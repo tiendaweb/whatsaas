@@ -149,6 +149,15 @@ pnpm db:migrate
 
 Si se omite este paso, pueden fallar lecturas de configuración de pagos (por ejemplo, tabla `payment_provider_settings` inexistente).
 
+### Migración CRM pendiente (requerida)
+
+Hay una migración obligatoria para CRM que agrega `contacts.custom_data` (`jsonb`, default `{}`):
+
+- Archivo: `lib/db/migrations/0008_contacts_custom_data.sql`
+- SQL: `ALTER TABLE contacts ADD COLUMN custom_data jsonb DEFAULT '{}'::jsonb`
+
+Asegúrate de ejecutar `pnpm db:migrate` antes de iniciar la app para evitar desajustes entre el schema de Drizzle y la base de datos en producción.
+
 ## Checklist de despliegue
 
 ```txt

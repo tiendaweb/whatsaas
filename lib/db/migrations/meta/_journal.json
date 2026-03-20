@@ -50,6 +50,13 @@
       "when": 1773189979527,
       "tag": "0006_chief_iron_fist",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1774005592389,
+      "tag": "0008_contacts_custom_data",
+      "breakpoints": true
     }
   ]
 }
