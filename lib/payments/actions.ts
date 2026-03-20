@@ -1,7 +1,7 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import { createCheckoutSession, createCustomerPortalSession, stripe } from './stripe';
+import { stripe, getActivePlugin } from './plugins';
 import { withTeam } from '@/lib/auth/middleware';
 import { db } from '@/lib/db/drizzle';
 import { teams, plans } from '@/lib/db/schema';
@@ -9,12 +9,20 @@ import { eq } from 'drizzle-orm';
 
 export const checkoutAction = withTeam(async (formData, team) => {
   const priceId = formData.get('priceId') as string;
-  await createCheckoutSession({ team: team, priceId });
+  const plugin = await getActivePlugin();
+  await plugin.createCheckout({ team: team, priceId });
 });
 
 export const customerPortalAction = withTeam(async (_, team) => {
-  const portalSession = await createCustomerPortalSession(team);
-  redirect(portalSession.url);
+  const plugin = await getActivePlugin();
+  if (plugin.createCustomerPortal) {
+    const portalUrl = await plugin.createCustomerPortal(team);
+    if (portalUrl) {
+      redirect(portalUrl);
+    }
+  }
+
+  redirect('/pricing');
 });
 
 export const joinFreePlanAction = withTeam(async (formData, team) => {

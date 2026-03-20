@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Check, Loader2, MessageCircle, Sparkles, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -38,7 +39,15 @@ type TeamData = {
   subscriptionStatus: string | null;
 };
 
-export function PricingClient({ allPlans, currentTeam }: { allPlans: Plan[], currentTeam?: TeamData }) {
+export function PricingClient({
+  allPlans,
+  currentTeam,
+  paymentProvider,
+}: {
+  allPlans: Plan[],
+  currentTeam?: TeamData,
+  paymentProvider: 'stripe' | 'manual' | 'mercadopago'
+}) {
   const [billingCycle, setBillingCycle] = useState<'month' | 'year'>('month');
   const [loadingId, setLoadingId] = useState<number | null>(null);
   const [isPortalLoading, setIsPortalLoading] = useState(false);
@@ -46,6 +55,8 @@ export function PricingClient({ allPlans, currentTeam }: { allPlans: Plan[], cur
   
   const [isConfirmationOpen, setIsConfirmationOpen] = useState(false);
   const [selectedFreePlan, setSelectedFreePlan] = useState<Plan | null>(null);
+  const searchParams = useSearchParams();
+  const manualPaymentPending = searchParams.get('manualPayment') === 'pending';
 
   const featuredPlanIndex = 1;
   const filteredPlans = allPlans.filter((plan) => plan.interval === billingCycle);
@@ -133,7 +144,13 @@ export function PricingClient({ allPlans, currentTeam }: { allPlans: Plan[], cur
             />
             </div>
 
-            {currentTeam && currentTeam.subscriptionStatus === 'active' && (
+            {manualPaymentPending && (
+                <p className="text-sm text-amber-600 dark:text-amber-400">
+                  Se creó tu solicitud de pago manual. Un administrador debe aprobarla.
+                </p>
+            )}
+
+            {currentTeam && currentTeam.subscriptionStatus === 'active' && paymentProvider === 'stripe' && (
                 <button 
                     onClick={handlePortalAccess}
                     disabled={isPortalLoading}

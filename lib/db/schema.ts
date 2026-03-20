@@ -765,6 +765,35 @@ export const chatTheme = pgTable('chat_theme', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
+export const paymentProviderSettings = pgTable('payment_provider_settings', {
+  id: serial('id').primaryKey(),
+  provider: varchar('provider', { length: 50 }).notNull().unique(),
+  enabled: boolean('enabled').notNull().default(false),
+  isDefault: boolean('is_default').notNull().default(false),
+  config: jsonb('config').$type<Record<string, string | undefined>>().notNull().default({}),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export const manualPayments = pgTable('manual_payments', {
+  id: serial('id').primaryKey(),
+  teamId: integer('team_id')
+    .notNull()
+    .references(() => teams.id, { onDelete: 'cascade' }),
+  planId: integer('plan_id')
+    .notNull()
+    .references(() => plans.id, { onDelete: 'cascade' }),
+  amount: integer('amount').notNull(),
+  currency: varchar('currency', { length: 3 }).notNull().default('usd'),
+  status: varchar('status', { length: 30 }).notNull().default('pending_manual_review'),
+  reference: text('reference'),
+  proofUrl: text('proof_url'),
+  reviewedBy: integer('reviewed_by').references(() => users.id, { onDelete: 'set null' }),
+  reviewedAt: timestamp('reviewed_at'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
 export const passwordResetTokens = pgTable('password_reset_tokens', {
   id: serial('id').primaryKey(),
   userId: integer('user_id')
@@ -831,6 +860,12 @@ export type NewBranding = typeof branding.$inferInsert;
 
 export type ChatTheme = typeof chatTheme.$inferSelect;
 export type NewChatTheme = typeof chatTheme.$inferInsert;
+
+export type PaymentProviderSetting = typeof paymentProviderSettings.$inferSelect;
+export type NewPaymentProviderSetting = typeof paymentProviderSettings.$inferInsert;
+
+export type ManualPayment = typeof manualPayments.$inferSelect;
+export type NewManualPayment = typeof manualPayments.$inferInsert;
 
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type NewApiKey = typeof apiKeys.$inferInsert;
