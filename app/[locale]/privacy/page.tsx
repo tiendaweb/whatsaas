@@ -4,8 +4,8 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 
 export const metadata = {
-  title: 'Privacy Policy',
-  description: 'How we handle your data.',
+  title: 'Política de Privacidad',
+  description: 'Cómo recopilamos, usamos y protegemos tus datos.',
 };
 
 export default async function PrivacyPage() {
@@ -17,46 +17,64 @@ export default async function PrivacyPage() {
       <div className="max-w-3xl mx-auto">
         <Link href="/">
           <Button variant="ghost" className="mb-8 pl-0 hover:bg-transparent hover:text-primary">
-            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Home
+            <ArrowLeft className="mr-2 h-4 w-4" /> Volver al inicio
           </Button>
         </Link>
 
-        <h1 className="text-4xl font-bold tracking-tight text-foreground mb-2">Privacy Policy</h1>
-        <p className="text-muted-foreground mb-10">Last updated: {new Date().toLocaleDateString()}</p>
+        <h1 className="text-4xl font-bold tracking-tight text-foreground mb-2">Política de Privacidad</h1>
+        <p className="text-muted-foreground mb-10">Última actualización: {new Date().toLocaleDateString()}</p>
 
         <div className="space-y-8 text-foreground/90 leading-relaxed">
           <section>
-            <h2 className="text-2xl font-semibold mb-4 text-foreground">1. Information Collection</h2>
+            <h2 className="text-2xl font-semibold mb-4 text-foreground">1. Información que recopilamos</h2>
             <p>
-              We collect information to provide better services to all our users. We collect information in the following ways: information you give us (such as your name, email address, and billing information) and information we get from your use of our services (such as log information, location information, and local storage).
+              En {siteName} recopilamos únicamente la información necesaria para prestar el servicio: datos de cuenta
+              (como nombre, correo y empresa), información de facturación y datos de uso de la plataforma (por ejemplo,
+              registros técnicos, actividad dentro del sistema y configuración de integraciones).
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4 text-foreground">2. How We Use Information</h2>
+            <h2 className="text-2xl font-semibold mb-4 text-foreground">2. Cómo usamos la información</h2>
             <p>
-              We use the information we collect from all of our services to provide, maintain, protect and improve them, to develop new ones, and to protect {siteName} and our users. We also use this information to offer you tailored content – like giving you more relevant search results and ads.
+              Usamos tus datos para operar, mantener y mejorar {siteName}, procesar pagos, brindar soporte técnico,
+              prevenir fraudes, cumplir obligaciones legales y comunicar novedades relevantes del servicio. No usamos tus
+              datos para fines incompatibles con estos propósitos.
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4 text-foreground">3. Information We Share</h2>
+            <h2 className="text-2xl font-semibold mb-4 text-foreground">3. Compartición de datos</h2>
             <p>
-              We do not share personal information with companies, organizations and individuals outside of {siteName} unless one of the following circumstances applies: with your consent, for external processing (trusted businesses or persons), or for legal reasons.
+              No vendemos tu información personal. Solo compartimos datos con proveedores que nos ayudan a operar la
+              plataforma (por ejemplo, infraestructura, analítica o pagos), bajo obligaciones de confidencialidad y
+              seguridad, o cuando la ley lo exige.
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4 text-foreground">4. Information Security</h2>
+            <h2 className="text-2xl font-semibold mb-4 text-foreground">4. Seguridad y conservación</h2>
             <p>
-              We work hard to protect {siteName} and our users from unauthorized access to or unauthorized alteration, disclosure or destruction of information we hold. We encrypt many of our services using SSL and review our information collection, storage and processing practices.
+              Aplicamos medidas técnicas y organizativas razonables para proteger tu información frente a accesos no
+              autorizados, pérdida o alteración. Conservamos los datos durante el tiempo necesario para cumplir la
+              finalidad del servicio, obligaciones contractuales y requerimientos legales.
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4 text-foreground">5. Changes</h2>
+            <h2 className="text-2xl font-semibold mb-4 text-foreground">5. Tus derechos</h2>
             <p>
-              Our Privacy Policy may change from time to time. We will not reduce your rights under this Privacy Policy without your explicit consent. We will post any privacy policy changes on this page and, if the changes are significant, we will provide a more prominent notice.
+              Puedes solicitar acceso, rectificación o eliminación de tus datos, así como oponerte a determinados
+              tratamientos, escribiéndonos por los canales oficiales de soporte. Responderemos dentro de plazos
+              razonables y de acuerdo con la normativa aplicable.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold mb-4 text-foreground">6. Cambios a esta política</h2>
+            <p>
+              Podemos actualizar esta Política de Privacidad para reflejar mejoras del producto o cambios normativos.
+              Publicaremos la versión vigente en esta página e indicaremos la fecha de última actualización.
             </p>
           </section>
         </div>

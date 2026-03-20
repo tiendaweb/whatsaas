@@ -4,8 +4,8 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 
 export const metadata = {
-  title: 'Terms of Service',
-  description: 'Read our terms and conditions.',
+  title: 'Términos del Servicio',
+  description: 'Consulta las condiciones de uso de la plataforma.',
 };
 
 export default async function TermsPage() {
@@ -17,53 +17,63 @@ export default async function TermsPage() {
       <div className="max-w-3xl mx-auto">
         <Link href="/">
           <Button variant="ghost" className="mb-8 pl-0 hover:bg-transparent hover:text-primary">
-            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Home
+            <ArrowLeft className="mr-2 h-4 w-4" /> Volver al inicio
           </Button>
         </Link>
 
-        <h1 className="text-4xl font-bold tracking-tight text-foreground mb-2">Terms of Service</h1>
-        <p className="text-muted-foreground mb-10">Last updated: {new Date().toLocaleDateString()}</p>
+        <h1 className="text-4xl font-bold tracking-tight text-foreground mb-2">Términos del Servicio</h1>
+        <p className="text-muted-foreground mb-10">Última actualización: {new Date().toLocaleDateString()}</p>
 
         <div className="space-y-8 text-foreground/90 leading-relaxed">
           <section>
-            <h2 className="text-2xl font-semibold mb-4 text-foreground">1. Acceptance of Terms</h2>
+            <h2 className="text-2xl font-semibold mb-4 text-foreground">1. Aceptación de los términos</h2>
             <p>
-              By accessing and using {siteName}, you accept and agree to be bound by the terms and provision of this agreement. In addition, when using these particular services, you shall be subject to any posted guidelines or rules applicable to such services.
+              Al acceder y utilizar {siteName}, aceptas estos términos y condiciones. Si utilizas funcionalidades
+              específicas, también se aplicarán políticas o lineamientos adicionales publicados dentro de la plataforma.
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4 text-foreground">2. Provision of Services</h2>
+            <h2 className="text-2xl font-semibold mb-4 text-foreground">2. Uso de la plataforma</h2>
             <p>
-              You agree and acknowledge that {siteName} is entitled to modify, improve or discontinue any of its services at its sole discretion and without notice to you even if it may result in you being prevented from accessing any information contained in it.
+              Debes usar {siteName} de forma legal y responsable. Nos reservamos el derecho de actualizar, modificar o
+              discontinuar funciones del servicio cuando sea necesario para mejorar la operación, seguridad o
+              cumplimiento normativo.
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4 text-foreground">3. Proprietary Rights</h2>
+            <h2 className="text-2xl font-semibold mb-4 text-foreground">3. Propiedad intelectual</h2>
             <p>
-              You acknowledge and agree that {siteName} may contain proprietary and confidential information including trademarks, service marks and patents protected by intellectual property laws and international intellectual property treaties. {siteName} authorizes you to view and make a single copy of portions of its content for offline, personal, non-commercial use. Our content may not be sold, reproduced, or distributed without our written permission.
+              Todo el contenido, marca, diseño y tecnología de {siteName} está protegido por derechos de propiedad
+              intelectual. No está permitido copiar, revender, redistribuir o explotar comercialmente el contenido sin
+              autorización previa y por escrito.
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4 text-foreground">4. Submitted Content</h2>
+            <h2 className="text-2xl font-semibold mb-4 text-foreground">4. Contenido del usuario</h2>
             <p>
-              When you submit content to {siteName} you simultaneously grant {siteName} an irrevocable, worldwide, royalty-free license to publish, display, modify, distribute and syndicate your content worldwide. You confirm and warrant that you have the required authority to grant the above license to {siteName}.
+              Conservas la titularidad de la información que cargas en la plataforma. Nos otorgas una licencia limitada
+              para procesarla únicamente con el fin de prestar el servicio, mantener su funcionamiento y cumplir
+              obligaciones legales o de seguridad.
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4 text-foreground">5. Termination of Agreement</h2>
+            <h2 className="text-2xl font-semibold mb-4 text-foreground">5. Suspensión o terminación</h2>
             <p>
-              The Terms of this agreement will continue to apply in perpetuity until terminated by either party without notice at any time for any reason. Terms that are to continue in perpetuity shall be unaffected by the termination of this agreement.
+              Podemos suspender o terminar el acceso en casos de incumplimiento de estos términos, uso indebido,
+              actividad fraudulenta o riesgo para la plataforma y sus usuarios.
             </p>
           </section>
 
           <section>
-            <h2 className="text-2xl font-semibold mb-4 text-foreground">6. Disclaimer of Warranties</h2>
+            <h2 className="text-2xl font-semibold mb-4 text-foreground">6. Limitación de responsabilidad</h2>
             <p>
-              You understand and agree that your use of {siteName} is entirely at your own risk and that our services are provided "As Is" and "As Available". {siteName} does not make any express or implied warranties, endorsements or representations whatsoever as to the operation of the {siteName} website, information, content, materials, or products.
+              {siteName} se proporciona “tal cual” y según disponibilidad. En la máxima medida permitida por la ley, no
+              garantizamos ausencia total de interrupciones y no asumimos responsabilidad por daños indirectos derivados
+              del uso del servicio.
             </p>
           </section>
         </div>
