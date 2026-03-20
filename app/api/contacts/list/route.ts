@@ -46,9 +46,9 @@ export async function GET() {
 
     const formatted = teamContacts.map(c => ({
         ...c,
-        tags: c.contactTags.map(ct => ct.tag),
+        tags: c.contactTags?.map(ct => ct.tag) ?? [],
         profilePicUrl: c.chat?.profilePicUrl,
-        phone: c.chat?.remoteJid.split('@')[0],
+        phone: c.chat?.remoteJid ? c.chat.remoteJid.split('@')[0] : null,
         instanceId: c.chat?.instance?.id || null,
         instanceName: c.chat?.instance?.instanceName || null,
     }));

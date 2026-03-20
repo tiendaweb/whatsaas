@@ -2,7 +2,7 @@ import { NextResponse, NextRequest } from 'next/server';
 import { db } from '@/lib/db/drizzle';
 import { getTeamForUser } from '@/lib/db/queries';
 import { customFields } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,12 +52,10 @@ export async function DELETE(req: NextRequest) {
         if (!id) return NextResponse.json({ error: 'Missing ID' }, { status: 400 });
 
         await db.delete(customFields)
-            .where(and(eq(customFields.id, parseInt(id)), eq(customFields.teamId, team.id)));
+            .where(and(eq(customFields.id, parseInt(id, 10)), eq(customFields.teamId, team.id)));
 
         return NextResponse.json({ success: true });
     } catch (error) {
         return NextResponse.json({ error: 'Internal Error' }, { status: 500 });
     }
 }
-
-import { and } from 'drizzle-orm';

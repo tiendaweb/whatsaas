@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
     
     const formattedContact = {
       ...contact,
-      tags: contact.contactTags.map(ct => ct.tag) || []
+      tags: contact.contactTags?.map(ct => ct.tag) ?? []
     };
     delete (formattedContact as any).contactTags; 
 
