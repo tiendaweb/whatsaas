@@ -15,7 +15,7 @@ import { useBranding } from '@/providers/branding-provider';
 
 export default function ContactPage() {
   const { branding } = useBranding();
-  const siteName = branding?.name || 'WhatSaaS';
+  const siteName = branding?.name || 'WhatsPro';
 
   const [state, formAction, isPending] = useActionState(sendContactMessage, {});
 

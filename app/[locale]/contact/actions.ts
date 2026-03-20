@@ -19,7 +19,7 @@ export type ContactActionState = {
 
 export async function sendContactMessage(prevState: ContactActionState, formData: FormData): Promise<ContactActionState> {
   const branding = await getBranding();
-  const siteName = branding?.name || 'WhatSaaS';
+  const siteName = branding?.name || 'WhatsPro';
   
   const rawData = {
     firstName: formData.get('firstName') as string,

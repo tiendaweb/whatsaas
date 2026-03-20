@@ -27,7 +27,7 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
   );
 
   const { branding } = useBranding();
-  const siteName = branding?.name || 'WhatSaaS';
+  const siteName = branding?.name || 'WhatsPro';
 
   return (
     <main className="relative min-h-screen flex flex-col items-center justify-center bg-background p-4 overflow-hidden font-sans">

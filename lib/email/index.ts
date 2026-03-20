@@ -6,7 +6,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 export async function sendInvitationEmail(email: string, teamName: string, inviteId: number) {
   const inviteLink = `${process.env.BASE_URL}/sign-up?inviteId=${inviteId}`;
   const branding = await getBranding();
-  const appName = branding?.name || 'WhatSaaS';
+  const appName = branding?.name || 'WhatsPro';
 
   try {
     await resend.emails.send({
@@ -39,7 +39,7 @@ export async function sendInvitationEmail(email: string, teamName: string, invit
 export async function sendPasswordResetEmail(email: string, token: string) {
   const resetLink = `${process.env.BASE_URL}/reset-password?token=${token}`;
   const branding = await getBranding();
-  const appName = branding?.name || 'WhatSaaS';
+  const appName = branding?.name || 'WhatsPro';
 
   try {
     await resend.emails.send({

@@ -10,7 +10,7 @@ export const metadata = {
 
 export default async function PrivacyPage() {
   const branding = await getBranding();
-  const siteName = branding?.name || 'WhatSaaS';
+  const siteName = branding?.name || 'WhatsPro';
 
   return (
     <main className="min-h-screen bg-background py-16 px-4 sm:px-6 lg:px-8">
