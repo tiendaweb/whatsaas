@@ -747,6 +747,9 @@
     "set_password_desc": "Definir una nueva contraseña para {name}.",
     "new_password": "Nueva contraseña",
     "password_min_length": "La contraseña debe tener al menos 8 caracteres.",
+    "impersonate": "Suplantar",
+    "impersonate_confirm": "¿Suplantar a {name}?",
+    "impersonate_success": "Suplantación iniciada.",
     "cancel": "Cancelar",
     "save_password": "Guardar contraseña"
   },

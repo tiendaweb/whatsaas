@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, Suspense, useEffect } from 'react';
+import { useState, Suspense, useEffect, useTransition } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { LogOut, Settings, MessageCircle, Menu, X } from 'lucide-react';
+import { LogOut, Settings, MessageCircle, Menu, X, ShieldAlert } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,12 +18,20 @@ import useSWR, { mutate } from 'swr';
 import { Sidebar } from '@/components/interface/Sidebar';
 import Logo from '@/components/interface/Logo';
 import { ThemeSwitcher } from '@/components/theme-switcher';
+import { adminStopImpersonation } from '@/app/[locale]/(admin)/admin-actions';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
+type UserWithImpersonation = User & {
+  impersonation?: {
+    isImpersonating: boolean;
+    impersonatorId: number | null;
+  };
+};
 
 function UserMenu() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { data: user } = useSWR<User>('/api/user', fetcher);
+  const [isStoppingImpersonation, startStopImpersonation] = useTransition();
+  const { data: user } = useSWR<UserWithImpersonation>('/api/user', fetcher);
   const router = useRouter();
 
   async function handleSignOut() {
@@ -48,6 +56,17 @@ function UserMenu() {
     );
   }
 
+  async function handleStopImpersonation() {
+    startStopImpersonation(async () => {
+      const result = await adminStopImpersonation();
+      if (result.error) return;
+      mutate('/api/user');
+      mutate('/api/team');
+      router.push('/admin/users');
+      router.refresh();
+    });
+  }
+
   return (
     <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
       <DropdownMenuTrigger>
@@ -62,6 +81,12 @@ function UserMenu() {
         </Avatar>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="flex flex-col gap-1 w-48">
+        {user.impersonation?.isImpersonating && (
+          <DropdownMenuItem className="cursor-pointer" onClick={handleStopImpersonation} disabled={isStoppingImpersonation}>
+            <ShieldAlert className="mr-2 h-4 w-4" />
+            <span>{isStoppingImpersonation ? 'Leaving...' : 'Stop impersonation'}</span>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem className="cursor-pointer">
           <Link href="/dashboard" className="flex w-full items-center">
             <MessageCircle className="mr-2 h-4 w-4" />

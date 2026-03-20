@@ -748,6 +748,9 @@
     "set_password_desc": "Definir uma nova senha para {name}.",
     "new_password": "Nova senha",
     "password_min_length": "A senha deve ter pelo menos 8 caracteres.",
+    "impersonate": "Personificar",
+    "impersonate_confirm": "Personificar {name}?",
+    "impersonate_success": "Personificação iniciada.",
     "cancel": "Cancelar",
     "save_password": "Salvar senha"
   },

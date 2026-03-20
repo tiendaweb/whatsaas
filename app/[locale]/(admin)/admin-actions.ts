@@ -8,7 +8,7 @@ import { getUser } from '@/lib/db/queries';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { getStripeClient } from '@/lib/payments/stripe';
-import { hashPassword } from '@/lib/auth/session';
+import { getSession, hashPassword, setSession } from '@/lib/auth/session';
 import { sendPasswordResetEmail } from '@/lib/email';
 import { randomUUID } from 'crypto';
 
@@ -256,6 +256,68 @@ export async function adminSetPassword(userId: number, newPassword: string): Pro
     return { success: 'Password updated successfully.' };
   } catch (error: any) {
     return { error: error.message || 'Failed to update password.' };
+  }
+}
+
+export async function adminStartImpersonation(userId: number): Promise<ActionState> {
+  try {
+    const adminUser = await verifyAdmin();
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return { error: 'Invalid user.' };
+    }
+
+    if (adminUser.id === userId) {
+      return { error: 'You cannot impersonate yourself.' };
+    }
+
+    const [targetUser] = await db
+      .select({
+        id: users.id,
+        deletedAt: users.deletedAt,
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!targetUser || targetUser.deletedAt) {
+      return { error: 'User not found.' };
+    }
+
+    await setSession({ id: targetUser.id }, adminUser.id);
+    return { success: 'Impersonation started.' };
+  } catch (error: any) {
+    return { error: error.message || 'Failed to start impersonation.' };
+  }
+}
+
+export async function adminStopImpersonation(): Promise<ActionState> {
+  try {
+    const session = await getSession();
+    const impersonatorId = session?.impersonatedBy?.id;
+
+    if (!impersonatorId) {
+      return { error: 'No active impersonation session.' };
+    }
+
+    const [adminUser] = await db
+      .select({
+        id: users.id,
+        role: users.role,
+        deletedAt: users.deletedAt,
+      })
+      .from(users)
+      .where(eq(users.id, impersonatorId))
+      .limit(1);
+
+    if (!adminUser || adminUser.deletedAt || adminUser.role !== 'admin') {
+      return { error: 'Original admin user is not available.' };
+    }
+
+    await setSession({ id: adminUser.id });
+    return { success: 'Impersonation stopped.' };
+  } catch (error: any) {
+    return { error: error.message || 'Failed to stop impersonation.' };
   }
 }
 
