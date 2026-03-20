@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUser } from '@/lib/db/queries';
-import { getAllUsers, getAllTeamsList } from '@/lib/db/admin-queries';
+import { getAllPlansList, getAllUsers, getAllTeamsList } from '@/lib/db/admin-queries';
 
 export async function GET(request: NextRequest) {
   const user = await getUser();
@@ -17,10 +17,11 @@ export async function GET(request: NextRequest) {
     perPage: parseInt(searchParams.get('perPage') || '20'),
   };
 
-  const [result, teams] = await Promise.all([
+  const [result, teams, plans] = await Promise.all([
     getAllUsers(filters),
     getAllTeamsList(),
+    getAllPlansList(),
   ]);
 
-  return NextResponse.json({ ...result, teams });
+  return NextResponse.json({ ...result, teams, plans });
 }

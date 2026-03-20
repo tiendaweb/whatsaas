@@ -32,6 +32,14 @@ const planSchema = z.object({
   isTemplatesEnabled: z.boolean(),
 });
 
+const createAdminUserSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required.').max(100),
+  email: z.string().email('Invalid email address.'),
+  password: z.string().min(8, 'Password must be at least 8 characters.'),
+  role: z.enum(['admin', 'owner', 'member']),
+  planId: z.coerce.number().int().positive('Select a valid plan.'),
+});
+
 async function verifyAdmin() {
   const user = await getUser();
   if (!user || user.role !== 'admin') {
@@ -65,6 +73,141 @@ export async function updateUserRole(userId: number, role: string): Promise<Acti
     return { success: 'Role updated successfully' };
   } catch (error: any) {
     return { error: error.message || 'Failed to update role' };
+  }
+}
+
+export async function createUserFromAdmin(payload: {
+  name: string;
+  email: string;
+  password: string;
+  role: string;
+  planId: number;
+}): Promise<ActionState> {
+  try {
+    const adminUser = await verifyAdmin();
+    const validated = createAdminUserSchema.safeParse(payload);
+
+    if (!validated.success) {
+      return { error: validated.error.issues[0]?.message || 'Invalid input.' };
+    }
+
+    const { name, email, password, role, planId } = validated.data;
+
+    const [existingUser] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+
+    if (existingUser) {
+      return { error: 'A user with this email already exists.' };
+    }
+
+    const [selectedPlan] = await db
+      .select({ id: plans.id, name: plans.name })
+      .from(plans)
+      .where(eq(plans.id, planId))
+      .limit(1);
+
+    if (!selectedPlan) {
+      return { error: 'Selected plan was not found.' };
+    }
+
+    const passwordHash = await hashPassword(password);
+
+    const { createdUser } = await db.transaction(async (tx) => {
+      const [createdUser] = await tx
+        .insert(users)
+        .values({
+          name,
+          email,
+          passwordHash,
+          role,
+          updatedAt: new Date(),
+        })
+        .returning({ id: users.id });
+
+      const [createdTeam] = await tx
+        .insert(teams)
+        .values({
+          name: `${name}'s Team`,
+          planId: selectedPlan.id,
+          planName: selectedPlan.name,
+          subscriptionStatus: 'active',
+          updatedAt: new Date(),
+        })
+        .returning({ id: teams.id });
+
+      await tx.insert(teamMembers).values({
+        userId: createdUser.id,
+        teamId: createdTeam.id,
+        role: role === 'member' ? 'member' : 'owner',
+      });
+
+      await tx.insert(activityLogs).values({
+        teamId: createdTeam.id,
+        userId: adminUser.id,
+        action: `ADMIN_CREATE_USER:${email}`,
+      });
+
+      return { createdUser };
+    });
+
+    revalidatePath('/admin/users');
+    return { success: `User created successfully (ID: ${createdUser.id}).` };
+  } catch (error: any) {
+    return { error: error.message || 'Failed to create user.' };
+  }
+}
+
+export async function assignPlanToUserTeam(userId: number, planId: number): Promise<ActionState> {
+  try {
+    const adminUser = await verifyAdmin();
+
+    if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(planId) || planId <= 0) {
+      return { error: 'Invalid user or plan.' };
+    }
+
+    const [selectedPlan] = await db
+      .select({ id: plans.id, name: plans.name })
+      .from(plans)
+      .where(eq(plans.id, planId))
+      .limit(1);
+
+    if (!selectedPlan) {
+      return { error: 'Plan not found.' };
+    }
+
+    const [membership] = await db
+      .select({ teamId: teamMembers.teamId })
+      .from(teamMembers)
+      .where(eq(teamMembers.userId, userId))
+      .limit(1);
+
+    if (!membership) {
+      return { error: 'User has no team assigned.' };
+    }
+
+    await db
+      .update(teams)
+      .set({
+        planId: selectedPlan.id,
+        planName: selectedPlan.name,
+        updatedAt: new Date(),
+      })
+      .where(eq(teams.id, membership.teamId));
+
+    await db.insert(activityLogs).values({
+      teamId: membership.teamId,
+      userId: adminUser.id,
+      action: `ADMIN_ASSIGN_PLAN:user_${userId}->plan_${selectedPlan.id}`,
+    });
+
+    revalidatePath('/admin/users');
+    revalidatePath('/admin/teams');
+    return { success: 'Plan assigned successfully.' };
+  } catch (error: any) {
+    return { error: error.message || 'Failed to assign plan.' };
   }
 }
 
