@@ -52,14 +52,37 @@ function warnWithFallback(scope: string, error: unknown) {
 
 export async function ensurePaymentProviderDefaults() {
   try {
-    const existing = await db.select().from(paymentProviderSettings);
-    if (existing.length > 0) return;
-
-    await db.insert(paymentProviderSettings).values([
+    const requiredProviders = [
       { provider: 'stripe', enabled: true, isDefault: true, config: {} },
       { provider: 'manual', enabled: true, isDefault: false, config: {} },
       { provider: 'mercadopago', enabled: false, isDefault: false, config: {} },
-    ]);
+    ] as const;
+
+    const existing = await db.select().from(paymentProviderSettings);
+    const existingProviders = new Set(existing.map((row) => row.provider));
+
+    const missingProviders = requiredProviders.filter((provider) => !existingProviders.has(provider.provider));
+    if (missingProviders.length > 0) {
+      await db.insert(paymentProviderSettings).values(missingProviders).onConflictDoNothing();
+    }
+
+    const providers = missingProviders.length > 0 ? await db.select().from(paymentProviderSettings) : existing;
+    const hasDefaultProvider = providers.some((provider) => provider.isDefault);
+
+    if (!hasDefaultProvider) {
+      const deterministicDefault =
+        providers.find((provider) => provider.provider === 'stripe' && provider.enabled) ??
+        requiredProviders
+          .map((requiredProvider) => providers.find((provider) => provider.provider === requiredProvider.provider && provider.enabled))
+          .find((provider) => provider !== undefined);
+
+      if (deterministicDefault) {
+        await db
+          .update(paymentProviderSettings)
+          .set({ isDefault: true })
+          .where(eq(paymentProviderSettings.provider, deterministicDefault.provider));
+      }
+    }
   } catch (error) {
     if (isRelationMissingError(error)) {
       warnWithFallback('ensurePaymentProviderDefaults', error);
