@@ -4,14 +4,36 @@ import { users, teams, teamMembers, plans } from '@/lib/db/schema';
 import { setSession } from '@/lib/auth/session';
 import { NextRequest, NextResponse } from 'next/server';
 import { getStripeClient } from '@/lib/payments/stripe';
+import { getActivePaymentProvider } from '@/lib/payments/provider-settings';
 import Stripe from 'stripe';
+
+function redirectToPricingWithInfo(request: NextRequest, reason: string) {
+  const redirectUrl = new URL('/pricing', request.url);
+  redirectUrl.searchParams.set('payment_notice', reason);
+  return NextResponse.redirect(redirectUrl);
+}
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const sessionId = searchParams.get('session_id');
 
   if (!sessionId) {
-    return NextResponse.redirect(new URL('/pricing', request.url));
+    return redirectToPricingWithInfo(request, 'missing_checkout_session');
+  }
+
+  const activeProvider = await getActivePaymentProvider();
+  if (activeProvider !== 'stripe') {
+    return redirectToPricingWithInfo(request, `checkout_ignored_provider_${activeProvider}`);
+  }
+
+  if (!process.env.STRIPE_SECRET_KEY) {
+    console.error({
+      scope: 'api.stripe.checkout',
+      action: 'validate_stripe_config',
+      message: 'Stripe checkout ignored because STRIPE_SECRET_KEY is missing',
+      hasSessionId: Boolean(sessionId),
+    });
+    return redirectToPricingWithInfo(request, 'stripe_not_configured');
   }
 
   try {
@@ -103,7 +125,13 @@ export async function GET(request: NextRequest) {
     await setSession(user[0]);
     return NextResponse.redirect(new URL('/dashboard', request.url));
   } catch (error) {
-    console.error('Error handling successful checkout:', error);
+    console.error({
+      scope: 'api.stripe.checkout',
+      action: 'handle_successful_checkout',
+      message: 'Error handling successful checkout',
+      sessionId,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
     return NextResponse.redirect(new URL('/error', request.url));
   }
 }
