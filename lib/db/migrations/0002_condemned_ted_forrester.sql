@@ -1,0 +1,1 @@
+ALTER TABLE "waba_templates" DROP CONSTRAINT "waba_templates_meta_id_unique";
