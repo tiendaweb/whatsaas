@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   try {
     const team = await getTeamForUser();
     if (!team) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(null);
     }
 
     const jid = request.nextUrl.searchParams.get('jid');
@@ -60,6 +60,6 @@ export async function GET(request: NextRequest) {
 
   } catch (error: any) {
     console.error('Error fetching contact:', error.message);
-    return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });
+    return NextResponse.json(null);
   }
 }

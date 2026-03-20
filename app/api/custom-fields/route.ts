@@ -9,12 +9,13 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     const team = await getTeamForUser();
-    if (!team) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!team) return NextResponse.json([]);
 
     const fields = await db.select().from(customFields).where(eq(customFields.teamId, team.id));
     return NextResponse.json(fields);
   } catch (error) {
-    return NextResponse.json({ error: 'Internal Error' }, { status: 500 });
+    console.error('Error fetching custom fields:', error);
+    return NextResponse.json([]);
   }
 }
 

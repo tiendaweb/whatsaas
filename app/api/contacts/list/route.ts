@@ -14,7 +14,7 @@ export async function GET() {
 
     const team = await getTeamForUser();
     if (!team) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json([]);
     }
 
     const teamContacts = await db.query.contacts.findMany({
@@ -56,6 +56,7 @@ export async function GET() {
     return NextResponse.json(formatted);
 
   } catch (error: any) {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error('Error fetching contacts list:', error?.message || error);
+    return NextResponse.json([]);
   }
 }
