@@ -19,8 +19,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { MoreHorizontal, Mail, KeyRound, Trash2, Loader2 } from 'lucide-react';
-import { adminSendResetLink, adminSetPassword, deleteUser } from '../../admin-actions';
+import { MoreHorizontal, Mail, KeyRound, Trash2, Loader2, UserRoundCog } from 'lucide-react';
+import { adminSendResetLink, adminSetPassword, adminStartImpersonation, deleteUser } from '../../admin-actions';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { useSWRConfig } from 'swr';
@@ -80,6 +80,21 @@ export function UserActions({ userId, userName }: UserActionsProps) {
     });
   };
 
+  const handleImpersonate = () => {
+    if (!confirm(t('impersonate_confirm', { name: userName || 'N/A' }))) return;
+    startTransition(async () => {
+      const result = await adminStartImpersonation(userId);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+
+      toast.success(t('impersonate_success'));
+      router.push('/dashboard');
+      router.refresh();
+    });
+  };
+
   return (
     <>
       <DropdownMenu>
@@ -100,6 +115,10 @@ export function UserActions({ userId, userName }: UserActionsProps) {
           <DropdownMenuItem onClick={() => setShowPasswordDialog(true)}>
             <KeyRound className="mr-2 h-4 w-4" />
             {t('set_password')}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={handleImpersonate}>
+            <UserRoundCog className="mr-2 h-4 w-4" />
+            {t('impersonate')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

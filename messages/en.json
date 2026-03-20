@@ -752,6 +752,9 @@
     "set_password_desc": "Set a new password for {name}.",
     "new_password": "New password",
     "password_min_length": "Password must be at least 8 characters.",
+    "impersonate": "Impersonate",
+    "impersonate_confirm": "Impersonate {name}?",
+    "impersonate_success": "Impersonation started.",
     "cancel": "Cancel",
     "save_password": "Save password"
   },
