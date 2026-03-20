@@ -48,6 +48,7 @@ export const plans = pgTable('plans', {
   isFlowBuilderEnabled: boolean('is_flow_builder_enabled').notNull().default(false),
   isCampaignsEnabled: boolean('is_campaigns_enabled').notNull().default(false),
   isTemplatesEnabled: boolean('is_templates_enabled').notNull().default(false),
+  pricingCustomItems: jsonb('pricing_custom_items').$type<Array<{ text: string; included: boolean }>>().notNull().default([]),
   
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),

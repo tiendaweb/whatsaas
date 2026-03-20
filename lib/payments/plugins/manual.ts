@@ -9,8 +9,13 @@ export const manualPaymentPlugin: PaymentPlugin = {
   id: 'manual',
   async createCheckout({ team, priceId, planId }) {
     const user = await getUser();
+    const redirectQuery = new URLSearchParams({
+      redirect: 'checkout',
+      ...(priceId ? { priceId } : {}),
+      ...(planId ? { planId: String(planId) } : {}),
+    }).toString();
     if (!team || !user) {
-      redirect(`/sign-up?redirect=checkout&priceId=${priceId}`);
+      redirect(`/sign-up?${redirectQuery}`);
     }
 
     const plan = planId

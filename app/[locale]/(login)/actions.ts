@@ -98,8 +98,10 @@ export const signIn = validatedAction(signInSchema, async (data, formData) => {
   const redirectTo = formData.get('redirect') as string | null;
   if (redirectTo === 'checkout') {
     const priceId = formData.get('priceId') as string;
+    const rawPlanId = formData.get('planId');
+    const planId = rawPlanId ? Number(rawPlanId) : undefined;
     const plugin = await getActivePlugin();
-    return plugin.createCheckout({ team: foundTeam, priceId });
+    return plugin.createCheckout({ team: foundTeam, priceId, planId });
   }
 
   redirect('/dashboard');
@@ -230,8 +232,10 @@ export const signUp = validatedAction(signUpSchema, async (data, formData) => {
   const redirectTo = formData.get('redirect') as string | null;
   if (redirectTo === 'checkout') {
     const priceId = formData.get('priceId') as string;
+    const rawPlanId = formData.get('planId');
+    const planId = rawPlanId ? Number(rawPlanId) : undefined;
     const plugin = await getActivePlugin();
-    return plugin.createCheckout({ team: createdTeam, priceId });
+    return plugin.createCheckout({ team: createdTeam, priceId, planId });
   }
 
   redirect('/dashboard');

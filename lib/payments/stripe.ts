@@ -31,9 +31,18 @@ export async function createCheckoutSession({
   planId?: number;
 }) {
   const user = await getUser();
+  const redirectQuery = new URLSearchParams({
+    redirect: 'checkout',
+    ...(priceId ? { priceId } : {}),
+    ...(planId ? { planId: String(planId) } : {}),
+  }).toString();
 
   if (!team || !user) {
-    redirect(`/sign-up?redirect=checkout&priceId=${priceId}`);
+    redirect(`/sign-up?${redirectQuery}`);
+  }
+
+  if (!process.env.STRIPE_SECRET_KEY) {
+    redirect('/pricing?payment_notice=stripe_not_configured');
   }
 
   const plan = planId
@@ -80,6 +89,10 @@ export async function createCheckoutSession({
 export async function createCustomerPortalSession(team: typeof teams.$inferSelect) {
   if (!team.stripeCustomerId || !team.stripeProductId) {
     redirect('/pricing');
+  }
+
+  if (!process.env.STRIPE_SECRET_KEY) {
+    redirect('/pricing?payment_notice=stripe_not_configured');
   }
 
   const stripe = getStripeClient();
