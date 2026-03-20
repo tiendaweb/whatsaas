@@ -53,8 +53,9 @@ export async function saveProviderConfig(formData: FormData) {
   await assertAdmin();
 
   const provider = formData.get('provider') as PaymentProviderId;
-  const enabled = formData.get('enabled') === 'on';
+  const requestedEnabled = formData.get('enabled') === 'on';
   const isDefault = formData.get('isDefault') === 'on';
+  const enabled = isDefault ? true : requestedEnabled;
 
   const config: Record<string, string> = {};
 
@@ -73,21 +74,47 @@ export async function saveProviderConfig(formData: FormData) {
     config.pendingUrl = (formData.get('pendingUrl') as string) || '';
   }
 
-  if (isDefault) {
-    await db.update(paymentProviderSettings).set({ isDefault: false, updatedAt: new Date() });
-  }
+  await db.transaction(async (tx) => {
+    const providers = await tx.select().from(paymentProviderSettings);
+    const currentProvider = providers.find((item) => item.provider === provider);
 
-  await db
-    .update(paymentProviderSettings)
-    .set({
-      enabled,
-      isDefault,
-      config,
-      updatedAt: new Date(),
-    })
-    .where(eq(paymentProviderSettings.provider, provider));
+    if (!currentProvider) {
+      throw new Error('Proveedor de pago no encontrado.');
+    }
+
+    const providersAfterUpdate = providers.map((item) => {
+      if (item.provider !== provider) {
+        return item;
+      }
+
+      return {
+        ...item,
+        enabled,
+        isDefault,
+      };
+    });
+
+    if (!providersAfterUpdate.some((item) => item.enabled)) {
+      throw new Error('Debe haber al menos un proveedor de pago habilitado.');
+    }
+
+    if (isDefault) {
+      await tx.update(paymentProviderSettings).set({ isDefault: false, updatedAt: new Date() });
+    }
+
+    await tx
+      .update(paymentProviderSettings)
+      .set({
+        enabled,
+        isDefault,
+        config,
+        updatedAt: new Date(),
+      })
+      .where(eq(paymentProviderSettings.provider, provider));
+  });
 
   revalidatePath('/admin/payments');
+  revalidatePath('/admin/settings');
 }
 
 export async function approveManualPayment(formData: FormData) {
