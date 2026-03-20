@@ -15,6 +15,11 @@ async function assertAdmin() {
   return user;
 }
 
+export type SaveProviderConfigResult = {
+  ok?: boolean;
+  error?: string;
+};
+
 export async function getPaymentAdminData() {
   await assertAdmin();
   try {
@@ -49,10 +54,16 @@ export async function getPaymentAdminData() {
   }
 }
 
-export async function saveProviderConfig(formData: FormData) {
+async function persistProviderConfig(formData: FormData): Promise<SaveProviderConfigResult> {
   await assertAdmin();
 
-  const provider = formData.get('provider') as PaymentProviderId;
+  const provider = formData.get('provider');
+  const allowedProviders: PaymentProviderId[] = ['stripe', 'manual', 'mercadopago'];
+
+  if (!provider || typeof provider !== 'string' || !allowedProviders.includes(provider as PaymentProviderId)) {
+    return { error: 'Proveedor de pago inválido.' };
+  }
+
   const requestedEnabled = formData.get('enabled') === 'on';
   const isDefault = formData.get('isDefault') === 'on';
   const enabled = isDefault ? true : requestedEnabled;
@@ -74,47 +85,75 @@ export async function saveProviderConfig(formData: FormData) {
     config.pendingUrl = (formData.get('pendingUrl') as string) || '';
   }
 
-  await db.transaction(async (tx) => {
-    const providers = await tx.select().from(paymentProviderSettings);
-    const currentProvider = providers.find((item) => item.provider === provider);
+  try {
+    await db.transaction(async (tx) => {
+      let providers = await tx.select().from(paymentProviderSettings);
+      let currentProvider = providers.find((item) => item.provider === provider);
 
-    if (!currentProvider) {
-      throw new Error('Proveedor de pago no encontrado.');
-    }
+      if (!currentProvider) {
+        await tx.insert(paymentProviderSettings).values({
+          provider,
+          enabled: false,
+          isDefault: false,
+          config: {},
+        }).onConflictDoNothing();
 
-    const providersAfterUpdate = providers.map((item) => {
-      if (item.provider !== provider) {
-        return item;
+        providers = await tx.select().from(paymentProviderSettings);
+        currentProvider = providers.find((item) => item.provider === provider);
+        if (!currentProvider) {
+          throw new Error('No se pudo crear la configuración del proveedor de pago.');
+        }
       }
 
-      return {
-        ...item,
-        enabled,
-        isDefault,
-      };
+      const providersAfterUpdate = providers.map((item) => {
+        if (item.provider !== provider) {
+          return item;
+        }
+
+        return {
+          ...item,
+          enabled,
+          isDefault,
+        };
+      });
+
+      if (!providersAfterUpdate.some((item) => item.enabled)) {
+        throw new Error('Debe haber al menos un proveedor de pago habilitado.');
+      }
+
+      if (isDefault) {
+        await tx.update(paymentProviderSettings).set({ isDefault: false, updatedAt: new Date() });
+      }
+
+      await tx
+        .update(paymentProviderSettings)
+        .set({
+          enabled,
+          isDefault,
+          config,
+          updatedAt: new Date(),
+        })
+        .where(eq(paymentProviderSettings.provider, provider));
     });
-
-    if (!providersAfterUpdate.some((item) => item.enabled)) {
-      throw new Error('Debe haber al menos un proveedor de pago habilitado.');
-    }
-
-    if (isDefault) {
-      await tx.update(paymentProviderSettings).set({ isDefault: false, updatedAt: new Date() });
-    }
-
-    await tx
-      .update(paymentProviderSettings)
-      .set({
-        enabled,
-        isDefault,
-        config,
-        updatedAt: new Date(),
-      })
-      .where(eq(paymentProviderSettings.provider, provider));
-  });
+  } catch (error) {
+    console.error('Error saving provider config:', error);
+    return { error: error instanceof Error ? error.message : 'No se pudo guardar la configuración del proveedor.' };
+  }
 
   revalidatePath('/admin/payments');
   revalidatePath('/admin/settings');
+  return { ok: true };
+}
+
+export async function saveProviderConfig(formData: FormData): Promise<void> {
+  await persistProviderConfig(formData);
+}
+
+export async function saveProviderConfigAction(
+  _prevState: SaveProviderConfigResult,
+  formData: FormData,
+): Promise<SaveProviderConfigResult> {
+  return persistProviderConfig(formData);
 }
 
 export async function approveManualPayment(formData: FormData) {
