@@ -1,7 +1,8 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import { stripe, getActivePlugin } from './plugins';
+import { getActivePlugin } from './plugins';
+import { getStripeClient } from './stripe';
 import { withTeam } from '@/lib/auth/middleware';
 import { db } from '@/lib/db/drizzle';
 import { teams, plans } from '@/lib/db/schema';
@@ -38,10 +39,15 @@ export const joinFreePlanAction = withTeam(async (formData, team) => {
   }
 
   if (team.stripeSubscriptionId && team.subscriptionStatus === 'active') {
-    try {
-      await stripe.subscriptions.cancel(team.stripeSubscriptionId);
-    } catch (error) {
-      console.error("Erro ao cancelar assinatura anterior no Stripe:", error);
+    const hasStripeKey = Boolean(process.env.STRIPE_SECRET_KEY);
+
+    if (hasStripeKey) {
+      try {
+        const stripe = getStripeClient();
+        await stripe.subscriptions.cancel(team.stripeSubscriptionId);
+      } catch (error) {
+        console.error("Erro ao cancelar assinatura anterior no Stripe:", error);
+      }
     }
   }
 
