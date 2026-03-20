@@ -6,8 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 
 export const metadata = {
-  title: 'Documentation',
-  description: 'Learn how to use our platform.',
+  title: 'Documentación',
+  description: 'Aprende a usar nuestra plataforma.',
 };
 
 export default async function DocsPage() {
@@ -16,40 +16,40 @@ export default async function DocsPage() {
 
   const categories = [
     {
-      title: "Getting Started",
-      description: "Everything you need to know to get your account up and running.",
+      title: 'Primeros pasos',
+      description: 'Todo lo necesario para dejar tu cuenta lista y funcionando.',
       icon: Zap,
-      links: ["Account Setup", "Connecting WhatsApp", "Inviting Team Members"]
+      links: ['Configuración de cuenta', 'Conectar WhatsApp', 'Invitar miembros del equipo']
     },
     {
-      title: "Automation & Flows",
-      description: "Learn how to build powerful automation flows.",
+      title: 'Automatización y flujos',
+      description: 'Aprende a crear automatizaciones potentes para tu operación.',
       icon: Code,
-      links: ["Visual Flow Builder", "Message Types", "Variables & Logic"]
+      links: ['Constructor visual de flujos', 'Tipos de mensaje', 'Variables y lógica']
     },
     {
-      title: "CRM & Contacts",
-      description: "Manage your leads and customers effectively.",
+      title: 'CRM y contactos',
+      description: 'Gestiona leads y clientes de forma ordenada y eficiente.',
       icon: UsersIcon,
-      links: ["Importing Contacts", "Tags & Funnels", "Filtering Leads"]
+      links: ['Importar contactos', 'Etiquetas y embudos', 'Filtrado de leads']
     },
     {
-      title: "API & Developers",
-      description: "Technical documentation for our API endpoints.",
+      title: 'API y desarrollo',
+      description: 'Documentación técnica de endpoints e integraciones.',
       icon: Book,
-      links: ["Authentication", "Sending Messages", "Webhooks"]
+      links: ['Autenticación', 'Envío de mensajes', 'Webhooks']
     },
     {
-      title: "Troubleshooting",
-      description: "Common issues and how to resolve them.",
+      title: 'Resolución de problemas',
+      description: 'Errores comunes y cómo solucionarlos rápidamente.',
       icon: Shield,
-      links: ["Connection Issues", "Message Failures", "Billing FAQ"]
+      links: ['Problemas de conexión', 'Fallos de envío', 'Preguntas frecuentes de facturación']
     },
     {
-      title: "Best Practices",
-      description: "Tips to avoid bans and improve engagement.",
+      title: 'Buenas prácticas',
+      description: 'Recomendaciones para mejorar resultados y evitar bloqueos.',
       icon: MessageSquare,
-      links: ["Anti-Spam Rules", "Template Guidelines", "Broadcast Strategy"]
+      links: ['Reglas anti-spam', 'Guía de plantillas', 'Estrategia de difusiones']
     }
   ];
 
@@ -59,21 +59,21 @@ export default async function DocsPage() {
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <Link href="/">
             <Button variant="ghost" className="absolute top-6 left-6 pl-0 hover:bg-transparent hover:text-primary">
-              <ArrowLeft className="mr-2 h-4 w-4" /> Back
+              <ArrowLeft className="mr-2 h-4 w-4" /> Volver
             </Button>
           </Link>
-          
+
           <h1 className="text-3xl md:text-5xl font-bold tracking-tight mb-6">
-            {siteName} Documentation
+            Documentación de {siteName}
           </h1>
           <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
-            Find everything you need to know about automating your WhatsApp support and sales.
+            Encuentra todo lo que necesitas para automatizar tu soporte y ventas por WhatsApp.
           </p>
-          
+
           <div className="relative max-w-xl mx-auto">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-            <Input 
-              placeholder="Search for articles, guides, or API docs..." 
+            <Input
+              placeholder="Buscar artículos, guías o documentación de API..."
               className="pl-10 h-12 bg-background shadow-sm rounded-xl text-base"
             />
           </div>
@@ -107,11 +107,11 @@ export default async function DocsPage() {
 
         <div className="mt-20 p-8 rounded-2xl bg-primary/5 border border-primary/10 flex flex-col md:flex-row items-center justify-between gap-6">
           <div>
-            <h3 className="text-xl font-semibold mb-2">Can't find what you're looking for?</h3>
-            <p className="text-muted-foreground">Our support team is here to help you with any questions.</p>
+            <h3 className="text-xl font-semibold mb-2">¿No encuentras lo que buscas?</h3>
+            <p className="text-muted-foreground">Nuestro equipo de soporte puede ayudarte con cualquier duda.</p>
           </div>
           <Link href="/contact">
-            <Button size="lg">Contact Support</Button>
+            <Button size="lg">Contactar soporte</Button>
           </Link>
         </div>
       </div>
@@ -138,5 +138,5 @@ function UsersIcon(props: any) {
       <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
       <path d="M16 3.13a4 4 0 0 1 0 7.75" />
     </svg>
-  )
+  );
 }
