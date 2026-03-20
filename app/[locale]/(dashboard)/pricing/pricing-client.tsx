@@ -79,6 +79,7 @@ export function PricingClient({
       setLoadingId(plan.id);
       const formData = new FormData();
       formData.append('priceId', plan.stripePriceId);
+      formData.append('planId', plan.id.toString());
       await checkoutAction(formData);
       setLoadingId(null);
     }

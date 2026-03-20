@@ -40,6 +40,11 @@ async function verifyAdmin() {
   return user;
 }
 
+function hasStripeCredentials() {
+  const key = process.env.STRIPE_SECRET_KEY;
+  return Boolean(key && key.startsWith('sk_') && key.length > 20);
+}
+
 export async function updateUserRole(userId: number, role: string): Promise<ActionState> {
   try {
     const currentUser = await verifyAdmin();
@@ -179,6 +184,7 @@ export async function upsertPlan(prevState: ActionState, formData: FormData): Pr
     const { name, description, amount, interval } = validated.data;
     let stripeProductId = '';
     let stripePriceId = '';
+    const canUseStripe = hasStripeCredentials();
 
     if (id) {
       const existingPlan = await db.query.plans.findFirst({
@@ -187,14 +193,16 @@ export async function upsertPlan(prevState: ActionState, formData: FormData): Pr
 
       if (!existingPlan) return { error: 'Plan not found' };
 
-      await stripe.products.update(existingPlan.stripeProductId, {
-        name: name,
-        description: description || undefined,
-      });
-      
-      stripeProductId = existingPlan.stripeProductId;
+      stripeProductId = existingPlan.stripeProductId || '';
 
-      if (existingPlan.amount !== amount || existingPlan.interval !== interval) {
+      if (canUseStripe && stripeProductId) {
+        await stripe.products.update(existingPlan.stripeProductId, {
+          name: name,
+          description: description || undefined,
+        });
+      }
+
+      if (canUseStripe && stripeProductId && (existingPlan.amount !== amount || existingPlan.interval !== interval)) {
         const newPrice = await stripe.prices.create({
           product: stripeProductId,
           unit_amount: amount,
@@ -203,23 +211,25 @@ export async function upsertPlan(prevState: ActionState, formData: FormData): Pr
         });
         stripePriceId = newPrice.id;
       } else {
-        stripePriceId = existingPlan.stripePriceId;
+        stripePriceId = existingPlan.stripePriceId || '';
       }
 
     } else {
-      const product = await stripe.products.create({
-        name: name,
-        description: description || undefined,
-      });
-      stripeProductId = product.id;
+      if (canUseStripe) {
+        const product = await stripe.products.create({
+          name: name,
+          description: description || undefined,
+        });
+        stripeProductId = product.id;
 
-      const price = await stripe.prices.create({
-        product: product.id,
-        unit_amount: amount,
-        currency: 'usd',
-        recurring: { interval: interval as 'month' | 'year' },
-      });
-      stripePriceId = price.id;
+        const price = await stripe.prices.create({
+          product: product.id,
+          unit_amount: amount,
+          currency: 'usd',
+          recurring: { interval: interval as 'month' | 'year' },
+        });
+        stripePriceId = price.id;
+      }
     }
 
     const dataToSave = {
@@ -262,7 +272,7 @@ export async function deletePlan(planId: number): Promise<ActionState> {
     }
 
     const plan = await db.query.plans.findFirst({ where: eq(plans.id, planId) });
-    if (plan?.stripeProductId) {
+    if (plan?.stripeProductId && hasStripeCredentials()) {
       try {
           await stripe.products.update(plan.stripeProductId, { active: false });
       } catch (e) {

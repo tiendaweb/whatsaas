@@ -3,6 +3,7 @@ import { teams } from '@/lib/db/schema';
 export type CheckoutInput = {
   team: typeof teams.$inferSelect | null;
   priceId: string;
+  planId?: number;
 };
 
 export type PaymentPlugin = {

@@ -7,7 +7,7 @@ import { getActivePaymentProvider, PaymentProviderId } from '@/lib/payments/prov
 
 const stripePlugin: PaymentPlugin = {
   id: 'stripe',
-  createCheckout: async ({ team, priceId }) => createCheckoutSession({ team, priceId }),
+  createCheckout: async ({ team, priceId, planId }) => createCheckoutSession({ team, priceId, planId }),
   createCustomerPortal: async (team) => {
     const portal = await createCustomerPortalSession(team);
     return portal.url;

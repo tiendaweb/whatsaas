@@ -15,10 +15,12 @@ export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 
 export async function createCheckoutSession({
   team,
-  priceId
+  priceId,
+  planId,
 }: {
   team: typeof teams.$inferSelect | null;
   priceId: string;
+  planId?: number;
 }) {
   const user = await getUser();
 
@@ -26,9 +28,14 @@ export async function createCheckoutSession({
     redirect(`/sign-up?redirect=checkout&priceId=${priceId}`);
   }
 
-  const plan = await db.query.plans.findFirst({
-    where: eq(plans.stripePriceId, priceId)
-  });
+  const plan = planId
+    ? await db.query.plans.findFirst({ where: eq(plans.id, planId) })
+    : await db.query.plans.findFirst({ where: eq(plans.stripePriceId, priceId) });
+
+  const resolvedPriceId = priceId || plan?.stripePriceId;
+  if (!resolvedPriceId) {
+    throw new Error('El plan no tiene precio de Stripe configurado.');
+  }
 
   const subscriptionData: Stripe.Checkout.SessionCreateParams.SubscriptionData = {
     metadata: {
@@ -44,7 +51,7 @@ export async function createCheckoutSession({
     payment_method_types: ['card'],
     line_items: [
       {
-        price: priceId,
+        price: resolvedPriceId,
         quantity: 1
       }
     ],
