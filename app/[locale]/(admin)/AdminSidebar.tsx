@@ -13,6 +13,7 @@ import {
   Palette,
   MessageSquare,
   Wallet,
+  Settings,
 } from 'lucide-react';
 import { ThemeSwitcher } from '@/components/theme-switcher';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
@@ -25,6 +26,7 @@ const navItems = [
   { href: '/admin/branding', label: 'Branding', icon: Palette },
   { href: '/admin/chat-theme', label: 'Chat Theme', icon: MessageSquare },
   { href: '/admin/payments', label: 'Payments', icon: Wallet },
+  { href: '/admin/settings', label: 'Ajustes', icon: Settings },
 ];
 
 export function AdminSidebar() {

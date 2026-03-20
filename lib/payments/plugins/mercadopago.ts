@@ -8,13 +8,15 @@ import { getProviderConfig } from '@/lib/payments/provider-settings';
 
 export const mercadoPagoPlugin: PaymentPlugin = {
   id: 'mercadopago',
-  async createCheckout({ team, priceId }) {
+  async createCheckout({ team, priceId, planId }) {
     const user = await getUser();
     if (!team || !user) {
       redirect(`/sign-up?redirect=checkout&priceId=${priceId}`);
     }
 
-    const plan = await db.query.plans.findFirst({ where: eq(plans.stripePriceId, priceId) });
+    const plan = planId
+      ? await db.query.plans.findFirst({ where: eq(plans.id, planId) })
+      : await db.query.plans.findFirst({ where: eq(plans.stripePriceId, priceId) });
     if (!plan) {
       throw new Error('Plano não encontrado.');
     }

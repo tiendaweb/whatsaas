@@ -3,7 +3,12 @@ import { ChatThemeForm } from './ChatThemeForm';
 import { getTranslations } from 'next-intl/server';
 
 export default async function ChatThemePage() {
-  const themeData = await db.query.chatTheme.findFirst();
+  let themeData = null;
+  try {
+    themeData = await db.query.chatTheme.findFirst();
+  } catch (error) {
+    console.error('Error loading chat theme:', error);
+  }
   const t = await getTranslations('ChatTheme');
 
   return (

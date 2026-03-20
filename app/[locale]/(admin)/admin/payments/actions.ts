@@ -17,31 +17,36 @@ async function assertAdmin() {
 
 export async function getPaymentAdminData() {
   await assertAdmin();
-  await ensurePaymentProviderDefaults();
+  try {
+    await ensurePaymentProviderDefaults();
 
-  const [providers, pendingManualPayments] = await Promise.all([
-    db.select().from(paymentProviderSettings),
-    db
-      .select({
-        payment: manualPayments,
-        team: {
-          id: teams.id,
-          name: teams.name,
-        },
-        plan: {
-          id: plans.id,
-          name: plans.name,
-        },
-      })
-      .from(manualPayments)
-      .innerJoin(teams, eq(manualPayments.teamId, teams.id))
-      .innerJoin(plans, eq(manualPayments.planId, plans.id))
-      .where(eq(manualPayments.status, 'pending_manual_review'))
-      .orderBy(desc(manualPayments.createdAt))
-      .limit(50),
-  ]);
+    const [providers, pendingManualPayments] = await Promise.all([
+      db.select().from(paymentProviderSettings),
+      db
+        .select({
+          payment: manualPayments,
+          team: {
+            id: teams.id,
+            name: teams.name,
+          },
+          plan: {
+            id: plans.id,
+            name: plans.name,
+          },
+        })
+        .from(manualPayments)
+        .innerJoin(teams, eq(manualPayments.teamId, teams.id))
+        .innerJoin(plans, eq(manualPayments.planId, plans.id))
+        .where(eq(manualPayments.status, 'pending_manual_review'))
+        .orderBy(desc(manualPayments.createdAt))
+        .limit(50),
+    ]);
 
-  return { providers, pendingManualPayments };
+    return { providers, pendingManualPayments };
+  } catch (error) {
+    console.error('Error loading payment admin data:', error);
+    return { providers: [], pendingManualPayments: [] };
+  }
 }
 
 export async function saveProviderConfig(formData: FormData) {
@@ -52,6 +57,12 @@ export async function saveProviderConfig(formData: FormData) {
   const isDefault = formData.get('isDefault') === 'on';
 
   const config: Record<string, string> = {};
+
+  if (provider === 'stripe') {
+    config.secretKey = (formData.get('secretKey') as string) || '';
+    config.publishableKey = (formData.get('publishableKey') as string) || '';
+    config.webhookSecret = (formData.get('webhookSecret') as string) || '';
+  }
 
   if (provider === 'mercadopago') {
     config.accessToken = (formData.get('accessToken') as string) || '';

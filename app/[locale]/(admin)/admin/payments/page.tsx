@@ -13,12 +13,18 @@ export default async function AdminPaymentsPage() {
   const mp = providers.find((p) => p.provider === 'mercadopago');
 
   const mpConfig = (mp?.config ?? {}) as Record<string, string>;
+  const hasProviderRows = providers.length > 0;
 
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-3xl font-bold">Payment Plugins</h1>
         <p className="text-muted-foreground">Configura proveedores desde admin sin tocar el core.</p>
+        {!hasProviderRows && (
+          <p className="text-sm text-amber-600 mt-2">
+            No se pudieron cargar las tablas de pagos. Ejecuta migraciones de base de datos y recarga esta pantalla.
+          </p>
+        )}
       </div>
 
       <Card>

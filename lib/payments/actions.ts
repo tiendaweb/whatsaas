@@ -9,8 +9,10 @@ import { eq } from 'drizzle-orm';
 
 export const checkoutAction = withTeam(async (formData, team) => {
   const priceId = formData.get('priceId') as string;
+  const rawPlanId = formData.get('planId');
+  const planId = rawPlanId ? Number(rawPlanId) : undefined;
   const plugin = await getActivePlugin();
-  await plugin.createCheckout({ team: team, priceId });
+  await plugin.createCheckout({ team: team, priceId, planId });
 });
 
 export const customerPortalAction = withTeam(async (_, team) => {
