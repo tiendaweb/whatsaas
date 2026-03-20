@@ -92,6 +92,13 @@ export async function getAllTeamsList() {
     .orderBy(teams.name);
 }
 
+export async function getAllPlansList() {
+  return await db
+    .select({ id: plans.id, name: plans.name })
+    .from(plans)
+    .orderBy(plans.name);
+}
+
 export async function getAllTeams() {
   return await db
     .select({

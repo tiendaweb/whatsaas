@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo, useTransition } from 'react';
 import useSWR from 'swr';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -23,8 +23,13 @@ import {
 } from '@/components/ui/select';
 import { RoleSelector } from './role-selector';
 import { UserActions } from './user-actions';
-import { Search, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, X, Plus, Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { toast } from 'sonner';
+import { assignPlanToUserTeam, createUserFromAdmin } from '../../admin-actions';
+import { useSWRConfig } from 'swr';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -36,6 +41,19 @@ export function UsersClient() {
   const [page, setPage] = useState(1);
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [debounceTimer, setDebounceTimer] = useState<NodeJS.Timeout | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const [showCreateUserDialog, setShowCreateUserDialog] = useState(false);
+  const [showAssignPlanDialog, setShowAssignPlanDialog] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<{ id: number; name: string | null } | null>(null);
+  const [newUser, setNewUser] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'member',
+    planId: '',
+  });
+  const [selectedPlanId, setSelectedPlanId] = useState('');
+  const { mutate } = useSWRConfig();
 
   const handleSearch = useCallback(
     (value: string) => {
@@ -66,6 +84,61 @@ export function UsersClient() {
   const total = data?.total || 0;
   const totalPages = data?.totalPages || 1;
   const teams = data?.teams || [];
+  const plans = data?.plans || [];
+
+  const resetCreateUserState = useCallback(() => {
+    setNewUser({ name: '', email: '', password: '', role: 'member', planId: '' });
+  }, []);
+
+  const handleCreateUser = () => {
+    if (!newUser.planId) {
+      toast.error(t('plan_required'));
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await createUserFromAdmin({
+        ...newUser,
+        planId: Number(newUser.planId),
+      });
+
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+
+      toast.success(result.success || t('create_user_success'));
+      setShowCreateUserDialog(false);
+      resetCreateUserState();
+      mutate((key: string) => typeof key === 'string' && key.startsWith('/api/admin/users'));
+    });
+  };
+
+  const openAssignPlanModal = (userId: number, userName: string | null) => {
+    setSelectedUser({ id: userId, name: userName });
+    setSelectedPlanId('');
+    setShowAssignPlanDialog(true);
+  };
+
+  const handleAssignPlan = () => {
+    if (!selectedUser || !selectedPlanId) {
+      toast.error(t('plan_required'));
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await assignPlanToUserTeam(selectedUser.id, Number(selectedPlanId));
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+
+      toast.success(result.success || t('assign_plan_success'));
+      setShowAssignPlanDialog(false);
+      setSelectedUser(null);
+      mutate((key: string) => typeof key === 'string' && key.startsWith('/api/admin/users'));
+    });
+  };
 
   const clearFilters = () => {
     setSearch('');
@@ -76,14 +149,24 @@ export function UsersClient() {
   };
 
   const hasFilters = debouncedSearch || role || teamId;
+  const isCreateDisabled = useMemo(
+    () => !newUser.name || !newUser.email || newUser.password.length < 8 || !newUser.planId,
+    [newUser]
+  );
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{t('title')}</h1>
-        <Badge variant="outline">
-          {total} {t('users_count')}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline">
+            {total} {t('users_count')}
+          </Badge>
+          <Button onClick={() => setShowCreateUserDialog(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            {t('create_user')}
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -196,6 +279,14 @@ export function UsersClient() {
                         {new Date(user.createdAt).toLocaleDateString()}
                       </TableCell>
                       <TableCell className="text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mr-2"
+                          onClick={() => openAssignPlanModal(user.id, user.name)}
+                        >
+                          {t('assign_plan')}
+                        </Button>
                         <UserActions userId={user.id} userName={user.name} />
                       </TableCell>
                     </TableRow>
@@ -232,6 +323,131 @@ export function UsersClient() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={showCreateUserDialog}
+        onOpenChange={(open) => {
+          setShowCreateUserDialog(open);
+          if (!open) resetCreateUserState();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('create_user_title')}</DialogTitle>
+            <DialogDescription>{t('create_user_desc')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="admin-create-name">{t('col_name')}</Label>
+              <Input
+                id="admin-create-name"
+                value={newUser.name}
+                onChange={(e) => setNewUser((prev) => ({ ...prev, name: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="admin-create-email">{t('col_email')}</Label>
+              <Input
+                id="admin-create-email"
+                type="email"
+                value={newUser.email}
+                onChange={(e) => setNewUser((prev) => ({ ...prev, email: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="admin-create-password">{t('new_password')}</Label>
+              <Input
+                id="admin-create-password"
+                type="password"
+                minLength={8}
+                value={newUser.password}
+                onChange={(e) => setNewUser((prev) => ({ ...prev, password: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t('col_role')}</Label>
+              <Select value={newUser.role} onValueChange={(value) => setNewUser((prev) => ({ ...prev, role: value }))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="owner">Owner</SelectItem>
+                  <SelectItem value="member">Member</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t('plan')}</Label>
+              <Select value={newUser.planId} onValueChange={(value) => setNewUser((prev) => ({ ...prev, planId: value }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('select_plan')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {plans.map((plan: { id: number; name: string }) => (
+                    <SelectItem key={plan.id} value={String(plan.id)}>
+                      {plan.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateUserDialog(false)}>
+              {t('cancel')}
+            </Button>
+            <Button onClick={handleCreateUser} disabled={isPending || isCreateDisabled}>
+              {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {t('create_user')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showAssignPlanDialog}
+        onOpenChange={(open) => {
+          setShowAssignPlanDialog(open);
+          if (!open) {
+            setSelectedUser(null);
+            setSelectedPlanId('');
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('assign_plan_title')}</DialogTitle>
+            <DialogDescription>
+              {t('assign_plan_desc', { name: selectedUser?.name || 'N/A' })}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label>{t('plan')}</Label>
+            <Select value={selectedPlanId} onValueChange={setSelectedPlanId}>
+              <SelectTrigger>
+                <SelectValue placeholder={t('select_plan')} />
+              </SelectTrigger>
+              <SelectContent>
+                {plans.map((plan: { id: number; name: string }) => (
+                  <SelectItem key={plan.id} value={String(plan.id)}>
+                    {plan.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAssignPlanDialog(false)}>
+              {t('cancel')}
+            </Button>
+            <Button onClick={handleAssignPlan} disabled={isPending || !selectedPlanId}>
+              {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {t('save_plan')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
