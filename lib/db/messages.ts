@@ -1,4 +1,5 @@
 import { type Message } from './schema';
+import { resolveMediaUrl } from '@/lib/media-url';
 
 export type FrontendMessage = Omit<Message, 'timestamp'> & {
   timestamp: string;
@@ -15,7 +16,7 @@ export function formatMessageForFrontend(dbMessage: Partial<Message>): FrontendM
     messageType: dbMessage.messageType || 'unknown',
     text: dbMessage.text || null,
     timestamp: timestampString,
-    mediaUrl: dbMessage.mediaUrl || null,
+    mediaUrl: resolveMediaUrl(dbMessage.mediaUrl),
     mediaMimetype: dbMessage.mediaMimetype || null,
     mediaCaption: dbMessage.mediaCaption || null,
     mediaFileLength: dbMessage.mediaFileLength || null,

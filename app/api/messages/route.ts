@@ -3,6 +3,7 @@ import { db } from '@/lib/db/drizzle';
 import { getTeamForUser } from '@/lib/db/queries'; 
 import { chats, messages } from '@/lib/db/schema'; 
 import { eq, and, asc } from 'drizzle-orm';
+import { resolveMediaUrl } from '@/lib/media-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,7 +69,12 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    return NextResponse.json(chatMessages);
+    const normalizedMessages = chatMessages.map((message) => ({
+      ...message,
+      mediaUrl: resolveMediaUrl(message.mediaUrl),
+    }));
+
+    return NextResponse.json(normalizedMessages);
 
   } catch (error: any) {
     console.error('Error fetching messages:', error.message);

@@ -35,6 +35,23 @@ export async function POST(request: NextRequest) {
       customData
     } = body;
 
+    const parsedAssignedUserId = assignedUserId !== undefined && assignedUserId !== null && assignedUserId !== '' && assignedUserId !== 'null'
+      ? Number(assignedUserId)
+      : null;
+    const parsedFunnelStageId = funnelStageId !== undefined && funnelStageId !== null && funnelStageId !== '' && funnelStageId !== 'null'
+      ? Number(funnelStageId)
+      : null;
+    const parsedTagIds = Array.isArray(tagIds)
+      ? tagIds.map((tagId: unknown) => Number(tagId)).filter((tagId: number) => Number.isInteger(tagId) && tagId > 0)
+      : [];
+
+    if (parsedAssignedUserId !== null && !Number.isInteger(parsedAssignedUserId)) {
+      return NextResponse.json({ error: 'assignedUserId must be a valid integer' }, { status: 400 });
+    }
+    if (parsedFunnelStageId !== null && !Number.isInteger(parsedFunnelStageId)) {
+      return NextResponse.json({ error: 'funnelStageId must be a valid integer' }, { status: 400 });
+    }
+
     if (!jid || !name) {
       return NextResponse.json({ error: 'jid and name are required' }, { status: 400 });
     }
@@ -62,8 +79,8 @@ export async function POST(request: NextRequest) {
                 teamId: team.id,
                 chatId: chat.id,
                 name: name,
-                assignedUserId: assignedUserId || null,
-                funnelStageId: funnelStageId || null,
+                assignedUserId: parsedAssignedUserId,
+                funnelStageId: parsedFunnelStageId,
                 notes: notes || null,
                 customData: customData || {},
                 updatedAt: new Date()
@@ -73,8 +90,8 @@ export async function POST(request: NextRequest) {
         newContact = insertedContact;
         await logActivity(team.id, user.id, ActivityType.CREATE_CONTACT);
         
-        if (tagIds && Array.isArray(tagIds) && tagIds.length > 0) {
-            const tagsToInsert = tagIds.map((tagId: number) => ({
+        if (parsedTagIds.length > 0) {
+            const tagsToInsert = parsedTagIds.map((tagId: number) => ({
                 contactId: newContact.id,
                 tagId: tagId,
             }));
