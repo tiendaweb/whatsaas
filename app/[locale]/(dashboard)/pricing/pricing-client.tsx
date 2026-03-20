@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Check, Loader2, MessageCircle, Sparkles, ArrowRight } from 'lucide-react';
+import { Check, Loader2, MessageCircle, Sparkles, ArrowRight, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { checkoutAction, joinFreePlanAction, customerPortalAction } from '@/lib/payments/actions';
@@ -31,6 +31,7 @@ type Plan = {
   isFlowBuilderEnabled: boolean;
   isCampaignsEnabled: boolean;
   isTemplatesEnabled: boolean;
+  pricingCustomItems?: Array<{ text: string; included: boolean }> | null;
 };
 
 
@@ -57,6 +58,7 @@ export function PricingClient({
   const [selectedFreePlan, setSelectedFreePlan] = useState<Plan | null>(null);
   const searchParams = useSearchParams();
   const manualPaymentPending = searchParams.get('manualPayment') === 'pending';
+  const paymentNotice = searchParams.get('payment_notice');
 
   const featuredPlanIndex = 1;
   const filteredPlans = allPlans.filter((plan) => plan.interval === billingCycle);
@@ -150,6 +152,11 @@ export function PricingClient({
                   Se creó tu solicitud de pago manual. Un administrador debe aprobarla.
                 </p>
             )}
+            {paymentNotice === 'stripe_not_configured' && (
+              <p className="text-sm text-amber-600 dark:text-amber-400">
+                Stripe no está configurado todavía. Puedes continuar con pago manual.
+              </p>
+            )}
 
             {currentTeam && currentTeam.subscriptionStatus === 'active' && paymentProvider === 'stripe' && (
                 <button 
@@ -236,6 +243,14 @@ export function PricingClient({
                   <FeatureItem text="Visual Flow Builder" isEnabled={plan.isFlowBuilderEnabled} isFeatured={isFeatured} />
                   <FeatureItem text="Mass Campaigns" isEnabled={plan.isCampaignsEnabled} isFeatured={isFeatured} />
                   <FeatureItem text="WABA Templates" isEnabled={plan.isTemplatesEnabled} isFeatured={isFeatured} />
+                  {(plan.pricingCustomItems ?? []).map((item, customIndex) => (
+                    <FeatureItem
+                      key={`${plan.id}-custom-${customIndex}`}
+                      text={item.text}
+                      isEnabled={item.included}
+                      isFeatured={isFeatured}
+                    />
+                  ))}
                 </ul>
               </div>
             </div>
@@ -288,7 +303,7 @@ function FeatureItem({ text, isEnabled = true, isFeatured }: { text: string; isE
           ? (isFeatured ? "border-primary text-primary bg-primary/10" : "border-foreground text-foreground")
           : (isFeatured ? "border-zinc-700 text-zinc-700" : "border-zinc-300 text-zinc-300 dark:border-zinc-800 dark:text-zinc-800")
       )}>
-        <Check className="h-3 w-3" />
+        {isEnabled ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
       </div>
       <span className={cn(
         "text-sm", 

@@ -1,6 +1,7 @@
 import { db } from '@/lib/db/drizzle';
 import { paymentProviderSettings } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 
 export type PaymentProviderId = 'stripe' | 'manual' | 'mercadopago';
 
@@ -50,8 +51,46 @@ function warnWithFallback(scope: string, error: unknown) {
   });
 }
 
+let paymentTablesBootstrapped = false;
+
+async function ensurePaymentTables() {
+  if (paymentTablesBootstrapped) return;
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS payment_provider_settings (
+      id serial PRIMARY KEY,
+      provider varchar(50) NOT NULL UNIQUE,
+      enabled boolean NOT NULL DEFAULT false,
+      is_default boolean NOT NULL DEFAULT false,
+      config jsonb NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamp NOT NULL DEFAULT now(),
+      updated_at timestamp NOT NULL DEFAULT now()
+    );
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS manual_payments (
+      id serial PRIMARY KEY,
+      team_id integer NOT NULL REFERENCES teams(id) ON DELETE cascade,
+      plan_id integer NOT NULL REFERENCES plans(id) ON DELETE cascade,
+      amount integer NOT NULL,
+      currency varchar(3) NOT NULL DEFAULT 'usd',
+      status varchar(30) NOT NULL DEFAULT 'pending_manual_review',
+      reference text,
+      proof_url text,
+      reviewed_by integer REFERENCES users(id) ON DELETE set null,
+      reviewed_at timestamp,
+      created_at timestamp NOT NULL DEFAULT now(),
+      updated_at timestamp NOT NULL DEFAULT now()
+    );
+  `);
+
+  paymentTablesBootstrapped = true;
+}
+
 export async function ensurePaymentProviderDefaults() {
   try {
+    await ensurePaymentTables();
     const requiredProviders = [
       { provider: 'stripe', enabled: true, isDefault: true, config: {} },
       { provider: 'manual', enabled: true, isDefault: false, config: {} },
@@ -125,6 +164,7 @@ export async function getActivePaymentProvider(): Promise<PaymentProviderId> {
 }
 
 export async function getProviderConfig<T extends PaymentProviderId>(provider: T): Promise<ProviderConfigMap[T]> {
+  await ensurePaymentProviderDefaults();
   const settings = await db.query.paymentProviderSettings.findFirst({
     where: eq(paymentProviderSettings.provider, provider),
   });

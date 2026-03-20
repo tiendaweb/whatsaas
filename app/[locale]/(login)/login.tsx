@@ -20,11 +20,17 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
   const searchParams = useSearchParams();
   const redirect = searchParams.get('redirect');
   const priceId = searchParams.get('priceId');
+  const planId = searchParams.get('planId');
   const inviteId = searchParams.get('inviteId');
   const [state, formAction, pending] = useActionState<ActionState, FormData>(
     mode === 'signin' ? signIn : signUp,
     { error: '' }
   );
+  const switchParams = new URLSearchParams();
+  if (redirect) switchParams.set('redirect', redirect);
+  if (priceId) switchParams.set('priceId', priceId);
+  if (planId) switchParams.set('planId', planId);
+  const switchHref = `${mode === 'signin' ? '/sign-up' : '/sign-in'}${switchParams.toString() ? `?${switchParams.toString()}` : ''}`;
 
   const { branding } = useBranding();
   const siteName = branding?.name || 'WhatsPro';
@@ -63,6 +69,7 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
         <form className="space-y-5" action={formAction}>
           <input type="hidden" name="redirect" value={redirect || ''} />
           <input type="hidden" name="priceId" value={priceId || ''} />
+          <input type="hidden" name="planId" value={planId || ''} />
           <input type="hidden" name="inviteId" value={inviteId || ''} />
 
           <div className="space-y-2">
@@ -128,9 +135,7 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
             {mode === 'signin' ? t('no_account') : t('has_account')}
           </span>
           <Link
-            href={`${mode === 'signin' ? '/sign-up' : '/sign-in'}${
-              redirect ? `?redirect=${redirect}` : ''
-            }${priceId ? `&priceId=${priceId}` : ''}`}
+            href={switchHref}
             className="font-medium text-primary hover:underline underline-offset-4 transition-colors"
           >
             {mode === 'signin' ? t('sign_up') : t('sign_in')}

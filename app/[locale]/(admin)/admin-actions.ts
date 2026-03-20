@@ -30,6 +30,10 @@ const planSchema = z.object({
   isFlowBuilderEnabled: z.boolean(),
   isCampaignsEnabled: z.boolean(),
   isTemplatesEnabled: z.boolean(),
+  pricingCustomItems: z.array(z.object({
+    text: z.string().min(1).max(120),
+    included: z.boolean(),
+  })).default([]),
 });
 
 const createAdminUserSchema = z.object({
@@ -304,6 +308,24 @@ export async function upsertPlan(prevState: ActionState, formData: FormData): Pr
     
     const rawAmount = parseFloat(formData.get('amount') as string || '0');
     const amountInCents = Math.round(rawAmount * 100);
+    const rawCustomItems = (formData.get('pricingCustomItems') as string | null)?.trim() || '';
+    let pricingCustomItems: Array<{ text: string; included: boolean }> = [];
+    if (rawCustomItems) {
+      try {
+        const parsed = JSON.parse(rawCustomItems);
+        if (Array.isArray(parsed)) {
+          pricingCustomItems = parsed
+            .filter((item) => item && typeof item.text === 'string')
+            .map((item) => ({
+              text: String(item.text).trim(),
+              included: Boolean(item.included),
+            }))
+            .filter((item) => item.text.length > 0);
+        }
+      } catch {
+        return { error: 'pricingCustomItems debe ser un JSON válido.' };
+      }
+    }
 
     const rawData = {
       name: formData.get('name'),
@@ -318,6 +340,7 @@ export async function upsertPlan(prevState: ActionState, formData: FormData): Pr
       isFlowBuilderEnabled: formData.get('isFlowBuilderEnabled') === 'on',
       isCampaignsEnabled: formData.get('isCampaignsEnabled') === 'on',
       isTemplatesEnabled: formData.get('isTemplatesEnabled') === 'on',
+      pricingCustomItems,
     };
 
     const validated = planSchema.safeParse(rawData);
@@ -341,25 +364,25 @@ export async function upsertPlan(prevState: ActionState, formData: FormData): Pr
       stripeProductId = existingPlan.stripeProductId || '';
 
       if (stripeProductId) {
-        if (!canUseStripe) {
-          return { error: STRIPE_CONFIG_ERROR };
-        }
+        if (canUseStripe) {
+          const stripe = getStripeClient();
 
-        const stripe = getStripeClient();
-
-        await stripe.products.update(existingPlan.stripeProductId, {
-          name: name,
-          description: description || undefined,
-        });
-
-        if (existingPlan.amount !== amount || existingPlan.interval !== interval) {
-          const newPrice = await stripe.prices.create({
-            product: stripeProductId,
-            unit_amount: amount,
-            currency: 'usd',
-            recurring: { interval: interval as 'month' | 'year' },
+          await stripe.products.update(existingPlan.stripeProductId, {
+            name: name,
+            description: description || undefined,
           });
-          stripePriceId = newPrice.id;
+
+          if (existingPlan.amount !== amount || existingPlan.interval !== interval) {
+            const newPrice = await stripe.prices.create({
+              product: stripeProductId,
+              unit_amount: amount,
+              currency: 'usd',
+              recurring: { interval: interval as 'month' | 'year' },
+            });
+            stripePriceId = newPrice.id;
+          } else {
+            stripePriceId = existingPlan.stripePriceId || '';
+          }
         } else {
           stripePriceId = existingPlan.stripePriceId || '';
         }
