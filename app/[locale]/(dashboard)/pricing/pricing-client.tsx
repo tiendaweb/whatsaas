@@ -52,6 +52,7 @@ export function PricingClient({
   const [billingCycle, setBillingCycle] = useState<'month' | 'year'>('month');
   const [loadingId, setLoadingId] = useState<number | null>(null);
   const [isPortalLoading, setIsPortalLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const { branding } = useBranding();
   
   const [isConfirmationOpen, setIsConfirmationOpen] = useState(false);
@@ -72,6 +73,7 @@ export function PricingClient({
   };
 
   const handlePlanSelection = async (plan: Plan) => {
+    setActionError(null);
     if (plan.amount === 0) {
       
       setSelectedFreePlan(plan);
@@ -82,23 +84,41 @@ export function PricingClient({
       const formData = new FormData();
       formData.append('priceId', plan.stripePriceId);
       formData.append('planId', plan.id.toString());
-      await checkoutAction(formData);
-      setLoadingId(null);
+      try {
+        await checkoutAction(formData);
+      } catch (error) {
+        console.error('Error iniciando checkout:', error);
+        setActionError('No se pudo iniciar el checkout. Revisa la configuración de pagos e intenta nuevamente.');
+        setLoadingId(null);
+      }
     }
   };
 
   const confirmFreePlan = async () => {
     if (!selectedFreePlan) return;
+    setActionError(null);
     setLoadingId(selectedFreePlan.id);
     const formData = new FormData();
     formData.append('planId', selectedFreePlan.id.toString());
-    await joinFreePlanAction(formData);
+    try {
+      await joinFreePlanAction(formData);
+    } catch (error) {
+      console.error('Error cambiando al plan gratuito:', error);
+      setActionError('No se pudo cambiar al plan gratuito. Intenta nuevamente.');
+      setLoadingId(null);
+    }
   };
 
   const handlePortalAccess = async () => {
     setIsPortalLoading(true);
-    await customerPortalAction(new FormData());
-    setIsPortalLoading(false);
+    setActionError(null);
+    try {
+      await customerPortalAction(new FormData());
+    } catch (error) {
+      console.error('Error abriendo el portal de Stripe:', error);
+      setActionError('No se pudo abrir el portal de facturación. Intenta nuevamente.');
+      setIsPortalLoading(false);
+    }
   };
 
   return (
@@ -155,6 +175,11 @@ export function PricingClient({
             {paymentNotice === 'stripe_not_configured' && (
               <p className="text-sm text-amber-600 dark:text-amber-400">
                 Stripe no está configurado todavía. Puedes continuar con pago manual.
+              </p>
+            )}
+            {actionError && (
+              <p className="text-sm text-red-600 dark:text-red-400">
+                {actionError}
               </p>
             )}
 
