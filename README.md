@@ -1,4 +1,4 @@
-# WhatSaaS (Next.js + Drizzle)
+# WhatsPro (Next.js + Drizzle)
 
 Plataforma SaaS para gestión de conversaciones, campañas y automatizaciones con panel administrativo, roles, planes y facturación.
 
