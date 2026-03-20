@@ -139,6 +139,26 @@ pnpm db:seed
 pnpm dev
 ```
 
+## Post-deploy obligatorio
+
+Antes de levantar la app en producción con `next start`, es **obligatorio** ejecutar migraciones:
+
+```bash
+pnpm db:migrate
+```
+
+Si se omite este paso, pueden fallar lecturas de configuración de pagos (por ejemplo, tabla `payment_provider_settings` inexistente).
+
+## Checklist de despliegue
+
+```txt
+1) git pull
+2) pnpm install
+3) pnpm build
+4) pnpm db:migrate
+5) restart del proceso (next start / PM2 / systemd)
+```
+
 Usuario semilla:
 - `test@test.com`
 - `admin123`
