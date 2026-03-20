@@ -1,4 +1,3 @@
-import { stripe } from '@/lib/payments/stripe';
 import { PaymentPlugin } from './types';
 import { manualPaymentPlugin } from './manual';
 import { mercadoPagoPlugin } from './mercadopago';
@@ -28,5 +27,3 @@ export async function getActivePlugin(): Promise<PaymentPlugin> {
   const activeProvider = await getActivePaymentProvider();
   return getPluginById(activeProvider);
 }
-
-export { stripe };

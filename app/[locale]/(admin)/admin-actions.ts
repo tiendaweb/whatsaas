@@ -7,7 +7,7 @@ import { revalidatePath } from 'next/cache';
 import { getUser } from '@/lib/db/queries';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
-import { stripe } from '@/lib/payments/stripe';
+import { getStripeClient } from '@/lib/payments/stripe';
 import { hashPassword } from '@/lib/auth/session';
 import { sendPasswordResetEmail } from '@/lib/email';
 import { randomUUID } from 'crypto';
@@ -44,6 +44,8 @@ function hasStripeCredentials() {
   const key = process.env.STRIPE_SECRET_KEY;
   return Boolean(key && key.startsWith('sk_') && key.length > 20);
 }
+
+const STRIPE_CONFIG_ERROR = 'Stripe no está configurado. Define STRIPE_SECRET_KEY para sincronizar planes con Stripe.';
 
 export async function updateUserRole(userId: number, role: string): Promise<ActionState> {
   try {
@@ -195,27 +197,37 @@ export async function upsertPlan(prevState: ActionState, formData: FormData): Pr
 
       stripeProductId = existingPlan.stripeProductId || '';
 
-      if (canUseStripe && stripeProductId) {
+      if (stripeProductId) {
+        if (!canUseStripe) {
+          return { error: STRIPE_CONFIG_ERROR };
+        }
+
+        const stripe = getStripeClient();
+
         await stripe.products.update(existingPlan.stripeProductId, {
           name: name,
           description: description || undefined,
         });
-      }
 
-      if (canUseStripe && stripeProductId && (existingPlan.amount !== amount || existingPlan.interval !== interval)) {
-        const newPrice = await stripe.prices.create({
-          product: stripeProductId,
-          unit_amount: amount,
-          currency: 'usd',
-          recurring: { interval: interval as 'month' | 'year' },
-        });
-        stripePriceId = newPrice.id;
+        if (existingPlan.amount !== amount || existingPlan.interval !== interval) {
+          const newPrice = await stripe.prices.create({
+            product: stripeProductId,
+            unit_amount: amount,
+            currency: 'usd',
+            recurring: { interval: interval as 'month' | 'year' },
+          });
+          stripePriceId = newPrice.id;
+        } else {
+          stripePriceId = existingPlan.stripePriceId || '';
+        }
       } else {
         stripePriceId = existingPlan.stripePriceId || '';
       }
 
     } else {
       if (canUseStripe) {
+        const stripe = getStripeClient();
+
         const product = await stripe.products.create({
           name: name,
           description: description || undefined,
@@ -272,11 +284,16 @@ export async function deletePlan(planId: number): Promise<ActionState> {
     }
 
     const plan = await db.query.plans.findFirst({ where: eq(plans.id, planId) });
-    if (plan?.stripeProductId && hasStripeCredentials()) {
+    if (plan?.stripeProductId) {
+      if (!hasStripeCredentials()) {
+        return { error: STRIPE_CONFIG_ERROR };
+      }
+
       try {
-          await stripe.products.update(plan.stripeProductId, { active: false });
+        const stripe = getStripeClient();
+        await stripe.products.update(plan.stripeProductId, { active: false });
       } catch (e) {
-          console.error(e);
+        console.error(e);
       }
     }
 
