@@ -21,7 +21,7 @@ export const viewport: Viewport = {
 export async function generateMetadata(): Promise<Metadata> {
   const branding = await getBranding();
   return {
-    title: branding?.name || 'Whats SaaS',
+    title: branding?.name || 'WhatsPro',
     description: 'Get started quickly with a WhatsApp CRM designed to manage leads, conversations, and sales in one place.',
     icons: {
       icon: branding?.faviconUrl ? `${branding.faviconUrl}?v=${new Date(branding.updatedAt).getTime()}` : '/favicon.ico',

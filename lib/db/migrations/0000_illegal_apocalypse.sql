@@ -83,7 +83,7 @@ CREATE TABLE "automations" (
 --> statement-breakpoint
 CREATE TABLE "branding" (
 	"id" serial PRIMARY KEY NOT NULL,
-	"name" varchar(100) DEFAULT 'WhatsSaaS' NOT NULL,
+	"name" varchar(100) DEFAULT 'WhatsPro' NOT NULL,
 	"logo_url" text,
 	"favicon_url" text,
 	"created_at" timestamp DEFAULT now() NOT NULL,
