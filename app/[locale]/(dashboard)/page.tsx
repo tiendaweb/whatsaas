@@ -254,7 +254,7 @@ export default async function HomePage() {
   
   const plans = await getPublishedPlans();
   const branding = await getBranding();
-  const siteName = branding?.name || 'WhatSaaS';
+  const siteName = branding?.name || 'WhatsPro';
 
   return (
     <main className="flex flex-col min-h-screen bg-background selection:bg-primary/20">

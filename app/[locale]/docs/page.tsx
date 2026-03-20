@@ -12,7 +12,7 @@ export const metadata = {
 
 export default async function DocsPage() {
   const branding = await getBranding();
-  const siteName = branding?.name || 'WhatSaaS';
+  const siteName = branding?.name || 'WhatsPro';
 
   const categories = [
     {
