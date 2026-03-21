@@ -578,7 +578,11 @@ export async function POST(request: Request) {
         }
 
         if (!automationProcessed) {
-            await scheduleAIProcessing(teamId, chatIdForAutomation, instanceId);
+            try {
+                scheduleAIProcessing(teamId, chatIdForAutomation, instanceId);
+            } catch (error) {
+                console.error('[Webhook] Failed to schedule AI processing:', error);
+            }
         }
       }
 
