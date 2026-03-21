@@ -9,21 +9,31 @@ type EffectiveAIState = {
   teamEnabled: boolean;
 };
 
+function isExplicitConversationOverride(
+  sessionStatus: AISessionStatus | null
+): sessionStatus is 'active' | 'paused' {
+  return sessionStatus === 'active' || sessionStatus === 'paused';
+}
+
 export function getEffectiveAIState(
   teamEnabled: boolean,
   sessionStatus: AISessionStatus | null | undefined
 ): EffectiveAIState {
   const conversationStatus = sessionStatus ?? null;
   const hasSession = conversationStatus !== null;
-  const isPaused = conversationStatus === 'paused';
-  const effectiveStatus = !teamEnabled || isPaused ? 'paused' : 'active';
+  const hasExplicitConversationOverride = isExplicitConversationOverride(conversationStatus);
+  const effectiveStatus = hasExplicitConversationOverride
+    ? conversationStatus
+    : teamEnabled
+      ? 'active'
+      : 'paused';
 
   return {
     conversationStatus,
     effectiveStatus,
     hasSession,
-    inheritsTeamStatus: !hasSession,
-    isActive: teamEnabled && !isPaused,
+    inheritsTeamStatus: !hasExplicitConversationOverride,
+    isActive: effectiveStatus === 'active',
     teamEnabled,
   };
 }
@@ -39,6 +49,13 @@ export function shouldPersistAISession(
   return requestedStatus !== 'paused';
 }
 
-export function shouldBlockAIProcessing(sessionStatus: AISessionStatus | null | undefined) {
-  return sessionStatus === 'paused';
+export function shouldBlockAIProcessing(
+  teamEnabledOrSessionStatus: boolean | AISessionStatus | null | undefined,
+  sessionStatus?: AISessionStatus | null | undefined
+) {
+  if (typeof teamEnabledOrSessionStatus === 'boolean') {
+    return getEffectiveAIState(teamEnabledOrSessionStatus, sessionStatus).effectiveStatus === 'paused';
+  }
+
+  return teamEnabledOrSessionStatus === 'paused';
 }

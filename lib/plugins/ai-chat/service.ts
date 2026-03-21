@@ -254,17 +254,20 @@ export async function processAIMessage(
   audioUrl?: string | null
 ) {
 
-  const config = await db.query.aiConfigs.findFirst({
-    where: and(eq(aiConfigs.teamId, teamId), eq(aiConfigs.isActive, true))
-  });
+  const [config, existingSession] = await Promise.all([
+    db.query.aiConfigs.findFirst({
+      where: eq(aiConfigs.teamId, teamId)
+    }),
+    db.query.aiSessions.findFirst({
+      where: eq(aiSessions.chatId, chatId)
+    })
+  ]);
 
   if (!config) return false;
 
-  let session = await db.query.aiSessions.findFirst({
-    where: eq(aiSessions.chatId, chatId)
-  });
+  let session = existingSession;
 
-  if (shouldBlockAIProcessing(session?.status)) {
+  if (shouldBlockAIProcessing(!!config.isActive, session?.status)) {
       return false;
   }
 

@@ -7,6 +7,17 @@ import { createSystemMessage } from '@/lib/db/system-messages';
 import { pusherServer } from '@/lib/pusher-server';
 import { getEffectiveAIState, shouldPersistAISession } from '@/lib/ai/session-state';
 
+function serializeAIState(aiState: ReturnType<typeof getEffectiveAIState>) {
+  return {
+    isActive: aiState.isActive,
+    teamEnabled: aiState.teamEnabled,
+    conversationStatus: aiState.conversationStatus,
+    effectiveStatus: aiState.effectiveStatus,
+    inheritsTeamStatus: aiState.inheritsTeamStatus,
+    hasSession: aiState.hasSession,
+  };
+}
+
 async function getChatForTeam(teamId: number, chatId: number) {
   return db.query.chats.findFirst({
     where: and(
@@ -47,14 +58,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // sino que el chat hereda el estado global del equipo.
     const aiState = getEffectiveAIState(!!config?.isActive, session?.status);
 
-    return NextResponse.json({
-      isActive: aiState.isActive,
-      teamEnabled: aiState.teamEnabled,
-      conversationStatus: aiState.conversationStatus,
-      effectiveStatus: aiState.effectiveStatus,
-      inheritsTeamStatus: aiState.inheritsTeamStatus,
-      hasSession: aiState.hasSession,
-    });
+    return NextResponse.json(serializeAIState(aiState));
   } catch (error) {
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
@@ -135,12 +139,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       success: true,
       requestedStatus: status,
       status: nextState.effectiveStatus,
-      isActive: nextState.isActive,
-      teamEnabled: nextState.teamEnabled,
-      conversationStatus: nextState.conversationStatus,
-      effectiveStatus: nextState.effectiveStatus,
-      inheritsTeamStatus: nextState.inheritsTeamStatus,
-      hasSession: nextState.hasSession,
+      ...serializeAIState(nextState),
     });
   } catch (error) {
     console.error(error);
