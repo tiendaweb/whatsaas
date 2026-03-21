@@ -20,6 +20,7 @@ export interface AIMessage {
   audioUrl?: string | null;
   toolCalls?: any[];
   toolCallId?: string;
+  toolName?: string;
 }
 
 export interface AIProvider {

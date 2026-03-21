@@ -269,21 +269,24 @@ export async function processAIMessage(
                     history.push({
                         role: 'tool',
                         content: JSON.stringify(result),
-                        toolCallId: toolCall.id || toolCall.function.name
+                        toolCallId: toolCall.id || toolCall.function.name,
+                        toolName: toolCall.function.name,
                     });
                   } catch (toolError: any) {
                     console.error(`Tool execution error:`, toolError);
                     history.push({
                         role: 'tool',
                         content: JSON.stringify({ error: toolError.message || "Failed to execute tool" }),
-                        toolCallId: toolCall.id || toolCall.function.name
+                        toolCallId: toolCall.id || toolCall.function.name,
+                        toolName: toolCall.function.name,
                     });
                   }
               } else {
                   history.push({
                         role: 'tool',
                         content: JSON.stringify({ error: "Tool not found" }),
-                        toolCallId: toolCall.id || toolCall.function.name
+                        toolCallId: toolCall.id || toolCall.function.name,
+                        toolName: toolCall.function.name,
                     });
               }
           }
