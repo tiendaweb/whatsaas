@@ -912,6 +912,7 @@
       "additional_context_placeholder": "Adicione detalhes, objetivos, objeções ou instruções para a reescrita.",
       "saved_context_label": "Contexto salvo",
       "saved_context_placeholder": "O contexto persistido da conversa e da equipe aparecerá aqui.",
+      "show_saved_context": "Mostrar contexto atual",
       "result_label": "Resposta melhorada",
       "result_placeholder": "A resposta melhorada pronta para WhatsApp aparecerá aqui.",
       "insert_button": "Inserir no campo",

@@ -908,13 +908,13 @@ export default function ChatPage() {
       <QuickRepliesModal open={quickRepliesOpen} onOpenChange={setQuickRepliesOpen} />
       <TemplateDialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen} onSendTemplate={handleSendTemplate} />
       <Dialog open={improveDialogOpen} onOpenChange={setImproveDialogOpen}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col overflow-hidden sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{improveActionConfig.title}</DialogTitle>
             <DialogDescription>{improveActionConfig.description}</DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="flex-1 space-y-4 overflow-y-auto pr-1">
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('improve_reply.current_text_label')}</label>
               <Textarea value={newMessage} readOnly placeholder={t('improve_reply.current_text_placeholder')} rows={4} />
@@ -930,15 +930,20 @@ export default function ChatPage() {
               />
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">{t('improve_reply.saved_context_label')}</label>
-              <Textarea
-                value={savedImproveContext}
-                onChange={(event) => setSavedImproveContext(event.target.value)}
-                placeholder={t('improve_reply.saved_context_placeholder')}
-                rows={6}
-              />
-            </div>
+            <details className="space-y-2 rounded-lg border border-border/60 p-3">
+              <summary className="cursor-pointer list-none text-sm font-medium">
+                {t('improve_reply.show_saved_context')}
+              </summary>
+              <div className="mt-3 space-y-2">
+                <label className="text-sm font-medium">{t('improve_reply.saved_context_label')}</label>
+                <Textarea
+                  value={savedImproveContext}
+                  onChange={(event) => setSavedImproveContext(event.target.value)}
+                  placeholder={t('improve_reply.saved_context_placeholder')}
+                  rows={6}
+                />
+              </div>
+            </details>
 
             <div className="space-y-2">
               <label className="text-sm font-medium">{improveActionConfig.resultLabel}</label>
