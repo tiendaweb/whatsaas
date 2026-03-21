@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useState, useRef } from 'react';
+import { useActionState, useEffect, useState, useRef, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { Button } from '@/components/ui/button';
@@ -11,8 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
-import { Bot, Loader2, Save, Key, BrainCircuit, Sliders, Paperclip, X, FileText, FileImage, File as FileIcon, UploadCloud, Database } from 'lucide-react';
-import { getAiConfig, saveAiConfig, AiActionState } from './actions';
+import { Bot, Loader2, Save, Key, BrainCircuit, Sliders, Paperclip, X, FileText, FileImage, File as FileIcon, UploadCloud, Database, Sparkles } from 'lucide-react';
+import { getAiConfig, saveAiConfig, testAiConfigConnection, AiActionState, AiConnectionTestState } from './actions';
 import { toast } from 'sonner';
 import { ToolsManager } from '@/components/ai/ToolsManager';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -69,6 +69,8 @@ export default function AiSettingsPage() {
   const [existingAttachments, setExistingAttachments] = useState<Attachment[]>([]);
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isTestingConnection, startConnectionTest] = useTransition();
+  const [connectionTestState, setConnectionTestState] = useState<AiConnectionTestState>({});
 
   const loadData = async () => {
     try {
@@ -126,6 +128,32 @@ export default function AiSettingsPage() {
       setModel(validModels[0]);
     }
   }, [provider, model]); 
+
+  const handleConnectionTest = () => {
+    setConnectionTestState({});
+
+    startConnectionTest(async () => {
+      const result = await testAiConfigConnection({
+        provider,
+        model,
+        apiKey,
+        systemPrompt,
+        temperature,
+        maxOutputTokens: maxTokens,
+      });
+
+      setConnectionTestState(result);
+
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+
+      if (result.success) {
+        toast.success(result.success);
+      }
+    });
+  };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -235,7 +263,7 @@ export default function AiSettingsPage() {
                                 </Select>
                             </div>
 
-                            <div className="space-y-2">
+                            <div className="space-y-3">
                                 <Label className="flex items-center gap-2">
                                     <Key className="h-3 w-3" /> {t('api_key_label')}
                                 </Label>
@@ -246,6 +274,31 @@ export default function AiSettingsPage() {
                                     onChange={(e) => setApiKey(e.target.value)} 
                                     placeholder={provider === 'openai' ? 'sk-...' : 'AIza...'}
                                 />
+
+                                <div className="rounded-lg border bg-muted/20 p-3 space-y-3">
+                                    <div className="space-y-1">
+                                        <p className="text-sm font-medium">{t('ai_connection_test_title')}</p>
+                                        <p className="text-xs text-muted-foreground">{t('ai_connection_test_desc')}</p>
+                                    </div>
+
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={handleConnectionTest}
+                                        disabled={isTestingConnection || !apiKey.trim() || !model}
+                                        className="w-full sm:w-auto"
+                                    >
+                                        {isTestingConnection ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                                        {t('ai_connection_test_button')}
+                                    </Button>
+
+                                    {connectionTestState.generatedText ? (
+                                        <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-900 dark:border-green-900/50 dark:bg-green-950/30 dark:text-green-100">
+                                            <p className="font-medium">{t('ai_connection_test_result_label')}</p>
+                                            <p className="mt-1 text-sm leading-relaxed">{connectionTestState.generatedText}</p>
+                                        </div>
+                                    ) : null}
+                                </div>
                             </div>
                         </CardContent>
                     </Card>

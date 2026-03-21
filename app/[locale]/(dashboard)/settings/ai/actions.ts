@@ -9,6 +9,9 @@ import { revalidatePath } from 'next/cache';
 import path from 'path';
 import fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
+import { OpenAIProvider } from '@/lib/plugins/ai-chat/providers/openai';
+import { GeminiProvider } from '@/lib/plugins/ai-chat/providers/gemini';
+import { AIProvider } from '@/lib/plugins/ai-chat/types';
 
 export type AiActionState = {
   error?: string;
@@ -24,6 +27,75 @@ const aiConfigSchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
   maxOutputTokens: z.number().min(1).optional(),
 });
+
+const aiConnectionTestSchema = z.object({
+  provider: z.enum(['openai', 'gemini']),
+  model: z.string().min(1),
+  apiKey: z.string().min(1, 'API Key is required'),
+  systemPrompt: z.string().optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  maxOutputTokens: z.number().min(1).max(1000).optional(),
+});
+
+export type AiConnectionTestState = {
+  error?: string;
+  success?: string;
+  generatedText?: string;
+};
+
+function createAiProvider(config: z.infer<typeof aiConnectionTestSchema>): AIProvider {
+  const commonConfig = {
+    apiKey: config.apiKey,
+    model: config.model,
+    systemPrompt: config.systemPrompt || undefined,
+    temperature: config.temperature ?? 0.7,
+    maxOutputTokens: config.maxOutputTokens ?? 120,
+    attachments: [],
+  };
+
+  if (config.provider === 'openai') {
+    return new OpenAIProvider(commonConfig);
+  }
+
+  return new GeminiProvider(commonConfig);
+}
+
+export async function testAiConfigConnection(input: unknown): Promise<AiConnectionTestState> {
+  const team = await getTeamForUser();
+  if (!team) return { error: 'Unauthorized' };
+
+  const validatedFields = aiConnectionTestSchema.safeParse(input);
+
+  if (!validatedFields.success) {
+    return { error: validatedFields.error.issues[0].message };
+  }
+
+  try {
+    const provider = createAiProvider(validatedFields.data);
+    const response = await provider.generateResponse([
+      {
+        role: 'user',
+        content: 'Generate a short text in Spanish confirming that the AI connection is working correctly.'
+      }
+    ]);
+
+    const generatedText = response.content?.trim();
+
+    if (!generatedText) {
+      return { error: 'The provider did not return a text response.' };
+    }
+
+    return {
+      success: 'Connection verified successfully.',
+      generatedText,
+    };
+  } catch (error) {
+    console.error('Failed to test AI connection:', error);
+
+    const message = error instanceof Error ? error.message : 'Unable to verify the AI connection.';
+    return { error: message };
+  }
+}
 
 export async function getAiConfig() {
   const team = await getTeamForUser();
