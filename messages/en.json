@@ -912,6 +912,8 @@
       "additional_context_placeholder": "Add details, goals, objections, or guidance for the rewrite.",
       "saved_context_label": "Saved context",
       "saved_context_placeholder": "Conversation and team context will appear here.",
+      "show_saved_context": "Show current context",
+      "hide_saved_context": "Hide current context",
       "result_label": "Improved reply",
       "result_placeholder": "Your improved WhatsApp-ready reply will appear here.",
       "insert_button": "Insert into composer",
