@@ -3,9 +3,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { X, Loader2, Users, Download, Wand2, Copy, Sparkles } from 'lucide-react';
+import { X, Loader2, Users, Download, Wand2, Copy, Sparkles, SpellCheck, Paintbrush } from 'lucide-react';
 import { useParams, useSearchParams } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
 import PusherClient from 'pusher-js';
@@ -27,6 +26,8 @@ import { QuickRepliesModal } from '@/components/chat/QuickRepliesModal';
 import { DateSeparator } from '@/components/chat/DateSeparator';
 import { useTheme } from 'next-themes';
 import { useTranslations } from 'next-intl';
+
+type ImproveReplyMode = 'improve' | 'orthography' | 'stylize';
 
 interface ChatThemeData {
   backgroundType: string;
@@ -70,6 +71,7 @@ export default function ChatPage() {
   const [quickRepliesOpen, setQuickRepliesOpen] = useState(false);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [improveDialogOpen, setImproveDialogOpen] = useState(false);
+  const [improveMode, setImproveMode] = useState<ImproveReplyMode>('improve');
   const [additionalContext, setAdditionalContext] = useState('');
   const [savedImproveContext, setSavedImproveContext] = useState('');
   const [improvedReply, setImprovedReply] = useState('');
@@ -609,7 +611,7 @@ export default function ChatPage() {
     }
   };
 
-  const requestImprovedReply = useCallback(async () => {
+  const requestImprovedReply = useCallback(async (mode: ImproveReplyMode = improveMode) => {
     if (!currentChat?.id) {
       toast.error(t('improve_reply.chat_not_ready_error'));
       return;
@@ -630,6 +632,7 @@ export default function ChatPage() {
           composerText: newMessage,
           additionalContext,
           savedContext: savedImproveContext,
+          mode,
           metadata: {
             chatName: chatDetails.name,
             contactName: contact?.name || null,
@@ -651,16 +654,18 @@ export default function ChatPage() {
     } finally {
       setIsImprovingReply(false);
     }
-  }, [additionalContext, chatDetails.name, contact?.name, currentChat?.id, isGroup, newMessage, remoteJid, savedImproveContext, t]);
+  }, [additionalContext, chatDetails.name, contact?.name, currentChat?.id, improveMode, isGroup, newMessage, remoteJid, savedImproveContext, t]);
 
-  const handleOpenImproveDialog = useCallback(async () => {
+  const handleOpenImproveDialog = useCallback(async (mode: ImproveReplyMode) => {
     if (!newMessage.trim()) {
       toast.error(t('improve_reply.empty_message_error'));
       return;
     }
 
+    setImproveMode(mode);
+    setImprovedReply('');
     setImproveDialogOpen(true);
-    await requestImprovedReply();
+    await requestImprovedReply(mode);
   }, [newMessage, requestImprovedReply, t]);
 
   const handleInsertImprovedReply = useCallback(() => {
@@ -680,6 +685,36 @@ export default function ChatPage() {
       toast.error(t('improve_reply.copy_error_toast'));
     }
   }, [improvedReply, t]);
+
+  const improveActionConfig = useMemo(() => {
+    if (improveMode === 'orthography') {
+      return {
+        title: t('improve_reply.orthography_title'),
+        description: t('improve_reply.orthography_description'),
+        resultLabel: t('improve_reply.orthography_result_label'),
+        resultPlaceholder: t('improve_reply.orthography_result_placeholder'),
+        regenerateLabel: t('improve_reply.orthography_button'),
+      };
+    }
+
+    if (improveMode === 'stylize') {
+      return {
+        title: t('improve_reply.stylize_title'),
+        description: t('improve_reply.stylize_description'),
+        resultLabel: t('improve_reply.stylize_result_label'),
+        resultPlaceholder: t('improve_reply.stylize_result_placeholder'),
+        regenerateLabel: t('improve_reply.stylize_button'),
+      };
+    }
+
+    return {
+      title: t('improve_reply.modal_title'),
+      description: t('improve_reply.modal_description'),
+      resultLabel: t('improve_reply.result_label'),
+      resultPlaceholder: t('improve_reply.result_placeholder'),
+      regenerateLabel: t('improve_reply.button'),
+    };
+  }, [improveMode, t]);
 
   useEffect(() => {
     setSyncDismissed(false);
@@ -793,20 +828,42 @@ export default function ChatPage() {
         {renderReplyPreview()}
 
         <footer className="flex flex-col border-t bg-background shrink-0">
-          <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('improve_reply.button')}</p>
-              <p className="text-xs text-muted-foreground">{t('improve_reply.helper_text')}</p>
-            </div>
+          <div className="flex items-center justify-end gap-2 border-b px-3 py-2">
             <Button
               type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleOpenImproveDialog}
+              variant="ghost"
+              size="icon"
+              title={t('improve_reply.button')}
+              onClick={() => handleOpenImproveDialog('improve')}
               disabled={isImprovingReply || !newMessage.trim() || !currentChat?.id}
             >
-              {isImprovingReply ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              {t('improve_reply.button')}
+              {isImprovingReply && improveMode === 'improve'
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <Sparkles className="h-4 w-4" />}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              title={t('improve_reply.orthography_button')}
+              onClick={() => handleOpenImproveDialog('orthography')}
+              disabled={isImprovingReply || !newMessage.trim() || !currentChat?.id}
+            >
+              {isImprovingReply && improveMode === 'orthography'
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <SpellCheck className="h-4 w-4" />}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              title={t('improve_reply.stylize_button')}
+              onClick={() => handleOpenImproveDialog('stylize')}
+              disabled={isImprovingReply || !newMessage.trim() || !currentChat?.id}
+            >
+              {isImprovingReply && improveMode === 'stylize'
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <Paintbrush className="h-4 w-4" />}
             </Button>
           </div>
           <ChatInput
@@ -848,14 +905,14 @@ export default function ChatPage() {
       <Dialog open={improveDialogOpen} onOpenChange={setImproveDialogOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{t('improve_reply.modal_title')}</DialogTitle>
-            <DialogDescription>{t('improve_reply.modal_description')}</DialogDescription>
+            <DialogTitle>{improveActionConfig.title}</DialogTitle>
+            <DialogDescription>{improveActionConfig.description}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('improve_reply.current_text_label')}</label>
-              <Input value={newMessage} readOnly placeholder={t('improve_reply.current_text_placeholder')} />
+              <Textarea value={newMessage} readOnly placeholder={t('improve_reply.current_text_placeholder')} rows={4} />
             </div>
 
             <div className="space-y-2">
@@ -879,11 +936,11 @@ export default function ChatPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">{t('improve_reply.result_label')}</label>
+              <label className="text-sm font-medium">{improveActionConfig.resultLabel}</label>
               <Textarea
                 value={improvedReply}
                 onChange={(event) => setImprovedReply(event.target.value)}
-                placeholder={t('improve_reply.result_placeholder')}
+                placeholder={improveActionConfig.resultPlaceholder}
                 rows={7}
               />
             </div>
@@ -895,9 +952,9 @@ export default function ChatPage() {
                 <Copy className="h-4 w-4" />
                 {t('improve_reply.copy_button')}
               </Button>
-              <Button type="button" variant="outline" onClick={requestImprovedReply} disabled={isImprovingReply || !newMessage.trim()}>
+              <Button type="button" variant="outline" onClick={() => requestImprovedReply(improveMode)} disabled={isImprovingReply || !newMessage.trim()}>
                 {isImprovingReply ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                {t('improve_reply.regenerate_button')}
+                {improveActionConfig.regenerateLabel}
               </Button>
             </div>
 
