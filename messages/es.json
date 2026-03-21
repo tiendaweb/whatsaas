@@ -1,5 +1,5 @@
 {
- "Utils": {
+  "Utils": {
     "bytes": "Bytes",
     "error_base64": "No se pudo convertir el archivo a base64",
     "today": "Hoy",
@@ -921,7 +921,17 @@
       "generic_error": "No se pudo mejorar la respuesta.",
       "copy_success_toast": "Respuesta mejorada copiada.",
       "copy_error_toast": "No se pudo copiar la respuesta.",
-      "insert_success_toast": "Respuesta mejorada insertada en el composer."
+      "insert_success_toast": "Respuesta mejorada insertada en el composer.",
+      "orthography_button": "Ortografía",
+      "orthography_title": "Ortografía",
+      "orthography_description": "Corrige ortografía, acentos, puntuación y gramática sin cambiar la intención del mensaje.",
+      "orthography_result_label": "Texto corregido",
+      "orthography_result_placeholder": "Aquí aparecerá el texto corregido listo para WhatsApp.",
+      "stylize_button": "Estilizar",
+      "stylize_title": "Estilizar texto",
+      "stylize_description": "Reescribe el texto con más estilo, claridad e impacto, manteniendo el mensaje original.",
+      "stylize_result_label": "Texto estilizado",
+      "stylize_result_placeholder": "Aquí aparecerá el texto estilizado listo para WhatsApp."
     },
     "sync_messages": {
       "banner": "Este chat no tiene mensajes. ¿Desea importar el historial?",

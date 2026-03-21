@@ -149,7 +149,6 @@
     "canceled": "Canceled",
     "active": "Active",
     "free_plan": "Free Plan",
-
     "members_title": "Team Members",
     "no_members": "No team members yet.",
     "remove_btn": "Remove",
@@ -160,12 +159,10 @@
     "remove_member": "Remove member",
     "you": "you",
     "pending": "Pending",
-
     "invites_title": "Pending Invitations",
     "invite_sent": "Sent: {date}",
     "copy_link": "Copy Link",
     "revoke": "Revoke",
-
     "invite_section_title": "Invite Team Member",
     "email_label": "Email",
     "role_label": "Role",
@@ -212,7 +209,6 @@
     "save_btn": "Save",
     "role_updated": "Permissions updated",
     "failed_to_update_role": "Failed to update permissions",
-
     "general_title": "General Settings",
     "account_info": "Account Information",
     "name_label": "Name",
@@ -926,7 +922,17 @@
       "generic_error": "We could not improve the reply.",
       "copy_success_toast": "Improved reply copied.",
       "copy_error_toast": "We could not copy the reply.",
-      "insert_success_toast": "Improved reply inserted into the composer."
+      "insert_success_toast": "Improved reply inserted into the composer.",
+      "orthography_button": "Orthography",
+      "orthography_title": "Orthography",
+      "orthography_description": "Fix spelling, accents, punctuation, and grammar without changing the message intent.",
+      "orthography_result_label": "Corrected text",
+      "orthography_result_placeholder": "The corrected WhatsApp-ready text will appear here.",
+      "stylize_button": "Stylize",
+      "stylize_title": "Stylize text",
+      "stylize_description": "Rewrite the text with more style, clarity, and impact while keeping the original message.",
+      "stylize_result_label": "Stylized text",
+      "stylize_result_placeholder": "The stylized WhatsApp-ready text will appear here."
     },
     "sync_messages": {
       "banner": "This chat has no messages. Would you like to import the history?",

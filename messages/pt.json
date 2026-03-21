@@ -922,7 +922,17 @@
       "generic_error": "Não foi possível melhorar a resposta.",
       "copy_success_toast": "Resposta melhorada copiada.",
       "copy_error_toast": "Não foi possível copiar a resposta.",
-      "insert_success_toast": "Resposta melhorada inserida no composer."
+      "insert_success_toast": "Resposta melhorada inserida no composer.",
+      "orthography_button": "Ortografia",
+      "orthography_title": "Ortografia",
+      "orthography_description": "Corrige ortografia, acentos, pontuação e gramática sem mudar a intenção da mensagem.",
+      "orthography_result_label": "Texto corrigido",
+      "orthography_result_placeholder": "O texto corrigido pronto para WhatsApp aparecerá aqui.",
+      "stylize_button": "Estilizar",
+      "stylize_title": "Estilizar texto",
+      "stylize_description": "Reescreve o texto com mais estilo, clareza e impacto, mantendo a mensagem original.",
+      "stylize_result_label": "Texto estilizado",
+      "stylize_result_placeholder": "O texto estilizado pronto para WhatsApp aparecerá aqui."
     },
     "sync_messages": {
       "banner": "Este chat não possui mensagens. Deseja importar o histórico?",

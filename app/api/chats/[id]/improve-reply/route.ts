@@ -9,10 +9,13 @@ import type { AIMessage } from '@/lib/plugins/ai-chat/types';
 
 export const dynamic = 'force-dynamic';
 
+type ImproveReplyMode = 'improve' | 'orthography' | 'stylize';
+
 type ImproveReplyRequest = {
   composerText?: string;
   additionalContext?: string;
   savedContext?: string;
+  mode?: ImproveReplyMode;
   metadata?: {
     chatName?: string | null;
     contactName?: string | null;
@@ -88,6 +91,48 @@ function buildSavedContext(params: {
   return sections.join('\n\n');
 }
 
+
+function buildTaskInstructions(mode: ImproveReplyMode) {
+  switch (mode) {
+    case 'orthography':
+      return [
+        'Task: fix and improve the spelling, accents, punctuation, and grammar of the draft so it is ready to send through WhatsApp.',
+        'Rules:',
+        '- Preserve the original meaning, intent, and factual content.',
+        '- Keep the wording as close as possible to the draft unless a correction is needed for clarity or correctness.',
+        '- Keep it brief, natural, and conversational.',
+        '- Use the saved context and recent conversation only when they are relevant.',
+        '- Do not invent discounts, promises, dates, or unavailable information.',
+        '- Do not mention that the text was corrected by AI.',
+        '- Return only the corrected WhatsApp-ready message with no markdown fences or explanations.',
+      ].join('\n');
+    case 'stylize':
+      return [
+        'Task: rewrite the draft to give it more style, polish, and impact while keeping it ready to send through WhatsApp.',
+        'Rules:',
+        '- Preserve the original intent and important facts.',
+        '- Make it feel clearer, more polished, and more engaging without becoming robotic or exaggerated.',
+        '- Keep it brief, natural, and conversational.',
+        '- Use the saved context and recent conversation only when they are relevant.',
+        '- Do not invent discounts, promises, dates, or unavailable information.',
+        '- Do not mention that the text was rewritten by AI.',
+        '- Return only the final WhatsApp-ready message with no markdown fences or explanations.',
+      ].join('\n');
+    case 'improve':
+    default:
+      return [
+        'Task: rewrite the draft so it is ready to send through WhatsApp.',
+        'Rules:',
+        '- Preserve the original intent, tone, and important facts.',
+        '- Keep it brief, natural, and conversational.',
+        '- Use the saved context and recent conversation only when they are relevant.',
+        '- Do not invent discounts, promises, dates, or unavailable information.',
+        '- Do not mention that the text was rewritten by AI.',
+        '- Return only the final WhatsApp-ready message with no markdown fences or explanations.',
+      ].join('\n');
+  }
+}
+
 function buildConversationExcerpt(
   recentMessages: Array<{ fromMe: boolean; text: string | null; mediaCaption: string | null; messageType: string | null }>
 ) {
@@ -118,6 +163,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const composerText = body.composerText?.trim() || '';
     const additionalContext = body.additionalContext?.trim() || '';
     const savedContextOverride = body.savedContext?.trim();
+    const mode: ImproveReplyMode = body.mode === 'orthography' || body.mode === 'stylize' ? body.mode : 'improve';
 
     if (!composerText) {
       return NextResponse.json({ error: 'Composer text is required' }, { status: 400 });
@@ -169,15 +215,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const conversationExcerpt = buildConversationExcerpt(orderedMessages);
 
     const improveReplyPrompt = [
-      config.systemPrompt?.trim() ? `Base team instructions:\n${config.systemPrompt.trim()}` : null,
-      'Task: rewrite the draft so it is ready to send through WhatsApp.',
-      'Rules:',
-      '- Preserve the original intent, tone, and important facts.',
-      '- Keep it brief, natural, and conversational.',
-      '- Use the saved context and recent conversation only when they are relevant.',
-      '- Do not invent discounts, promises, dates, or unavailable information.',
-      '- Do not mention that the text was rewritten by AI.',
-      '- Return only the final WhatsApp-ready message with no markdown fences or explanations.',
+      config.systemPrompt?.trim() ? `Base team instructions:
+${config.systemPrompt.trim()}` : null,
+      buildTaskInstructions(mode),
     ].filter(Boolean).join('\n');
 
     const provider = await getAIProviderForConfig({

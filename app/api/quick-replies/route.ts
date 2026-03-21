@@ -20,12 +20,17 @@ export async function POST(request: NextRequest) {
   if (!team) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   
   const { shortcut, content } = await request.json();
-  const cleanShortcut = shortcut.replace(/^\//, '').toLowerCase();
+  const cleanShortcut = String(shortcut || '').replace(/^\//, '').trim().toLowerCase();
+  const normalizedContent = typeof content === 'string' ? content.replace(/\r\n/g, '\n') : '';
+
+  if (!cleanShortcut || !normalizedContent.trim()) {
+    return NextResponse.json({ error: 'shortcut and content are required' }, { status: 400 });
+  }
 
   const [newReply] = await db.insert(quickReplies).values({
     teamId: team.id,
     shortcut: cleanShortcut,
-    content
+    content: normalizedContent
   }).returning();
 
   return NextResponse.json(newReply);
