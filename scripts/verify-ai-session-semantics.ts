@@ -3,7 +3,7 @@ import {
   getEffectiveAIState,
   shouldBlockAIProcessing,
   shouldPersistAISession,
-} from '../lib/ai/session-state.ts';
+} from '../lib/ai/session-state';
 
 type Scenario = {
   name: string;
