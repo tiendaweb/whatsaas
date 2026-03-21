@@ -105,12 +105,20 @@ export class GeminiProvider implements AIProvider {
                continue; 
            }
 
+           let parsedContent: any = msg.content;
+           try {
+               parsedContent = JSON.parse(msg.content);
+           } catch {
+               parsedContent = { result: msg.content };
+           }
+
            contents.push({
-             role: 'tool', 
+             role: 'user',
              parts: [{
                functionResponse: {
-                 name: msg.toolCallId,
-                 response: { result: msg.content } 
+                 id: msg.toolCallId,
+                 name: msg.toolName || msg.toolCallId,
+                 response: parsedContent,
                }
              }]
            });
@@ -196,33 +204,21 @@ export class GeminiProvider implements AIProvider {
             }
         });
 
-        const candidate = response.candidates?.[0];
-        const contentParts = candidate?.content?.parts;
-        
-        let text = "";
-        let toolCalls = undefined;
-
-        if (contentParts) {
-            const textPart = contentParts.find(p => p.text);
-            if (textPart) text = textPart.text || "";
-
-            const functionCallParts = contentParts.filter(p => p.functionCall);
-            if (functionCallParts.length > 0) {
-                toolCalls = functionCallParts.map(p => ({
-                    id: p.functionCall?.name || 'unknown_call_id',
-                    type: 'function',
-                    function: {
-                        name: p.functionCall?.name || '',
-                        arguments: JSON.stringify(p.functionCall?.args || {})
-                    }
-                }));
+        const text = response.text || "";
+        const functionCalls = response.functionCalls;
+        const toolCalls = functionCalls?.map((call, index) => ({
+            id: call.id || `${call.name || 'unknown_call'}_${index}`,
+            type: 'function',
+            function: {
+                name: call.name || '',
+                arguments: JSON.stringify(call.args || {})
             }
-        }
+        }));
 
         return {
             role: 'assistant',
             content: text || null,
-            toolCalls: toolCalls
+            toolCalls,
         };
 
     } catch (error) {
