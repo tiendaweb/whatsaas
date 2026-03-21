@@ -7,6 +7,7 @@ import { getDynamicTools } from './tools';
 import { AIMessage, AIProvider } from './types';
 import { pusherServer } from '@/lib/pusher-server';
 import { createSystemMessage } from '@/lib/db/system-messages';
+import { shouldBlockAIProcessing } from '@/lib/ai/session-state';
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "http://localhost:8080";
 const DEFAULT_AI_DEBOUNCE_MS = 5000;
@@ -263,6 +264,10 @@ export async function processAIMessage(
     where: eq(aiSessions.chatId, chatId)
   });
 
+  if (shouldBlockAIProcessing(session?.status)) {
+      return false;
+  }
+
   if (!session) {
     const [newSession] = await db.insert(aiSessions).values({
         chatId,
@@ -270,10 +275,6 @@ export async function processAIMessage(
         status: 'active'
     }).returning();
     session = newSession;
-  }
-
-  if (session.status !== 'active') {
-      return false;
   }
 
   let provider: AIProvider;
