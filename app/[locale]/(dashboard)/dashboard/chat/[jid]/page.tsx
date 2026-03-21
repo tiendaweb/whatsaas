@@ -828,7 +828,36 @@ export default function ChatPage() {
         {renderReplyPreview()}
 
         <footer className="flex flex-col border-t bg-background shrink-0">
-          <div className="flex items-center justify-end gap-2 border-b px-3 py-2">
+          <ChatInput
+            isInternalNote={isInternalNote}
+            setIsInternalNote={setIsInternalNote}
+            newMessage={newMessage}
+            setNewMessage={setNewMessage}
+            recordingStatus={recordingStatus}
+            recordingTime={recordingTime}
+            onStartRecording={startRecording}
+            onStopRecording={stopRecording}
+            onCancelRecording={cancelRecording}
+            onSendText={handleSendText}
+            onSendAudio={handleSendAudio}
+            onSendAttachment={handleSendAttachment}
+            audioUrl={audioUrl}
+            isAudioPlaying={isAudioPlaying}
+            toggleAudioPlayback={toggleAudioPlayback}
+            audioPlayerRef={audioPlayerRef as React.RefObject<HTMLAudioElement>}
+            fileInputRef={fileInputRef as unknown as React.RefObject<HTMLInputElement>}
+            handleFileIconClick={handleFileIconClick}
+            onEmojiClick={onEmojiClick}
+            quickRepliesOpen={quickRepliesOpen}
+            setQuickRepliesOpen={setQuickRepliesOpen}
+            showQuickReplySuggestions={showQuickReplySuggestions}
+            setShowQuickReplySuggestions={setShowQuickReplySuggestions}
+            filteredQuickReplies={filteredQuickReplies}
+            isWindowExpired={isWindowExpired}
+            onOpenTemplateDialog={() => setTemplateDialogOpen(true)}
+            isGroup={isGroup}
+          />
+          <div className="flex items-center justify-end gap-2 border-t px-3 py-2">
             <Button
               type="button"
               variant="ghost"
@@ -866,35 +895,6 @@ export default function ChatPage() {
                 : <Paintbrush className="h-4 w-4" />}
             </Button>
           </div>
-          <ChatInput
-            isInternalNote={isInternalNote}
-            setIsInternalNote={setIsInternalNote}
-            newMessage={newMessage}
-            setNewMessage={setNewMessage}
-            recordingStatus={recordingStatus}
-            recordingTime={recordingTime}
-            onStartRecording={startRecording}
-            onStopRecording={stopRecording}
-            onCancelRecording={cancelRecording}
-            onSendText={handleSendText}
-            onSendAudio={handleSendAudio}
-            onSendAttachment={handleSendAttachment}
-            audioUrl={audioUrl}
-            isAudioPlaying={isAudioPlaying}
-            toggleAudioPlayback={toggleAudioPlayback}
-            audioPlayerRef={audioPlayerRef as React.RefObject<HTMLAudioElement>}
-            fileInputRef={fileInputRef as unknown as React.RefObject<HTMLInputElement>}
-            handleFileIconClick={handleFileIconClick}
-            onEmojiClick={onEmojiClick}
-            quickRepliesOpen={quickRepliesOpen}
-            setQuickRepliesOpen={setQuickRepliesOpen}
-            showQuickReplySuggestions={showQuickReplySuggestions}
-            setShowQuickReplySuggestions={setShowQuickReplySuggestions}
-            filteredQuickReplies={filteredQuickReplies}
-            isWindowExpired={isWindowExpired}
-            onOpenTemplateDialog={() => setTemplateDialogOpen(true)}
-            isGroup={isGroup}
-          />
         </footer>
       </div>
 

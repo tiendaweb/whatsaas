@@ -12,7 +12,13 @@ export async function GET() {
     where: eq(quickReplies.teamId, team.id),
     orderBy: [desc(quickReplies.createdAt)]
   });
-  return NextResponse.json(replies);
+
+  const normalizedReplies = replies.map((reply) => ({
+    ...reply,
+    content: reply.content.replace(/\r\n/g, '\n'),
+  }));
+
+  return NextResponse.json(normalizedReplies);
 }
 
 export async function POST(request: NextRequest) {
