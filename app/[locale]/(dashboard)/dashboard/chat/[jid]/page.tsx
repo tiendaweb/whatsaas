@@ -2,7 +2,10 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { X, Loader2, Users, Download } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { X, Loader2, Users, Download, Wand2, Copy, Sparkles } from 'lucide-react';
 import { useParams, useSearchParams } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
 import PusherClient from 'pusher-js';
@@ -66,6 +69,11 @@ export default function ChatPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [quickRepliesOpen, setQuickRepliesOpen] = useState(false);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const [improveDialogOpen, setImproveDialogOpen] = useState(false);
+  const [additionalContext, setAdditionalContext] = useState('');
+  const [savedImproveContext, setSavedImproveContext] = useState('');
+  const [improvedReply, setImprovedReply] = useState('');
+  const [isImprovingReply, setIsImprovingReply] = useState(false);
   const [showQuickReplySuggestions, setShowQuickReplySuggestions] = useState(false);
   const [chatSidebarCollapsed, setChatSidebarCollapsed] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -601,6 +609,78 @@ export default function ChatPage() {
     }
   };
 
+  const requestImprovedReply = useCallback(async () => {
+    if (!currentChat?.id) {
+      toast.error(t('improve_reply.chat_not_ready_error'));
+      return;
+    }
+
+    if (!newMessage.trim()) {
+      toast.error(t('improve_reply.empty_message_error'));
+      return;
+    }
+
+    setIsImprovingReply(true);
+
+    try {
+      const response = await fetch(`/api/chats/${currentChat.id}/improve-reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          composerText: newMessage,
+          additionalContext,
+          savedContext: savedImproveContext,
+          metadata: {
+            chatName: chatDetails.name,
+            contactName: contact?.name || null,
+            remoteJid,
+            isGroup,
+          },
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || t('improve_reply.generic_error'));
+      }
+
+      setSavedImproveContext(data.savedContext || '');
+      setImprovedReply(data.suggestion || '');
+    } catch (error: any) {
+      toast.error(error.message || t('improve_reply.generic_error'));
+    } finally {
+      setIsImprovingReply(false);
+    }
+  }, [additionalContext, chatDetails.name, contact?.name, currentChat?.id, isGroup, newMessage, remoteJid, savedImproveContext, t]);
+
+  const handleOpenImproveDialog = useCallback(async () => {
+    if (!newMessage.trim()) {
+      toast.error(t('improve_reply.empty_message_error'));
+      return;
+    }
+
+    setImproveDialogOpen(true);
+    await requestImprovedReply();
+  }, [newMessage, requestImprovedReply, t]);
+
+  const handleInsertImprovedReply = useCallback(() => {
+    if (!improvedReply.trim()) return;
+    setNewMessage(improvedReply);
+    toast.success(t('improve_reply.insert_success_toast'));
+    setImproveDialogOpen(false);
+  }, [improvedReply, t]);
+
+  const handleCopyImprovedReply = useCallback(async () => {
+    if (!improvedReply.trim()) return;
+
+    try {
+      await navigator.clipboard.writeText(improvedReply);
+      toast.success(t('improve_reply.copy_success_toast'));
+    } catch {
+      toast.error(t('improve_reply.copy_error_toast'));
+    }
+  }, [improvedReply, t]);
+
   useEffect(() => {
     setSyncDismissed(false);
   }, [remoteJid]);
@@ -713,6 +793,22 @@ export default function ChatPage() {
         {renderReplyPreview()}
 
         <footer className="flex flex-col border-t bg-background shrink-0">
+          <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{t('improve_reply.button')}</p>
+              <p className="text-xs text-muted-foreground">{t('improve_reply.helper_text')}</p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleOpenImproveDialog}
+              disabled={isImprovingReply || !newMessage.trim() || !currentChat?.id}
+            >
+              {isImprovingReply ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {t('improve_reply.button')}
+            </Button>
+          </div>
           <ChatInput
             isInternalNote={isInternalNote}
             setIsInternalNote={setIsInternalNote}
@@ -749,6 +845,68 @@ export default function ChatPage() {
 
       <QuickRepliesModal open={quickRepliesOpen} onOpenChange={setQuickRepliesOpen} />
       <TemplateDialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen} onSendTemplate={handleSendTemplate} />
+      <Dialog open={improveDialogOpen} onOpenChange={setImproveDialogOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t('improve_reply.modal_title')}</DialogTitle>
+            <DialogDescription>{t('improve_reply.modal_description')}</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t('improve_reply.current_text_label')}</label>
+              <Input value={newMessage} readOnly placeholder={t('improve_reply.current_text_placeholder')} />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t('improve_reply.additional_context_label')}</label>
+              <Textarea
+                value={additionalContext}
+                onChange={(event) => setAdditionalContext(event.target.value)}
+                placeholder={t('improve_reply.additional_context_placeholder')}
+                rows={4}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t('improve_reply.saved_context_label')}</label>
+              <Textarea
+                value={savedImproveContext}
+                onChange={(event) => setSavedImproveContext(event.target.value)}
+                placeholder={t('improve_reply.saved_context_placeholder')}
+                rows={6}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t('improve_reply.result_label')}</label>
+              <Textarea
+                value={improvedReply}
+                onChange={(event) => setImprovedReply(event.target.value)}
+                placeholder={t('improve_reply.result_placeholder')}
+                rows={7}
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant="outline" onClick={handleCopyImprovedReply} disabled={!improvedReply.trim()}>
+                <Copy className="h-4 w-4" />
+                {t('improve_reply.copy_button')}
+              </Button>
+              <Button type="button" variant="outline" onClick={requestImprovedReply} disabled={isImprovingReply || !newMessage.trim()}>
+                {isImprovingReply ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+                {t('improve_reply.regenerate_button')}
+              </Button>
+            </div>
+
+            <Button type="button" onClick={handleInsertImprovedReply} disabled={!improvedReply.trim()}>
+              {t('improve_reply.insert_button')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Lightbox open={lightboxOpen} close={() => setLightboxOpen(false)} slides={slides} index={lightboxIndex} plugins={[Zoom, Video]} zoom={{ maxZoomPixelRatio: 3, doubleTapDelay: 300 }} />
     </div>

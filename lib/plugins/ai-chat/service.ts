@@ -27,8 +27,44 @@ type AIChatProcessingState = {
 
 const aiChatProcessingStates = new Map<number, AIChatProcessingState>();
 
+type TeamAIConfig = typeof aiConfigs.$inferSelect;
+
 function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+export async function getAIProviderForConfig(config: TeamAIConfig): Promise<AIProvider> {
+  const commonConfig = {
+    apiKey: config.apiKey,
+    model: config.model,
+    systemPrompt: config.systemPrompt || undefined,
+    temperature: Number(config.temperature) || 0.7,
+    maxOutputTokens: config.maxOutputTokens || 1000,
+    attachments: config.attachments as any[] || [],
+  };
+
+  if (config.provider === 'openai') {
+    return new OpenAIProvider(commonConfig);
+  }
+
+  if (config.provider === 'gemini') {
+    return new GeminiProvider(commonConfig);
+  }
+
+  throw new Error(`Provider ${config.provider} not implemented yet`);
+}
+
+export async function getAIProviderForTeam(teamId: number): Promise<{ config: TeamAIConfig; provider: AIProvider } | null> {
+  const config = await db.query.aiConfigs.findFirst({
+    where: eq(aiConfigs.teamId, teamId),
+  });
+
+  if (!config) {
+    return null;
+  }
+
+  const provider = await getAIProviderForConfig(config);
+  return { config, provider };
 }
 
 async function sendAiTextMessage(instance: any, remoteJid: string, text: string, teamId: number, chatId: number) {
@@ -280,23 +316,7 @@ export async function processAIMessage(
     session = newSession;
   }
 
-  let provider: AIProvider;
-  const commonConfig = {
-    apiKey: config.apiKey, 
-    model: config.model,
-    systemPrompt: config.systemPrompt || undefined,
-    temperature: Number(config.temperature) || 0.7,
-    maxOutputTokens: config.maxOutputTokens || 1000,
-    attachments: config.attachments as any[] || []
-  };
-  
-  if (config.provider === 'openai') {
-    provider = new OpenAIProvider(commonConfig);
-  } else if (config.provider === 'gemini') {
-    provider = new GeminiProvider(commonConfig);
-  } else {
-    throw new Error(`Provider ${config.provider} not implemented yet`);
-  }
+  const provider = await getAIProviderForConfig(config);
 
   let finalInput = userMessage;
   if (config.provider === 'openai' && audioUrl) {
