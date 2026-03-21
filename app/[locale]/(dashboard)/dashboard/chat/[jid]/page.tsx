@@ -716,6 +716,24 @@ export default function ChatPage() {
     };
   }, [improveMode, t]);
 
+  const improveComposerActions = useMemo(() => ([
+    {
+      mode: 'improve' as ImproveReplyMode,
+      title: t('improve_reply.button'),
+      icon: Sparkles,
+    },
+    {
+      mode: 'orthography' as ImproveReplyMode,
+      title: t('improve_reply.orthography_button'),
+      icon: SpellCheck,
+    },
+    {
+      mode: 'stylize' as ImproveReplyMode,
+      title: t('improve_reply.stylize_button'),
+      icon: Paintbrush,
+    },
+  ]), [t]);
+
   useEffect(() => {
     setSyncDismissed(false);
   }, [remoteJid]);
@@ -827,73 +845,60 @@ export default function ChatPage() {
 
         {renderReplyPreview()}
 
-        <footer className="flex flex-col border-t bg-background shrink-0">
-          <ChatInput
-            isInternalNote={isInternalNote}
-            setIsInternalNote={setIsInternalNote}
-            newMessage={newMessage}
-            setNewMessage={setNewMessage}
-            recordingStatus={recordingStatus}
-            recordingTime={recordingTime}
-            onStartRecording={startRecording}
-            onStopRecording={stopRecording}
-            onCancelRecording={cancelRecording}
-            onSendText={handleSendText}
-            onSendAudio={handleSendAudio}
-            onSendAttachment={handleSendAttachment}
-            audioUrl={audioUrl}
-            isAudioPlaying={isAudioPlaying}
-            toggleAudioPlayback={toggleAudioPlayback}
-            audioPlayerRef={audioPlayerRef as React.RefObject<HTMLAudioElement>}
-            fileInputRef={fileInputRef as unknown as React.RefObject<HTMLInputElement>}
-            handleFileIconClick={handleFileIconClick}
-            onEmojiClick={onEmojiClick}
-            quickRepliesOpen={quickRepliesOpen}
-            setQuickRepliesOpen={setQuickRepliesOpen}
-            showQuickReplySuggestions={showQuickReplySuggestions}
-            setShowQuickReplySuggestions={setShowQuickReplySuggestions}
-            filteredQuickReplies={filteredQuickReplies}
-            isWindowExpired={isWindowExpired}
-            onOpenTemplateDialog={() => setTemplateDialogOpen(true)}
-            isGroup={isGroup}
-          />
-          <div className="flex items-center justify-end gap-2 border-t px-3 py-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              title={t('improve_reply.button')}
-              onClick={() => handleOpenImproveDialog('improve')}
-              disabled={isImprovingReply || !newMessage.trim() || !currentChat?.id}
-            >
-              {isImprovingReply && improveMode === 'improve'
-                ? <Loader2 className="h-4 w-4 animate-spin" />
-                : <Sparkles className="h-4 w-4" />}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              title={t('improve_reply.orthography_button')}
-              onClick={() => handleOpenImproveDialog('orthography')}
-              disabled={isImprovingReply || !newMessage.trim() || !currentChat?.id}
-            >
-              {isImprovingReply && improveMode === 'orthography'
-                ? <Loader2 className="h-4 w-4 animate-spin" />
-                : <SpellCheck className="h-4 w-4" />}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              title={t('improve_reply.stylize_button')}
-              onClick={() => handleOpenImproveDialog('stylize')}
-              disabled={isImprovingReply || !newMessage.trim() || !currentChat?.id}
-            >
-              {isImprovingReply && improveMode === 'stylize'
-                ? <Loader2 className="h-4 w-4 animate-spin" />
-                : <Paintbrush className="h-4 w-4" />}
-            </Button>
+        <footer className="border-t bg-background shrink-0">
+          <div className="relative">
+            <ChatInput
+              isInternalNote={isInternalNote}
+              setIsInternalNote={setIsInternalNote}
+              newMessage={newMessage}
+              setNewMessage={setNewMessage}
+              recordingStatus={recordingStatus}
+              recordingTime={recordingTime}
+              onStartRecording={startRecording}
+              onStopRecording={stopRecording}
+              onCancelRecording={cancelRecording}
+              onSendText={handleSendText}
+              onSendAudio={handleSendAudio}
+              onSendAttachment={handleSendAttachment}
+              audioUrl={audioUrl}
+              isAudioPlaying={isAudioPlaying}
+              toggleAudioPlayback={toggleAudioPlayback}
+              audioPlayerRef={audioPlayerRef as React.RefObject<HTMLAudioElement>}
+              fileInputRef={fileInputRef as unknown as React.RefObject<HTMLInputElement>}
+              handleFileIconClick={handleFileIconClick}
+              onEmojiClick={onEmojiClick}
+              quickRepliesOpen={quickRepliesOpen}
+              setQuickRepliesOpen={setQuickRepliesOpen}
+              showQuickReplySuggestions={showQuickReplySuggestions}
+              setShowQuickReplySuggestions={setShowQuickReplySuggestions}
+              filteredQuickReplies={filteredQuickReplies}
+              isWindowExpired={isWindowExpired}
+              onOpenTemplateDialog={() => setTemplateDialogOpen(true)}
+              isGroup={isGroup}
+            />
+
+            <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-end px-3 py-2">
+              <div className="pointer-events-auto flex items-center gap-1 rounded-full border bg-background/90 p-1 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
+                {improveComposerActions.map(({ mode, title, icon: Icon }) => {
+                  const isLoadingAction = isImprovingReply && improveMode === mode;
+
+                  return (
+                    <Button
+                      key={mode}
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
+                      title={title}
+                      onClick={() => handleOpenImproveDialog(mode)}
+                      disabled={isImprovingReply || !newMessage.trim() || !currentChat?.id}
+                    >
+                      {isLoadingAction ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon className="h-4 w-4" />}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </footer>
       </div>
