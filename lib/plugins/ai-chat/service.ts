@@ -9,7 +9,26 @@ import { pusherServer } from '@/lib/pusher-server';
 import { createSystemMessage } from '@/lib/db/system-messages';
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "http://localhost:8080";
-const activeAIJobs = new Map<number, Promise<void>>();
+const DEFAULT_AI_DEBOUNCE_MS = 5000;
+const parsedDebounceMs = Number(process.env.AI_DEBOUNCE_MS ?? DEFAULT_AI_DEBOUNCE_MS);
+const AI_DEBOUNCE_MS = Number.isFinite(parsedDebounceMs) && parsedDebounceMs >= 0
+  ? parsedDebounceMs
+  : DEFAULT_AI_DEBOUNCE_MS;
+
+type AIChatProcessingState = {
+  debounceUntil: number | null;
+  instanceId: number;
+  isDrainQueued: boolean;
+  teamId: number;
+  timer: NodeJS.Timeout | null;
+  runningJob: Promise<void>;
+};
+
+const aiChatProcessingStates = new Map<number, AIChatProcessingState>();
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
 
 async function sendAiTextMessage(instance: any, remoteJid: string, text: string, teamId: number, chatId: number) {
     if (!instance.accessToken) return;
@@ -133,30 +152,98 @@ async function flushAIProcessing(teamId: number, chatId: number, instanceId: num
   );
 }
 
-export async function scheduleAIProcessing(teamId: number, chatId: number, instanceId: number) {
-  const previousJob = activeAIJobs.get(chatId);
+function getOrCreateAIChatProcessingState(teamId: number, chatId: number, instanceId: number) {
+  const existingState = aiChatProcessingStates.get(chatId);
 
-  const job = (async () => {
-    if (previousJob) {
-      await previousJob.catch(() => undefined);
+  if (existingState) {
+    existingState.teamId = teamId;
+    existingState.instanceId = instanceId;
+    return existingState;
+  }
+
+  const newState: AIChatProcessingState = {
+    debounceUntil: null,
+    instanceId,
+    isDrainQueued: false,
+    teamId,
+    timer: null,
+    runningJob: Promise.resolve(),
+  };
+
+  aiChatProcessingStates.set(chatId, newState);
+  return newState;
+}
+
+async function drainAIProcessingQueue(chatId: number, state: AIChatProcessingState) {
+  while (state.debounceUntil !== null) {
+    const currentDebounceUntil = state.debounceUntil;
+    const waitMs = currentDebounceUntil - Date.now();
+
+    if (waitMs > 0) {
+      await sleep(waitMs);
     }
 
+    if (state.debounceUntil !== currentDebounceUntil) {
+      continue;
+    }
+
+    state.debounceUntil = null;
+
     try {
-      await flushAIProcessing(teamId, chatId, instanceId);
+      await flushAIProcessing(state.teamId, chatId, state.instanceId);
     } catch (e: any) {
       console.error("AI Processing Error:", e);
     }
-  })();
-
-  activeAIJobs.set(chatId, job);
-
-  try {
-    await job;
-  } finally {
-    if (activeAIJobs.get(chatId) === job) {
-      activeAIJobs.delete(chatId);
-    }
   }
+}
+
+function queueAIProcessing(chatId: number) {
+  const state = aiChatProcessingStates.get(chatId);
+
+  if (!state) return;
+
+  state.timer = null;
+
+  if (state.isDrainQueued) {
+    return;
+  }
+
+  state.isDrainQueued = true;
+
+  state.runningJob = state.runningJob
+    .catch(() => undefined)
+    .then(() => drainAIProcessingQueue(chatId, state))
+    .finally(() => {
+      state.isDrainQueued = false;
+
+      if (state.debounceUntil !== null && !state.timer) {
+        const waitMs = Math.max(state.debounceUntil - Date.now(), 0);
+        state.timer = setTimeout(() => {
+          queueAIProcessing(chatId);
+        }, waitMs);
+        return;
+      }
+
+      if (state.debounceUntil === null && !state.timer && aiChatProcessingStates.get(chatId) === state) {
+        aiChatProcessingStates.delete(chatId);
+      }
+    });
+}
+
+export function scheduleAIProcessing(teamId: number, chatId: number, instanceId: number) {
+  const state = getOrCreateAIChatProcessingState(teamId, chatId, instanceId);
+
+  state.teamId = teamId;
+  state.instanceId = instanceId;
+  state.debounceUntil = Date.now() + AI_DEBOUNCE_MS;
+
+  if (state.timer) {
+    clearTimeout(state.timer);
+  }
+
+  state.timer = setTimeout(() => {
+    queueAIProcessing(chatId);
+  }, AI_DEBOUNCE_MS);
 }
 
 export async function processAIMessage(
