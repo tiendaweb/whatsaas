@@ -78,6 +78,7 @@ export default function ChatPage() {
   const [improvedReply, setImprovedReply] = useState('');
   const [isImprovingReply, setIsImprovingReply] = useState(false);
   const [showQuickReplySuggestions, setShowQuickReplySuggestions] = useState(false);
+  const lastImproveContextChatIdRef = useRef<number | null>(null);
   const [chatSidebarCollapsed, setChatSidebarCollapsed] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('chatSidebarCollapsed') === 'true';
@@ -739,6 +740,23 @@ export default function ChatPage() {
   useEffect(() => {
     setSyncDismissed(false);
   }, [remoteJid]);
+
+  useEffect(() => {
+    if (!currentChat?.id) {
+      return;
+    }
+
+    if (lastImproveContextChatIdRef.current === currentChat.id) {
+      return;
+    }
+
+    lastImproveContextChatIdRef.current = currentChat.id;
+    setAdditionalContext('');
+    setSavedImproveContext('');
+    setShowSavedImproveContext(false);
+    setImprovedReply('');
+    setImproveDialogOpen(false);
+  }, [currentChat?.id]);
 
   const showSyncBanner = !syncDismissed && currentChat?.instanceId && messages && messages.length === 0 && !isLoading && !error;
 
