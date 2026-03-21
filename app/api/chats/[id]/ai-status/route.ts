@@ -5,6 +5,7 @@ import { aiConfigs, aiSessions, chats } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { createSystemMessage } from '@/lib/db/system-messages';
 import { pusherServer } from '@/lib/pusher-server';
+import { getEffectiveAIState, shouldPersistAISession } from '@/lib/ai/session-state';
 
 async function getChatForTeam(teamId: number, chatId: number) {
   return db.query.chats.findFirst({
@@ -42,13 +43,17 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       }),
     ]);
 
-    const isTeamAiEnabled = !!config?.isActive;
-    const isConversationActive = session ? session.status === 'active' : true;
+    // Regla de negocio: sin sesión no implica un estado persistido del chat,
+    // sino que el chat hereda el estado global del equipo.
+    const aiState = getEffectiveAIState(!!config?.isActive, session?.status);
 
     return NextResponse.json({
-      isActive: isTeamAiEnabled && isConversationActive,
-      teamEnabled: isTeamAiEnabled,
-      conversationStatus: session?.status || 'active',
+      isActive: aiState.isActive,
+      teamEnabled: aiState.teamEnabled,
+      conversationStatus: aiState.conversationStatus,
+      effectiveStatus: aiState.effectiveStatus,
+      inheritsTeamStatus: aiState.inheritsTeamStatus,
+      hasSession: aiState.hasSession,
     });
   } catch (error) {
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
@@ -86,35 +91,56 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         }),
     ]);
 
+    const previousState = getEffectiveAIState(!!teamConfig?.isActive, existingSession?.status);
+    let nextConversationStatus = existingSession?.status ?? null;
+
     if (existingSession) {
+      if (existingSession.status !== status) {
         await db.update(aiSessions)
-            .set({ status, updatedAt: new Date() })
-            .where(eq(aiSessions.id, existingSession.id));
-    } else {
-        await db.insert(aiSessions).values({
-            chatId,
-            status,
-            history: []
-        });
+          .set({ status, updatedAt: new Date() })
+          .where(eq(aiSessions.id, existingSession.id));
+      }
+
+      nextConversationStatus = status;
+    } else if (shouldPersistAISession(status, false)) {
+      await db.insert(aiSessions).values({
+        chatId,
+        status,
+        history: []
+      });
+
+      nextConversationStatus = status;
     }
 
-    const userName = user.name || user.email;
-    const logText = status === 'active'
+    const nextState = getEffectiveAIState(!!teamConfig?.isActive, nextConversationStatus);
+    const hasStateChanged =
+      previousState.conversationStatus !== nextState.conversationStatus ||
+      previousState.effectiveStatus !== nextState.effectiveStatus;
+
+    if (hasStateChanged) {
+      const userName = user.name || user.email;
+      const logText = nextState.effectiveStatus === 'active'
         ? `@@syslog_user_activated_ai|name=${userName}`
         : `@@syslog_user_deactivated_ai|name=${userName}`;
-    await createSystemMessage(team.id, chatId, logText);
+      await createSystemMessage(team.id, chatId, logText);
 
-    await pusherServer.trigger(`team-${team.id}`, 'chat-status-update', {
+      await pusherServer.trigger(`team-${team.id}`, 'chat-status-update', {
         chatId,
         type: 'ai',
-        status,
-    });
+        status: nextState.effectiveStatus,
+      });
+    }
 
     return NextResponse.json({
-        success: true,
-        status,
-        isActive: !!teamConfig?.isActive && status === 'active',
-        teamEnabled: !!teamConfig?.isActive,
+      success: true,
+      requestedStatus: status,
+      status: nextState.effectiveStatus,
+      isActive: nextState.isActive,
+      teamEnabled: nextState.teamEnabled,
+      conversationStatus: nextState.conversationStatus,
+      effectiveStatus: nextState.effectiveStatus,
+      inheritsTeamStatus: nextState.inheritsTeamStatus,
+      hasSession: nextState.hasSession,
     });
   } catch (error) {
     console.error(error);

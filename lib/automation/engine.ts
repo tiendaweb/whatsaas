@@ -6,6 +6,7 @@ import {
   contactTags, 
   messages, 
   evolutionInstances, 
+  aiConfigs,
   aiSessions, 
   chats 
 } from '@/lib/db/schema';
@@ -14,6 +15,7 @@ import { Node, Edge } from '@xyflow/react';
 import fs from 'fs/promises';
 import path from 'path';
 import { pusherServer } from '@/lib/pusher-server';
+import { getEffectiveAIState, shouldPersistAISession } from '@/lib/ai/session-state';
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "http://localhost:8080";
 const GRAPH_API_URL = "https://graph.facebook.com";
@@ -420,26 +422,47 @@ async function executeStep(
     }
     else if (nextNode.type === 'ai_control') {
         const action = nextNode.data.action as string || 'active';
-        
-        const existingAiSession = await db.query.aiSessions.findFirst({
-            where: eq(aiSessions.chatId, chatId)
-        });
+        const [teamAiConfig, existingAiSession] = await Promise.all([
+            db.query.aiConfigs.findFirst({
+                where: eq(aiConfigs.teamId, teamId),
+                columns: { isActive: true },
+            }),
+            db.query.aiSessions.findFirst({
+                where: eq(aiSessions.chatId, chatId)
+            }),
+        ]);
+
+        const previousState = getEffectiveAIState(!!teamAiConfig?.isActive, existingAiSession?.status);
+        let nextConversationStatus = existingAiSession?.status ?? null;
 
         if (existingAiSession) {
-            await db.update(aiSessions)
-                .set({ status: action, updatedAt: new Date() })
-                .where(eq(aiSessions.id, existingAiSession.id));
-        } else {
+            if (existingAiSession.status !== action) {
+                await db.update(aiSessions)
+                    .set({ status: action, updatedAt: new Date() })
+                    .where(eq(aiSessions.id, existingAiSession.id));
+            }
+
+            nextConversationStatus = action;
+        } else if (shouldPersistAISession(action, false)) {
             await db.insert(aiSessions).values({
                 chatId,
                 status: action,
                 history: []
             });
+
+            nextConversationStatus = action;
         }
 
-        await pusherServer.trigger(`team-${teamId}`, 'chat-status-update', {
-            chatId, type: 'ai', status: action
-        });
+        const nextState = getEffectiveAIState(!!teamAiConfig?.isActive, nextConversationStatus);
+
+        if (
+            previousState.conversationStatus !== nextState.conversationStatus ||
+            previousState.effectiveStatus !== nextState.effectiveStatus
+        ) {
+            await pusherServer.trigger(`team-${teamId}`, 'chat-status-update', {
+                chatId, type: 'ai', status: nextState.effectiveStatus
+            });
+        }
 
         await moveToNextAuto(updatedSession, flow, nextNode.id, instance, remoteJid, teamId, chatId);
     }
