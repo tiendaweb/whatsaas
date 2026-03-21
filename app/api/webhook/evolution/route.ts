@@ -578,7 +578,7 @@ export async function POST(request: Request) {
         }
 
         if (!automationProcessed) {
-            scheduleAIProcessing(teamId, chatIdForAutomation, instanceId);
+            await scheduleAIProcessing(teamId, chatIdForAutomation, instanceId);
         }
       }
 

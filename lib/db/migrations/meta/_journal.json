@@ -71,6 +71,13 @@
       "when": 1775000000000,
       "tag": "0009_plan_pricing_custom_items",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1776000000000,
+      "tag": "0010_ai_config_attachments",
+      "breakpoints": true
     }
   ]
 }
