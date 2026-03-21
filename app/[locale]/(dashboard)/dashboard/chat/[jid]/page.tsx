@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
-import { X, Loader2, Users, Download, Wand2, Copy, Sparkles, SpellCheck, Paintbrush } from 'lucide-react';
+import { X, Loader2, Users, Download, Wand2, Copy, Sparkles, SpellCheck, Paintbrush, ChevronDown, ChevronUp } from 'lucide-react';
 import { useParams, useSearchParams } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
 import PusherClient from 'pusher-js';
@@ -74,6 +74,7 @@ export default function ChatPage() {
   const [improveMode, setImproveMode] = useState<ImproveReplyMode>('improve');
   const [additionalContext, setAdditionalContext] = useState('');
   const [savedImproveContext, setSavedImproveContext] = useState('');
+  const [showSavedImproveContext, setShowSavedImproveContext] = useState(false);
   const [improvedReply, setImprovedReply] = useState('');
   const [isImprovingReply, setIsImprovingReply] = useState(false);
   const [showQuickReplySuggestions, setShowQuickReplySuggestions] = useState(false);
@@ -664,6 +665,7 @@ export default function ChatPage() {
 
     setImproveMode(mode);
     setImprovedReply('');
+    setShowSavedImproveContext(false);
     setImproveDialogOpen(true);
     await requestImprovedReply(mode);
   }, [newMessage, requestImprovedReply, t]);
@@ -908,13 +910,13 @@ export default function ChatPage() {
       <QuickRepliesModal open={quickRepliesOpen} onOpenChange={setQuickRepliesOpen} />
       <TemplateDialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen} onSendTemplate={handleSendTemplate} />
       <Dialog open={improveDialogOpen} onOpenChange={setImproveDialogOpen}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col overflow-hidden sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{improveActionConfig.title}</DialogTitle>
             <DialogDescription>{improveActionConfig.description}</DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="flex-1 space-y-4 overflow-y-auto pr-1">
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('improve_reply.current_text_label')}</label>
               <Textarea value={newMessage} readOnly placeholder={t('improve_reply.current_text_placeholder')} rows={4} />
@@ -930,14 +932,34 @@ export default function ChatPage() {
               />
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">{t('improve_reply.saved_context_label')}</label>
-              <Textarea
-                value={savedImproveContext}
-                onChange={(event) => setSavedImproveContext(event.target.value)}
-                placeholder={t('improve_reply.saved_context_placeholder')}
-                rows={6}
-              />
+            <div className="space-y-2 rounded-lg border border-border/60 p-3">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-3 text-left"
+                onClick={() => setShowSavedImproveContext((prev) => !prev)}
+              >
+                <div>
+                  <p className="text-sm font-medium">{t('improve_reply.saved_context_label')}</p>
+                  <p className="text-muted-foreground text-xs">
+                    {t(showSavedImproveContext ? 'improve_reply.hide_saved_context' : 'improve_reply.show_saved_context')}
+                  </p>
+                </div>
+                {showSavedImproveContext ? (
+                  <ChevronUp className="text-muted-foreground h-4 w-4 shrink-0" />
+                ) : (
+                  <ChevronDown className="text-muted-foreground h-4 w-4 shrink-0" />
+                )}
+              </button>
+
+              {showSavedImproveContext ? (
+                <Textarea
+                  className="mt-3"
+                  value={savedImproveContext}
+                  onChange={(event) => setSavedImproveContext(event.target.value)}
+                  placeholder={t('improve_reply.saved_context_placeholder')}
+                  rows={6}
+                />
+              ) : null}
             </div>
 
             <div className="space-y-2">
