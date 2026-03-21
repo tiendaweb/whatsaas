@@ -9,8 +9,7 @@ import { pusherServer } from '@/lib/pusher-server';
 import { createSystemMessage } from '@/lib/db/system-messages';
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "http://localhost:8080";
-const AI_DEBOUNCE_MS = 5000;
-const pendingAIChats = new Map<number, NodeJS.Timeout>();
+const activeAIJobs = new Map<number, Promise<void>>();
 
 async function sendAiTextMessage(instance: any, remoteJid: string, text: string, teamId: number, chatId: number) {
     if (!instance.accessToken) return;
@@ -82,69 +81,82 @@ async function sendAiTextMessage(instance: any, remoteJid: string, text: string,
     }
 }
 
-export function scheduleAIProcessing(teamId: number, chatId: number, instanceId: number) {
-  const existing = pendingAIChats.get(chatId);
-  if (existing) clearTimeout(existing);
+async function flushAIProcessing(teamId: number, chatId: number, instanceId: number) {
+  const lastOwnMessage = await db.query.messages.findFirst({
+    where: and(eq(messages.chatId, chatId), eq(messages.fromMe, true)),
+    orderBy: [desc(messages.timestamp)],
+    columns: { timestamp: true },
+  });
 
-  const timer = setTimeout(async () => {
-    pendingAIChats.delete(chatId);
+  const pendingWhere = lastOwnMessage
+    ? and(eq(messages.chatId, chatId), eq(messages.fromMe, false), gt(messages.timestamp, lastOwnMessage.timestamp))
+    : and(eq(messages.chatId, chatId), eq(messages.fromMe, false));
+
+  const pendingMessages = await db.query.messages.findMany({
+    where: pendingWhere,
+    orderBy: [messages.timestamp],
+    columns: { text: true, mediaUrl: true },
+    limit: 20,
+  });
+
+  if (pendingMessages.length === 0) return;
+
+  const combinedText = pendingMessages
+    .map(m => m.text || '[media]')
+    .join('\n');
+
+  const latestMedia = [...pendingMessages].reverse().find(m => m.mediaUrl);
+
+  const aiResponse = await processAIMessage(teamId, chatId, combinedText, latestMedia?.mediaUrl);
+
+  if (!aiResponse) return;
+
+  const instance = await db.query.evolutionInstances.findFirst({
+    where: eq(evolutionInstances.id, instanceId),
+  });
+
+  if (!instance?.accessToken) return;
+
+  const chat = await db.query.chats.findFirst({
+    where: eq(chats.id, chatId),
+    columns: { remoteJid: true },
+  });
+
+  if (!chat) return;
+
+  await sendAiTextMessage(
+    { instanceName: instance.instanceName, accessToken: instance.accessToken },
+    chat.remoteJid,
+    aiResponse,
+    teamId,
+    chatId
+  );
+}
+
+export async function scheduleAIProcessing(teamId: number, chatId: number, instanceId: number) {
+  const previousJob = activeAIJobs.get(chatId);
+
+  const job = (async () => {
+    if (previousJob) {
+      await previousJob.catch(() => undefined);
+    }
 
     try {
-      const lastOwnMessage = await db.query.messages.findFirst({
-        where: and(eq(messages.chatId, chatId), eq(messages.fromMe, true)),
-        orderBy: [desc(messages.timestamp)],
-        columns: { timestamp: true },
-      });
-
-      const pendingWhere = lastOwnMessage
-        ? and(eq(messages.chatId, chatId), eq(messages.fromMe, false), gt(messages.timestamp, lastOwnMessage.timestamp))
-        : and(eq(messages.chatId, chatId), eq(messages.fromMe, false));
-
-      const pendingMessages = await db.query.messages.findMany({
-        where: pendingWhere,
-        orderBy: [messages.timestamp],
-        columns: { text: true, mediaUrl: true },
-        limit: 20,
-      });
-
-      if (pendingMessages.length === 0) return;
-
-      const combinedText = pendingMessages
-        .map(m => m.text || '[media]')
-        .join('\n');
-
-      const latestMedia = [...pendingMessages].reverse().find(m => m.mediaUrl);
-
-      const aiResponse = await processAIMessage(teamId, chatId, combinedText, latestMedia?.mediaUrl);
-
-      if (aiResponse) {
-        const instance = await db.query.evolutionInstances.findFirst({
-          where: eq(evolutionInstances.id, instanceId),
-        });
-
-        if (instance?.accessToken) {
-          const chat = await db.query.chats.findFirst({
-            where: eq(chats.id, chatId),
-            columns: { remoteJid: true },
-          });
-
-          if (chat) {
-            await sendAiTextMessage(
-              { instanceName: instance.instanceName, accessToken: instance.accessToken },
-              chat.remoteJid,
-              aiResponse,
-              teamId,
-              chatId
-            );
-          }
-        }
-      }
+      await flushAIProcessing(teamId, chatId, instanceId);
     } catch (e: any) {
-      console.error("AI Debounce Processing Error:", e);
+      console.error("AI Processing Error:", e);
     }
-  }, AI_DEBOUNCE_MS);
+  })();
 
-  pendingAIChats.set(chatId, timer);
+  activeAIJobs.set(chatId, job);
+
+  try {
+    await job;
+  } finally {
+    if (activeAIJobs.get(chatId) === job) {
+      activeAIJobs.delete(chatId);
+    }
+  }
 }
 
 export async function processAIMessage(
