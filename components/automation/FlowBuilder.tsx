@@ -223,10 +223,10 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 w-full">
+      <div className="flex min-h-0 min-w-0 w-full flex-1">
         <Sidebar />
         
-        <div className="relative flex-1 min-h-0 bg-slate-50 dark:bg-slate-950" ref={reactFlowWrapper}>
+        <div className="relative flex-1 min-h-0 min-w-0 overflow-hidden bg-slate-50 dark:bg-slate-950" ref={reactFlowWrapper}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
