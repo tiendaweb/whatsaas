@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useTheme } from 'next-themes';
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
 import {
   ReactFlow,
   MiniMap,
@@ -16,14 +16,14 @@ import {
   ReactFlowProvider,
   useReactFlow,
   ProOptions,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Input } from '@/components/ui/input';
-import { Slider } from '@/components/ui/slider';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Slider } from "@/components/ui/slider";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Dialog,
   DialogContent,
@@ -31,9 +31,15 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
+} from "@/components/ui/dialog";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import {
   ArrowLeft,
   Save,
@@ -46,30 +52,36 @@ import {
   CheckCircle2,
   GitBranchPlus,
   RotateCcw,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import { useLocale, useTranslations } from 'next-intl';
-import { StartNode } from './nodes/StartNode';
-import { MessageNode } from './nodes/MessageNode';
-import { OptionsNode } from './nodes/OptionsNode';
-import { DelayNode } from './nodes/DelayNode';
-import { CollectNode } from './nodes/CollectNode';
-import { SaveContactNode } from './nodes/SaveContactNode';
-import { MediaNode } from './nodes/MediaNode';
-import { EndNode } from './nodes/EndNode';
-import { ButtonMessageNode } from './nodes/ButtonMessageNode';
-import { ListMessageNode } from './nodes/ListMessageNode';
-import { CallToActionNode } from './nodes/CallToActionNode';
-import { AiControlNode } from './nodes/AiControlNode';
-import { ConditionNode } from './nodes/ConditionNode';
-import { Sidebar } from './Sidebar';
-import { PropertiesPanel } from './PropertiesPanel';
+} from "lucide-react";
+import { toast } from "sonner";
+import { useLocale, useTranslations } from "next-intl";
+import { StartNode } from "./nodes/StartNode";
+import { MessageNode } from "./nodes/MessageNode";
+import { OptionsNode } from "./nodes/OptionsNode";
+import { DelayNode } from "./nodes/DelayNode";
+import { CollectNode } from "./nodes/CollectNode";
+import { SaveContactNode } from "./nodes/SaveContactNode";
+import { MediaNode } from "./nodes/MediaNode";
+import { EndNode } from "./nodes/EndNode";
+import { ButtonMessageNode } from "./nodes/ButtonMessageNode";
+import { ListMessageNode } from "./nodes/ListMessageNode";
+import { CallToActionNode } from "./nodes/CallToActionNode";
+import { AiControlNode } from "./nodes/AiControlNode";
+import { ConditionNode } from "./nodes/ConditionNode";
+import { Sidebar } from "./Sidebar";
+import { PropertiesPanel } from "./PropertiesPanel";
 import {
   generateAutomationFlow,
   saveAutomation,
   toggleAutomationStatus,
   type GenerateAutomationFlowResult,
-} from '@/app/[locale]/(dashboard)/automation/actions';
+} from "@/app/[locale]/(dashboard)/automation/actions";
+import {
+  applyAutomationAIDraftMetadata,
+  automationRequiresManualReview,
+  getAutomationAIDraftMetadata,
+  markAutomationAIDraftAsReviewed,
+} from "@/lib/automation/ai-draft";
 import {
   AUTOMATION_AI_NODE_CATALOG,
   getAllowedNodeTypesForChannel,
@@ -77,10 +89,20 @@ import {
   insertGeneratedSubflow,
   type AutomationAIChannel,
   type AutomationGeneratedFlow,
-} from '@/lib/automation/ai-flow';
-import { prepareAutomationFlowForSave, type PrepareAutomationFlowResult } from '@/lib/automation/flow-normalizer';
-import { createAutomationCanvasNode } from '@/lib/automation/node-catalog';
-import type { AutomationCanvasEdge, AutomationCanvasNode, AutomationCanvasNodeData, AutomationFlowEdge, AutomationFlowNode } from '@/lib/automation/flow-schema';
+} from "@/lib/automation/ai-flow";
+import {
+  prepareAutomationFlowForSave,
+  type PrepareAutomationFlowResult,
+} from "@/lib/automation/flow-normalizer";
+import { createAutomationCanvasNode } from "@/lib/automation/node-catalog";
+import type {
+  AutomationAIDraftMetadata,
+  AutomationCanvasEdge,
+  AutomationCanvasNode,
+  AutomationCanvasNodeData,
+  AutomationFlowEdge,
+  AutomationFlowNode,
+} from "@/lib/automation/flow-schema";
 
 const nodeTypes = {
   start: StartNode,
@@ -111,15 +133,145 @@ const OVERLAY_GAP = 16;
 const HORIZONTAL_SPACING = 380;
 const VERTICAL_SPACING = 170;
 
-type InsertMode = 'replace' | 'insert';
+type InsertMode = "replace" | "insert";
 
-function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialActive }: FlowBuilderProps) {
-  const t = useTranslations('Automation');
+type PreviewItem = {
+  id: string;
+  title: string;
+  description?: string;
+};
+
+type GeneratedFlowSummary = {
+  outgoingMessages: PreviewItem[];
+  conditions: PreviewItem[];
+  savedVariables: PreviewItem[];
+  links: PreviewItem[];
+};
+
+function buildGeneratedFlowSummary(
+  flow: AutomationGeneratedFlow,
+): GeneratedFlowSummary {
+  return flow.nodes.reduce<GeneratedFlowSummary>(
+    (summary, node) => {
+      switch (node.type) {
+        case "message":
+          summary.outgoingMessages.push({
+            id: node.id,
+            title: node.data.label,
+            description: node.type,
+          });
+          break;
+        case "media":
+          summary.outgoingMessages.push({
+            id: node.id,
+            title: node.data.caption || node.type,
+            description: `Media: ${node.data.mediaType || "image"}`,
+          });
+          break;
+        case "options":
+          summary.outgoingMessages.push({
+            id: node.id,
+            title: node.data.label,
+            description: node.data.options.join(", "),
+          });
+          break;
+        case "button_message":
+          summary.outgoingMessages.push({
+            id: node.id,
+            title: node.data.bodyText,
+            description: node.data.buttons
+              .map((button) => button.text)
+              .join(", "),
+          });
+          break;
+        case "list_message":
+          summary.outgoingMessages.push({
+            id: node.id,
+            title: node.data.bodyText,
+            description: node.data.items.map((item) => item.title).join(", "),
+          });
+          break;
+        case "call_to_action":
+          summary.outgoingMessages.push({
+            id: node.id,
+            title: node.data.bodyText,
+            description: node.data.buttonText,
+          });
+          summary.links.push({
+            id: node.id,
+            title: node.data.buttonText,
+            description: node.data.url,
+          });
+          break;
+        case "condition":
+          node.data.conditions.forEach((condition, index) => {
+            summary.conditions.push({
+              id: `${node.id}-${condition.id}`,
+              title: `${condition.type} ${condition.operator} ${condition.value}`,
+              description: condition.value2
+                ? condition.value2
+                : `#${index + 1}`,
+            });
+          });
+          break;
+        case "collect":
+          summary.savedVariables.push({
+            id: node.id,
+            title: node.data.variable,
+            description: node.data.label,
+          });
+          break;
+        case "save_contact": {
+          const mappings = [
+            node.data.nameVariable ? `name=${node.data.nameVariable}` : null,
+            node.data.agentId ? `agent=${node.data.agentId}` : null,
+            node.data.departmentId
+              ? `department=${node.data.departmentId}`
+              : null,
+            node.data.tagId ? `tag=${node.data.tagId}` : null,
+            node.data.funnelStageId ? `stage=${node.data.funnelStageId}` : null,
+            ...(node.data.customFields
+              ? Object.entries(node.data.customFields).map(
+                  ([field, value]) => `${field}=${value}`,
+                )
+              : []),
+          ].filter(Boolean);
+
+          if (mappings.length > 0) {
+            summary.savedVariables.push({
+              id: node.id,
+              title: node.type,
+              description: mappings.join(" · "),
+            });
+          }
+          break;
+        }
+      }
+
+      return summary;
+    },
+    {
+      outgoingMessages: [],
+      conditions: [],
+      savedVariables: [],
+      links: [],
+    },
+  );
+}
+
+function FlowBuilderContent({
+  automationId,
+  initialNodes,
+  initialEdges,
+  initialActive,
+}: FlowBuilderProps) {
+  const t = useTranslations("Automation");
   const locale = useLocale();
   const router = useRouter();
   const { resolvedTheme } = useTheme();
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [nodes, setNodes, onNodesChange] = useNodesState<AutomationCanvasNode>(initialNodes);
+  const [nodes, setNodes, onNodesChange] =
+    useNodesState<AutomationCanvasNode>(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
 
@@ -128,25 +280,34 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
   const [isActive, setIsActive] = useState(initialActive);
 
   const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
-  const [generatorPrompt, setGeneratorPrompt] = useState('');
-  const [generatorChannel, setGeneratorChannel] = useState<AutomationAIChannel>('qr');
+  const [generatorPrompt, setGeneratorPrompt] = useState("");
+  const [generatorChannel, setGeneratorChannel] =
+    useState<AutomationAIChannel>("qr");
   const [generatorTemperature, setGeneratorTemperature] = useState(0.7);
   const [generatorMaxTokens, setGeneratorMaxTokens] = useState(1200);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generationResult, setGenerationResult] = useState<AutomationGeneratedFlow | null>(null);
-  const [generationRawResponse, setGenerationRawResponse] = useState<string | null>(null);
-  const [generationValidationErrors, setGenerationValidationErrors] = useState<string[]>([]);
+  const [generationResult, setGenerationResult] =
+    useState<AutomationGeneratedFlow | null>(null);
+  const [generationRawResponse, setGenerationRawResponse] = useState<
+    string | null
+  >(null);
+  const [generationValidationErrors, setGenerationValidationErrors] = useState<
+    string[]
+  >([]);
   const [generationError, setGenerationError] = useState<string | null>(null);
-  const [insertMode, setInsertMode] = useState<InsertMode>('replace');
+  const [insertMode, setInsertMode] = useState<InsertMode>("replace");
   const [isSavePreviewOpen, setIsSavePreviewOpen] = useState(false);
   const [savePreviewWarnings, setSavePreviewWarnings] = useState<string[]>([]);
   const [savePreviewErrors, setSavePreviewErrors] = useState<string[]>([]);
-  const [savePreviewFlow, setSavePreviewFlow] = useState<Extract<PrepareAutomationFlowResult, { success: true }> | null>(null);
+  const [savePreviewFlow, setSavePreviewFlow] = useState<Extract<
+    PrepareAutomationFlowResult,
+    { success: true }
+  > | null>(null);
 
   const { screenToFlowPosition, toObject, fitView } = useReactFlow();
 
   useEffect(() => {
-    setIsDarkMode(resolvedTheme === 'dark');
+    setIsDarkMode(resolvedTheme === "dark");
   }, [resolvedTheme]);
 
   useEffect(() => {
@@ -158,9 +319,9 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
     };
 
     updateViewportSize();
-    window.addEventListener('resize', updateViewportSize);
+    window.addEventListener("resize", updateViewportSize);
 
-    return () => window.removeEventListener('resize', updateViewportSize);
+    return () => window.removeEventListener("resize", updateViewportSize);
   }, []);
 
   const availableNodeTypes = useMemo(
@@ -175,6 +336,18 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
 
   const currentFlowHasEditableNodes = nodes.length > 0;
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) || null;
+  const aiDraftMetadata = useMemo(
+    () => getAutomationAIDraftMetadata(nodes as AutomationFlowNode[]),
+    [nodes],
+  );
+  const requiresManualReview = Boolean(
+    aiDraftMetadata && !aiDraftMetadata.reviewedManually,
+  );
+  const generatedFlowSummary = useMemo(
+    () =>
+      generationResult ? buildGeneratedFlowSummary(generationResult) : null,
+    [generationResult],
+  );
 
   const resetGeneratorState = useCallback(() => {
     setGenerationResult(null);
@@ -190,15 +363,15 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
+    event.dataTransfer.dropEffect = "move";
   }, []);
 
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
-      const type = event.dataTransfer.getData('application/reactflow');
+      const type = event.dataTransfer.getData("application/reactflow");
 
-      if (typeof type === 'undefined' || !type) return;
+      if (typeof type === "undefined" || !type) return;
 
       const position = screenToFlowPosition({
         x: event.clientX,
@@ -206,7 +379,7 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
       });
 
       const newNode = createAutomationCanvasNode({
-        type: type as AutomationCanvasNode['type'],
+        type: type as AutomationCanvasNode["type"],
         position,
       });
 
@@ -215,22 +388,31 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
     [screenToFlowPosition, setNodes],
   );
 
-  const onNodeClick = useCallback((_: React.MouseEvent, node: AutomationCanvasNode) => {
-    setSelectedNodeId(node.id);
-  }, []);
+  const onNodeClick = useCallback(
+    (_: React.MouseEvent, node: AutomationCanvasNode) => {
+      setSelectedNodeId(node.id);
+    },
+    [],
+  );
 
   const onPaneClick = useCallback(() => {
     setSelectedNodeId(null);
   }, []);
 
-  const updateNodeData = (id: string, data: Partial<AutomationCanvasNodeData>) => {
+  const updateNodeData = (
+    id: string,
+    data: Partial<AutomationCanvasNodeData>,
+  ) => {
     setNodes((nds) =>
       nds.map((node) => {
         if (node.id === id) {
-          return { ...node, data: { ...node.data, ...data } } as AutomationCanvasNode;
+          return {
+            ...node,
+            data: { ...node.data, ...data },
+          } as AutomationCanvasNode;
         }
         return node;
-      })
+      }),
     );
   };
 
@@ -241,13 +423,15 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
       edges: flow.edges as AutomationFlowEdge[],
     });
 
-    setSavePreviewWarnings(preparedFlow.warnings.map((warning) => warning.message));
+    setSavePreviewWarnings(
+      preparedFlow.warnings.map((warning) => warning.message),
+    );
 
     if (!preparedFlow.success) {
       setSavePreviewErrors(preparedFlow.errors);
       setSavePreviewFlow(null);
       setIsSavePreviewOpen(true);
-      toast.error(t('save_preview.validation_failed_title'));
+      toast.error(t("save_preview.validation_failed_title"));
       return;
     }
 
@@ -263,29 +447,70 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
 
     setIsSaving(true);
     try {
-      await saveAutomation(automationId, savePreviewFlow.nodes, savePreviewFlow.edges);
+      await saveAutomation(
+        automationId,
+        savePreviewFlow.nodes,
+        savePreviewFlow.edges,
+      );
       setNodes(savePreviewFlow.nodes as AutomationCanvasNode[]);
       setEdges(savePreviewFlow.edges as AutomationCanvasEdge[]);
+      if (automationRequiresManualReview(savePreviewFlow.nodes)) {
+        setIsActive(false);
+      }
       setIsSavePreviewOpen(false);
-      toast.success(t('toast_saved'));
+      toast.success(t("toast_saved"));
     } catch (error) {
-      toast.error(t('ai_generator.save_failed'));
+      toast.error(t("ai_generator.save_failed"));
     } finally {
       setIsSaving(false);
     }
   };
 
   const toggleActive = async () => {
+    if (!isActive && requiresManualReview) {
+      toast.error(t("ai_review.activation_blocked_toast"));
+      return;
+    }
+
     const newState = !isActive;
     setIsActive(newState);
     try {
       await toggleAutomationStatus(automationId, newState);
-      toast.success(t('toast_status_changed'));
+      toast.success(t("toast_status_changed"));
     } catch (error) {
       setIsActive(!newState);
-      toast.error('Failed to change status');
+      toast.error(t("failed_to_update_status_toast"));
     }
   };
+
+  const markDraftAsGenerated = useCallback(
+    (flowNodes: AutomationFlowNode[]): AutomationCanvasNode[] => {
+      const metadata: AutomationAIDraftMetadata = {
+        source: "ai",
+        status: "draft_generated",
+        originalPrompt: generatorPrompt.trim(),
+        generatedAt: new Date().toISOString(),
+        reviewedManually: false,
+        reviewedAt: null,
+      };
+
+      return applyAutomationAIDraftMetadata(
+        flowNodes,
+        metadata,
+      ) as AutomationCanvasNode[];
+    },
+    [generatorPrompt],
+  );
+
+  const handleConfirmReview = useCallback(() => {
+    setNodes(
+      (currentNodes) =>
+        markAutomationAIDraftAsReviewed(
+          currentNodes as AutomationFlowNode[],
+        ) as AutomationCanvasNode[],
+    );
+    toast.success(t("ai_review.confirmed_toast"));
+  }, [setNodes, t]);
 
   const handleAutoArrange = useCallback(() => {
     if (nodes.length <= 1) {
@@ -301,15 +526,18 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
     }
 
     for (const edge of edges) {
-      outgoing.set(edge.source, [...(outgoing.get(edge.source) ?? []), edge.target]);
+      outgoing.set(edge.source, [
+        ...(outgoing.get(edge.source) ?? []),
+        edge.target,
+      ]);
       incomingCount.set(edge.target, (incomingCount.get(edge.target) ?? 0) + 1);
     }
 
     const roots = nodes
       .filter((node) => (incomingCount.get(node.id) ?? 0) === 0)
       .sort((a, b) => {
-        if (a.type === 'start' && b.type !== 'start') return -1;
-        if (a.type !== 'start' && b.type === 'start') return 1;
+        if (a.type === "start" && b.type !== "start") return -1;
+        if (a.type !== "start" && b.type === "start") return 1;
         return a.position.y - b.position.y;
       });
 
@@ -331,8 +559,14 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
       const currentLevel = levelByNode.get(currentId) ?? 0;
 
       for (const target of outgoing.get(currentId) ?? []) {
-        levelByNode.set(target, Math.max(levelByNode.get(target) ?? 0, currentLevel + 1));
-        workingIncomingCount.set(target, (workingIncomingCount.get(target) ?? 0) - 1);
+        levelByNode.set(
+          target,
+          Math.max(levelByNode.get(target) ?? 0, currentLevel + 1),
+        );
+        workingIncomingCount.set(
+          target,
+          (workingIncomingCount.get(target) ?? 0) - 1,
+        );
 
         if ((workingIncomingCount.get(target) ?? 0) <= 0) {
           queue.push(target);
@@ -355,14 +589,20 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
     }
 
     const sortedLevels = Array.from(nodesByLevel.keys()).sort((a, b) => a - b);
-    const largestColumn = Math.max(...sortedLevels.map((level) => nodesByLevel.get(level)?.length ?? 0), 1);
+    const largestColumn = Math.max(
+      ...sortedLevels.map((level) => nodesByLevel.get(level)?.length ?? 0),
+      1,
+    );
 
     const arrangedPositions = new Map<string, { x: number; y: number }>();
 
     sortedLevels.forEach((level) => {
-      const levelNodes = [...(nodesByLevel.get(level) ?? [])].sort((a, b) => a.position.y - b.position.y);
+      const levelNodes = [...(nodesByLevel.get(level) ?? [])].sort(
+        (a, b) => a.position.y - b.position.y,
+      );
       const columnHeight = (levelNodes.length - 1) * VERTICAL_SPACING;
-      const verticalOffset = ((largestColumn - 1) * VERTICAL_SPACING - columnHeight) / 2;
+      const verticalOffset =
+        ((largestColumn - 1) * VERTICAL_SPACING - columnHeight) / 2;
 
       levelNodes.forEach((node, index) => {
         arrangedPositions.set(node.id, {
@@ -389,7 +629,7 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
 
   const handleGenerateFlow = async () => {
     if (generatorPrompt.trim().length < 10) {
-      setGenerationError(t('ai_generator.prompt_too_short'));
+      setGenerationError(t("ai_generator.prompt_too_short"));
       setGenerationValidationErrors([]);
       setGenerationResult(null);
       return;
@@ -401,29 +641,31 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
     setGenerationResult(null);
 
     try {
-      const result: GenerateAutomationFlowResult = await generateAutomationFlow({
-        prompt: generatorPrompt,
-        locale,
-        channel: generatorChannel,
-        allowedNodeTypes: availableNodeTypes,
-        nodeContentConstraints: generatorConstraints,
-        temperature: Number(generatorTemperature.toFixed(1)),
-        maxOutputTokens: generatorMaxTokens,
-      });
+      const result: GenerateAutomationFlowResult = await generateAutomationFlow(
+        {
+          prompt: generatorPrompt,
+          locale,
+          channel: generatorChannel,
+          allowedNodeTypes: availableNodeTypes,
+          nodeContentConstraints: generatorConstraints,
+          temperature: Number(generatorTemperature.toFixed(1)),
+          maxOutputTokens: generatorMaxTokens,
+        },
+      );
 
       setGenerationRawResponse(result.rawResponse ?? null);
 
       if (!result.success || !result.flow) {
-        setGenerationError(result.error ?? t('ai_generator.generic_error'));
+        setGenerationError(result.error ?? t("ai_generator.generic_error"));
         setGenerationValidationErrors(result.validationErrors ?? []);
         return;
       }
 
       setGenerationResult(result.flow);
       setGenerationValidationErrors([]);
-      toast.success(t('ai_generator.generated_toast'));
+      toast.success(t("ai_generator.generated_toast"));
     } catch (error) {
-      setGenerationError(t('ai_generator.generic_error'));
+      setGenerationError(t("ai_generator.generic_error"));
     } finally {
       setIsGenerating(false);
     }
@@ -434,12 +676,13 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
       return;
     }
 
-    if (insertMode === 'replace') {
-      setNodes(generationResult.nodes as AutomationCanvasNode[]);
+    if (insertMode === "replace") {
+      setNodes(markDraftAsGenerated(generationResult.nodes));
       setEdges(generationResult.edges as AutomationCanvasEdge[]);
       setSelectedNodeId(null);
+      setIsActive(false);
       setIsGeneratorOpen(false);
-      toast.success(t('ai_generator.inserted_replace_toast'));
+      toast.success(t("ai_generator.inserted_replace_toast"));
       requestAnimationFrame(() => fitView({ padding: 0.2, duration: 350 }));
       return;
     }
@@ -449,7 +692,7 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
       currentEdges: edges,
       generatedNodes: generationResult.nodes,
       generatedEdges: generationResult.edges,
-      selectedNodeId: selectedNodeId ?? '',
+      selectedNodeId: selectedNodeId ?? "",
     });
 
     if (!mergeResult.success) {
@@ -457,15 +700,16 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
       return;
     }
 
-    setNodes(mergeResult.nodes as AutomationCanvasNode[]);
+    setNodes(markDraftAsGenerated(mergeResult.nodes as AutomationFlowNode[]));
     setEdges(mergeResult.edges as AutomationCanvasEdge[]);
+    setIsActive(false);
     setIsGeneratorOpen(false);
-    toast.success(t('ai_generator.inserted_subflow_toast'));
+    toast.success(t("ai_generator.inserted_subflow_toast"));
     requestAnimationFrame(() => fitView({ padding: 0.2, duration: 350 }));
   };
 
-  const bgColor = isDarkMode ? '#020617' : '#f8fafc';
-  const dotColor = isDarkMode ? '#334155' : '#cbd5e1';
+  const bgColor = isDarkMode ? "#020617" : "#f8fafc";
+  const dotColor = isDarkMode ? "#334155" : "#cbd5e1";
   const isShortViewport = viewportSize.height > 0 && viewportSize.height < 820;
   const isCompactViewport = viewportSize.width > 0 && viewportSize.width < 1440;
   const miniMapHeight = isShortViewport ? 96 : 136;
@@ -473,9 +717,9 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
   const miniMapBottomOffset = CONTROL_STACK_HEIGHT + OVERLAY_GAP * 2;
 
   const controlsStyle = {
-    backgroundColor: isDarkMode ? '#0f172a' : '#ffffff',
-    color: isDarkMode ? '#f8fafc' : '#0f172a',
-    borderColor: isDarkMode ? '#1e293b' : '#e2e8f0',
+    backgroundColor: isDarkMode ? "#0f172a" : "#ffffff",
+    color: isDarkMode ? "#f8fafc" : "#0f172a",
+    borderColor: isDarkMode ? "#1e293b" : "#e2e8f0",
     left: 16,
     bottom: 16,
     borderRadius: 12,
@@ -483,7 +727,7 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
   };
 
   const miniMapStyle = {
-    backgroundColor: isDarkMode ? '#0f172a' : '#ffffff',
+    backgroundColor: isDarkMode ? "#0f172a" : "#ffffff",
     height: miniMapHeight,
     width: miniMapWidth,
     left: 16,
@@ -501,39 +745,84 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
               <ArrowLeft className="h-5 w-5 text-muted-foreground" />
             </Button>
             <div>
-              <h1 className="text-lg font-bold text-foreground">{t('header_title')}</h1>
+              <h1 className="text-lg font-bold text-foreground">
+                {t("header_title")}
+              </h1>
               <div className="flex items-center gap-2">
-                <p className="text-xs text-muted-foreground">ID: {automationId}</p>
-                <span className={`inline-flex items-center px-1.5 rounded-full text-[10px] font-medium ${
-                  isActive
-                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                    : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
-                }`}>
-                  {isActive ? t('status_active') : t('status_draft')}
+                <p className="text-xs text-muted-foreground">
+                  ID: {automationId}
+                </p>
+                <span
+                  className={`inline-flex items-center px-1.5 rounded-full text-[10px] font-medium ${
+                    isActive
+                      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                      : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                  }`}
+                >
+                  {isActive ? t("status_active") : t("status_draft")}
                 </span>
+                {aiDraftMetadata && (
+                  <span
+                    className={`inline-flex items-center px-1.5 rounded-full text-[10px] font-medium ${
+                      requiresManualReview
+                        ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                        : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                    }`}
+                  >
+                    {requiresManualReview
+                      ? t("status_ai_draft_generated")
+                      : t("status_ai_reviewed")}
+                  </span>
+                )}
               </div>
             </div>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => {
-              setIsGeneratorOpen(true);
-              resetGeneratorState();
-            }}>
+            {aiDraftMetadata && (
+              <Button
+                variant={requiresManualReview ? "default" : "outline"}
+                size="sm"
+                onClick={handleConfirmReview}
+                disabled={!requiresManualReview}
+              >
+                <CheckCircle2 className="h-4 w-4 mr-1.5" />
+                {requiresManualReview
+                  ? t("ai_review.confirm_btn")
+                  : t("ai_review.confirmed_btn")}
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsGeneratorOpen(true);
+                resetGeneratorState();
+              }}
+            >
               <Sparkles className="h-4 w-4 mr-1.5" />
-              {t('ai_generator.open_btn')}
+              {t("ai_generator.open_btn")}
             </Button>
             <Button variant="outline" size="sm" onClick={handleAutoArrange}>
               <LayoutGrid className="h-4 w-4 mr-1.5" />
-              {t('ai_generator.organize_btn')}
+              {t("ai_generator.organize_btn")}
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={toggleActive}
-              className={isActive ? 'text-orange-600 hover:text-orange-700 hover:bg-orange-50' : 'text-green-600 hover:text-green-700 hover:bg-green-50'}
+              disabled={!isActive && requiresManualReview}
+              className={
+                isActive
+                  ? "text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                  : "text-green-600 hover:text-green-700 hover:bg-green-50"
+              }
             >
-              {isActive ? <PauseCircle className="h-4 w-4 mr-1.5" /> : <PlayCircle className="h-4 w-4 mr-1.5" />}
-              {isActive ? t('pause') : t('activate')}
+              {isActive ? (
+                <PauseCircle className="h-4 w-4 mr-1.5" />
+              ) : (
+                <PlayCircle className="h-4 w-4 mr-1.5" />
+              )}
+              {isActive ? t("pause") : t("activate")}
             </Button>
             <Button
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
@@ -541,11 +830,50 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
               disabled={isSaving}
               size="sm"
             >
-              {isSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-              {isSaving ? t('saving') : t('save_btn')}
+              {isSaving ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 mr-2" />
+              )}
+              {isSaving ? t("saving") : t("save_btn")}
             </Button>
           </div>
         </header>
+
+        {aiDraftMetadata && (
+          <div
+            className={`border-b px-6 py-3 text-sm ${
+              requiresManualReview
+                ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100"
+                : "border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-100"
+            }`}
+          >
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 font-medium">
+                  <AlertTriangle className="h-4 w-4" />
+                  {requiresManualReview
+                    ? t("ai_review.banner_title")
+                    : t("ai_review.reviewed_title")}
+                </div>
+                <p className="text-xs md:text-sm">
+                  {requiresManualReview
+                    ? t("ai_review.banner_description")
+                    : t("ai_review.reviewed_description")}
+                </p>
+              </div>
+              {requiresManualReview && (
+                <p className="text-xs text-amber-800/80 dark:text-amber-200/80">
+                  {t("ai_review.generated_meta", {
+                    timestamp: new Date(
+                      aiDraftMetadata.generatedAt,
+                    ).toLocaleString(locale),
+                  })}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="flex min-h-0 min-w-0 w-full flex-1">
           <Sidebar />
@@ -574,8 +902,12 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
                 position="bottom-left"
                 style={miniMapStyle}
                 className="border shadow-lg backdrop-blur-sm"
-                maskColor={isDarkMode ? 'rgba(2, 6, 23, 0.7)' : 'rgba(248, 250, 252, 0.7)'}
-                nodeColor={isDarkMode ? '#334155' : '#cbd5e1'}
+                maskColor={
+                  isDarkMode
+                    ? "rgba(2, 6, 23, 0.7)"
+                    : "rgba(248, 250, 252, 0.7)"
+                }
+                nodeColor={isDarkMode ? "#334155" : "#cbd5e1"}
                 pannable
                 zoomable
               />
@@ -589,23 +921,29 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
             </ReactFlow>
           </div>
 
-          <PropertiesPanel selectedNode={selectedNode} onUpdateNode={updateNodeData} onClose={() => setSelectedNodeId(null)} />
+          <PropertiesPanel
+            selectedNode={selectedNode}
+            onUpdateNode={updateNodeData}
+            onClose={() => setSelectedNodeId(null)}
+          />
         </div>
       </div>
 
       <Dialog open={isSavePreviewOpen} onOpenChange={setIsSavePreviewOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{t('save_preview.title')}</DialogTitle>
-            <DialogDescription>{t('save_preview.description')}</DialogDescription>
+            <DialogTitle>{t("save_preview.title")}</DialogTitle>
+            <DialogDescription>
+              {t("save_preview.description")}
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             {savePreviewFlow && (
               <div className="rounded-lg border bg-muted/20 p-3 text-sm">
-                <div className="font-medium">{t('save_preview.sequence')}</div>
+                <div className="font-medium">{t("save_preview.sequence")}</div>
                 <div className="mt-2 text-muted-foreground">
-                  {t('save_preview.counts', {
+                  {t("save_preview.counts", {
                     nodes: savePreviewFlow.preview.nodeCount,
                     edges: savePreviewFlow.preview.edgeCount,
                   })}
@@ -617,7 +955,7 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
                 <div className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-400">
                   <AlertTriangle className="h-4 w-4" />
-                  {t('save_preview.warnings_title')}
+                  {t("save_preview.warnings_title")}
                 </div>
                 <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-700/90 dark:text-amber-300">
                   {savePreviewWarnings.map((warning, index) => (
@@ -631,7 +969,7 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
               <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
                 <div className="flex items-center gap-2 font-medium text-destructive">
                   <AlertTriangle className="h-4 w-4" />
-                  {t('save_preview.errors_title')}
+                  {t("save_preview.errors_title")}
                 </div>
                 <ul className="mt-2 list-disc space-y-1 pl-5 text-destructive/90">
                   {savePreviewErrors.map((error, index) => (
@@ -645,19 +983,31 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
               <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-3 text-sm text-green-700 dark:text-green-400">
                 <div className="flex items-center gap-2 font-medium">
                   <CheckCircle2 className="h-4 w-4" />
-                  {t('save_preview.ready_title')}
+                  {t("save_preview.ready_title")}
                 </div>
               </div>
             )}
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsSavePreviewOpen(false)}>
-              {t('save_preview.back_btn')}
+            <Button
+              variant="outline"
+              onClick={() => setIsSavePreviewOpen(false)}
+            >
+              {t("save_preview.back_btn")}
             </Button>
-            <Button onClick={handleConfirmSave} disabled={!savePreviewFlow || savePreviewErrors.length > 0 || isSaving}>
-              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              {isSaving ? t('saving') : t('save_preview.confirm_btn')}
+            <Button
+              onClick={handleConfirmSave}
+              disabled={
+                !savePreviewFlow || savePreviewErrors.length > 0 || isSaving
+              }
+            >
+              {isSaving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
+              {isSaving ? t("saving") : t("save_preview.confirm_btn")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -666,26 +1016,30 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
       <Dialog open={isGeneratorOpen} onOpenChange={setIsGeneratorOpen}>
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
-            <DialogTitle>{t('ai_generator.title')}</DialogTitle>
-            <DialogDescription>{t('ai_generator.description')}</DialogDescription>
+            <DialogTitle>{t("ai_generator.title")}</DialogTitle>
+            <DialogDescription>
+              {t("ai_generator.description")}
+            </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-6 overflow-hidden lg:grid-cols-[1.1fr_0.9fr] flex-1 min-h-0">
             <div className="space-y-5 overflow-y-auto pr-1">
               <div className="space-y-2">
-                <Label htmlFor="ai-flow-prompt">{t('ai_generator.prompt_label')}</Label>
+                <Label htmlFor="ai-flow-prompt">
+                  {t("ai_generator.prompt_label")}
+                </Label>
                 <Textarea
                   id="ai-flow-prompt"
                   rows={8}
                   value={generatorPrompt}
                   onChange={(event) => setGeneratorPrompt(event.target.value)}
-                  placeholder={t('ai_generator.prompt_placeholder')}
+                  placeholder={t("ai_generator.prompt_placeholder")}
                   className="resize-none"
                 />
               </div>
 
               <div className="space-y-3">
-                <Label>{t('ai_generator.channel_label')}</Label>
+                <Label>{t("ai_generator.channel_label")}</Label>
                 <RadioGroup
                   value={generatorChannel}
                   onValueChange={(value) => {
@@ -694,12 +1048,19 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
                   }}
                   className="grid gap-3 md:grid-cols-2"
                 >
-                  {(['qr', 'api'] as AutomationAIChannel[]).map((channel) => (
-                    <label key={channel} className="flex cursor-pointer items-start gap-3 rounded-lg border p-4 hover:border-primary/60">
+                  {(["qr", "api"] as AutomationAIChannel[]).map((channel) => (
+                    <label
+                      key={channel}
+                      className="flex cursor-pointer items-start gap-3 rounded-lg border p-4 hover:border-primary/60"
+                    >
                       <RadioGroupItem value={channel} className="mt-1" />
                       <div className="space-y-1">
-                        <div className="font-medium">{t(`ai_generator.channels.${channel}.title`)}</div>
-                        <p className="text-sm text-muted-foreground">{t(`ai_generator.channels.${channel}.description`)}</p>
+                        <div className="font-medium">
+                          {t(`ai_generator.channels.${channel}.title`)}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {t(`ai_generator.channels.${channel}.description`)}
+                        </p>
                       </div>
                     </label>
                   ))}
@@ -709,19 +1070,25 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-2">
-                    <Label>{t('ai_generator.temperature_label')}</Label>
-                    <span className="text-xs text-muted-foreground">{generatorTemperature.toFixed(1)}</span>
+                    <Label>{t("ai_generator.temperature_label")}</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {generatorTemperature.toFixed(1)}
+                    </span>
                   </div>
                   <Slider
                     min={0}
                     max={2}
                     step={0.1}
                     value={[generatorTemperature]}
-                    onValueChange={(value) => setGeneratorTemperature(value[0] ?? 0.7)}
+                    onValueChange={(value) =>
+                      setGeneratorTemperature(value[0] ?? 0.7)
+                    }
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="ai-flow-max-tokens">{t('ai_generator.max_tokens_label')}</Label>
+                  <Label htmlFor="ai-flow-max-tokens">
+                    {t("ai_generator.max_tokens_label")}
+                  </Label>
                   <Input
                     id="ai-flow-max-tokens"
                     type="number"
@@ -729,23 +1096,37 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
                     max={4096}
                     step={64}
                     value={generatorMaxTokens}
-                    onChange={(event) => setGeneratorMaxTokens(Number(event.target.value) || 1200)}
+                    onChange={(event) =>
+                      setGeneratorMaxTokens(Number(event.target.value) || 1200)
+                    }
                   />
                 </div>
               </div>
 
               <Card>
                 <CardHeader>
-                  <CardTitle>{t('ai_generator.allowed_nodes_title')}</CardTitle>
-                  <CardDescription>{t('ai_generator.allowed_nodes_desc')}</CardDescription>
+                  <CardTitle>{t("ai_generator.allowed_nodes_title")}</CardTitle>
+                  <CardDescription>
+                    {t("ai_generator.allowed_nodes_desc")}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {AUTOMATION_AI_NODE_CATALOG.filter((node) => node.channels.includes(generatorChannel)).map((node) => (
+                  {AUTOMATION_AI_NODE_CATALOG.filter((node) =>
+                    node.channels.includes(generatorChannel),
+                  ).map((node) => (
                     <div key={node.type} className="rounded-lg border p-3">
-                      <div className="font-medium text-sm">{t(node.labelKey)}</div>
-                      <div className="text-xs text-muted-foreground mt-1">{node.description}</div>
-                      <div className="text-xs mt-2 text-muted-foreground">{generatorConstraints[node.type]}</div>
-                      <div className="text-[11px] mt-2 text-muted-foreground">{node.examples.join(' · ')}</div>
+                      <div className="font-medium text-sm">
+                        {t(node.labelKey)}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {node.description}
+                      </div>
+                      <div className="text-xs mt-2 text-muted-foreground">
+                        {generatorConstraints[node.type]}
+                      </div>
+                      <div className="text-[11px] mt-2 text-muted-foreground">
+                        {node.examples.join(" · ")}
+                      </div>
                     </div>
                   ))}
                 </CardContent>
@@ -755,8 +1136,10 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
             <div className="space-y-4 overflow-y-auto pr-1">
               <Card>
                 <CardHeader>
-                  <CardTitle>{t('ai_generator.preview_title')}</CardTitle>
-                  <CardDescription>{t('ai_generator.preview_desc')}</CardDescription>
+                  <CardTitle>{t("ai_generator.preview_title")}</CardTitle>
+                  <CardDescription>
+                    {t("ai_generator.preview_desc")}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {generationError && (
@@ -772,7 +1155,7 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
                     <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
                       <div className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-400">
                         <AlertTriangle className="h-4 w-4" />
-                        {t('ai_generator.validation_errors_title')}
+                        {t("ai_generator.validation_errors_title")}
                       </div>
                       <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-700/90 dark:text-amber-300">
                         {generationValidationErrors.map((error, index) => (
@@ -790,16 +1173,27 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
                           {generationResult.suggestedName}
                         </div>
                         <div className="mt-2 text-xs text-muted-foreground">
-                          {t('ai_generator.preview_counts', {
+                          {t("ai_generator.preview_counts", {
                             nodes: generationResult.nodes.length,
                             edges: generationResult.edges.length,
                           })}
                         </div>
                       </div>
 
+                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-900 dark:text-amber-100">
+                        <div className="font-medium">
+                          {t("ai_generator.review_notice_title")}
+                        </div>
+                        <p className="mt-1 text-xs text-amber-800/90 dark:text-amber-200/90">
+                          {t("ai_generator.review_notice_description")}
+                        </p>
+                      </div>
+
                       {generationResult.warnings.length > 0 && (
                         <div>
-                          <div className="text-sm font-medium mb-2">{t('ai_generator.warnings_title')}</div>
+                          <div className="text-sm font-medium mb-2">
+                            {t("ai_generator.warnings_title")}
+                          </div>
                           <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
                             {generationResult.warnings.map((warning, index) => (
                               <li key={`${warning}-${index}`}>{warning}</li>
@@ -810,28 +1204,51 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
 
                       {currentFlowHasEditableNodes && (
                         <div className="space-y-3 rounded-lg border p-3">
-                          <div className="text-sm font-medium">{t('ai_generator.insert_mode_title')}</div>
-                          <RadioGroup value={insertMode} onValueChange={(value) => setInsertMode(value as InsertMode)} className="grid gap-3">
+                          <div className="text-sm font-medium">
+                            {t("ai_generator.insert_mode_title")}
+                          </div>
+                          <RadioGroup
+                            value={insertMode}
+                            onValueChange={(value) =>
+                              setInsertMode(value as InsertMode)
+                            }
+                            className="grid gap-3"
+                          >
                             <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:border-primary/60">
-                              <RadioGroupItem value="replace" className="mt-1" />
+                              <RadioGroupItem
+                                value="replace"
+                                className="mt-1"
+                              />
                               <div>
-                                <div className="flex items-center gap-2 font-medium"><RotateCcw className="h-4 w-4" /> {t('ai_generator.insert_modes.replace_title')}</div>
-                                <p className="text-sm text-muted-foreground">{t('ai_generator.insert_modes.replace_desc')}</p>
+                                <div className="flex items-center gap-2 font-medium">
+                                  <RotateCcw className="h-4 w-4" />{" "}
+                                  {t("ai_generator.insert_modes.replace_title")}
+                                </div>
+                                <p className="text-sm text-muted-foreground">
+                                  {t("ai_generator.insert_modes.replace_desc")}
+                                </p>
                               </div>
                             </label>
                             <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:border-primary/60">
                               <RadioGroupItem value="insert" className="mt-1" />
                               <div>
-                                <div className="flex items-center gap-2 font-medium"><GitBranchPlus className="h-4 w-4" /> {t('ai_generator.insert_modes.insert_title')}</div>
-                                <p className="text-sm text-muted-foreground">{t('ai_generator.insert_modes.insert_desc')}</p>
+                                <div className="flex items-center gap-2 font-medium">
+                                  <GitBranchPlus className="h-4 w-4" />{" "}
+                                  {t("ai_generator.insert_modes.insert_title")}
+                                </div>
+                                <p className="text-sm text-muted-foreground">
+                                  {t("ai_generator.insert_modes.insert_desc")}
+                                </p>
                               </div>
                             </label>
                           </RadioGroup>
-                          {insertMode === 'insert' && (
+                          {insertMode === "insert" && (
                             <p className="text-xs text-muted-foreground">
                               {selectedNodeId
-                                ? t('ai_generator.selected_node_ready', { nodeId: selectedNodeId })
-                                : t('ai_generator.select_node_hint')}
+                                ? t("ai_generator.selected_node_ready", {
+                                    nodeId: selectedNodeId,
+                                  })
+                                : t("ai_generator.select_node_hint")}
                             </p>
                           )}
                         </div>
@@ -840,30 +1257,122 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
                       <Separator />
 
                       <div className="space-y-3">
+                        {generatedFlowSummary && (
+                          <div className="space-y-3">
+                            <div className="text-sm font-medium">
+                              {t("ai_generator.diff_title")}
+                            </div>
+                            <div className="grid gap-3 md:grid-cols-2">
+                              {(
+                                [
+                                  [
+                                    "outgoingMessages",
+                                    t("ai_generator.diff_sections.messages"),
+                                  ],
+                                  [
+                                    "conditions",
+                                    t("ai_generator.diff_sections.conditions"),
+                                  ],
+                                  [
+                                    "savedVariables",
+                                    t("ai_generator.diff_sections.variables"),
+                                  ],
+                                  [
+                                    "links",
+                                    t("ai_generator.diff_sections.links"),
+                                  ],
+                                ] as const
+                              ).map(([key, title]) => {
+                                const items = generatedFlowSummary[key];
+                                return (
+                                  <div
+                                    key={key}
+                                    className="rounded-lg border p-3"
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="text-sm font-medium">
+                                        {title}
+                                      </div>
+                                      <span className="text-xs text-muted-foreground">
+                                        {items.length}
+                                      </span>
+                                    </div>
+                                    {items.length > 0 ? (
+                                      <div className="mt-3 space-y-2">
+                                        {items.map((item) => (
+                                          <div
+                                            key={item.id}
+                                            className="rounded-md bg-muted/40 p-2"
+                                          >
+                                            <div className="text-sm font-medium leading-snug">
+                                              {item.title}
+                                            </div>
+                                            {item.description && (
+                                              <div className="mt-1 text-xs text-muted-foreground">
+                                                {item.description}
+                                              </div>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <p className="mt-3 text-xs text-muted-foreground">
+                                        {t("ai_generator.diff_empty")}
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
                         <div>
-                          <div className="text-sm font-medium mb-2">{t('ai_generator.nodes_title')}</div>
+                          <div className="text-sm font-medium mb-2">
+                            {t("ai_generator.nodes_title")}
+                          </div>
                           <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
                             {generationResult.nodes.map((node) => (
-                              <div key={node.id} className="rounded-lg border p-3 text-sm">
+                              <div
+                                key={node.id}
+                                className="rounded-lg border p-3 text-sm"
+                              >
                                 <div className="font-medium">{node.type}</div>
-                                <div className="text-xs text-muted-foreground mt-1">{node.id}</div>
-                                <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-muted-foreground">{JSON.stringify(node.data, null, 2)}</pre>
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  {node.id}
+                                </div>
+                                <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                                  {JSON.stringify(node.data, null, 2)}
+                                </pre>
                               </div>
                             ))}
                           </div>
                         </div>
 
                         <div>
-                          <div className="text-sm font-medium mb-2">{t('ai_generator.edges_title')}</div>
+                          <div className="text-sm font-medium mb-2">
+                            {t("ai_generator.edges_title")}
+                          </div>
                           <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                             {generationResult.edges.map((edge) => (
-                              <div key={edge.id} className="rounded-lg border p-3 text-xs text-muted-foreground">
-                                <div>{edge.source} → {edge.target}</div>
+                              <div
+                                key={edge.id}
+                                className="rounded-lg border p-3 text-xs text-muted-foreground"
+                              >
+                                <div>
+                                  {edge.source} → {edge.target}
+                                </div>
                                 {(edge.sourceHandle || edge.targetHandle) && (
                                   <div className="mt-1">
-                                    {edge.sourceHandle ? `sourceHandle=${edge.sourceHandle}` : null}
-                                    {edge.sourceHandle && edge.targetHandle ? ' · ' : null}
-                                    {edge.targetHandle ? `targetHandle=${edge.targetHandle}` : null}
+                                    {edge.sourceHandle
+                                      ? `sourceHandle=${edge.sourceHandle}`
+                                      : null}
+                                    {edge.sourceHandle && edge.targetHandle
+                                      ? " · "
+                                      : null}
+                                    {edge.targetHandle
+                                      ? `targetHandle=${edge.targetHandle}`
+                                      : null}
                                   </div>
                                 )}
                               </div>
@@ -874,14 +1383,20 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
                     </>
                   ) : (
                     <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                      {isGenerating ? t('ai_generator.generating_preview') : t('ai_generator.empty_preview')}
+                      {isGenerating
+                        ? t("ai_generator.generating_preview")
+                        : t("ai_generator.empty_preview")}
                     </div>
                   )}
 
                   {generationRawResponse && !generationResult && (
                     <details className="rounded-lg border p-3 text-xs text-muted-foreground">
-                      <summary className="cursor-pointer font-medium">{t('ai_generator.raw_response_title')}</summary>
-                      <pre className="mt-3 whitespace-pre-wrap break-words">{generationRawResponse}</pre>
+                      <summary className="cursor-pointer font-medium">
+                        {t("ai_generator.raw_response_title")}
+                      </summary>
+                      <pre className="mt-3 whitespace-pre-wrap break-words">
+                        {generationRawResponse}
+                      </pre>
                     </details>
                   )}
                 </CardContent>
@@ -890,16 +1405,32 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsGeneratorOpen(false)}>{t('ai_generator.cancel_btn')}</Button>
-            <Button variant="outline" onClick={handleGenerateFlow} disabled={isGenerating}>
-              {isGenerating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
-              {isGenerating ? t('ai_generator.generating_btn') : t('ai_generator.generate_btn')}
+            <Button variant="outline" onClick={() => setIsGeneratorOpen(false)}>
+              {t("ai_generator.cancel_btn")}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleGenerateFlow}
+              disabled={isGenerating}
+            >
+              {isGenerating ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4 mr-2" />
+              )}
+              {isGenerating
+                ? t("ai_generator.generating_btn")
+                : t("ai_generator.generate_btn")}
             </Button>
             <Button
               onClick={handleInsertGeneratedFlow}
-              disabled={!generationResult || generationValidationErrors.length > 0 || (insertMode === 'insert' && !selectedNodeId)}
+              disabled={
+                !generationResult ||
+                generationValidationErrors.length > 0 ||
+                (insertMode === "insert" && !selectedNodeId)
+              }
             >
-              {t('ai_generator.insert_btn')}
+              {t("ai_generator.insert_btn")}
             </Button>
           </DialogFooter>
         </DialogContent>
