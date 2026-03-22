@@ -850,23 +850,19 @@ function FlowBuilderContent({
                   : t("ai_review.confirmed_btn")}
               </Button>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!isAIFlowGeneratorEnabled}
-              onClick={() => {
-                if (!isAIFlowGeneratorEnabled) {
-                  return;
-                }
-                setIsGeneratorOpen(true);
-                resetGeneratorState();
-              }}
-            >
-              <Sparkles className="h-4 w-4 mr-1.5" />
-              {isAIFlowGeneratorEnabled
-                ? t("ai_generator.open_btn")
-                : t("ai_generator.disabled_btn")}
-            </Button>
+            {isAIFlowGeneratorEnabled && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setIsGeneratorOpen(true);
+                  resetGeneratorState();
+                }}
+              >
+                <Sparkles className="h-4 w-4 mr-1.5" />
+                {t("ai_generator.open_btn")}
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={handleAutoArrange}>
               <LayoutGrid className="h-4 w-4 mr-1.5" />
               {t("ai_generator.organize_btn")}
@@ -1078,11 +1074,12 @@ function FlowBuilderContent({
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={isAIFlowGeneratorEnabled && isGeneratorOpen}
-        onOpenChange={setIsGeneratorOpen}
-      >
-        <DialogContent className="flex h-screen w-screen max-h-none max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:rounded-none">
+      {isAIFlowGeneratorEnabled && (
+        <Dialog
+          open={isGeneratorOpen}
+          onOpenChange={setIsGeneratorOpen}
+        >
+          <DialogContent className="flex h-screen w-screen max-h-none max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:rounded-none">
           <DialogHeader className="shrink-0 border-b px-6 py-4 text-left">
             <DialogTitle>{t("ai_generator.title")}</DialogTitle>
             <DialogDescription>
@@ -1729,8 +1726,9 @@ function FlowBuilderContent({
               </Button>
             )}
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      )}
     </>
   );
 }

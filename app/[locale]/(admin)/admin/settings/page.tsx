@@ -36,9 +36,9 @@ export default async function AdminSettingsPage() {
           <form action={saveAutomationAdminSettings} className="space-y-4">
             <div className="flex items-start justify-between gap-6 rounded-lg border p-4">
               <div className="space-y-1">
-                <Label htmlFor="ai-flow-generator-enabled">Generador IA de flujos</Label>
+                <Label htmlFor="ai-flow-generator-enabled">Mostrar "Generar con IA" en automatizaciones</Label>
                 <p className="text-sm text-muted-foreground">
-                  Controla si los usuarios pueden abrir el modal del generador IA desde el builder.
+                  Cuando está apagado, el botón y el modal de "Generar con IA" se ocultan del creador de flujos.
                 </p>
               </div>
               <Switch
