@@ -16,8 +16,8 @@ import {
 import {
   type AutomationFlowEdge,
   type AutomationFlowNode,
-  validateAutomationFlow,
 } from '@/lib/automation/flow-schema';
+import { prepareAutomationFlowForSave } from '@/lib/automation/flow-normalizer';
 
 export async function getAutomations() {
   const team = await getTeamForUser();
@@ -64,17 +64,17 @@ export async function saveAutomation(id: number, nodes: AutomationFlowNode[], ed
   const team = await getTeamForUser();
   if (!team) throw new Error('Unauthorized');
 
-  const validatedFlow = validateAutomationFlow({ nodes, edges });
-  if (!validatedFlow.success) {
-    throw new Error(validatedFlow.errors[0] || 'Invalid automation flow.');
+  const preparedFlow = prepareAutomationFlowForSave({ nodes, edges });
+  if (!preparedFlow.success) {
+    throw new Error(preparedFlow.errors[0] || 'Invalid automation flow.');
   }
 
   await db.update(automations)
-    .set({ nodes: validatedFlow.data.nodes, edges: validatedFlow.data.edges, updatedAt: new Date() })
+    .set({ nodes: preparedFlow.nodes, edges: preparedFlow.edges, updatedAt: new Date() })
     .where(eq(automations.id, id));
 
   revalidatePath(`/automation/${id}`);
-  return { success: true };
+  return { success: true, warnings: preparedFlow.warnings.map((warning) => warning.message) };
 }
 
 export async function toggleAutomationStatus(id: number, isActive: boolean) {
