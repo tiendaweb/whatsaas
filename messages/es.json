@@ -598,7 +598,60 @@
     "agent_label": "Agente",
     "department_label": "Departamento",
     "end_node_desc": "Este nodo cerrará inmediatamente la sesión de automatización.",
-    "save_changes_btn": "Guardar Cambios"
+    "save_changes_btn": "Guardar Cambios",
+    "ai_generator": {
+      "open_btn": "Generar con IA",
+      "organize_btn": "Organizar nodos",
+      "title": "Generador IA de flujos",
+      "description": "Describe la automatización que quieres, revisa la vista previa estructurada e insértala en el canvas solo después de que pase la validación.",
+      "prompt_label": "Prompt",
+      "prompt_placeholder": "Ejemplo: Crea un flujo de calificación de ventas que salude al lead, pregunte su nombre, ofrezca opciones de producto y lo derive a un humano si elige enterprise.",
+      "channel_label": "Modo de generación",
+      "temperature_label": "Temperatura",
+      "max_tokens_label": "Máximo de tokens de salida",
+      "allowed_nodes_title": "Nodos permitidos y restricciones",
+      "allowed_nodes_desc": "El generador solo ve los tipos de nodo disponibles para el canal seleccionado.",
+      "preview_title": "Vista previa",
+      "preview_desc": "La validación ocurre antes de que puedas insertar el flujo generado en el canvas.",
+      "preview_counts": "{nodes} nodos · {edges} conexiones",
+      "warnings_title": "Advertencias",
+      "validation_errors_title": "Problemas de parsing o validación",
+      "insert_mode_title": "Cómo aplicar el resultado",
+      "nodes_title": "Nodos generados",
+      "edges_title": "Conexiones generadas",
+      "raw_response_title": "Respuesta cruda del modelo",
+      "empty_preview": "Todavía no hay vista previa. Genera un flujo para inspeccionar la salida estructurada.",
+      "generating_preview": "Generando vista previa…",
+      "cancel_btn": "Cancelar",
+      "generate_btn": "Generar",
+      "generating_btn": "Generando…",
+      "insert_btn": "Insertar en el canvas",
+      "generated_toast": "Borrador de automatización generado.",
+      "inserted_replace_toast": "El flujo generado se insertó y reemplazó el canvas actual.",
+      "inserted_subflow_toast": "El subflujo generado se insertó en el canvas.",
+      "generic_error": "No fue posible generar el flujo en este momento.",
+      "save_failed": "No se pudo guardar el flujo.",
+      "prompt_too_short": "Escribe un prompt más detallado antes de generar.",
+      "validation_before_save_title": "Corrige los problemas de validación antes de guardar.",
+      "select_node_hint": "Selecciona un nodo compatible en el canvas si quieres insertar el resultado como subflujo.",
+      "selected_node_ready": "Nodo seleccionado: {nodeId}",
+      "channels": {
+        "qr": {
+          "title": "QR / Web",
+          "description": "Permite componentes de Mensaje de texto plano y multimedia."
+        },
+        "api": {
+          "title": "API oficial",
+          "description": "Deshabilita los nodos Message y Media. Prioriza nodos interactivos de API."
+        }
+      },
+      "insert_modes": {
+        "replace_title": "Reemplazar flujo actual",
+        "replace_desc": "Sobrescribe el canvas actual con la vista previa generada.",
+        "insert_title": "Insertar desde el nodo seleccionado",
+        "insert_desc": "Mantiene el flujo actual y conecta el subflujo generado después del nodo seleccionado."
+      }
+    }
   },
   "Templates": {
     "no_waba_instance_connected": "Sin Instancia WABA Conectada",

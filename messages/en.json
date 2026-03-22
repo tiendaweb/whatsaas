@@ -599,7 +599,60 @@
     "agent_label": "Agent",
     "department_label": "Department",
     "end_node_desc": "This node will immediately close the automation session.",
-    "save_changes_btn": "Save Changes"
+    "save_changes_btn": "Save Changes",
+    "ai_generator": {
+      "open_btn": "Generate with AI",
+      "organize_btn": "Organize nodes",
+      "title": "AI flow generator",
+      "description": "Describe the automation you want, review the structured preview, and insert it into the canvas only after validation passes.",
+      "prompt_label": "Prompt",
+      "prompt_placeholder": "Example: Create a sales qualification flow that greets the lead, asks for their name, offers product options, and sends them to a human if they choose enterprise.",
+      "channel_label": "Generation mode",
+      "temperature_label": "Temperature",
+      "max_tokens_label": "Max output tokens",
+      "allowed_nodes_title": "Allowed nodes and constraints",
+      "allowed_nodes_desc": "The generator only sees the node types available for the selected channel.",
+      "preview_title": "Preview",
+      "preview_desc": "Validation happens before you can insert the generated flow into the canvas.",
+      "preview_counts": "{nodes} nodes · {edges} edges",
+      "warnings_title": "Warnings",
+      "validation_errors_title": "Parsing or validation issues",
+      "insert_mode_title": "How to apply the result",
+      "nodes_title": "Generated nodes",
+      "edges_title": "Generated edges",
+      "raw_response_title": "Raw model response",
+      "empty_preview": "No preview yet. Generate a flow to inspect the structured output.",
+      "generating_preview": "Generating preview…",
+      "cancel_btn": "Cancel",
+      "generate_btn": "Generate",
+      "generating_btn": "Generating…",
+      "insert_btn": "Insert in canvas",
+      "generated_toast": "Automation draft generated.",
+      "inserted_replace_toast": "Generated flow inserted and replaced the current canvas.",
+      "inserted_subflow_toast": "Generated subflow inserted into the canvas.",
+      "generic_error": "Unable to generate the flow right now.",
+      "save_failed": "Failed to save flow.",
+      "prompt_too_short": "Please provide a more detailed prompt before generating.",
+      "validation_before_save_title": "Please fix the validation issues before saving.",
+      "select_node_hint": "Select a compatible node in the canvas if you want to insert the result as a subflow.",
+      "selected_node_ready": "Selected node: {nodeId}",
+      "channels": {
+        "qr": {
+          "title": "QR / Web",
+          "description": "Allows plain text and multimedia Message components."
+        },
+        "api": {
+          "title": "Official API",
+          "description": "Disables plain Message and Media nodes. Prefer interactive API nodes."
+        }
+      },
+      "insert_modes": {
+        "replace_title": "Replace current flow",
+        "replace_desc": "Overwrite the current canvas with the generated flow preview.",
+        "insert_title": "Insert from selected node",
+        "insert_desc": "Keep the current flow and attach the generated subflow after the selected node."
+      }
+    }
   },
   "Templates": {
     "no_waba_instance_connected": "No WABA Instance Connected",
