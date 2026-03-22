@@ -619,7 +619,7 @@
       "open_btn": "Generate with AI",
       "organize_btn": "Organize nodes",
       "title": "AI flow generator",
-      "description": "Describe the automation you want, review the structured preview, and insert it into the canvas only after validation passes.",
+      "description": "Describe the automation, review the result, and then insert it into the canvas.",
       "prompt_label": "Prompt",
       "prompt_placeholder": "Example: Create a sales qualification flow that greets the lead, asks for their name, offers product options, and sends them to a human if they choose enterprise.",
       "channel_label": "Generation mode",
@@ -630,7 +630,7 @@
       "preview_title": "Preview",
       "preview_desc": "Validation happens before you can insert the generated flow into the canvas.",
       "preview_counts": "{nodes} nodes · {edges} edges",
-      "diff_title": "Preview of created nodes",
+      "diff_title": "Flow summary",
       "diff_empty": "No items detected in this category.",
       "diff_sections": {
         "messages": "Outgoing messages",
@@ -650,8 +650,8 @@
       "status_error": "Generation error",
       "suggested_name_title": "Suggested name",
       "counts_title": "Nodes and edges",
-      "nodes_title": "Generated nodes",
-      "edges_title": "Generated edges",
+      "nodes_title": "Nodes (JSON)",
+      "edges_title": "Graph edges",
       "raw_response_title": "Raw model response",
       "empty_preview": "No preview yet. Generate a flow to inspect the structured output.",
       "generating_preview": "Generating preview…",
@@ -685,7 +685,8 @@
         "replace_desc": "Overwrite the current canvas with the generated flow preview.",
         "insert_title": "Insert from selected node",
         "insert_desc": "Keep the current flow and attach the generated subflow after the selected node."
-      }
+      },
+      "generate_again_btn": "Generate again"
     },
     "save_preview": {
       "title": "Review before saving",

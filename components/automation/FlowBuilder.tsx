@@ -39,7 +39,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import {
   ArrowLeft,
   Save,
@@ -96,6 +95,7 @@ import {
   type PrepareAutomationFlowResult,
 } from "@/lib/automation/flow-normalizer";
 import { createAutomationCanvasNode } from "@/lib/automation/node-catalog";
+import { cn } from "@/lib/utils";
 import type {
   AutomationAIDraftMetadata,
   AutomationCanvasEdge,
@@ -336,6 +336,13 @@ function FlowBuilderContent({
   );
 
   const currentFlowHasEditableNodes = nodes.length > 0;
+  const hasValidGeneration =
+    generationResult !== null && generationValidationErrors.length === 0;
+  const showInsertSelectionHelper =
+    hasValidGeneration &&
+    currentFlowHasEditableNodes &&
+    insertMode === "insert" &&
+    !selectedNodeId;
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) || null;
   const aiDraftMetadata = useMemo(
     () => getAutomationAIDraftMetadata(nodes as AutomationFlowNode[]),
@@ -1026,14 +1033,15 @@ function FlowBuilderContent({
           <div className="flex-1 overflow-y-auto">
             <div className="grid min-h-full gap-4 px-6 py-4 lg:grid-cols-[1.35fr_0.85fr]">
               <div className="space-y-4">
-                <Card>
-                  <CardHeader className="pb-4">
-                    <CardTitle>{t("ai_generator.prompt_label")}</CardTitle>
-                    <CardDescription>
+                <section className="rounded-xl bg-muted/20 p-5">
+                  <div className="space-y-1 pb-4">
+                    <h3 className="font-semibold">{t("ai_generator.prompt_label")}</h3>
+                    <p className="text-sm text-muted-foreground">
                       {t("ai_generator.prompt_placeholder")}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
+                    </p>
+                  </div>
+
+                  <div className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="ai-flow-prompt">
                         {t("ai_generator.prompt_label")}
@@ -1046,7 +1054,7 @@ function FlowBuilderContent({
                           setGeneratorPrompt(event.target.value)
                         }
                         placeholder={t("ai_generator.prompt_placeholder")}
-                        className="resize-none"
+                        className="resize-none border-0 bg-background/90 shadow-sm"
                       />
                     </div>
 
@@ -1064,7 +1072,11 @@ function FlowBuilderContent({
                           (channel) => (
                             <label
                               key={channel}
-                              className="flex cursor-pointer items-start gap-3 rounded-lg border p-4 hover:border-primary/60"
+                              className={cn(
+                                "flex cursor-pointer items-start gap-3 rounded-xl bg-background/80 p-4 shadow-sm ring-1 ring-border transition hover:ring-primary/50",
+                                generatorChannel === channel &&
+                                  "ring-2 ring-primary/50",
+                              )}
                             >
                               <RadioGroupItem
                                 value={channel}
@@ -1085,27 +1097,10 @@ function FlowBuilderContent({
                         )}
                       </RadioGroup>
                     </div>
+                  </div>
+                </section>
 
-                    <div className="flex flex-wrap gap-3">
-                      <Button
-                        onClick={handleGenerateFlow}
-                        disabled={isGenerating}
-                        className="min-w-[180px]"
-                      >
-                        {isGenerating ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Sparkles className="mr-2 h-4 w-4" />
-                        )}
-                        {isGenerating
-                          ? t("ai_generator.generating_btn")
-                          : t("ai_generator.generate_btn")}
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <details className="rounded-lg border bg-card" open>
+                <details className="rounded-xl bg-muted/20" open>
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium marker:hidden">
                     <span className="flex items-center gap-2">
                       <Settings2 className="h-4 w-4 text-muted-foreground" />
@@ -1115,7 +1110,7 @@ function FlowBuilderContent({
                       {generatorTemperature.toFixed(1)} · {generatorMaxTokens}
                     </span>
                   </summary>
-                  <div className="border-t px-4 py-4">
+                  <div className="px-4 py-4">
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-3">
                         <div className="flex items-center justify-between gap-2">
@@ -1156,7 +1151,7 @@ function FlowBuilderContent({
                   </div>
                 </details>
 
-                <details className="rounded-lg border bg-card">
+                <details className="rounded-xl bg-muted/20">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium marker:hidden">
                     <span>{t("ai_generator.allowed_nodes_title")}</span>
                     <span className="text-xs text-muted-foreground">
@@ -1167,7 +1162,7 @@ function FlowBuilderContent({
                       }
                     </span>
                   </summary>
-                  <div className="border-t px-4 py-4">
+                  <div className="px-4 py-4">
                     <p className="mb-4 text-sm text-muted-foreground">
                       {t("ai_generator.allowed_nodes_desc")}
                     </p>
@@ -1175,7 +1170,7 @@ function FlowBuilderContent({
                       {AUTOMATION_AI_NODE_CATALOG.filter((node) =>
                         node.channels.includes(generatorChannel),
                       ).map((node) => (
-                        <div key={node.type} className="rounded-lg border p-3">
+                        <div key={node.type} className="rounded-xl bg-background/80 p-3 shadow-sm">
                           <div className="text-sm font-medium">
                             {t(node.labelKey)}
                           </div>
@@ -1196,16 +1191,15 @@ function FlowBuilderContent({
               </div>
 
               <div className="space-y-4">
-                <Card>
-                  <CardHeader className="pb-4">
-                    <CardTitle>{t("ai_generator.preview_title")}</CardTitle>
-                    <CardDescription>
+                <section className="space-y-4 rounded-xl bg-muted/20 p-5">
+                  <div className="space-y-1">
+                    <h3 className="font-semibold">{t("ai_generator.preview_title")}</h3>
+                    <p className="text-sm text-muted-foreground">
                       {t("ai_generator.preview_desc")}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
+                    </p>
+                  </div>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-lg border bg-muted/20 p-3">
+                      <div className="rounded-xl bg-background/80 p-3 shadow-sm">
                         <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                           {t("ai_generator.status_title")}
                         </div>
@@ -1214,12 +1208,12 @@ function FlowBuilderContent({
                             ? t("ai_generator.status_error")
                             : isGenerating
                               ? t("ai_generator.status_generating")
-                              : generationResult
+                              : hasValidGeneration
                                 ? t("ai_generator.status_ready")
                                 : t("ai_generator.status_idle")}
                         </div>
                       </div>
-                      <div className="rounded-lg border bg-muted/20 p-3">
+                      <div className="rounded-xl bg-background/80 p-3 shadow-sm">
                         <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                           {t("ai_generator.suggested_name_title")}
                         </div>
@@ -1230,7 +1224,7 @@ function FlowBuilderContent({
                     </div>
 
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-lg border p-3">
+                      <div className="rounded-xl bg-background/80 p-3 shadow-sm">
                         <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                           {t("ai_generator.counts_title")}
                         </div>
@@ -1243,7 +1237,7 @@ function FlowBuilderContent({
                             : "—"}
                         </div>
                       </div>
-                      <div className="rounded-lg border p-3">
+                      <div className="rounded-xl bg-background/80 p-3 shadow-sm">
                         <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                           {t("ai_generator.insert_mode_title")}
                         </div>
@@ -1282,7 +1276,7 @@ function FlowBuilderContent({
 
                     {generationResult ? (
                       <>
-                        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-900 dark:text-amber-100">
+                        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-900 dark:text-amber-100">
                           <div className="font-medium">
                             {t("ai_generator.review_notice_title")}
                           </div>
@@ -1307,7 +1301,7 @@ function FlowBuilderContent({
                         )}
 
                         {currentFlowHasEditableNodes && (
-                          <div className="space-y-3 rounded-lg border p-3">
+                          <div className="space-y-3 rounded-xl bg-background/80 p-3 shadow-sm">
                             <div className="text-sm font-medium">
                               {t("ai_generator.insert_mode_title")}
                             </div>
@@ -1318,7 +1312,13 @@ function FlowBuilderContent({
                               }
                               className="grid gap-3"
                             >
-                              <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:border-primary/60">
+                              <label
+                                className={cn(
+                                  "flex cursor-pointer items-start gap-3 rounded-xl bg-background p-3 shadow-sm ring-1 ring-border transition hover:ring-primary/50",
+                                  insertMode === "replace" &&
+                                    "ring-2 ring-primary/50",
+                                )}
+                              >
                                 <RadioGroupItem
                                   value="replace"
                                   className="mt-1"
@@ -1337,7 +1337,13 @@ function FlowBuilderContent({
                                   </p>
                                 </div>
                               </label>
-                              <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:border-primary/60">
+                              <label
+                                className={cn(
+                                  "flex cursor-pointer items-start gap-3 rounded-xl bg-background p-3 shadow-sm ring-1 ring-border transition hover:ring-primary/50",
+                                  insertMode === "insert" &&
+                                    "ring-2 ring-primary/50",
+                                )}
+                              >
                                 <RadioGroupItem
                                   value="insert"
                                   className="mt-1"
@@ -1368,12 +1374,19 @@ function FlowBuilderContent({
                         )}
 
                         {generatedFlowSummary && (
-                          <>
-                            <Separator />
-                            <div className="space-y-3">
-                              <div className="text-sm font-medium">
+                          <Card className="border shadow-sm">
+                            <CardHeader className="pb-4">
+                              <CardTitle className="text-base">
                                 {t("ai_generator.diff_title")}
-                              </div>
+                              </CardTitle>
+                              <CardDescription>
+                                {t("ai_generator.preview_counts", {
+                                  nodes: generationResult.nodes.length,
+                                  edges: generationResult.edges.length,
+                                })}
+                              </CardDescription>
+                            </CardHeader>
+                            <CardContent>
                               <div className="grid gap-3 md:grid-cols-2">
                                 {(
                                   [
@@ -1401,7 +1414,7 @@ function FlowBuilderContent({
                                   return (
                                     <div
                                       key={key}
-                                      className="rounded-lg border p-3"
+                                      className="rounded-xl bg-muted/20 p-3"
                                     >
                                       <div className="flex items-center justify-between gap-2">
                                         <div className="text-sm font-medium">
@@ -1416,7 +1429,7 @@ function FlowBuilderContent({
                                           {items.map((item) => (
                                             <div
                                               key={item.id}
-                                              className="rounded-md bg-muted/40 p-2"
+                                              className="rounded-lg bg-background/80 p-2 shadow-sm"
                                             >
                                               <div className="text-sm font-medium leading-snug">
                                                 {item.title}
@@ -1438,11 +1451,11 @@ function FlowBuilderContent({
                                   );
                                 })}
                               </div>
-                            </div>
-                          </>
+                            </CardContent>
+                          </Card>
                         )}
 
-                        <details className="rounded-lg border" open>
+                        <details className="rounded-xl bg-background/70 p-1" open>
                           <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium marker:hidden">
                             <div className="flex items-center justify-between gap-3">
                               <span>
@@ -1456,8 +1469,8 @@ function FlowBuilderContent({
                               </span>
                             </div>
                           </summary>
-                          <div className="space-y-3 border-t px-4 py-4">
-                            <details className="rounded-md border bg-muted/10">
+                          <div className="space-y-3 px-4 py-4">
+                            <details className="rounded-xl bg-muted/20">
                               <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium marker:hidden">
                                 <div className="flex items-center justify-between gap-2">
                                   <span>{t("ai_generator.nodes_title")}</span>
@@ -1470,7 +1483,7 @@ function FlowBuilderContent({
                                 {generationResult.nodes.map((node) => (
                                   <div
                                     key={node.id}
-                                    className="rounded-lg border p-3 text-sm"
+                                    className="rounded-xl bg-background/80 p-3 text-sm shadow-sm"
                                   >
                                     <div className="font-medium">
                                       {node.type}
@@ -1486,7 +1499,7 @@ function FlowBuilderContent({
                               </div>
                             </details>
 
-                            <details className="rounded-md border bg-muted/10">
+                            <details className="rounded-xl bg-muted/20">
                               <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium marker:hidden">
                                 <div className="flex items-center justify-between gap-2">
                                   <span>{t("ai_generator.edges_title")}</span>
@@ -1499,7 +1512,7 @@ function FlowBuilderContent({
                                 {generationResult.edges.map((edge) => (
                                   <div
                                     key={edge.id}
-                                    className="rounded-lg border p-3 text-xs text-muted-foreground"
+                                    className="rounded-xl bg-background/80 p-3 text-xs text-muted-foreground shadow-sm"
                                   >
                                     <div>
                                       {edge.source} → {edge.target}
@@ -1524,7 +1537,7 @@ function FlowBuilderContent({
                             </details>
 
                             {generationRawResponse && (
-                              <details className="rounded-md border bg-muted/10">
+                              <details className="rounded-xl bg-muted/20">
                                 <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium marker:hidden">
                                   <div className="flex items-center justify-between gap-2">
                                     <span>
@@ -1546,7 +1559,7 @@ function FlowBuilderContent({
                         </details>
                       </>
                     ) : (
-                      <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      <div className="rounded-xl bg-background/70 p-6 text-sm text-muted-foreground shadow-sm ring-1 ring-dashed ring-border">
                         {isGenerating
                           ? t("ai_generator.generating_preview")
                           : t("ai_generator.empty_preview")}
@@ -1554,7 +1567,7 @@ function FlowBuilderContent({
                     )}
 
                     {generationRawResponse && !generationResult && (
-                      <details className="rounded-lg border p-3 text-xs text-muted-foreground">
+                      <details className="rounded-xl bg-background/70 p-3 text-xs text-muted-foreground shadow-sm">
                         <summary className="cursor-pointer font-medium">
                           {t("ai_generator.raw_response_title")}
                         </summary>
@@ -1563,26 +1576,57 @@ function FlowBuilderContent({
                         </pre>
                       </details>
                     )}
-                  </CardContent>
-                </Card>
+                </section>
               </div>
             </div>
           </div>
+
+          {showInsertSelectionHelper && (
+            <div className="border-t border-amber-500/30 bg-amber-500/5 px-6 py-3">
+              <div className="flex items-start gap-2 text-sm text-amber-900 dark:text-amber-100">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{t("ai_generator.select_node_hint")}</span>
+              </div>
+            </div>
+          )}
 
           <DialogFooter className="shrink-0 border-t px-6 py-4">
             <Button variant="outline" onClick={() => setIsGeneratorOpen(false)}>
               {t("ai_generator.cancel_btn")}
             </Button>
-            <Button
-              onClick={handleInsertGeneratedFlow}
-              disabled={
-                !generationResult ||
-                generationValidationErrors.length > 0 ||
-                (insertMode === "insert" && !selectedNodeId)
-              }
-            >
-              {t("ai_generator.insert_btn")}
-            </Button>
+            {hasValidGeneration ? (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={handleGenerateFlow}
+                  disabled={isGenerating}
+                >
+                  {isGenerating ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="mr-2 h-4 w-4" />
+                  )}
+                  {t("ai_generator.generate_again_btn")}
+                </Button>
+                <Button
+                  onClick={handleInsertGeneratedFlow}
+                  disabled={insertMode === "insert" && !selectedNodeId}
+                >
+                  {t("ai_generator.insert_btn")}
+                </Button>
+              </>
+            ) : (
+              <Button onClick={handleGenerateFlow} disabled={isGenerating}>
+                {isGenerating ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="mr-2 h-4 w-4" />
+                )}
+                {isGenerating
+                  ? t("ai_generator.generating_btn")
+                  : t("ai_generator.generate_btn")}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
