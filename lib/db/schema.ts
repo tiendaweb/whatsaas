@@ -766,6 +766,13 @@ export const chatTheme = pgTable('chat_theme', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
+export const automationAdminSettings = pgTable('automation_admin_settings', {
+  id: serial('id').primaryKey(),
+  aiFlowGeneratorEnabled: boolean('ai_flow_generator_enabled').notNull().default(true),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
 export const paymentProviderSettings = pgTable('payment_provider_settings', {
   id: serial('id').primaryKey(),
   provider: varchar('provider', { length: 50 }).notNull().unique(),

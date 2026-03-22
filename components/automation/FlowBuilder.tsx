@@ -25,6 +25,13 @@ import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -126,6 +133,7 @@ interface FlowBuilderProps {
   initialNodes: AutomationCanvasNode[];
   initialEdges: AutomationCanvasEdge[];
   initialActive: boolean;
+  isAIFlowGeneratorEnabled: boolean;
 }
 
 const proOptions: ProOptions = { hideAttribution: true };
@@ -148,6 +156,27 @@ type GeneratedFlowSummary = {
   savedVariables: PreviewItem[];
   links: PreviewItem[];
 };
+
+const MIN_GENERATOR_TOKENS = 128;
+const MAX_GENERATOR_TOKENS = 4096;
+const DEFAULT_GENERATOR_TOKENS = 1200;
+const GENERATOR_TOKEN_PRESETS = [512, 1024, 2048, 4096] as const;
+
+function clampGeneratorMaxTokens(value: number) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_GENERATOR_TOKENS;
+  }
+
+  return Math.min(MAX_GENERATOR_TOKENS, Math.max(MIN_GENERATOR_TOKENS, Math.round(value)));
+}
+
+function isGeneratorTokenPreset(
+  value: number,
+): value is (typeof GENERATOR_TOKEN_PRESETS)[number] {
+  return GENERATOR_TOKEN_PRESETS.includes(
+    value as (typeof GENERATOR_TOKEN_PRESETS)[number],
+  );
+}
 
 function buildGeneratedFlowSummary(
   flow: AutomationGeneratedFlow,
@@ -265,6 +294,7 @@ function FlowBuilderContent({
   initialNodes,
   initialEdges,
   initialActive,
+  isAIFlowGeneratorEnabled,
 }: FlowBuilderProps) {
   const t = useTranslations("Automation");
   const locale = useLocale();
@@ -285,7 +315,9 @@ function FlowBuilderContent({
   const [generatorChannel, setGeneratorChannel] =
     useState<AutomationAIChannel>("qr");
   const [generatorTemperature, setGeneratorTemperature] = useState(0.7);
-  const [generatorMaxTokens, setGeneratorMaxTokens] = useState(1200);
+  const [generatorMaxTokens, setGeneratorMaxTokens] = useState(
+    DEFAULT_GENERATOR_TOKENS,
+  );
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationResult, setGenerationResult] =
     useState<AutomationGeneratedFlow | null>(null);
@@ -636,6 +668,11 @@ function FlowBuilderContent({
   }, [edges, fitView, nodes, setNodes]);
 
   const handleGenerateFlow = async () => {
+    const clampedMaxTokens = clampGeneratorMaxTokens(generatorMaxTokens);
+    if (clampedMaxTokens !== generatorMaxTokens) {
+      setGeneratorMaxTokens(clampedMaxTokens);
+    }
+
     if (generatorPrompt.trim().length < 10) {
       setGenerationError(t("ai_generator.prompt_too_short"));
       setGenerationValidationErrors([]);
@@ -657,7 +694,7 @@ function FlowBuilderContent({
           allowedNodeTypes: availableNodeTypes,
           nodeContentConstraints: generatorConstraints,
           temperature: Number(generatorTemperature.toFixed(1)),
-          maxOutputTokens: generatorMaxTokens,
+          maxOutputTokens: clampedMaxTokens,
         },
       );
 
@@ -802,13 +839,19 @@ function FlowBuilderContent({
             <Button
               variant="outline"
               size="sm"
+              disabled={!isAIFlowGeneratorEnabled}
               onClick={() => {
+                if (!isAIFlowGeneratorEnabled) {
+                  return;
+                }
                 setIsGeneratorOpen(true);
                 resetGeneratorState();
               }}
             >
               <Sparkles className="h-4 w-4 mr-1.5" />
-              {t("ai_generator.open_btn")}
+              {isAIFlowGeneratorEnabled
+                ? t("ai_generator.open_btn")
+                : t("ai_generator.disabled_btn")}
             </Button>
             <Button variant="outline" size="sm" onClick={handleAutoArrange}>
               <LayoutGrid className="h-4 w-4 mr-1.5" />
@@ -1021,8 +1064,11 @@ function FlowBuilderContent({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isGeneratorOpen} onOpenChange={setIsGeneratorOpen}>
-        <DialogContent className="flex max-h-[92vh] w-[min(96vw,1400px)] max-w-none flex-col gap-0 overflow-hidden p-0">
+      <Dialog
+        open={isAIFlowGeneratorEnabled && isGeneratorOpen}
+        onOpenChange={setIsGeneratorOpen}
+      >
+        <DialogContent className="flex h-screen w-screen max-h-none max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:rounded-none">
           <DialogHeader className="shrink-0 border-b px-6 py-4 text-left">
             <DialogTitle>{t("ai_generator.title")}</DialogTitle>
             <DialogDescription>
@@ -1136,16 +1182,57 @@ function FlowBuilderContent({
                         <Input
                           id="ai-flow-max-tokens"
                           type="number"
-                          min={128}
-                          max={4096}
+                          min={MIN_GENERATOR_TOKENS}
+                          max={MAX_GENERATOR_TOKENS}
                           step={64}
                           value={generatorMaxTokens}
-                          onChange={(event) =>
+                          onChange={(event) => {
                             setGeneratorMaxTokens(
-                              Number(event.target.value) || 1200,
+                              clampGeneratorMaxTokens(
+                                Number(event.target.value),
+                              ),
+                            );
+                          }}
+                          onBlur={() =>
+                            setGeneratorMaxTokens((currentValue) =>
+                              clampGeneratorMaxTokens(currentValue),
                             )
                           }
                         />
+                        <p className="text-xs text-muted-foreground">
+                          {t("ai_generator.max_tokens_hint")}
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="ai-flow-max-tokens-preset">
+                          {t("ai_generator.max_tokens_presets_label")}
+                        </Label>
+                        <Select
+                          value={
+                            isGeneratorTokenPreset(generatorMaxTokens)
+                              ? generatorMaxTokens.toString()
+                              : undefined
+                          }
+                          onValueChange={(value) =>
+                            setGeneratorMaxTokens(
+                              clampGeneratorMaxTokens(Number(value)),
+                            )
+                          }
+                        >
+                          <SelectTrigger id="ai-flow-max-tokens-preset">
+                            <SelectValue placeholder="512 · 1024 · 2048 · 4096" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {GENERATOR_TOKEN_PRESETS.map((preset) => (
+                              <SelectItem
+                                key={preset}
+                                value={preset.toString()}
+                              >
+                                {preset}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
                   </div>

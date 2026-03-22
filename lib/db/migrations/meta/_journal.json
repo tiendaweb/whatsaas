@@ -78,6 +78,13 @@
       "when": 1776000000000,
       "tag": "0010_ai_config_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1777000000000,
+      "tag": "0011_automation_admin_settings",
+      "breakpoints": true
     }
   ]
 }

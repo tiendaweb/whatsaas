@@ -2,10 +2,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import { getAutomationAdminSettings } from '@/lib/automation/admin-settings';
 import { getPaymentAdminData, saveProviderConfig } from '../payments/actions';
+import { saveAutomationAdminSettings } from './actions';
 
 export default async function AdminSettingsPage() {
-  const { providers } = await getPaymentAdminData();
+  const [{ providers }, automationSettings] = await Promise.all([
+    getPaymentAdminData(),
+    getAutomationAdminSettings(),
+  ]);
 
   const stripe = providers.find((p) => p.provider === 'stripe');
   const manual = providers.find((p) => p.provider === 'manual');
@@ -20,6 +26,31 @@ export default async function AdminSettingsPage() {
         <h1 className="text-3xl font-bold">Ajustes</h1>
         <p className="text-muted-foreground">Configura llaves de proveedores y define el método de cobro activo.</p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Automatizaciones</CardTitle>
+          <CardDescription>Activa o desactiva funciones globales del editor de automatizaciones.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={saveAutomationAdminSettings} className="space-y-4">
+            <div className="flex items-start justify-between gap-6 rounded-lg border p-4">
+              <div className="space-y-1">
+                <Label htmlFor="ai-flow-generator-enabled">Generador IA de flujos</Label>
+                <p className="text-sm text-muted-foreground">
+                  Controla si los usuarios pueden abrir el modal del generador IA desde el builder.
+                </p>
+              </div>
+              <Switch
+                id="ai-flow-generator-enabled"
+                name="aiFlowGeneratorEnabled"
+                defaultChecked={Boolean(automationSettings?.aiFlowGeneratorEnabled ?? true)}
+              />
+            </div>
+            <Button type="submit">Guardar ajustes de automatización</Button>
+          </form>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

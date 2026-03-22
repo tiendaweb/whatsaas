@@ -2,6 +2,7 @@ import React from 'react';
 import { notFound, redirect } from 'next/navigation';
 import FlowBuilder from '@/components/automation/FlowBuilder';
 import { getAutomation } from '../actions';
+import { getAutomationAdminSettings } from '@/lib/automation/admin-settings';
 import { enforceFeature } from '@/lib/limits';
 import { getTeamForUser } from '@/lib/db/queries';
 import { createAutomationCanvasNode } from '@/lib/automation/node-catalog';
@@ -21,7 +22,10 @@ export default async function AutomationEditorPage({ params }: { params: { id: s
   
   if (isNaN(automationId)) return notFound();
 
-  const automation = await getAutomation(automationId);
+  const [automation, automationSettings] = await Promise.all([
+    getAutomation(automationId),
+    getAutomationAdminSettings(),
+  ]);
 
   if (!automation) return notFound();
 
@@ -38,6 +42,7 @@ export default async function AutomationEditorPage({ params }: { params: { id: s
       initialNodes={initialNodes}
       initialEdges={initialEdges}
       initialActive={automation.isActive}
+      isAIFlowGeneratorEnabled={Boolean(automationSettings?.aiFlowGeneratorEnabled ?? true)}
     />
   );
 }
