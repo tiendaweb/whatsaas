@@ -178,7 +178,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen bg-muted overflow-hidden">
       <Sidebar />
-      <main className="flex-1 flex flex-col h-full overflow-hidden relative">
+      <main className="relative flex flex-1 min-h-0 flex-col overflow-hidden">
         {children}
       </main>
     </div>

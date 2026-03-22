@@ -79,7 +79,7 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="w-64 bg-background border-r border-border flex flex-col shrink-0 h-full max-h-full overflow-hidden">
+    <aside className="flex w-64 min-h-0 shrink-0 flex-col overflow-hidden border-r border-border bg-background">
       <div className="p-3 border-b border-border shrink-0 bg-background z-10">
         <h2 className="font-semibold text-sm">{t('sidebar_title')}</h2>
         <p className="text-[10px] text-muted-foreground">{t('sidebar_desc')}</p>
