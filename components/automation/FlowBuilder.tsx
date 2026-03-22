@@ -160,6 +160,7 @@ type GeneratedFlowSummary = {
 const MIN_GENERATOR_TOKENS = 128;
 const MAX_GENERATOR_TOKENS = 4096;
 const DEFAULT_GENERATOR_TOKENS = 1200;
+const GENERATOR_TOKEN_RANGE_HINT = "Rango permitido: 128–4096";
 const GENERATOR_TOKEN_PRESETS = [512, 1024, 2048, 4096] as const;
 
 function clampGeneratorMaxTokens(value: number) {
@@ -175,6 +176,12 @@ function isGeneratorTokenPreset(
 ): value is (typeof GENERATOR_TOKEN_PRESETS)[number] {
   return GENERATOR_TOKEN_PRESETS.includes(
     value as (typeof GENERATOR_TOKEN_PRESETS)[number],
+  );
+}
+
+function normalizeGeneratorMaxTokens(value: number | string) {
+  return clampGeneratorMaxTokens(
+    typeof value === "number" ? value : Number(value),
   );
 }
 
@@ -317,6 +324,13 @@ function FlowBuilderContent({
   const [generatorTemperature, setGeneratorTemperature] = useState(0.7);
   const [generatorMaxTokens, setGeneratorMaxTokens] = useState(
     DEFAULT_GENERATOR_TOKENS,
+  );
+
+  const handleGeneratorMaxTokensChange = useCallback(
+    (value: number | string) => {
+      setGeneratorMaxTokens(normalizeGeneratorMaxTokens(value));
+    },
+    [],
   );
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationResult, setGenerationResult] =
@@ -668,7 +682,7 @@ function FlowBuilderContent({
   }, [edges, fitView, nodes, setNodes]);
 
   const handleGenerateFlow = async () => {
-    const clampedMaxTokens = clampGeneratorMaxTokens(generatorMaxTokens);
+    const clampedMaxTokens = normalizeGeneratorMaxTokens(generatorMaxTokens);
     if (clampedMaxTokens !== generatorMaxTokens) {
       setGeneratorMaxTokens(clampedMaxTokens);
     }
@@ -1187,18 +1201,20 @@ function FlowBuilderContent({
                           step={64}
                           value={generatorMaxTokens}
                           onChange={(event) => {
-                            setGeneratorMaxTokens(
-                              clampGeneratorMaxTokens(
-                                Number(event.target.value),
-                              ),
+                            handleGeneratorMaxTokensChange(
+                              event.target.value,
                             );
                           }}
-                          onBlur={() =>
-                            setGeneratorMaxTokens((currentValue) =>
-                              clampGeneratorMaxTokens(currentValue),
-                            )
-                          }
+                          onBlur={(event) => {
+                            event.target.value = normalizeGeneratorMaxTokens(
+                              event.target.value,
+                            ).toString();
+                            handleGeneratorMaxTokensChange(event.target.value);
+                          }}
                         />
+                        <p className="text-xs text-muted-foreground">
+                          {GENERATOR_TOKEN_RANGE_HINT}
+                        </p>
                         <p className="text-xs text-muted-foreground">
                           {t("ai_generator.max_tokens_hint")}
                         </p>
@@ -1214,9 +1230,7 @@ function FlowBuilderContent({
                               : undefined
                           }
                           onValueChange={(value) =>
-                            setGeneratorMaxTokens(
-                              clampGeneratorMaxTokens(Number(value)),
-                            )
+                            handleGeneratorMaxTokensChange(value)
                           }
                         >
                           <SelectTrigger id="ai-flow-max-tokens-preset">
