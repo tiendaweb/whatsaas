@@ -8,12 +8,16 @@ export class OpenAIProvider implements AIProvider {
   private client: OpenAI;
   private model: string;
   private systemPrompt?: string;
+  private temperature: number;
+  private maxOutputTokens: number;
   private attachments: { name: string; url: string; type: string; size: number }[];
 
   constructor(config: AIProviderConfig) {
     this.client = new OpenAI({ apiKey: config.apiKey });
     this.model = config.model;
     this.systemPrompt = config.systemPrompt;
+    this.temperature = config.temperature ?? 0.7;
+    this.maxOutputTokens = config.maxOutputTokens ?? 1000;
     this.attachments = config.attachments || [];
   }
 
@@ -100,6 +104,8 @@ export class OpenAIProvider implements AIProvider {
     const response = await this.client.chat.completions.create({
       model: this.model,
       messages: cleanMessages,
+      temperature: this.temperature,
+      max_tokens: this.maxOutputTokens,
       tools: formattedTools && formattedTools.length > 0 ? formattedTools : undefined,
     });
 

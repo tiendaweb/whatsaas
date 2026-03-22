@@ -599,7 +599,60 @@
     "agent_label": "Agente",
     "department_label": "Departamento",
     "end_node_desc": "Este nó encerrará imediatamente a sessão de automação.",
-    "save_changes_btn": "Salvar Alterações"
+    "save_changes_btn": "Salvar Alterações",
+    "ai_generator": {
+      "open_btn": "Gerar com IA",
+      "organize_btn": "Organizar nós",
+      "title": "Gerador de fluxos com IA",
+      "description": "Descreva a automação desejada, revise a prévia estruturada e insira no canvas somente depois que a validação passar.",
+      "prompt_label": "Prompt",
+      "prompt_placeholder": "Exemplo: Crie um fluxo de qualificação de vendas que cumprimente o lead, pergunte o nome, ofereça opções de produto e transfira para um humano se ele escolher enterprise.",
+      "channel_label": "Modo de geração",
+      "temperature_label": "Temperatura",
+      "max_tokens_label": "Máximo de tokens de saída",
+      "allowed_nodes_title": "Nós permitidos e restrições",
+      "allowed_nodes_desc": "O gerador só vê os tipos de nó disponíveis para o canal selecionado.",
+      "preview_title": "Pré-visualização",
+      "preview_desc": "A validação acontece antes de inserir o fluxo gerado no canvas.",
+      "preview_counts": "{nodes} nós · {edges} conexões",
+      "warnings_title": "Avisos",
+      "validation_errors_title": "Problemas de parsing ou validação",
+      "insert_mode_title": "Como aplicar o resultado",
+      "nodes_title": "Nós gerados",
+      "edges_title": "Conexões geradas",
+      "raw_response_title": "Resposta bruta do modelo",
+      "empty_preview": "Ainda não há prévia. Gere um fluxo para inspecionar a saída estruturada.",
+      "generating_preview": "Gerando prévia…",
+      "cancel_btn": "Cancelar",
+      "generate_btn": "Gerar",
+      "generating_btn": "Gerando…",
+      "insert_btn": "Inserir no canvas",
+      "generated_toast": "Rascunho de automação gerado.",
+      "inserted_replace_toast": "O fluxo gerado foi inserido e substituiu o canvas atual.",
+      "inserted_subflow_toast": "O subfluxo gerado foi inserido no canvas.",
+      "generic_error": "Não foi possível gerar o fluxo agora.",
+      "save_failed": "Falha ao salvar o fluxo.",
+      "prompt_too_short": "Escreva um prompt mais detalhado antes de gerar.",
+      "validation_before_save_title": "Corrija os problemas de validação antes de salvar.",
+      "select_node_hint": "Selecione um nó compatível no canvas se quiser inserir o resultado como subfluxo.",
+      "selected_node_ready": "Nó selecionado: {nodeId}",
+      "channels": {
+        "qr": {
+          "title": "QR / Web",
+          "description": "Permite componentes de Mensagem de texto simples e multimídia."
+        },
+        "api": {
+          "title": "API oficial",
+          "description": "Desabilita os nós Message e Media. Prefira nós interativos da API."
+        }
+      },
+      "insert_modes": {
+        "replace_title": "Substituir fluxo atual",
+        "replace_desc": "Sobrescreve o canvas atual com a prévia gerada.",
+        "insert_title": "Inserir a partir do nó selecionado",
+        "insert_desc": "Mantém o fluxo atual e conecta o subfluxo gerado após o nó selecionado."
+      }
+    }
   },
   "Templates": {
     "no_waba_instance_connected": "Nenhuma Instância WABA Conectada",
