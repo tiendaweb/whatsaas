@@ -75,10 +75,10 @@ import {
   getAllowedNodeTypesForChannel,
   getDefaultNodeContentConstraints,
   insertGeneratedSubflow,
-  validateAutomationCanvas,
   type AutomationAIChannel,
   type AutomationGeneratedFlow,
 } from '@/lib/automation/ai-flow';
+import { prepareAutomationFlowForSave, type PrepareAutomationFlowResult } from '@/lib/automation/flow-normalizer';
 import { createAutomationCanvasNode } from '@/lib/automation/node-catalog';
 import type { AutomationCanvasEdge, AutomationCanvasNode, AutomationCanvasNodeData, AutomationFlowEdge, AutomationFlowNode } from '@/lib/automation/flow-schema';
 
@@ -138,6 +138,10 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
   const [generationValidationErrors, setGenerationValidationErrors] = useState<string[]>([]);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [insertMode, setInsertMode] = useState<InsertMode>('replace');
+  const [isSavePreviewOpen, setIsSavePreviewOpen] = useState(false);
+  const [savePreviewWarnings, setSavePreviewWarnings] = useState<string[]>([]);
+  const [savePreviewErrors, setSavePreviewErrors] = useState<string[]>([]);
+  const [savePreviewFlow, setSavePreviewFlow] = useState<Extract<PrepareAutomationFlowResult, { success: true }> | null>(null);
 
   const { screenToFlowPosition, toObject, fitView } = useReactFlow();
 
@@ -230,19 +234,39 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
     );
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     const flow = toObject();
-    const validation = validateAutomationCanvas(flow.nodes as unknown[], flow.edges as unknown[]);
+    const preparedFlow = prepareAutomationFlowForSave({
+      nodes: flow.nodes as AutomationFlowNode[],
+      edges: flow.edges as AutomationFlowEdge[],
+    });
 
-    if (!validation.success) {
-      toast.error(t('ai_generator.validation_before_save_title'));
-      setGenerationValidationErrors(validation.errors);
+    setSavePreviewWarnings(preparedFlow.warnings.map((warning) => warning.message));
+
+    if (!preparedFlow.success) {
+      setSavePreviewErrors(preparedFlow.errors);
+      setSavePreviewFlow(null);
+      setIsSavePreviewOpen(true);
+      toast.error(t('save_preview.validation_failed_title'));
+      return;
+    }
+
+    setSavePreviewErrors([]);
+    setSavePreviewFlow(preparedFlow);
+    setIsSavePreviewOpen(true);
+  };
+
+  const handleConfirmSave = async () => {
+    if (!savePreviewFlow) {
       return;
     }
 
     setIsSaving(true);
     try {
-      await saveAutomation(automationId, flow.nodes as AutomationFlowNode[], flow.edges as AutomationFlowEdge[]);
+      await saveAutomation(automationId, savePreviewFlow.nodes, savePreviewFlow.edges);
+      setNodes(savePreviewFlow.nodes as AutomationCanvasNode[]);
+      setEdges(savePreviewFlow.edges as AutomationCanvasEdge[]);
+      setIsSavePreviewOpen(false);
       toast.success(t('toast_saved'));
     } catch (error) {
       toast.error(t('ai_generator.save_failed'));
@@ -568,6 +592,76 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
           <PropertiesPanel selectedNode={selectedNode} onUpdateNode={updateNodeData} onClose={() => setSelectedNodeId(null)} />
         </div>
       </div>
+
+      <Dialog open={isSavePreviewOpen} onOpenChange={setIsSavePreviewOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t('save_preview.title')}</DialogTitle>
+            <DialogDescription>{t('save_preview.description')}</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {savePreviewFlow && (
+              <div className="rounded-lg border bg-muted/20 p-3 text-sm">
+                <div className="font-medium">{t('save_preview.sequence')}</div>
+                <div className="mt-2 text-muted-foreground">
+                  {t('save_preview.counts', {
+                    nodes: savePreviewFlow.preview.nodeCount,
+                    edges: savePreviewFlow.preview.edgeCount,
+                  })}
+                </div>
+              </div>
+            )}
+
+            {savePreviewWarnings.length > 0 && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
+                <div className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-400">
+                  <AlertTriangle className="h-4 w-4" />
+                  {t('save_preview.warnings_title')}
+                </div>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-700/90 dark:text-amber-300">
+                  {savePreviewWarnings.map((warning, index) => (
+                    <li key={`${warning}-${index}`}>{warning}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {savePreviewErrors.length > 0 && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
+                <div className="flex items-center gap-2 font-medium text-destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  {t('save_preview.errors_title')}
+                </div>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-destructive/90">
+                  {savePreviewErrors.map((error, index) => (
+                    <li key={`${error}-${index}`}>{error}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {savePreviewFlow && savePreviewWarnings.length === 0 && (
+              <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-3 text-sm text-green-700 dark:text-green-400">
+                <div className="flex items-center gap-2 font-medium">
+                  <CheckCircle2 className="h-4 w-4" />
+                  {t('save_preview.ready_title')}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsSavePreviewOpen(false)}>
+              {t('save_preview.back_btn')}
+            </Button>
+            <Button onClick={handleConfirmSave} disabled={!savePreviewFlow || savePreviewErrors.length > 0 || isSaving}>
+              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              {isSaving ? t('saving') : t('save_preview.confirm_btn')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isGeneratorOpen} onOpenChange={setIsGeneratorOpen}>
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">

@@ -652,6 +652,18 @@
         "insert_title": "Insertar desde el nodo seleccionado",
         "insert_desc": "Mantiene el flujo actual y conecta el subflujo generado después del nodo seleccionado."
       }
+    },
+    "save_preview": {
+      "title": "Revisar antes de guardar",
+      "description": "Siempre ejecutamos normalización, validación de esquema y vista previa antes de persistir el flujo.",
+      "sequence": "Secuencia: normalizer → schema validation → preview → save",
+      "counts": "{nodes} nodos · {edges} conexiones normalizadas",
+      "warnings_title": "Advertencias recuperables",
+      "errors_title": "Errores fatales",
+      "ready_title": "El flujo está listo para guardarse.",
+      "back_btn": "Volver",
+      "confirm_btn": "Guardar flujo",
+      "validation_failed_title": "Revisa los errores fatales antes de guardar."
     }
   },
   "Templates": {

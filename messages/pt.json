@@ -653,6 +653,18 @@
         "insert_title": "Inserir a partir do nó selecionado",
         "insert_desc": "Mantém o fluxo atual e conecta o subfluxo gerado após o nó selecionado."
       }
+    },
+    "save_preview": {
+      "title": "Revisar antes de salvar",
+      "description": "Sempre executamos normalização, validação de schema e pré-visualização antes de persistir o fluxo.",
+      "sequence": "Sequência: normalizer → schema validation → preview → save",
+      "counts": "{nodes} nós normalizados · {edges} conexões normalizadas",
+      "warnings_title": "Avisos recuperáveis",
+      "errors_title": "Erros fatais",
+      "ready_title": "O fluxo está pronto para ser salvo.",
+      "back_btn": "Voltar",
+      "confirm_btn": "Salvar fluxo",
+      "validation_failed_title": "Revise os erros fatais antes de salvar."
     }
   },
   "Templates": {

@@ -653,6 +653,18 @@
         "insert_title": "Insert from selected node",
         "insert_desc": "Keep the current flow and attach the generated subflow after the selected node."
       }
+    },
+    "save_preview": {
+      "title": "Review before saving",
+      "description": "We always run normalization, schema validation, and a preview before persisting the flow.",
+      "sequence": "Sequence: normalizer → schema validation → preview → save",
+      "counts": "{nodes} normalized nodes · {edges} normalized edges",
+      "warnings_title": "Recoverable warnings",
+      "errors_title": "Fatal errors",
+      "ready_title": "The flow is ready to be saved.",
+      "back_btn": "Back",
+      "confirm_btn": "Save flow",
+      "validation_failed_title": "Review the fatal errors before saving."
     }
   },
   "Templates": {
