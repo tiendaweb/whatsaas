@@ -1,4 +1,5 @@
 import { db } from '@/lib/db/drizzle';
+import { relationExists } from '@/lib/db/relation-exists';
 import { automationAdminSettings } from '@/lib/db/schema';
 import { eq, sql } from 'drizzle-orm';
 
@@ -6,6 +7,11 @@ let automationSettingsBootstrapped = false;
 
 async function ensureAutomationAdminSettingsTable() {
   if (automationSettingsBootstrapped) return;
+
+  if (await relationExists('automation_admin_settings')) {
+    automationSettingsBootstrapped = true;
+    return;
+  }
 
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS automation_admin_settings (
