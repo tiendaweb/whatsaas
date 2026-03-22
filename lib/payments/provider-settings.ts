@@ -1,7 +1,7 @@
 import { db } from '@/lib/db/drizzle';
+import { relationExists } from '@/lib/db/relation-exists';
 import { paymentProviderSettings } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 export type PaymentProviderId = 'stripe' | 'manual' | 'mercadopago';
 
@@ -56,34 +56,43 @@ let paymentTablesBootstrapped = false;
 async function ensurePaymentTables() {
   if (paymentTablesBootstrapped) return;
 
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS payment_provider_settings (
-      id serial PRIMARY KEY,
-      provider varchar(50) NOT NULL UNIQUE,
-      enabled boolean NOT NULL DEFAULT false,
-      is_default boolean NOT NULL DEFAULT false,
-      config jsonb NOT NULL DEFAULT '{}'::jsonb,
-      created_at timestamp NOT NULL DEFAULT now(),
-      updated_at timestamp NOT NULL DEFAULT now()
-    );
-  `);
+  const [hasProviderSettings, hasManualPayments] = await Promise.all([
+    relationExists('payment_provider_settings'),
+    relationExists('manual_payments'),
+  ]);
 
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS manual_payments (
-      id serial PRIMARY KEY,
-      team_id integer NOT NULL REFERENCES teams(id) ON DELETE cascade,
-      plan_id integer NOT NULL REFERENCES plans(id) ON DELETE cascade,
-      amount integer NOT NULL,
-      currency varchar(3) NOT NULL DEFAULT 'usd',
-      status varchar(30) NOT NULL DEFAULT 'pending_manual_review',
-      reference text,
-      proof_url text,
-      reviewed_by integer REFERENCES users(id) ON DELETE set null,
-      reviewed_at timestamp,
-      created_at timestamp NOT NULL DEFAULT now(),
-      updated_at timestamp NOT NULL DEFAULT now()
-    );
-  `);
+  if (!hasProviderSettings) {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS payment_provider_settings (
+        id serial PRIMARY KEY,
+        provider varchar(50) NOT NULL UNIQUE,
+        enabled boolean NOT NULL DEFAULT false,
+        is_default boolean NOT NULL DEFAULT false,
+        config jsonb NOT NULL DEFAULT '{}'::jsonb,
+        created_at timestamp NOT NULL DEFAULT now(),
+        updated_at timestamp NOT NULL DEFAULT now()
+      );
+    `);
+  }
+
+  if (!hasManualPayments) {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS manual_payments (
+        id serial PRIMARY KEY,
+        team_id integer NOT NULL REFERENCES teams(id) ON DELETE cascade,
+        plan_id integer NOT NULL REFERENCES plans(id) ON DELETE cascade,
+        amount integer NOT NULL,
+        currency varchar(3) NOT NULL DEFAULT 'usd',
+        status varchar(30) NOT NULL DEFAULT 'pending_manual_review',
+        reference text,
+        proof_url text,
+        reviewed_by integer REFERENCES users(id) ON DELETE set null,
+        reviewed_at timestamp,
+        created_at timestamp NOT NULL DEFAULT now(),
+        updated_at timestamp NOT NULL DEFAULT now()
+      );
+    `);
+  }
 
   paymentTablesBootstrapped = true;
 }

@@ -1,10 +1,16 @@
 import { db } from '@/lib/db/drizzle';
+import { relationExists } from '@/lib/db/relation-exists';
 import { sql } from 'drizzle-orm';
 
 let customFieldsBootstrapped = false;
 
 export async function ensureCustomFieldsTable() {
   if (customFieldsBootstrapped) return;
+
+  if (await relationExists('custom_fields')) {
+    customFieldsBootstrapped = true;
+    return;
+  }
 
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS custom_fields (
