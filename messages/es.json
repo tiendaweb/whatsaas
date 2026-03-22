@@ -502,6 +502,7 @@
     "toast_saved": "Flujo guardado con éxito",
     "toast_status_changed": "Estado de automatización actualizado",
     "nodes": {
+      "start": "Disparador inicial",
       "message": "Enviar Mensaje",
       "media": "Enviar Multimedia",
       "buttons": "Mensaje de Botones",

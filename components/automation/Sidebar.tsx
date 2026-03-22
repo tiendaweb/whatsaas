@@ -1,22 +1,27 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  MessageSquare,
-  List,
-  Clock,
-  PenLine,
-  Save,
-  Image,
-  XCircle,
-  MousePointerClick,
-  ListChecks,
-  ExternalLink,
   Bot,
-  Split,
   ChevronDown,
   ChevronRight,
+  Clock,
+  ExternalLink,
+  Image,
+  List,
+  ListChecks,
+  MessageSquare,
+  MousePointerClick,
+  PenLine,
+  Save,
+  Split,
+  XCircle,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
+import {
+  AUTOMATION_SIDEBAR_CATEGORIES,
+  getSidebarNodesByCategory,
+  type AutomationSidebarIconKey,
+} from '@/lib/automation/node-catalog';
 
 interface SidebarSectionProps {
   title: string;
@@ -24,6 +29,21 @@ interface SidebarSectionProps {
   defaultOpen?: boolean;
   compact?: boolean;
 }
+
+const ICONS_BY_KEY: Record<AutomationSidebarIconKey, React.ElementType> = {
+  'message-square': MessageSquare,
+  image: Image,
+  'mouse-pointer-click': MousePointerClick,
+  'list-checks': ListChecks,
+  'external-link': ExternalLink,
+  list: List,
+  split: Split,
+  clock: Clock,
+  'x-circle': XCircle,
+  'pen-line': PenLine,
+  save: Save,
+  bot: Bot,
+};
 
 function SidebarSection({ title, children, defaultOpen = true, compact = false }: SidebarSectionProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -125,122 +145,26 @@ export function Sidebar() {
       </div>
 
       <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto pb-4">
-        <SidebarSection title={t('groups.messages')} compact={isCompact}>
-          <DraggableNode
-            collapsed={isCompact}
-            type="message"
-            label={t('nodes.message')}
-            icon={MessageSquare}
-            colorClass="bg-primary/10"
-            iconColorClass="text-primary"
-            onDragStart={onDragStart}
-          />
-          <DraggableNode
-            collapsed={isCompact}
-            type="media"
-            label={t('nodes.media')}
-            icon={Image}
-            colorClass="bg-pink-500/10"
-            iconColorClass="text-pink-500"
-            onDragStart={onDragStart}
-          />
-          <DraggableNode
-            collapsed={isCompact}
-            type="button_message"
-            label={t('nodes.buttons')}
-            icon={MousePointerClick}
-            colorClass="bg-indigo-500/10"
-            iconColorClass="text-indigo-500"
-            onDragStart={onDragStart}
-          />
-          <DraggableNode
-            collapsed={isCompact}
-            type="list_message"
-            label={t('nodes.list')}
-            icon={ListChecks}
-            colorClass="bg-teal-500/10"
-            iconColorClass="text-teal-500"
-            onDragStart={onDragStart}
-          />
-          <DraggableNode
-            collapsed={isCompact}
-            type="call_to_action"
-            label={t('nodes.cta')}
-            icon={ExternalLink}
-            colorClass="bg-sky-500/10"
-            iconColorClass="text-sky-500"
-            onDragStart={onDragStart}
-          />
-          <DraggableNode
-            collapsed={isCompact}
-            type="options"
-            label={t('nodes.options')}
-            icon={List}
-            colorClass="bg-orange-500/10"
-            iconColorClass="text-orange-500"
-            onDragStart={onDragStart}
-          />
-        </SidebarSection>
+        {AUTOMATION_SIDEBAR_CATEGORIES.map((category) => (
+          <SidebarSection key={category} title={t(`groups.${category}`)} compact={isCompact}>
+            {getSidebarNodesByCategory(category).map((node) => {
+              const Icon = ICONS_BY_KEY[node.sidebar!.icon];
 
-        <SidebarSection title={t('groups.logic')} compact={isCompact}>
-          <DraggableNode
-            collapsed={isCompact}
-            type="condition"
-            label={t('nodes.condition')}
-            icon={Split}
-            colorClass="bg-yellow-500/10"
-            iconColorClass="text-yellow-600"
-            onDragStart={onDragStart}
-          />
-          <DraggableNode
-            collapsed={isCompact}
-            type="delay"
-            label={t('nodes.delay')}
-            icon={Clock}
-            colorClass="bg-blue-500/10"
-            iconColorClass="text-blue-500"
-            onDragStart={onDragStart}
-          />
-          <DraggableNode
-            collapsed={isCompact}
-            type="end"
-            label={t('nodes.end')}
-            icon={XCircle}
-            colorClass="bg-destructive/10"
-            iconColorClass="text-destructive"
-            onDragStart={onDragStart}
-          />
-        </SidebarSection>
-
-        <SidebarSection title={t('groups.integrations')} compact={isCompact}>
-          <DraggableNode
-            collapsed={isCompact}
-            type="collect"
-            label={t('nodes.collect')}
-            icon={PenLine}
-            colorClass="bg-purple-500/10"
-            iconColorClass="text-purple-500"
-            onDragStart={onDragStart}
-          />
-          <DraggableNode
-            collapsed={isCompact}
-            type="save_contact"
-            label={t('nodes.save_contact')}
-            icon={Save}
-            colorClass="bg-green-500/10"
-            iconColorClass="text-green-500"
-            onDragStart={onDragStart}
-          />
-          <DraggableNode
-            collapsed={isCompact}
-            type="ai_control"
-            label={t('nodes.ai_control')}
-            icon={Bot}
-            colorClass="bg-violet-600/10"
-            iconColorClass="text-violet-600"
-            onDragStart={onDragStart}
-          />
-        </SidebarSection>
+              return (
+                <DraggableNode
+                  key={node.type}
+                  collapsed={isCompact}
+                  type={node.type}
+                  label={t(node.labelKey)}
+                  icon={Icon}
+                  colorClass={node.sidebar!.colorClass}
+                  iconColorClass={node.sidebar!.iconColorClass}
+                  onDragStart={onDragStart}
+                />
+              );
+            })}
+          </SidebarSection>
+        ))}
       </div>
     </aside>
   );

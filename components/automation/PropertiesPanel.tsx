@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from '@/components/ui/badge';
 import { X, Save, Plus, Trash2, UploadCloud, Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
 import type {
   AutomationCanvasNode,
   AutomationCanvasNodeData,
@@ -18,6 +19,12 @@ import type {
   MediaNodeData,
   StartNodeData,
 } from '@/lib/automation/flow-schema';
+import {
+  getAutomationNodeCatalogEntry,
+  getEditableFieldDefinition,
+  mergeAutomationNodeDataWithDefaults,
+  validateAutomationNodeData,
+} from '@/lib/automation/node-catalog';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -76,35 +83,46 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
   const { data: departmentsList } = useSWR<any[]>(shouldFetchCRM ? '/api/departments' : null, fetcher);
   
   const agents = teamData?.teamMembers?.map((tm: any) => tm.user) || [];
+  const selectedNodeMeta = selectedNode ? getAutomationNodeCatalogEntry(selectedNode.type) : null;
+  const optionsFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'options') : null;
+  const buttonsFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'buttons') : null;
+  const listItemsFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'items') : null;
+  const conditionsFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'conditions') : null;
+  const delayFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'seconds') : null;
+  const listButtonTextFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'buttonText') : null;
+  const ctaUrlFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'url') : null;
+  const mediaCaptionFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'caption') : null;
 
   useEffect(() => {
     if (selectedNode) {
-      setLabel(selectedNode.data.label as string || '');
-      setTitle(selectedNode.data.title as string || '');
-      setBodyText(selectedNode.data.bodyText as string || '');
-      setFooterText(selectedNode.data.footerText as string || '');
-      setButtonText(selectedNode.data.buttonText as string || '');
-      
-      if (selectedNode.type === 'options') setOptions(selectedNode.data.options as string[] || []);
-      if (selectedNode.type === 'delay') setSeconds(Number(selectedNode.data.seconds) || 2);
-      
+      const mergedData = mergeAutomationNodeDataWithDefaults(selectedNode.type, selectedNode.data);
+
+      setLabel((mergedData.label as string) || '');
+      setTitle((mergedData.title as string) || '');
+      setBodyText((mergedData.bodyText as string) || '');
+      setFooterText((mergedData.footerText as string) || '');
+      setButtonText((mergedData.buttonText as string) || '');
+
+      if (selectedNode.type === 'options') setOptions((mergedData.options as string[]) || []);
+      if (selectedNode.type === 'delay') setSeconds(Number(mergedData.seconds) || 2);
+
       if (selectedNode.type === 'collect') {
-        setVariable(selectedNode.data.variable as string || '');
+        setVariable((mergedData.variable as string) || '');
       }
 
       if (selectedNode.type === 'save_contact') {
-        setSaveNameVar(selectedNode.data.nameVariable as string || '');
-        setSaveAgentId(selectedNode.data.agentId as string || 'null');
-        setSaveDepartmentId(selectedNode.data.departmentId as string || 'null');
-        setSaveTagId(selectedNode.data.tagId as string || 'null');
-        setSaveFunnelId(selectedNode.data.funnelStageId as string || 'null');
-        setSaveCustomFields(selectedNode.data.customFields as Record<string, string> || {});
+        setSaveNameVar((mergedData.nameVariable as string) || '');
+        setSaveAgentId((mergedData.agentId as string) || 'null');
+        setSaveDepartmentId((mergedData.departmentId as string) || 'null');
+        setSaveTagId((mergedData.tagId as string) || 'null');
+        setSaveFunnelId((mergedData.funnelStageId as string) || 'null');
+        setSaveCustomFields((mergedData.customFields as Record<string, string>) || {});
       }
 
       if (selectedNode.type === 'start') {
-        setTriggerType(selectedNode.data.triggerType || 'contains');
-        setKeywords(selectedNode.data.keywords as string[] || []);
-        const conditions = (selectedNode.data.conditions as StartNodeData['conditions']) || {};
+        setTriggerType(mergedData.triggerType || 'first_message');
+        setKeywords((mergedData.keywords as string[]) || []);
+        const conditions = (mergedData.conditions as StartNodeData['conditions']) || {};
         setConditionStage(conditions.funnelStageId || 'null');
         setConditionTag(conditions.tagId || 'null');
         setConditionAgent(conditions.assignedUserId || 'null');
@@ -112,30 +130,30 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
       }
 
       if (selectedNode.type === 'media') {
-        setMediaUrl(selectedNode.data.mediaUrl as string || '');
-        setMediaType(selectedNode.data.mediaType || 'image');
-        setMediaCaption(selectedNode.data.caption as string || '');
-        setFileName(selectedNode.data.fileName as string || '');
+        setMediaUrl((mergedData.mediaUrl as string) || '');
+        setMediaType(mergedData.mediaType || 'image');
+        setMediaCaption((mergedData.caption as string) || '');
+        setFileName((mergedData.fileName as string) || '');
       }
 
       if (selectedNode.type === 'button_message') {
-        setButtons((selectedNode.data.buttons as ButtonMessageButton[]) || []);
+        setButtons((mergedData.buttons as ButtonMessageButton[]) || []);
       }
 
       if (selectedNode.type === 'list_message') {
-        setListItems((selectedNode.data.items as ListMessageItem[]) || []);
+        setListItems((mergedData.items as ListMessageItem[]) || []);
       }
 
       if (selectedNode.type === 'call_to_action') {
-        setCtaUrl(selectedNode.data.url as string || '');
+        setCtaUrl((mergedData.url as string) || '');
       }
 
       if (selectedNode.type === 'ai_control') {
-        setAiAction(selectedNode.data.action || 'active');
+        setAiAction(mergedData.action || 'active');
       }
 
       if (selectedNode.type === 'condition') {
-        setConditions((selectedNode.data.conditions as ConditionEntry[]) || []);
+        setConditions((mergedData.conditions as ConditionEntry[]) || []);
       }
     }
   }, [selectedNode]);
@@ -218,7 +236,15 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
       dataToSave.conditions = conditions;
     }
 
-    onUpdateNode(selectedNode.id, dataToSave);
+    const mergedData = mergeAutomationNodeDataWithDefaults(selectedNode.type, dataToSave);
+    const validation = validateAutomationNodeData(selectedNode.type, mergedData);
+
+    if (!validation.success) {
+      toast.error(validation.errors[0] || 'Invalid node configuration.');
+      return;
+    }
+
+    onUpdateNode(selectedNode.id, validation.data);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -255,12 +281,15 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
   const addKeyword = () => { if (keywordInput.trim() && !keywords.includes(keywordInput.trim())) { setKeywords([...keywords, keywordInput.trim()]); setKeywordInput(''); } };
   const removeKeyword = (k: string) => { setKeywords(keywords.filter(kw => kw !== k)); };
   
-  const addOption = () => setOptions([...options, `Option ${options.length + 1}`]);
+  const addOption = () => {
+    if (typeof optionsFieldMeta?.max === 'number' && options.length >= optionsFieldMeta.max) return;
+    setOptions([...options, `Option ${options.length + 1}`]);
+  };
   const removeOption = (index: number) => setOptions(options.filter((_, i) => i !== index));
   const updateOption = (index: number, value: string) => { const newOptions = [...options]; newOptions[index] = value; setOptions(newOptions); };
 
   const addButton = () => {
-    if (buttons.length >= 3) return;
+    if (typeof buttonsFieldMeta?.max === 'number' && buttons.length >= buttonsFieldMeta.max) return;
     setButtons([...buttons, { id: Date.now().toString(), text: '', value: '' }]);
   };
   const removeButton = (idx: number) => setButtons(buttons.filter((_, i) => i !== idx));
@@ -269,7 +298,7 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
   };
 
   const addListItem = () => {
-    if (listItems.length >= 10) return;
+    if (typeof listItemsFieldMeta?.max === 'number' && listItems.length >= listItemsFieldMeta.max) return;
     setListItems([...listItems, { id: Date.now().toString(), title: '', description: '', rowId: '' }]);
   };
   const removeListItem = (idx: number) => setListItems(listItems.filter((_, i) => i !== idx));
@@ -278,6 +307,7 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
   };
 
   const addCondition = () => {
+    if (typeof conditionsFieldMeta?.max === 'number' && conditions.length >= conditionsFieldMeta.max) return;
     setConditions([...conditions, { id: `cond-${Date.now()}`, type: 'text', operator: 'equals', value: '' }]);
   };
   const removeCondition = (idx: number) => setConditions(conditions.filter((_, i) => i !== idx));
@@ -288,7 +318,10 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
   return (
     <aside className="flex w-[clamp(18rem,24vw,22rem)] min-w-[18rem] max-w-[22rem] min-h-0 shrink-0 resize-x flex-col overflow-hidden border-l border-border bg-background">
       <div className="p-4 border-b border-border flex justify-between items-center bg-muted/30 shrink-0">
-        <h2 className="font-semibold text-sm">{t('properties_title')}</h2>
+        <div>
+          <h2 className="font-semibold text-sm">{t('properties_title')}</h2>
+          {selectedNodeMeta ? <p className="text-[11px] text-muted-foreground">{t(selectedNodeMeta.labelKey)}</p> : null}
+        </div>
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}><X className="h-4 w-4" /></Button>
       </div>
 
@@ -321,7 +354,7 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <Label>{t('ConditionProperties.title')}</Label>
-              <Button variant="outline" size="sm" onClick={addCondition} className="h-7 text-xs">
+              <Button variant="outline" size="sm" onClick={addCondition} disabled={typeof conditionsFieldMeta?.max === 'number' && conditions.length >= conditionsFieldMeta.max} className="h-7 text-xs">
                 <Plus className="h-3 w-3 mr-1" /> {t('ConditionProperties.add_condition_btn')}
               </Button>
             </div>
@@ -426,12 +459,12 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
             </div>
             <div className="space-y-2">
               <Label>{t('button_text_label')} <span className="text-destructive">*</span></Label>
-              <Input value={buttonText} onChange={(e) => setButtonText(e.target.value)} placeholder={t('button_text_placeholder')} maxLength={20} />
+              <Input value={buttonText} onChange={(e) => setButtonText(e.target.value)} placeholder={t('button_text_placeholder')} maxLength={listButtonTextFieldMeta?.max} />
             </div>
             <div className="space-y-3 pt-4 border-t border-border">
                 <div className="flex justify-between items-center">
                   <Label>{t('list_items_label', { count: listItems.length })}</Label>
-                  <Button variant="outline" size="sm" onClick={addListItem} disabled={listItems.length >= 10} className="h-7 text-xs">
+                  <Button variant="outline" size="sm" onClick={addListItem} disabled={typeof listItemsFieldMeta?.max === 'number' && listItems.length >= listItemsFieldMeta.max} className="h-7 text-xs">
                     <Plus className="h-3 w-3 mr-1" /> {t('add_item_btn')}
                   </Button>
                 </div>
@@ -464,11 +497,11 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
             </div>
             <div className="space-y-2">
               <Label>{t('button_text_label')} <span className="text-destructive">*</span></Label>
-              <Input value={buttonText} onChange={(e) => setButtonText(e.target.value)} placeholder={t('click_here_placeholder')} maxLength={20} />
+              <Input value={buttonText} onChange={(e) => setButtonText(e.target.value)} placeholder={t('click_here_placeholder')} maxLength={listButtonTextFieldMeta?.max} />
             </div>
             <div className="space-y-2">
               <Label>{t('button_link_label')} <span className="text-destructive">*</span></Label>
-              <Input value={ctaUrl} onChange={(e) => setCtaUrl(e.target.value)} placeholder={t('enter_url_placeholder')} />
+              <Input value={ctaUrl} onChange={(e) => setCtaUrl(e.target.value)} placeholder={t('enter_url_placeholder')} maxLength={ctaUrlFieldMeta?.max} />
             </div>
             <div className="space-y-2">
               <Label>{t('footer_optional_label')}</Label>
@@ -490,7 +523,7 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
             <div className="space-y-3 pt-4 border-t border-border">
                 <div className="flex justify-between items-center">
                   <Label>{t('buttons_label', { count: buttons.length })}</Label>
-                  <Button variant="outline" size="sm" onClick={addButton} disabled={buttons.length >= 3} className="h-7 text-xs">
+                  <Button variant="outline" size="sm" onClick={addButton} disabled={typeof buttonsFieldMeta?.max === 'number' && buttons.length >= buttonsFieldMeta.max} className="h-7 text-xs">
                     <Plus className="h-3 w-3 mr-1" /> {t('add_button_btn')}
                   </Button>
                 </div>
@@ -549,7 +582,7 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
              {mediaType !== 'audio' && (
                   <div className="space-y-2">
                     <Label>{t('caption_label')}</Label>
-                    <Input value={mediaCaption} onChange={(e) => setMediaCaption(e.target.value)} placeholder={t('optional_caption_placeholder')} />
+                    <Input value={mediaCaption} onChange={(e) => setMediaCaption(e.target.value)} placeholder={t('optional_caption_placeholder')} maxLength={mediaCaptionFieldMeta?.max} />
                  </div>
              )}
           </div>
@@ -632,7 +665,7 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
           <div className="space-y-3">
             <Label>{t('wait_duration_label')}</Label>
             <div className="flex items-center gap-2">
-              <Input type="number" min={1} max={60} value={seconds} onChange={(e) => setSeconds(Number(e.target.value))} />
+              <Input type="number" min={delayFieldMeta?.min} max={delayFieldMeta?.max} value={seconds} onChange={(e) => setSeconds(Number(e.target.value))} />
               <span className="text-sm text-muted-foreground">{t('sec_label')}</span>
             </div>
           </div>
@@ -640,7 +673,7 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
 
         {selectedNode.type === 'options' && (
           <div className="space-y-3 pt-4 border-t border-border">
-            <div className="flex justify-between items-center"><Label>{t('menu_options_label')}</Label><Button variant="outline" size="sm" onClick={addOption} className="h-7 text-xs"><Plus className="h-3 w-3 mr-1" /> {t('add_option_btn')}</Button></div>
+            <div className="flex justify-between items-center"><Label>{t('menu_options_label')}</Label><Button variant="outline" size="sm" onClick={addOption} disabled={typeof optionsFieldMeta?.max === 'number' && options.length >= optionsFieldMeta.max} className="h-7 text-xs"><Plus className="h-3 w-3 mr-1" /> {t('add_option_btn')}</Button></div>
             <div className="space-y-2">{options.map((opt, idx) => (<div key={idx} className="flex gap-2"><Input value={opt} onChange={(e) => updateOption(idx, e.target.value)} className="h-8 text-sm" /><Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeOption(idx)}><Trash2 className="h-3 w-3" /></Button></div>))}</div>
           </div>
         )}

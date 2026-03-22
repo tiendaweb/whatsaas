@@ -4,6 +4,7 @@ import FlowBuilder from '@/components/automation/FlowBuilder';
 import { getAutomation } from '../actions';
 import { enforceFeature } from '@/lib/limits';
 import { getTeamForUser } from '@/lib/db/queries';
+import { createAutomationCanvasNode } from '@/lib/automation/node-catalog';
 import type { AutomationCanvasEdge, AutomationCanvasNode } from '@/lib/automation/flow-schema';
 
 export default async function AutomationEditorPage({ params }: { params: { id: string } }) {
@@ -27,7 +28,7 @@ export default async function AutomationEditorPage({ params }: { params: { id: s
   
   const initialNodes = (automation.nodes as AutomationCanvasNode[])?.length > 0 
     ? (automation.nodes as AutomationCanvasNode[]) 
-    : [{ id: 'start-1', type: 'start', position: { x: 250, y: 100 }, data: { label: 'Start' } } satisfies AutomationCanvasNode];
+    : [createAutomationCanvasNode({ id: 'start-1', type: 'start', position: { x: 250, y: 100 } })];
 
   const initialEdges = (automation.edges as AutomationCanvasEdge[]) || [];
 
