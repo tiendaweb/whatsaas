@@ -1,4 +1,5 @@
 import { ToolDefinition } from './types';
+import { ensureCustomFieldsTable } from '@/lib/contacts/custom-fields';
 import { db } from '@/lib/db/drizzle';
 import { chats, aiTools, messages, contacts, funnelStages, teamMembers, users, customFields, tags, contactTags } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
@@ -229,6 +230,8 @@ async function executeSetCustomFieldAction(
     args: Record<string, any>,
     context: { chatId: number; teamId: number }
 ): Promise<{ success: boolean; message: string }> {
+    await ensureCustomFieldsTable();
+
     const { fieldId, fieldKey } = actionData;
     if (!fieldId || !fieldKey) return { success: false, message: "No custom field configured" };
 

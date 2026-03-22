@@ -2,6 +2,7 @@ import { NextResponse, NextRequest } from 'next/server';
 import { db } from '@/lib/db/drizzle';
 import { getTeamForUser } from '@/lib/db/queries';
 import { customFields } from '@/lib/db/schema';
+import { ensureCustomFieldsTable } from '@/lib/contacts/custom-fields';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -30,6 +31,8 @@ function buildFieldKey(name: string) {
 
 export async function GET() {
   try {
+    await ensureCustomFieldsTable();
+
     const team = await getTeamForUser();
     if (!team) return NextResponse.json([]);
 
@@ -43,6 +46,8 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    await ensureCustomFieldsTable();
+
     const team = await getTeamForUser();
     if (!team) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -86,6 +91,8 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
     try {
+        await ensureCustomFieldsTable();
+
         const team = await getTeamForUser();
         if (!team) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         

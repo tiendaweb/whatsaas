@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ensureCustomFieldsTable } from '@/lib/contacts/custom-fields';
 import { db } from '@/lib/db/drizzle';
 import { contacts, chats, tags, contactTags, customFields, funnelStages, teamMembers, departments } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
@@ -6,6 +7,8 @@ import { getSession } from '@/lib/auth/session';
 
 export async function POST(req: NextRequest) {
   try {
+    await ensureCustomFieldsTable();
+
     const session = await getSession();
     if (!session || !session.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
