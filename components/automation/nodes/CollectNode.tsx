@@ -8,9 +8,9 @@ interface CollectNodeData {
   variable: string;
 }
 
-export function CollectNode({ data, selected }: { data: CollectNodeData, selected?: boolean }) {
+export function CollectNode({ id, data, selected }: { id: string; data: CollectNodeData, selected?: boolean }) {
   return (
-    <BaseNode title="Collect Input" icon={PenLine} selected={selected}>
+    <BaseNode nodeId={id} title="Collect Input" icon={PenLine} selected={selected}>
       <div className="text-sm text-foreground line-clamp-2 mb-2">
         {data.label || "Ask a question..."}
       </div>

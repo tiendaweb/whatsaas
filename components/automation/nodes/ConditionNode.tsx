@@ -17,11 +17,12 @@ interface ConditionNodeData {
   conditions: Condition[];
 }
 
-export function ConditionNode({ data, selected }: { data: ConditionNodeData, selected?: boolean }) {
+export function ConditionNode({ id, data, selected }: { id: string; data: ConditionNodeData, selected?: boolean }) {
   const conditions = data.conditions || [];
 
   return (
     <BaseNode 
+      nodeId={id}
       title="Condition Split" 
       icon={Split} 
       selected={selected} 

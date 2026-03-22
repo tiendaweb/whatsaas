@@ -8,9 +8,9 @@ interface CallToActionData {
   url?: string;
 }
 
-export function CallToActionNode({ data, selected }: { data: CallToActionData, selected?: boolean }) {
+export function CallToActionNode({ id, data, selected }: { id: string; data: CallToActionData, selected?: boolean }) {
   return (
-    <BaseNode title="Call to Action" icon={ExternalLink} selected={selected}>
+    <BaseNode nodeId={id} title="Call to Action" icon={ExternalLink} selected={selected}>
       <div className="flex flex-col gap-3">
         <div className="text-sm text-foreground line-clamp-3">
           {data.bodyText || "Enter message text..."}

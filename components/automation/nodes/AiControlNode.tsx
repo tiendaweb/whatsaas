@@ -6,7 +6,7 @@ interface AiControlNodeData {
   action?: 'active' | 'paused';
 }
 
-export function AiControlNode({ data, selected }: { data: AiControlNodeData, selected?: boolean }) {
+export function AiControlNode({ id, data, selected }: { id: string; data: AiControlNodeData, selected?: boolean }) {
   const actionLabel = data.action === 'active' ? 'Enable IA' : 'Pause IA';
   
   const actionColor = data.action === 'active' 
@@ -14,7 +14,7 @@ export function AiControlNode({ data, selected }: { data: AiControlNodeData, sel
     : 'text-orange-600 bg-orange-50 border-orange-200 dark:text-orange-400 dark:bg-orange-900/30 dark:border-orange-800';
 
   return (
-    <BaseNode title="IA Control" icon={Bot} selected={selected}>
+    <BaseNode nodeId={id} title="IA Control" icon={Bot} selected={selected}>
       <div className={`text-xs font-medium px-2 py-1 rounded border text-center ${actionColor}`}>
         {actionLabel}
       </div>
