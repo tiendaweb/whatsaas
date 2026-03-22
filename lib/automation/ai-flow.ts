@@ -2,7 +2,6 @@ import { z } from 'zod';
 import {
   AUTOMATION_FLOW_CHANNELS,
   AUTOMATION_FLOW_NODE_TYPES,
-  AUTOMATION_TEXT_LIMITS,
   automationFlowEdgeSchema,
   automationFlowNodeSchema,
   type AutomationCanvasEdge,
@@ -13,6 +12,11 @@ import {
   type AutomationFlowNodeType,
   validateAutomationFlow,
 } from '@/lib/automation/flow-schema';
+import {
+  getAllowedAutomationNodeCatalog,
+  getAllowedAutomationNodeTypesForChannel,
+  getNodeContentConstraintsForChannel,
+} from '@/lib/automation/node-catalog';
 
 export const AUTOMATION_AI_CHANNELS = AUTOMATION_FLOW_CHANNELS;
 export type AutomationAIChannel = AutomationFlowChannel;
@@ -27,51 +31,23 @@ export type AutomationGeneratedFlow = {
   edges: AutomationFlowEdge[];
 };
 
-export const AUTOMATION_AI_NODE_CATALOG: Array<{
-  type: AutomationAINodeType;
-  label: string;
-  channels: AutomationAIChannel[];
-  description: string;
-}> = [
-  { type: 'start', label: 'Start Trigger', channels: ['qr', 'api'], description: 'Required entry node for the automation flow.' },
-  { type: 'message', label: 'Message', channels: ['qr'], description: 'Plain text WhatsApp message. Only available in QR flows.' },
-  { type: 'media', label: 'Media', channels: ['qr'], description: 'Send image, video, audio, or document with optional caption. Only available in QR flows.' },
-  { type: 'options', label: 'Options', channels: ['qr', 'api'], description: 'Menu of numbered text options.' },
-  { type: 'delay', label: 'Delay', channels: ['qr', 'api'], description: 'Wait some seconds before the next node.' },
-  { type: 'collect', label: 'Collect Input', channels: ['qr', 'api'], description: 'Ask a question and store the reply in a variable.' },
-  { type: 'save_contact', label: 'Save Contact', channels: ['qr', 'api'], description: 'Update contact attributes, owner, tags, or stage.' },
-  { type: 'end', label: 'End', channels: ['qr', 'api'], description: 'Immediately ends the automation session.' },
-  { type: 'button_message', label: 'Button Message', channels: ['api'], description: 'Interactive button message for API flows.' },
-  { type: 'list_message', label: 'List Message', channels: ['api'], description: 'Interactive list message for API flows.' },
-  { type: 'call_to_action', label: 'Call To Action', channels: ['api'], description: 'CTA message with URL button for API flows.' },
-  { type: 'ai_control', label: 'AI Control', channels: ['qr', 'api'], description: 'Enable or pause the AI assistant.' },
-  { type: 'condition', label: 'Condition', channels: ['qr', 'api'], description: 'Conditional split with dedicated branches and fallback.' },
-];
+export const AUTOMATION_AI_NODE_CATALOG = getAllowedAutomationNodeCatalog('qr').concat(
+  getAllowedAutomationNodeCatalog('api').filter((entry) => !getAllowedAutomationNodeCatalog('qr').some((qrEntry) => qrEntry.type === entry.type)),
+).map((entry) => ({
+  type: entry.type,
+  labelKey: entry.labelKey,
+  channels: entry.channels,
+  description: entry.aiDescription,
+  examples: entry.aiExamples,
+  connectionRules: entry.connectionRules.notes,
+}));
 
 export function getAllowedNodeTypesForChannel(channel: AutomationAIChannel): AutomationAINodeType[] {
-  return AUTOMATION_AI_NODE_CATALOG.filter((node) => node.channels.includes(channel)).map((node) => node.type);
+  return getAllowedAutomationNodeTypesForChannel(channel);
 }
 
 export function getDefaultNodeContentConstraints(channel: AutomationAIChannel): Record<string, string> {
-  return {
-    start: 'Exactly one start node. Use triggerType="first_message" unless the prompt clearly asks for keywords or fallback behavior.',
-    message: channel === 'qr'
-      ? `Plain text only. Use label with the exact message content. Keep text within ${AUTOMATION_TEXT_LIMITS.qr.text} characters.`
-      : 'Forbidden in API flows.',
-    media: channel === 'qr'
-      ? `Use mediaType plus optional caption. Caption must stay within ${AUTOMATION_TEXT_LIMITS.qr.mediaCaption} characters.`
-      : 'Forbidden in API flows.',
-    options: `Use label for the question and data.options for the numbered options. Maximum 10 options and ${AUTOMATION_TEXT_LIMITS.qr.option} characters per option.`,
-    delay: 'Use data.seconds as a positive integer. Keep delays practical (usually between 1 and 300 seconds).',
-    collect: `Use label for the prompt and data.variable for the variable name in snake_case. Keep prompt within ${AUTOMATION_TEXT_LIMITS.qr.text} characters.`,
-    save_contact: 'Only set fields that are truly needed. Prefer variables over hard-coded assignments when possible.',
-    end: 'Use this when the automation should stop cleanly.',
-    button_message: `API only. Use bodyText plus up to 3 buttons with id, text, and value. Button text max ${AUTOMATION_TEXT_LIMITS.api.buttonText} chars.`,
-    list_message: `API only. Use bodyText, buttonText, and up to 10 items with id, title, description, and rowId. Titles max ${AUTOMATION_TEXT_LIMITS.api.listItemTitle} chars and descriptions max ${AUTOMATION_TEXT_LIMITS.api.listItemDescription} chars.`,
-    call_to_action: `API only. Use bodyText, buttonText, and a valid https URL. Button text max ${AUTOMATION_TEXT_LIMITS.api.buttonText} chars.`,
-    ai_control: 'Use action="active" to enable AI or action="paused" to pause AI.',
-    condition: 'Use 1 or more conditions. Each outgoing edge must use the matching condition id as sourceHandle or use fallback.',
-  };
+  return getNodeContentConstraintsForChannel(channel);
 }
 
 export const automationAIGenerationRequestSchema = z.object({
@@ -245,7 +221,7 @@ export function insertGeneratedSubflow(params: {
 }
 
 export function buildAutomationFlowGeneratorPrompt(input: z.infer<typeof automationAIGenerationRequestSchema>) {
-  const allowedCatalog = AUTOMATION_AI_NODE_CATALOG.filter((node) => input.allowedNodeTypes.includes(node.type));
+  const allowedCatalog = getAllowedAutomationNodeCatalog(input.channel, input.allowedNodeTypes);
 
   return [
     'You are generating JSON for a WhatsApp automation flow builder.',
@@ -262,8 +238,14 @@ export function buildAutomationFlowGeneratorPrompt(input: z.infer<typeof automat
     '- Keep positions readable on a left-to-right canvas. Start near x=0, and advance by about 320-420 px horizontally.',
     '- Use concise warnings when assumptions or placeholders are needed.',
     '- Never include markdown, commentary, or prose outside the JSON object.',
-    'Allowed node types:',
-    ...allowedCatalog.map((node) => `- ${node.type}: ${node.description}`),
+    'Allowed node types and semantic guidance:',
+    ...allowedCatalog.flatMap((node) => [
+      `- ${node.type}: ${node.aiDescription}`,
+      `  Category: ${node.category}.`,
+      `  Connection rules: ${node.connectionRules.notes.join(' ')}`,
+      `  Editable fields: ${node.editableFields.map((field) => `${field.key}${field.required ? ' (required)' : ''}`).join(', ') || 'none'}.`,
+      `  Valid examples: ${node.aiExamples.join(' | ')}`,
+    ]),
     'Node content constraints:',
     ...Object.entries(input.nodeContentConstraints).map(([nodeType, constraint]) => `- ${nodeType}: ${constraint}`),
     'User prompt:',

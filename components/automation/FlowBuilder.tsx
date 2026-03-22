@@ -79,6 +79,7 @@ import {
   type AutomationAIChannel,
   type AutomationGeneratedFlow,
 } from '@/lib/automation/ai-flow';
+import { createAutomationCanvasNode } from '@/lib/automation/node-catalog';
 import type { AutomationCanvasEdge, AutomationCanvasNode, AutomationCanvasNodeData, AutomationFlowEdge, AutomationFlowNode } from '@/lib/automation/flow-schema';
 
 const nodeTypes = {
@@ -200,12 +201,10 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
         y: event.clientY,
       });
 
-      const newNode: AutomationCanvasNode = {
-        id: `${type}-${Date.now()}`,
+      const newNode = createAutomationCanvasNode({
         type: type as AutomationCanvasNode['type'],
         position,
-        data: { label: 'New Node' },
-      };
+      });
 
       setNodes((nds) => [...nds, newNode]);
     },
@@ -649,9 +648,10 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
                 <CardContent className="space-y-3">
                   {AUTOMATION_AI_NODE_CATALOG.filter((node) => node.channels.includes(generatorChannel)).map((node) => (
                     <div key={node.type} className="rounded-lg border p-3">
-                      <div className="font-medium text-sm">{node.label}</div>
+                      <div className="font-medium text-sm">{t(node.labelKey)}</div>
                       <div className="text-xs text-muted-foreground mt-1">{node.description}</div>
                       <div className="text-xs mt-2 text-muted-foreground">{generatorConstraints[node.type]}</div>
+                      <div className="text-[11px] mt-2 text-muted-foreground">{node.examples.join(' · ')}</div>
                     </div>
                   ))}
                 </CardContent>

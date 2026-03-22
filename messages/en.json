@@ -502,6 +502,7 @@
     "toast_saved": "Flow saved successfully",
     "toast_status_changed": "Automation status updated",
     "nodes": {
+      "start": "Start Trigger",
       "condition": "Condition Split",
       "message": "Send Message",
       "media": "Send Media",

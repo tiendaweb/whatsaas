@@ -502,6 +502,7 @@
     "toast_saved": "Fluxo salvo com sucesso",
     "toast_status_changed": "Status da automação atualizado",
     "nodes": {
+      "start": "Gatilho inicial",
       "condition": "Condição",
       "message": "Enviar Mensagem",
       "media": "Enviar Mídia",
