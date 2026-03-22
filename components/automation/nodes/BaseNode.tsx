@@ -2,8 +2,10 @@ import React from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { cn } from '@/lib/utils';
 import { LucideIcon } from 'lucide-react';
+import { DisconnectableTargetHandle } from './DisconnectableTargetHandle';
 
 interface BaseNodeProps {
+  nodeId: string;
   selected?: boolean;
   title: string;
   icon: LucideIcon;
@@ -13,6 +15,7 @@ interface BaseNodeProps {
 }
 
 export function BaseNode({ 
+  nodeId,
   selected, 
   title, 
   icon: Icon, 
@@ -37,8 +40,8 @@ export function BaseNode({
       </div>
 
       {!isStart && (
-        <Handle
-          type="target"
+        <DisconnectableTargetHandle
+          nodeId={nodeId}
           position={Position.Left}
           className="!bg-muted-foreground !w-3 !h-3 !-ml-1.5"
         />

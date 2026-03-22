@@ -15,7 +15,7 @@ interface StartNodeData {
   };
 }
 
-export function StartNode({ data, selected }: { data: StartNodeData, selected?: boolean }) {
+export function StartNode({ id, data, selected }: { id: string; data: StartNodeData, selected?: boolean }) {
   const triggerTypeLabel = {
     exact_match: 'Exact Match',
     contains: 'Message Contains',
@@ -24,7 +24,7 @@ export function StartNode({ data, selected }: { data: StartNodeData, selected?: 
   }[data.triggerType] || 'Message Contains';
 
   return (
-    <BaseNode title="Start Trigger" icon={Zap} selected={selected} isStart>
+    <BaseNode nodeId={id} title="Start Trigger" icon={Zap} selected={selected} isStart>
       <div className="space-y-3">
         <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 p-2 rounded">
           <MessageSquare className="h-3 w-3" />

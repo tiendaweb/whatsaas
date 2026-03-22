@@ -3,11 +3,11 @@ import { List, GripVertical } from 'lucide-react';
 import { Handle, Position } from '@xyflow/react';
 import { BaseNode } from './BaseNode';
 
-export function OptionsNode({ data, selected }: { data: { label: string, options?: string[] }, selected?: boolean }) {
+export function OptionsNode({ id, data, selected }: { id: string; data: { label: string, options?: string[] }, selected?: boolean }) {
   const options = data.options && data.options.length > 0 ? data.options : ['Option 1', 'Option 2'];
 
   return (
-    <BaseNode title="Options Menu" icon={List} selected={selected}>
+    <BaseNode nodeId={id} title="Options Menu" icon={List} selected={selected}>
       <div className="text-sm text-foreground mb-4 whitespace-pre-wrap">
         {data.label || "Choose an option:"}
       </div>

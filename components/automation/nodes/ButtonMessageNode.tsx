@@ -14,11 +14,12 @@ interface ButtonMessageData {
   buttons?: Button[];
 }
 
-export function ButtonMessageNode({ data, selected }: { data: ButtonMessageData, selected?: boolean }) {
+export function ButtonMessageNode({ id, data, selected }: { id: string; data: ButtonMessageData, selected?: boolean }) {
   const buttons = data.buttons || [];
 
   return (
     <BaseNode 
+      nodeId={id}
       title="Button Message" 
       icon={MousePointerClick} 
       selected={selected}

@@ -15,11 +15,12 @@ interface ListMessageData {
   items?: ListItem[];
 }
 
-export function ListMessageNode({ data, selected }: { data: ListMessageData, selected?: boolean }) {
+export function ListMessageNode({ id, data, selected }: { id: string; data: ListMessageData, selected?: boolean }) {
   const items = data.items || [];
 
   return (
     <BaseNode 
+      nodeId={id}
       title="List Message" 
       icon={ListChecks} 
       selected={selected}

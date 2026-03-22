@@ -9,7 +9,7 @@ interface MediaNodeData {
   fileName?: string;
 }
 
-export function MediaNode({ data, selected }: { data: MediaNodeData, selected?: boolean }) {
+export function MediaNode({ id, data, selected }: { id: string; data: MediaNodeData, selected?: boolean }) {
   const getIcon = () => {
     switch (data.mediaType) {
       case 'image': return Image;
@@ -22,7 +22,7 @@ export function MediaNode({ data, selected }: { data: MediaNodeData, selected?: 
   const Icon = getIcon();
 
   return (
-    <BaseNode title="Send Media" icon={Icon} selected={selected}>
+    <BaseNode nodeId={id} title="Send Media" icon={Icon} selected={selected}>
       <div className="flex flex-col gap-2">
         {data.mediaUrl ? (
           <div className="text-xs text-muted-foreground flex items-center gap-2 bg-muted/50 p-2 rounded">

@@ -11,7 +11,7 @@ interface SaveContactNodeData {
   customFields?: Record<string, string>;
 }
 
-export function SaveContactNode({ data, selected }: { data: SaveContactNodeData, selected?: boolean }) {
+export function SaveContactNode({ id, data, selected }: { id: string; data: SaveContactNodeData, selected?: boolean }) {
   const updates = [
     data.nameVariable ? `Name: {{${data.nameVariable}}}` : null,
     data.agentId && data.agentId !== 'null' ? 'Assign Agent' : null,
@@ -22,7 +22,7 @@ export function SaveContactNode({ data, selected }: { data: SaveContactNodeData,
   ].filter(Boolean);
 
   return (
-    <BaseNode title="Update Contact" icon={Save} selected={selected}>
+    <BaseNode nodeId={id} title="Update Contact" icon={Save} selected={selected}>
       {updates.length > 0 ? (
         <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-1">
           {updates.map((u, i) => <li key={i} className="truncate max-w-[180px]">{u}</li>)}

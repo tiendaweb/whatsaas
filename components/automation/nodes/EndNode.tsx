@@ -1,9 +1,10 @@
 import React from 'react';
 import { XCircle } from 'lucide-react';
-import { Handle, Position } from '@xyflow/react';
+import { Position } from '@xyflow/react';
 import { cn } from '@/lib/utils';
+import { DisconnectableTargetHandle } from './DisconnectableTargetHandle';
 
-export function EndNode({ selected }: { selected?: boolean }) {
+export function EndNode({ id, selected }: { id: string; selected?: boolean }) {
   return (
     <div
       className={cn(
@@ -14,8 +15,8 @@ export function EndNode({ selected }: { selected?: boolean }) {
       <XCircle className="h-4 w-4" />
       <span className="text-sm font-bold">End Chat</span>
       
-      <Handle
-        type="target"
+      <DisconnectableTargetHandle
+        nodeId={id}
         position={Position.Left}
         className="!bg-destructive !w-3 !h-3 !-ml-1.5"
       />
