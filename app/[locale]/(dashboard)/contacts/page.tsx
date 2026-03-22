@@ -477,14 +477,16 @@ export default function ContactsPage() {
         try {
             const res = await fetch('/api/custom-fields', {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: newFieldName, type: newFieldType })
             });
-            if(!res.ok) throw new Error("Err");
-            mutate('/api/custom-fields');
+            const data = await res.json().catch(() => null);
+            if(!res.ok) throw new Error(data?.error || "Err");
+            await mutate('/api/custom-fields');
             setNewFieldName('');
             toast.success("Field created");
         } catch(e) {
-            toast.error("Error creating field");
+            toast.error(e instanceof Error ? e.message : "Error creating field");
         } finally {
             setIsSaving(false);
         }
