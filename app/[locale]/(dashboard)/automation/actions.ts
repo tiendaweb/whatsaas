@@ -13,6 +13,11 @@ import {
   extractJsonObject,
   validateGeneratedAutomationFlow,
 } from '@/lib/automation/ai-flow';
+import {
+  type AutomationFlowEdge,
+  type AutomationFlowNode,
+  validateAutomationFlow,
+} from '@/lib/automation/flow-schema';
 
 export async function getAutomations() {
   const team = await getTeamForUser();
@@ -55,12 +60,17 @@ export async function createAutomation(name: string, instanceId: number) {
   return { success: true, id: newBot.id };
 }
 
-export async function saveAutomation(id: number, nodes: any[], edges: any[]) {
+export async function saveAutomation(id: number, nodes: AutomationFlowNode[], edges: AutomationFlowEdge[]) {
   const team = await getTeamForUser();
   if (!team) throw new Error('Unauthorized');
 
+  const validatedFlow = validateAutomationFlow({ nodes, edges });
+  if (!validatedFlow.success) {
+    throw new Error(validatedFlow.errors[0] || 'Invalid automation flow.');
+  }
+
   await db.update(automations)
-    .set({ nodes, edges, updatedAt: new Date() })
+    .set({ nodes: validatedFlow.data.nodes, edges: validatedFlow.data.edges, updatedAt: new Date() })
     .where(eq(automations.id, id));
 
   revalidatePath(`/automation/${id}`);
@@ -96,8 +106,8 @@ export type GenerateAutomationFlowResult = {
   flow?: {
     suggestedName: string;
     warnings: string[];
-    nodes: any[];
-    edges: any[];
+    nodes: AutomationFlowNode[];
+    edges: AutomationFlowEdge[];
   };
 };
 

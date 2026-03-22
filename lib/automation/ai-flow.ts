@@ -1,40 +1,24 @@
 import { z } from 'zod';
+import {
+  AUTOMATION_FLOW_CHANNELS,
+  AUTOMATION_FLOW_NODE_TYPES,
+  AUTOMATION_TEXT_LIMITS,
+  automationFlowEdgeSchema,
+  automationFlowNodeSchema,
+  type AutomationCanvasEdge,
+  type AutomationCanvasNode,
+  type AutomationFlowChannel,
+  type AutomationFlowEdge,
+  type AutomationFlowNode,
+  type AutomationFlowNodeType,
+  validateAutomationFlow,
+} from '@/lib/automation/flow-schema';
 
-export const AUTOMATION_AI_CHANNELS = ['qr', 'api'] as const;
-export type AutomationAIChannel = (typeof AUTOMATION_AI_CHANNELS)[number];
+export const AUTOMATION_AI_CHANNELS = AUTOMATION_FLOW_CHANNELS;
+export type AutomationAIChannel = AutomationFlowChannel;
 
-export const AUTOMATION_AI_NODE_TYPES = [
-  'start',
-  'message',
-  'media',
-  'options',
-  'delay',
-  'collect',
-  'save_contact',
-  'end',
-  'button_message',
-  'list_message',
-  'call_to_action',
-  'ai_control',
-  'condition',
-] as const;
-
-export type AutomationAINodeType = (typeof AUTOMATION_AI_NODE_TYPES)[number];
-
-export type AutomationFlowNode = {
-  id: string;
-  type: AutomationAINodeType;
-  position: { x: number; y: number };
-  data: Record<string, unknown>;
-};
-
-export type AutomationFlowEdge = {
-  id: string;
-  source: string;
-  target: string;
-  sourceHandle?: string | null;
-  targetHandle?: string | null;
-};
+export const AUTOMATION_AI_NODE_TYPES = AUTOMATION_FLOW_NODE_TYPES;
+export type AutomationAINodeType = AutomationFlowNodeType;
 
 export type AutomationGeneratedFlow = {
   suggestedName: string;
@@ -72,169 +56,23 @@ export function getDefaultNodeContentConstraints(channel: AutomationAIChannel): 
   return {
     start: 'Exactly one start node. Use triggerType="first_message" unless the prompt clearly asks for keywords or fallback behavior.',
     message: channel === 'qr'
-      ? 'Plain text only. Use label with the exact message content. Do not use this node in API flows.'
+      ? `Plain text only. Use label with the exact message content. Keep text within ${AUTOMATION_TEXT_LIMITS.qr.text} characters.`
       : 'Forbidden in API flows.',
     media: channel === 'qr'
-      ? 'Use mediaType plus optional caption. mediaUrl is optional only when the asset must be attached later by a human.'
+      ? `Use mediaType plus optional caption. Caption must stay within ${AUTOMATION_TEXT_LIMITS.qr.mediaCaption} characters.`
       : 'Forbidden in API flows.',
-    options: 'Use label for the question and data.options for the numbered options.',
+    options: `Use label for the question and data.options for the numbered options. Maximum 10 options and ${AUTOMATION_TEXT_LIMITS.qr.option} characters per option.`,
     delay: 'Use data.seconds as a positive integer. Keep delays practical (usually between 1 and 300 seconds).',
-    collect: 'Use label for the prompt and data.variable for the variable name in snake_case.',
+    collect: `Use label for the prompt and data.variable for the variable name in snake_case. Keep prompt within ${AUTOMATION_TEXT_LIMITS.qr.text} characters.`,
     save_contact: 'Only set fields that are truly needed. Prefer variables over hard-coded assignments when possible.',
     end: 'Use this when the automation should stop cleanly.',
-    button_message: 'API only. Use bodyText plus up to 3 buttons with id, text, and value.',
-    list_message: 'API only. Use bodyText, buttonText, and up to 10 items with id, title, description, and rowId.',
-    call_to_action: 'API only. Use bodyText, buttonText, and a valid https URL.',
+    button_message: `API only. Use bodyText plus up to 3 buttons with id, text, and value. Button text max ${AUTOMATION_TEXT_LIMITS.api.buttonText} chars.`,
+    list_message: `API only. Use bodyText, buttonText, and up to 10 items with id, title, description, and rowId. Titles max ${AUTOMATION_TEXT_LIMITS.api.listItemTitle} chars and descriptions max ${AUTOMATION_TEXT_LIMITS.api.listItemDescription} chars.`,
+    call_to_action: `API only. Use bodyText, buttonText, and a valid https URL. Button text max ${AUTOMATION_TEXT_LIMITS.api.buttonText} chars.`,
     ai_control: 'Use action="active" to enable AI or action="paused" to pause AI.',
     condition: 'Use 1 or more conditions. Each outgoing edge must use the matching condition id as sourceHandle or use fallback.',
   };
 }
-
-const positionSchema = z.object({
-  x: z.number().finite(),
-  y: z.number().finite(),
-});
-
-const startDataSchema = z.object({
-  label: z.string().optional(),
-  triggerType: z.enum(['exact_match', 'contains', 'first_message', 'fallback']).optional(),
-  keywords: z.array(z.string().min(1)).optional(),
-  conditions: z.object({
-    funnelStageId: z.string().optional(),
-    tagId: z.string().optional(),
-    assignedUserId: z.string().optional(),
-    departmentId: z.string().optional(),
-  }).partial().optional(),
-});
-
-const messageDataSchema = z.object({
-  label: z.string().min(1),
-});
-
-const mediaDataSchema = z.object({
-  mediaUrl: z.string().optional(),
-  mediaType: z.enum(['image', 'video', 'audio', 'document']).optional(),
-  caption: z.string().optional(),
-  fileName: z.string().optional(),
-});
-
-const optionsDataSchema = z.object({
-  label: z.string().min(1),
-  options: z.array(z.string().min(1)).min(1).max(10),
-});
-
-const delayDataSchema = z.object({
-  seconds: z.number().int().positive().max(86400),
-  label: z.string().optional(),
-});
-
-const collectDataSchema = z.object({
-  label: z.string().min(1),
-  variable: z.string().min(1),
-});
-
-const saveContactDataSchema = z.object({
-  nameVariable: z.string().optional(),
-  agentId: z.string().optional(),
-  departmentId: z.string().optional(),
-  tagId: z.string().optional(),
-  funnelStageId: z.string().optional(),
-  customFields: z.record(z.string(), z.string()).optional(),
-});
-
-const endDataSchema = z.object({}).passthrough();
-
-const buttonMessageDataSchema = z.object({
-  title: z.string().optional(),
-  bodyText: z.string().min(1),
-  footerText: z.string().optional(),
-  buttonText: z.string().optional(),
-  buttons: z.array(z.object({
-    id: z.string().min(1),
-    text: z.string().min(1),
-    value: z.string().min(1),
-  })).min(1).max(3),
-});
-
-const listMessageDataSchema = z.object({
-  title: z.string().optional(),
-  bodyText: z.string().min(1),
-  footerText: z.string().optional(),
-  buttonText: z.string().min(1),
-  items: z.array(z.object({
-    id: z.string().min(1),
-    title: z.string().min(1),
-    description: z.string().optional(),
-    rowId: z.string().min(1),
-  })).min(1).max(10),
-});
-
-const callToActionDataSchema = z.object({
-  title: z.string().optional(),
-  bodyText: z.string().min(1),
-  footerText: z.string().optional(),
-  buttonText: z.string().min(1),
-  url: z.string().url(),
-});
-
-const aiControlDataSchema = z.object({
-  action: z.enum(['active', 'paused']),
-});
-
-const conditionDataSchema = z.object({
-  conditions: z.array(z.object({
-    id: z.string().min(1),
-    type: z.string().min(1),
-    operator: z.string().min(1),
-    value: z.string().min(1),
-    value2: z.string().optional(),
-  })).min(1),
-  label: z.string().optional(),
-});
-
-const nodeDataSchemaByType = {
-  start: startDataSchema,
-  message: messageDataSchema,
-  media: mediaDataSchema,
-  options: optionsDataSchema,
-  delay: delayDataSchema,
-  collect: collectDataSchema,
-  save_contact: saveContactDataSchema,
-  end: endDataSchema,
-  button_message: buttonMessageDataSchema,
-  list_message: listMessageDataSchema,
-  call_to_action: callToActionDataSchema,
-  ai_control: aiControlDataSchema,
-  condition: conditionDataSchema,
-} as const;
-
-const automationFlowNodeSchema = z.object({
-  id: z.string().min(1),
-  type: z.enum(AUTOMATION_AI_NODE_TYPES),
-  position: positionSchema,
-  data: z.record(z.string(), z.unknown()),
-}).superRefine((node, ctx) => {
-  const dataSchema = nodeDataSchemaByType[node.type];
-  const result = dataSchema.safeParse(node.data);
-
-  if (!result.success) {
-    result.error.issues.forEach((issue) => {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Invalid data for node "${node.id}" (${node.type}): ${issue.message}`,
-        path: ['data', ...(issue.path ?? [])],
-      });
-    });
-  }
-});
-
-const automationFlowEdgeSchema = z.object({
-  id: z.string().min(1),
-  source: z.string().min(1),
-  target: z.string().min(1),
-  sourceHandle: z.string().nullable().optional(),
-  targetHandle: z.string().nullable().optional(),
-});
 
 export const automationAIGenerationRequestSchema = z.object({
   prompt: z.string().min(10),
@@ -271,7 +109,7 @@ export function extractJsonObject(raw: string): string {
 
 export function validateGeneratedAutomationFlow(
   input: unknown,
-  options?: { allowedNodeTypes?: AutomationAINodeType[]; channel?: AutomationAIChannel; requireSingleStart?: boolean }
+  options?: { allowedNodeTypes?: AutomationAINodeType[]; channel?: AutomationAIChannel; requireSingleStart?: boolean },
 ):
   | { success: true; data: AutomationGeneratedFlow }
   | { success: false; errors: string[] } {
@@ -284,79 +122,36 @@ export function validateGeneratedAutomationFlow(
     };
   }
 
-  const data = parsed.data as AutomationGeneratedFlow;
-  const errors: string[] = [];
-  const nodeIds = new Set<string>();
-  const edgeIds = new Set<string>();
-  const startNodes = data.nodes.filter((node) => node.type === 'start');
-  const allowedNodeTypes = new Set(options?.allowedNodeTypes ?? AUTOMATION_AI_NODE_TYPES);
+  const validated = validateAutomationFlow(
+    {
+      nodes: parsed.data.nodes,
+      edges: parsed.data.edges,
+    },
+    options,
+  );
 
-  for (const node of data.nodes) {
-    if (nodeIds.has(node.id)) {
-      errors.push(`Duplicate node id: ${node.id}`);
-    }
-    nodeIds.add(node.id);
-
-    if (!allowedNodeTypes.has(node.type)) {
-      errors.push(`Node type not allowed: ${node.type}`);
-    }
-
-    if (options?.channel === 'api' && (node.type === 'message' || node.type === 'media')) {
-      errors.push(`Node type ${node.type} is not allowed for API flows.`);
-    }
+  if (!validated.success) {
+    return validated;
   }
 
-  if (options?.requireSingleStart !== false) {
-    if (startNodes.length === 0) {
-      errors.push('The flow must include exactly one start node.');
-    }
-    if (startNodes.length > 1) {
-      errors.push('The flow cannot include more than one start node.');
-    }
-  }
-
-  for (const edge of data.edges) {
-    if (edgeIds.has(edge.id)) {
-      errors.push(`Duplicate edge id: ${edge.id}`);
-    }
-    edgeIds.add(edge.id);
-
-    if (!nodeIds.has(edge.source)) {
-      errors.push(`Edge ${edge.id} references unknown source node ${edge.source}.`);
-    }
-    if (!nodeIds.has(edge.target)) {
-      errors.push(`Edge ${edge.id} references unknown target node ${edge.target}.`);
-    }
-  }
-
-  for (const node of data.nodes.filter((node) => node.type === 'condition')) {
-    const conditions = Array.isArray(node.data.conditions) ? node.data.conditions as Array<{ id: string }> : [];
-    const validHandles = new Set(conditions.map((condition) => condition.id));
-    validHandles.add('fallback');
-
-    for (const edge of data.edges.filter((edge) => edge.source === node.id)) {
-      if (edge.sourceHandle && !validHandles.has(edge.sourceHandle)) {
-        errors.push(`Condition node ${node.id} has edge ${edge.id} with unknown sourceHandle ${edge.sourceHandle}.`);
-      }
-    }
-  }
-
-  if (errors.length > 0) {
-    return { success: false, errors };
-  }
-
-  return { success: true, data };
+  return {
+    success: true,
+    data: {
+      suggestedName: parsed.data.suggestedName,
+      warnings: parsed.data.warnings,
+      nodes: validated.data.nodes,
+      edges: validated.data.edges,
+    },
+  };
 }
 
 export function validateAutomationCanvas(nodes: unknown[], edges: unknown[]) {
-  return validateGeneratedAutomationFlow(
+  return validateAutomationFlow(
     {
-      suggestedName: 'Current automation',
-      warnings: [],
       nodes,
       edges,
     },
-    { requireSingleStart: true }
+    { requireSingleStart: true },
   );
 }
 
@@ -374,8 +169,8 @@ function uniqueId(prefix: string, existingIds: Set<string>) {
 }
 
 export function insertGeneratedSubflow(params: {
-  currentNodes: AutomationFlowNode[];
-  currentEdges: AutomationFlowEdge[];
+  currentNodes: AutomationCanvasNode[];
+  currentEdges: AutomationCanvasEdge[];
   generatedNodes: AutomationFlowNode[];
   generatedEdges: AutomationFlowEdge[];
   selectedNodeId: string;
@@ -444,7 +239,7 @@ export function insertGeneratedSubflow(params: {
 
   return {
     success: true as const,
-    nodes: [...params.currentNodes, ...positionedNodes],
+    nodes: [...params.currentNodes, ...(positionedNodes as AutomationCanvasNode[])],
     edges: [...params.currentEdges, ...edgesWithoutStart, ...connectorEdges],
   };
 }

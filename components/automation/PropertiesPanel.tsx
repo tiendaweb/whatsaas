@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { Node } from '@xyflow/react';
 import useSWR from 'swr';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -9,12 +8,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from '@/components/ui/badge';
 import { X, Save, Plus, Trash2, UploadCloud, Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import type {
+  AutomationCanvasNode,
+  AutomationCanvasNodeData,
+  AIControlNodeData,
+  ButtonMessageButton,
+  ConditionEntry,
+  ListMessageItem,
+  MediaNodeData,
+  StartNodeData,
+} from '@/lib/automation/flow-schema';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 interface PropertiesPanelProps {
-  selectedNode: Node | null;
-  onUpdateNode: (id: string, data: any) => void;
+  selectedNode: AutomationCanvasNode | null;
+  onUpdateNode: (id: string, data: Partial<AutomationCanvasNodeData>) => void;
   onClose: () => void;
 }
 
@@ -33,7 +42,7 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
   const [saveFunnelId, setSaveFunnelId] = useState('null');
   const [saveCustomFields, setSaveCustomFields] = useState<Record<string, string>>({});
 
-  const [triggerType, setTriggerType] = useState('contains');
+  const [triggerType, setTriggerType] = useState<NonNullable<StartNodeData['triggerType']>>('contains');
   const [keywordInput, setKeywordInput] = useState('');
   const [keywords, setKeywords] = useState<string[]>([]);
   const [conditionStage, setConditionStage] = useState<string>('null');
@@ -42,7 +51,7 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
   const [conditionDepartment, setConditionDepartment] = useState<string>('null');
 
   const [mediaUrl, setMediaUrl] = useState('');
-  const [mediaType, setMediaType] = useState('image');
+  const [mediaType, setMediaType] = useState<NonNullable<MediaNodeData['mediaType']>>('image');
   const [mediaCaption, setMediaCaption] = useState('');
   const [fileName, setFileName] = useState('');
   const [isUploading, setIsUploading] = useState(false);
@@ -52,12 +61,12 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
   const [footerText, setFooterText] = useState('');
   const [buttonText, setButtonText] = useState('');
   const [ctaUrl, setCtaUrl] = useState('');
-  const [buttons, setButtons] = useState<{ id: string; text: string; value: string }[]>([]);
-  const [listItems, setListItems] = useState<{ id: string; title: string; description: string; rowId: string }[]>([]);
+  const [buttons, setButtons] = useState<ButtonMessageButton[]>([]);
+  const [listItems, setListItems] = useState<ListMessageItem[]>([]);
 
-  const [aiAction, setAiAction] = useState('active');
+  const [aiAction, setAiAction] = useState<AIControlNodeData['action']>('active');
 
-  const [conditions, setConditions] = useState<{ id: string; type: string; operator: string; value: string; value2?: string }[]>([]);
+  const [conditions, setConditions] = useState<ConditionEntry[]>([]);
 
   const shouldFetchCRM = selectedNode?.type === 'start' || selectedNode?.type === 'save_contact';
   const { data: funnelStages } = useSWR<any[]>(shouldFetchCRM ? '/api/funnel-stages' : null, fetcher);
@@ -93,9 +102,9 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
       }
 
       if (selectedNode.type === 'start') {
-        setTriggerType(selectedNode.data.triggerType as string || 'contains');
+        setTriggerType(selectedNode.data.triggerType || 'contains');
         setKeywords(selectedNode.data.keywords as string[] || []);
-        const conditions = selectedNode.data.conditions as any || {};
+        const conditions = (selectedNode.data.conditions as StartNodeData['conditions']) || {};
         setConditionStage(conditions.funnelStageId || 'null');
         setConditionTag(conditions.tagId || 'null');
         setConditionAgent(conditions.assignedUserId || 'null');
@@ -104,17 +113,17 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
 
       if (selectedNode.type === 'media') {
         setMediaUrl(selectedNode.data.mediaUrl as string || '');
-        setMediaType(selectedNode.data.mediaType as string || 'image');
+        setMediaType(selectedNode.data.mediaType || 'image');
         setMediaCaption(selectedNode.data.caption as string || '');
         setFileName(selectedNode.data.fileName as string || '');
       }
 
       if (selectedNode.type === 'button_message') {
-        setButtons(selectedNode.data.buttons as any[] || []);
+        setButtons((selectedNode.data.buttons as ButtonMessageButton[]) || []);
       }
 
       if (selectedNode.type === 'list_message') {
-        setListItems(selectedNode.data.items as any[] || []);
+        setListItems((selectedNode.data.items as ListMessageItem[]) || []);
       }
 
       if (selectedNode.type === 'call_to_action') {
@@ -122,11 +131,11 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
       }
 
       if (selectedNode.type === 'ai_control') {
-        setAiAction(selectedNode.data.action as string || 'active');
+        setAiAction(selectedNode.data.action || 'active');
       }
 
       if (selectedNode.type === 'condition') {
-        setConditions(selectedNode.data.conditions as any[] || []);
+        setConditions((selectedNode.data.conditions as ConditionEntry[]) || []);
       }
     }
   }, [selectedNode]);
@@ -140,7 +149,7 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
   }
 
   const handleSave = () => {
-    let dataToSave: any = { label };
+    let dataToSave: Partial<AutomationCanvasNodeData> = { label };
 
     if (selectedNode.type === 'message' || selectedNode.type === 'collect' || selectedNode.type === 'options') {
        dataToSave.label = label;
@@ -255,11 +264,8 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
     setButtons([...buttons, { id: Date.now().toString(), text: '', value: '' }]);
   };
   const removeButton = (idx: number) => setButtons(buttons.filter((_, i) => i !== idx));
-  const updateButton = (idx: number, field: string, val: string) => {
-    const newBtns = [...buttons];
-    // @ts-ignore
-    newBtns[idx][field] = val;
-    setButtons(newBtns);
+  const updateButton = (idx: number, field: keyof ButtonMessageButton, val: string) => {
+    setButtons((current) => current.map((button, index) => index === idx ? { ...button, [field]: val } : button));
   };
 
   const addListItem = () => {
@@ -267,22 +273,16 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
     setListItems([...listItems, { id: Date.now().toString(), title: '', description: '', rowId: '' }]);
   };
   const removeListItem = (idx: number) => setListItems(listItems.filter((_, i) => i !== idx));
-  const updateListItem = (idx: number, field: string, val: string) => {
-    const newItems = [...listItems];
-    // @ts-ignore
-    newItems[idx][field] = val;
-    setListItems(newItems);
+  const updateListItem = (idx: number, field: keyof ListMessageItem, val: string) => {
+    setListItems((current) => current.map((item, index) => index === idx ? { ...item, [field]: val } : item));
   };
 
   const addCondition = () => {
     setConditions([...conditions, { id: `cond-${Date.now()}`, type: 'text', operator: 'equals', value: '' }]);
   };
   const removeCondition = (idx: number) => setConditions(conditions.filter((_, i) => i !== idx));
-  const updateCondition = (idx: number, field: string, val: string) => {
-    const newConds = [...conditions];
-    // @ts-ignore
-    newConds[idx][field] = val;
-    setConditions(newConds);
+  const updateCondition = (idx: number, field: keyof ConditionEntry, val: string) => {
+    setConditions((current) => current.map((condition, index) => index === idx ? { ...condition, [field]: val } : condition));
   };
 
   return (
@@ -305,7 +305,7 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>{t('action_label')}</Label>
-              <Select value={aiAction} onValueChange={setAiAction}>
+              <Select value={aiAction} onValueChange={(value) => setAiAction(value as AIControlNodeData['action'])}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="active">{t('enable_ai_select')}</SelectItem>
@@ -520,7 +520,7 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
           <div className="space-y-4">
              <div className="space-y-2">
                 <Label>{t('media_type_label')}</Label>
-                <Select value={mediaType} onValueChange={setMediaType}>
+                <Select value={mediaType} onValueChange={(value) => setMediaType(value as NonNullable<MediaNodeData['mediaType']>)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="image">{t('image_select_item')}</SelectItem>
@@ -647,7 +647,7 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
 
         {selectedNode.type === 'start' && (
           <div className="space-y-6">
-            <div className="space-y-3"><Label>{t('trigger_type_label')}</Label><Select value={triggerType} onValueChange={setTriggerType}><SelectTrigger><SelectValue placeholder={t('any_select')} /></SelectTrigger><SelectContent><SelectItem value="exact_match">{t('exact_match_select')}</SelectItem><SelectItem value="contains">{t('message_contains_select')}</SelectItem><SelectItem value="first_message">{t('first_message_select')}</SelectItem><SelectItem value="fallback">{t('fallback_select')}</SelectItem></SelectContent></Select></div>
+            <div className="space-y-3"><Label>{t('trigger_type_label')}</Label><Select value={triggerType} onValueChange={(value) => setTriggerType(value as NonNullable<StartNodeData['triggerType']>)}><SelectTrigger><SelectValue placeholder={t('any_select')} /></SelectTrigger><SelectContent><SelectItem value="exact_match">{t('exact_match_select')}</SelectItem><SelectItem value="contains">{t('message_contains_select')}</SelectItem><SelectItem value="first_message">{t('first_message_select')}</SelectItem><SelectItem value="fallback">{t('fallback_select')}</SelectItem></SelectContent></Select></div>
             {['exact_match', 'contains'].includes(triggerType) && (<div className="space-y-3"><Label>{t('keywords_label')}</Label><div className="flex gap-2"><Input value={keywordInput} onChange={(e) => setKeywordInput(e.target.value)} placeholder={t('add_keyword_placeholder')} onKeyDown={(e) => e.key === 'Enter' && addKeyword()} /><Button size="icon" onClick={addKeyword} variant="secondary"><Plus className="h-4 w-4" /></Button></div><div className="flex flex-wrap gap-2 mt-2">{keywords.map(k => (<Badge key={k} variant="outline" className="gap-1 pr-1">{k}<X className="h-3 w-3 cursor-pointer text-muted-foreground hover:text-destructive" onClick={() => removeKeyword(k)}/></Badge>))}</div></div>)}
             <div className="space-y-4 pt-4 border-t border-border"><h3 className="text-sm font-medium text-foreground">{t('conditions_title')}</h3><div className="space-y-2"><Label className="text-xs text-muted-foreground">{t('stage_label')}</Label><Select value={conditionStage} onValueChange={setConditionStage}><SelectTrigger><SelectValue placeholder={t('any_select')} /></SelectTrigger><SelectContent><SelectItem value="null">{t('any_select')}</SelectItem>{funnelStages?.map(s => <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label className="text-xs text-muted-foreground">{t('tag_label')}</Label><Select value={conditionTag} onValueChange={setConditionTag}><SelectTrigger><SelectValue placeholder={t('any_select')} /></SelectTrigger><SelectContent><SelectItem value="null">{t('any_select')}</SelectItem>{tags?.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label className="text-xs text-muted-foreground">{t('agent_label')}</Label><Select value={conditionAgent} onValueChange={setConditionAgent}><SelectTrigger><SelectValue placeholder={t('any_select')} /></SelectTrigger><SelectContent><SelectItem value="null">{t('any_select')}</SelectItem>{agents?.map((a: any) => <SelectItem key={a.id} value={a.id.toString()}>{a.name || a.email}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label className="text-xs text-muted-foreground">{t('department_label')}</Label><Select value={conditionDepartment} onValueChange={setConditionDepartment}><SelectTrigger><SelectValue placeholder={t('any_select')} /></SelectTrigger><SelectContent><SelectItem value="null">{t('any_select')}</SelectItem>{departmentsList?.map((d: any) => <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>)}</SelectContent></Select></div></div>
           </div>

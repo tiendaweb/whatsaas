@@ -11,30 +11,27 @@ import {
   chats 
 } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
-import { Node, Edge } from '@xyflow/react';
 import fs from 'fs/promises';
 import path from 'path';
 import { pusherServer } from '@/lib/pusher-server';
 import { getEffectiveAIState, shouldPersistAISession } from '@/lib/ai/session-state';
+import type {
+  AutomationCanvasEdge,
+  AutomationCanvasNode,
+  ButtonMessageButton,
+  ConditionEntry,
+  ListMessageItem,
+  SaveContactNodeData,
+  StartNodeData,
+} from '@/lib/automation/flow-schema';
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "http://localhost:8080";
 const GRAPH_API_URL = "https://graph.facebook.com";
 const GRAPH_API_VERSION = "v21.0";
 
 type FlowData = {
-  nodes: Node[];
-  edges: Edge[];
-};
-
-type StartNodeData = {
-    triggerType: 'exact_match' | 'contains' | 'first_message' | 'fallback';
-    keywords?: string[];
-    conditions?: {
-        funnelStageId?: string;
-        tagId?: string;
-        assignedUserId?: string;
-        departmentId?: string;
-    }
+  nodes: AutomationCanvasNode[];
+  edges: AutomationCanvasEdge[];
 };
 
 type InstanceConfig = {
@@ -44,7 +41,7 @@ type InstanceConfig = {
     metaPhoneNumberId?: string | null;
 };
 
-function replaceVariables(text: string, variables: Record<string, any> | null): string {
+function replaceVariables(text: string, variables: Record<string, string> | null): string {
     if (!text || !variables) return text;
     return text.replace(/\{\{(\w+)\}\}/g, (_, key) => {
         return variables[key] || "";
@@ -60,7 +57,7 @@ async function fileToBase64(filePath: string): Promise<string | null> {
     }
 }
 
-function evaluateCondition(condition: any, text: string, variables: Record<string, string>): boolean {
+function evaluateCondition(condition: ConditionEntry, text: string, variables: Record<string, string>): boolean {
     let valueToCheck = text;
     let targetValue = condition.value;
     let targetValue2 = condition.value2;
@@ -81,7 +78,7 @@ function evaluateCondition(condition: any, text: string, variables: Record<strin
     if (condition.type === 'number') {
         const numCheck = parseFloat(valueToCheck);
         const numTarget = parseFloat(targetValue);
-        const numTarget2 = parseFloat(targetValue2);
+        const numTarget2 = parseFloat(targetValue2 || '');
 
         if (isNaN(numCheck) || isNaN(numTarget)) return false;
 
@@ -174,7 +171,7 @@ export async function processAutomation(
     let fallbackAutomation = null;
 
     for (const automation of activeAutomations) {
-        const nodes = automation.nodes as Node[];
+        const nodes = automation.nodes as AutomationCanvasNode[];
         const startNode = nodes.find(n => n.type === 'start');
         if (!startNode) continue;
 
@@ -204,7 +201,7 @@ export async function processAutomation(
     const finalAutomation = matchedAutomation || fallbackAutomation;
 
     if (finalAutomation) {
-        const flow = { nodes: finalAutomation.nodes as Node[], edges: finalAutomation.edges as Edge[] };
+        const flow = { nodes: finalAutomation.nodes as AutomationCanvasNode[], edges: finalAutomation.edges as AutomationCanvasEdge[] };
         const startNode = flow.nodes.find(n => n.type === 'start');
         
         if (startNode) {
@@ -229,8 +226,8 @@ export async function processAutomation(
   }
 
   const flow = {
-      nodes: session.automation.nodes as Node[],
-      edges: session.automation.edges as Edge[]
+      nodes: session.automation.nodes as AutomationCanvasNode[],
+      edges: session.automation.edges as AutomationCanvasEdge[]
   };
 
   const currentNode = flow.nodes.find(n => n.id === session?.currentNodeId);
@@ -255,7 +252,7 @@ export async function processAutomation(
       nextNodeId = edge?.target;
   } 
   else if (currentNode.type === 'options' || currentNode.type === 'button_message' || currentNode.type === 'list_message') {
-      let selectedEdge: Edge | undefined;
+      let selectedEdge: AutomationCanvasEdge | undefined;
 
       if (currentNode.type === 'options') {
           const options = (currentNode.data.options as string[]) || [];
@@ -273,7 +270,7 @@ export async function processAutomation(
           }
       } 
       else if (currentNode.type === 'button_message') {
-          const buttons = (currentNode.data.buttons as any[]) || [];
+          const buttons = (currentNode.data.buttons as ButtonMessageButton[]) || [];
           const buttonIndex = buttons.findIndex(b => b.text.toLowerCase() === text.toLowerCase() || b.value === text);
           if (buttonIndex !== -1) {
               const handleId = `btn-${buttons[buttonIndex].id || buttonIndex}`;
@@ -281,7 +278,7 @@ export async function processAutomation(
           }
       }
       else if (currentNode.type === 'list_message') {
-          const items = (currentNode.data.items as any[]) || [];
+          const items = (currentNode.data.items as ListMessageItem[]) || [];
           const itemIndex = items.findIndex(i => i.title.toLowerCase() === text.toLowerCase() || i.rowId === text);
           if (itemIndex !== -1) {
               const handleId = `list-${items[itemIndex].id || itemIndex}`;
@@ -350,7 +347,7 @@ async function executeStep(
     }
 
     if (nextNode.type === 'condition') {
-        const conditions = (nextNode.data.conditions as any[]) || [];
+        const conditions = (nextNode.data.conditions as ConditionEntry[]) || [];
         let matchedConditionId: string | null = null;
         
         for (const cond of conditions) {
@@ -468,7 +465,7 @@ async function executeStep(
     }
 }
 
-async function moveToNextAuto(session: any, flow: FlowData, currentNodeId: string, instance: InstanceConfig, remoteJid: string, teamId: number, chatId: number) {
+async function moveToNextAuto(session: typeof automationSessions.$inferSelect, flow: FlowData, currentNodeId: string, instance: InstanceConfig, remoteJid: string, teamId: number, chatId: number) {
     const edge = flow.edges.find(e => e.source === currentNodeId);
     if (edge) {
         await new Promise(r => setTimeout(r, 500)); 
@@ -481,7 +478,7 @@ async function moveToNextAuto(session: any, flow: FlowData, currentNodeId: strin
     }
 }
 
-async function processTextOutput(node: Node, instance: InstanceConfig, remoteJid: string, teamId: number, chatId: number, variables: Record<string, any>) {
+async function processTextOutput(node: AutomationCanvasNode, instance: InstanceConfig, remoteJid: string, teamId: number, chatId: number, variables: Record<string, string>) {
     if (node.type === 'message') {
         let text = node.data.label as string;
         text = replaceVariables(text, variables);
@@ -500,8 +497,8 @@ async function processTextOutput(node: Node, instance: InstanceConfig, remoteJid
     }
 }
 
-async function processMediaOutput(node: Node, instance: InstanceConfig, remoteJid: string, teamId: number, chatId: number, variables: Record<string, any> = {}) {
-    const data = node.data as any;
+async function processMediaOutput(node: AutomationCanvasNode, instance: InstanceConfig, remoteJid: string, teamId: number, chatId: number, variables: Record<string, string> = {}) {
+    const data = node.data;
     if (!data.mediaUrl) return;
 
     try {
@@ -529,15 +526,15 @@ async function processMediaOutput(node: Node, instance: InstanceConfig, remoteJi
     }
 }
 
-async function processMetaInteractiveOutput(node: Node, instance: InstanceConfig, remoteJid: string, teamId: number, chatId: number, variables: Record<string, any>) {
+async function processMetaInteractiveOutput(node: AutomationCanvasNode, instance: InstanceConfig, remoteJid: string, teamId: number, chatId: number, variables: Record<string, string>) {
     if (!instance.metaToken || !instance.metaPhoneNumberId) return;
 
-    const data = node.data as any;
+    const data = node.data;
     const bodyText = replaceVariables(data.bodyText || '', variables);
     const footerText = replaceVariables(data.footerText || '', variables);
     const titleText = replaceVariables(data.title || '', variables);
 
-    let interactiveObject: any = {
+    let interactiveObject: Record<string, unknown> = {
         body: { text: bodyText }
     };
 
@@ -545,7 +542,7 @@ async function processMetaInteractiveOutput(node: Node, instance: InstanceConfig
     if (titleText && node.type === 'list_message') interactiveObject.header = { type: "text", text: titleText }; 
 
     if (node.type === 'button_message') {
-        const buttons = (data.buttons as any[]) || [];
+        const buttons = (data.buttons as ButtonMessageButton[]) || [];
         interactiveObject.type = "button";
         interactiveObject.action = {
             buttons: buttons.slice(0, 3).map((b, idx) => ({
@@ -559,7 +556,7 @@ async function processMetaInteractiveOutput(node: Node, instance: InstanceConfig
     } 
     else if (node.type === 'list_message') {
         const buttonText = data.buttonText || "Options";
-        const items = (data.items as any[]) || [];
+        const items = (data.items as ListMessageItem[]) || [];
         
         interactiveObject.type = "list";
         interactiveObject.action = {
@@ -768,8 +765,8 @@ async function sendMetaMessage(instance: InstanceConfig, remoteJid: string, mess
     }
 }
 
-async function processSaveContact(node: Node, session: any, teamId: number, chatId: number) {
-    const data = node.data as any;
+async function processSaveContact(node: AutomationCanvasNode, session: typeof automationSessions.$inferSelect, teamId: number, chatId: number) {
+    const data = node.data as SaveContactNodeData;
     const variables = (session.variables as Record<string, string>) || {};
     
 

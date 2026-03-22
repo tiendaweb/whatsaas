@@ -15,8 +15,6 @@ import {
   BackgroundVariant,
   ReactFlowProvider,
   useReactFlow,
-  Node,
-  Edge,
   ProOptions,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -81,6 +79,7 @@ import {
   type AutomationAIChannel,
   type AutomationGeneratedFlow,
 } from '@/lib/automation/ai-flow';
+import type { AutomationCanvasEdge, AutomationCanvasNode, AutomationCanvasNodeData, AutomationFlowEdge, AutomationFlowNode } from '@/lib/automation/flow-schema';
 
 const nodeTypes = {
   start: StartNode,
@@ -100,8 +99,8 @@ const nodeTypes = {
 
 interface FlowBuilderProps {
   automationId: number;
-  initialNodes: Node[];
-  initialEdges: Edge[];
+  initialNodes: AutomationCanvasNode[];
+  initialEdges: AutomationCanvasEdge[];
   initialActive: boolean;
 }
 
@@ -119,7 +118,7 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
   const router = useRouter();
   const { resolvedTheme } = useTheme();
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>(initialNodes);
+  const [nodes, setNodes, onNodesChange] = useNodesState<AutomationCanvasNode>(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
 
@@ -201,9 +200,9 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
         y: event.clientY,
       });
 
-      const newNode: Node = {
+      const newNode: AutomationCanvasNode = {
         id: `${type}-${Date.now()}`,
-        type,
+        type: type as AutomationCanvasNode['type'],
         position,
         data: { label: 'New Node' },
       };
@@ -213,7 +212,7 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
     [screenToFlowPosition, setNodes],
   );
 
-  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+  const onNodeClick = useCallback((_: React.MouseEvent, node: AutomationCanvasNode) => {
     setSelectedNodeId(node.id);
   }, []);
 
@@ -221,11 +220,11 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
     setSelectedNodeId(null);
   }, []);
 
-  const updateNodeData = (id: string, data: any) => {
+  const updateNodeData = (id: string, data: Partial<AutomationCanvasNodeData>) => {
     setNodes((nds) =>
       nds.map((node) => {
         if (node.id === id) {
-          return { ...node, data: { ...node.data, ...data } };
+          return { ...node, data: { ...node.data, ...data } } as AutomationCanvasNode;
         }
         return node;
       })
@@ -234,7 +233,7 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
 
   const handleSave = async () => {
     const flow = toObject();
-    const validation = validateAutomationCanvas(flow.nodes as any[], flow.edges as any[]);
+    const validation = validateAutomationCanvas(flow.nodes as unknown[], flow.edges as unknown[]);
 
     if (!validation.success) {
       toast.error(t('ai_generator.validation_before_save_title'));
@@ -244,7 +243,7 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
 
     setIsSaving(true);
     try {
-      await saveAutomation(automationId, flow.nodes, flow.edges);
+      await saveAutomation(automationId, flow.nodes as AutomationFlowNode[], flow.edges as AutomationFlowEdge[]);
       toast.success(t('toast_saved'));
     } catch (error) {
       toast.error(t('ai_generator.save_failed'));
@@ -326,7 +325,7 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
       }
     }
 
-    const nodesByLevel = new Map<number, Node[]>();
+    const nodesByLevel = new Map<number, AutomationCanvasNode[]>();
     for (const node of nodes) {
       const level = levelByNode.get(node.id) ?? 0;
       nodesByLevel.set(level, [...(nodesByLevel.get(level) ?? []), node]);
@@ -413,8 +412,8 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
     }
 
     if (insertMode === 'replace') {
-      setNodes(generationResult.nodes as Node[]);
-      setEdges(generationResult.edges as Edge[]);
+      setNodes(generationResult.nodes as AutomationCanvasNode[]);
+      setEdges(generationResult.edges as AutomationCanvasEdge[]);
       setSelectedNodeId(null);
       setIsGeneratorOpen(false);
       toast.success(t('ai_generator.inserted_replace_toast'));
@@ -423,8 +422,8 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
     }
 
     const mergeResult = insertGeneratedSubflow({
-      currentNodes: nodes as any,
-      currentEdges: edges as any,
+      currentNodes: nodes,
+      currentEdges: edges,
       generatedNodes: generationResult.nodes,
       generatedEdges: generationResult.edges,
       selectedNodeId: selectedNodeId ?? '',
@@ -435,8 +434,8 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
       return;
     }
 
-    setNodes(mergeResult.nodes as Node[]);
-    setEdges(mergeResult.edges as Edge[]);
+    setNodes(mergeResult.nodes as AutomationCanvasNode[]);
+    setEdges(mergeResult.edges as AutomationCanvasEdge[]);
     setIsGeneratorOpen(false);
     toast.success(t('ai_generator.inserted_subflow_toast'));
     requestAnimationFrame(() => fitView({ padding: 0.2, duration: 350 }));
