@@ -2,7 +2,7 @@
 
 import { db } from "@/lib/db/drizzle";
 import { aiConfigs, automations } from "@/lib/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { getTeamForUser } from "@/lib/db/queries";
 import { automationRequiresManualReview } from "@/lib/automation/ai-draft";
@@ -33,16 +33,33 @@ export async function getAutomations() {
   });
 }
 
+async function getAutomationForTeam(teamId: number, id: number) {
+  return db.query.automations.findFirst({
+    where: and(eq(automations.id, id), eq(automations.teamId, teamId)),
+  });
+}
+
+// Reuse this guard for any future action/endpoint that mutates an automation
+// (including AI-assisted node/edge overwrites) to keep ownership validation centralized.
+async function getOwnedAutomationOrThrow(id: number) {
+  const team = await getTeamForUser();
+  if (!team) {
+    throw new Error("Unauthorized");
+  }
+
+  const automation = await getAutomationForTeam(team.id, id);
+  if (!automation) {
+    throw new Error("Automation not found.");
+  }
+
+  return { team, automation };
+}
+
 export async function getAutomation(id: number) {
   const team = await getTeamForUser();
   if (!team) return null;
 
-  const automation = await db.query.automations.findFirst({
-    where: eq(automations.id, id),
-  });
-
-  if (!automation || automation.teamId !== team.id) return null;
-  return automation;
+  return getAutomationForTeam(team.id, id);
 }
 
 export async function createAutomation(name: string, instanceId: number) {
@@ -69,23 +86,14 @@ export async function saveAutomation(
   nodes: AutomationFlowNode[],
   edges: AutomationFlowEdge[],
 ) {
-  const team = await getTeamForUser();
-  if (!team) throw new Error("Unauthorized");
-
-  const automation = await db.query.automations.findFirst({
-    where: eq(automations.id, id),
-  });
-
-  if (!automation || automation.teamId !== team.id) {
-    throw new Error("Automation not found.");
-  }
+  const { team, automation } = await getOwnedAutomationOrThrow(id);
 
   const preparedFlow = prepareAutomationFlowForSave({ nodes, edges });
   if (!preparedFlow.success) {
     throw new Error(preparedFlow.errors[0] || "Invalid automation flow.");
   }
 
-  await db
+  const updatedAutomations = await db
     .update(automations)
     .set({
       nodes: preparedFlow.nodes,
@@ -95,7 +103,12 @@ export async function saveAutomation(
         : automation.isActive,
       updatedAt: new Date(),
     })
-    .where(eq(automations.id, id));
+    .where(and(eq(automations.id, id), eq(automations.teamId, team.id)))
+    .returning({ id: automations.id });
+
+  if (updatedAutomations.length === 0) {
+    throw new Error("Automation not found.");
+  }
 
   revalidatePath(`/automation/${id}`);
   revalidatePath("/automation");
@@ -106,16 +119,7 @@ export async function saveAutomation(
 }
 
 export async function toggleAutomationStatus(id: number, isActive: boolean) {
-  const team = await getTeamForUser();
-  if (!team) throw new Error("Unauthorized");
-
-  const automation = await db.query.automations.findFirst({
-    where: eq(automations.id, id),
-  });
-
-  if (!automation || automation.teamId !== team.id) {
-    throw new Error("Automation not found.");
-  }
+  const { team, automation } = await getOwnedAutomationOrThrow(id);
 
   if (
     isActive &&
@@ -124,10 +128,15 @@ export async function toggleAutomationStatus(id: number, isActive: boolean) {
     throw new Error("Automation requires manual review before activation.");
   }
 
-  await db
+  const updatedAutomations = await db
     .update(automations)
     .set({ isActive, updatedAt: new Date() })
-    .where(eq(automations.id, id));
+    .where(and(eq(automations.id, id), eq(automations.teamId, team.id)))
+    .returning({ id: automations.id });
+
+  if (updatedAutomations.length === 0) {
+    throw new Error("Automation not found.");
+  }
 
   revalidatePath(`/automation/${id}`);
   revalidatePath("/automation");
@@ -135,10 +144,17 @@ export async function toggleAutomationStatus(id: number, isActive: boolean) {
 }
 
 export async function deleteAutomation(id: number) {
-  const team = await getTeamForUser();
-  if (!team) throw new Error("Unauthorized");
+  const { team } = await getOwnedAutomationOrThrow(id);
 
-  await db.delete(automations).where(eq(automations.id, id));
+  const deletedAutomations = await db
+    .delete(automations)
+    .where(and(eq(automations.id, id), eq(automations.teamId, team.id)))
+    .returning({ id: automations.id });
+
+  if (deletedAutomations.length === 0) {
+    throw new Error("Automation not found.");
+  }
+
   revalidatePath("/automation");
 }
 
