@@ -23,6 +23,9 @@ import { Badge } from '@/components/ui/badge';
 import { getPublishedPlans } from '@/lib/db/queries';
 import { getBranding } from '@/lib/db/queries/branding';
 import Logo from '@/components/interface/Logo';
+import { LandingFeatureShowcase } from '@/components/landing/feature-showcase';
+import { LandingFaqSection } from '@/components/landing/faq-section';
+import { getLandingContent } from '@/lib/db/queries/landing';
 import { useTranslations } from 'next-intl';
 import { getTranslations } from 'next-intl/server'; 
 
@@ -252,8 +255,11 @@ export default async function HomePage() {
   
   const t = await getTranslations('LandingPage'); 
   
-  const plans = await getPublishedPlans();
-  const branding = await getBranding();
+  const [plans, branding, landingContent] = await Promise.all([
+    getPublishedPlans(),
+    getBranding(),
+    getLandingContent(),
+  ]);
   const siteName = branding?.name || 'WhatsPro';
 
   return (
@@ -346,6 +352,16 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
+
+      {landingContent.homeSections.map((section, index) => (
+        <LandingFeatureShowcase
+          key={section.id}
+          section={section}
+          reverse={index % 2 === 1}
+        />
+      ))}
+
+      <LandingFaqSection items={landingContent.faqItems} />
 
       <section id="pricing" className="py-24 bg-muted/30 border-t border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

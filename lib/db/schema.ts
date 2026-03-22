@@ -752,6 +752,23 @@ export const branding = pgTable('branding', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
+export const landingContent = pgTable('landing_content', {
+  id: serial('id').primaryKey(),
+  homeSections: jsonb('home_sections').$type<import('@/lib/landing/types').LandingHomeSection[]>().notNull().default([]),
+  faqItems: jsonb('faq_items').$type<import('@/lib/landing/types').LandingFaqItem[]>().notNull().default([]),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export const landingPages = pgTable('landing_pages', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 120 }).notNull(),
+  slug: varchar('slug', { length: 140 }).notNull().unique(),
+  content: text('content').notNull().default(''),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
 export const chatTheme = pgTable('chat_theme', {
   id: serial('id').primaryKey(),
   backgroundType: varchar('background_type', { length: 20 }).notNull().default('solid'),
@@ -865,6 +882,10 @@ export type AiTool = typeof aiTools.$inferSelect;
 export type NewAiTool = typeof aiTools.$inferInsert;
 export type Branding = typeof branding.$inferSelect;
 export type NewBranding = typeof branding.$inferInsert;
+export type LandingContent = typeof landingContent.$inferSelect;
+export type NewLandingContent = typeof landingContent.$inferInsert;
+export type LandingPage = typeof landingPages.$inferSelect;
+export type NewLandingPage = typeof landingPages.$inferInsert;
 
 export type ChatTheme = typeof chatTheme.$inferSelect;
 export type NewChatTheme = typeof chatTheme.$inferInsert;

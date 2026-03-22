@@ -1,0 +1,48 @@
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import { ArrowLeft } from 'lucide-react';
+import Logo from '@/components/interface/Logo';
+import { Button } from '@/components/ui/button';
+import { getBranding } from '@/lib/db/queries/branding';
+import { getLandingPageBySlug } from '@/lib/db/queries/landing';
+
+export default async function PublicLandingPage({
+  params,
+}: {
+  params: Promise<{ slug: string; locale: string }>;
+}) {
+  const { slug } = await params;
+  const page = await getLandingPageBySlug(slug);
+
+  if (!page) {
+    notFound();
+  }
+
+  const branding = await getBranding();
+  const siteName = branding?.name || 'WhatSaaS';
+
+  return (
+    <main className="min-h-screen bg-background">
+      <header className="border-b border-border/60 bg-background/90 backdrop-blur">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+          <Logo />
+          <Link href="/">
+            <Button variant="outline">
+              <ArrowLeft className="mr-2 h-4 w-4" /> Volver al inicio
+            </Button>
+          </Link>
+        </div>
+      </header>
+
+      <section className="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:px-8">
+        <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">{siteName}</p>
+        <h1 className="mt-4 text-4xl font-bold tracking-tight md:text-5xl">{page.name}</h1>
+        <p className="mt-4 text-lg text-muted-foreground">/{page.slug}</p>
+
+        <article className="prose prose-zinc mt-10 max-w-none whitespace-pre-wrap text-base leading-8 text-foreground dark:prose-invert">
+          {page.content}
+        </article>
+      </section>
+    </main>
+  );
+}

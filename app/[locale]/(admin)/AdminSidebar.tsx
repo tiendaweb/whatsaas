@@ -14,6 +14,7 @@ import {
   MessageSquare,
   Wallet,
   Settings,
+  LayoutTemplate,
 } from 'lucide-react';
 import { ThemeSwitcher } from '@/components/theme-switcher';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
@@ -24,6 +25,7 @@ const navItems = [
   { href: '/admin/teams', label: 'Teams', icon: Building },
   { href: '/admin/plans', label: 'Plans', icon: CreditCard },
   { href: '/admin/branding', label: 'Branding', icon: Palette },
+  { href: '/admin/landing', label: 'Landing', icon: LayoutTemplate },
   { href: '/admin/chat-theme', label: 'Chat Theme', icon: MessageSquare },
   { href: '/admin/payments', label: 'Payments', icon: Wallet },
   { href: '/admin/settings', label: 'Ajustes', icon: Settings },
