@@ -181,7 +181,7 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
   };
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <header className="flex justify-between items-center px-6 py-3 bg-background border-b border-border shrink-0 z-10">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => router.back()}>
@@ -223,10 +223,10 @@ function FlowBuilderContent({ automationId, initialNodes, initialEdges, initialA
         </div>
       </header>
 
-      <div className="flex-1 flex w-full h-full">
+      <div className="flex min-h-0 flex-1 w-full">
         <Sidebar />
         
-        <div className="flex-1 h-full relative bg-slate-50 dark:bg-slate-950" ref={reactFlowWrapper}>
+        <div className="relative flex-1 min-h-0 bg-slate-50 dark:bg-slate-950" ref={reactFlowWrapper}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
