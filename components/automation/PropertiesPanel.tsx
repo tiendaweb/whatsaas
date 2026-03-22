@@ -133,7 +133,7 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
 
   if (!selectedNode) {
     return (
-      <aside className="flex w-80 min-h-0 shrink-0 flex-col items-center justify-center overflow-hidden border-l border-border bg-background p-6 text-center">
+      <aside className="flex w-[clamp(18rem,24vw,22rem)] min-w-[18rem] max-w-[22rem] min-h-0 shrink-0 resize-x flex-col items-center justify-center overflow-hidden border-l border-border bg-background p-6 text-center">
         <p className="text-sm text-muted-foreground">{t('select_node_to_edit')}</p>
       </aside>
     );
@@ -286,7 +286,7 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
   };
 
   return (
-    <aside className="flex w-80 min-h-0 shrink-0 flex-col overflow-hidden border-l border-border bg-background">
+    <aside className="flex w-[clamp(18rem,24vw,22rem)] min-w-[18rem] max-w-[22rem] min-h-0 shrink-0 resize-x flex-col overflow-hidden border-l border-border bg-background">
       <div className="p-4 border-b border-border flex justify-between items-center bg-muted/30 shrink-0">
         <h2 className="font-semibold text-sm">{t('properties_title')}</h2>
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}><X className="h-4 w-4" /></Button>
