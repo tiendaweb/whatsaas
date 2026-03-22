@@ -618,7 +618,7 @@
       "open_btn": "Generar con IA",
       "organize_btn": "Organizar nodos",
       "title": "Generador IA de flujos",
-      "description": "Describe la automatización que quieres, revisa la vista previa estructurada e insértala en el canvas solo después de que pase la validación.",
+      "description": "Describe la automatización, revisa el resultado y luego insértalo en el canvas.",
       "prompt_label": "Prompt",
       "prompt_placeholder": "Ejemplo: Crea un flujo de calificación de ventas que salude al lead, pregunte su nombre, ofrezca opciones de producto y lo derive a un humano si elige enterprise.",
       "channel_label": "Modo de generación",
@@ -629,7 +629,7 @@
       "preview_title": "Vista previa",
       "preview_desc": "La validación ocurre antes de que puedas insertar el flujo generado en el canvas.",
       "preview_counts": "{nodes} nodos · {edges} conexiones",
-      "diff_title": "Preview de nodos creados",
+      "diff_title": "Resumen del flujo",
       "diff_empty": "No se detectaron elementos en esta categoría.",
       "diff_sections": {
         "messages": "Mensajes salientes",
@@ -649,8 +649,8 @@
       "status_error": "Error de generación",
       "suggested_name_title": "Nombre sugerido",
       "counts_title": "Nodos y conexiones",
-      "nodes_title": "Nodos generados",
-      "edges_title": "Conexiones generadas",
+      "nodes_title": "Nodos (JSON)",
+      "edges_title": "Conexiones del grafo",
       "raw_response_title": "Respuesta cruda del modelo",
       "empty_preview": "Todavía no hay vista previa. Genera un flujo para inspeccionar la salida estructurada.",
       "generating_preview": "Generando vista previa…",
@@ -684,7 +684,8 @@
         "replace_desc": "Sobrescribe el canvas actual con la vista previa generada.",
         "insert_title": "Insertar desde el nodo seleccionado",
         "insert_desc": "Mantiene el flujo actual y conecta el subflujo generado después del nodo seleccionado."
-      }
+      },
+      "generate_again_btn": "Generar de nuevo"
     },
     "save_preview": {
       "title": "Revisar antes de guardar",

@@ -619,7 +619,7 @@
       "open_btn": "Gerar com IA",
       "organize_btn": "Organizar nós",
       "title": "Gerador de fluxos com IA",
-      "description": "Descreva a automação desejada, revise a prévia estruturada e insira no canvas somente depois que a validação passar.",
+      "description": "Descreva a automação, revise o resultado e depois insira no canvas.",
       "prompt_label": "Prompt",
       "prompt_placeholder": "Exemplo: Crie um fluxo de qualificação de vendas que cumprimente o lead, pergunte o nome, ofereça opções de produto e transfira para um humano se ele escolher enterprise.",
       "channel_label": "Modo de geração",
@@ -630,7 +630,7 @@
       "preview_title": "Pré-visualização",
       "preview_desc": "A validação acontece antes de inserir o fluxo gerado no canvas.",
       "preview_counts": "{nodes} nós · {edges} conexões",
-      "diff_title": "Prévia dos nós criados",
+      "diff_title": "Resumo do fluxo",
       "diff_empty": "Nenhum item detectado nesta categoria.",
       "diff_sections": {
         "messages": "Mensagens de saída",
@@ -650,8 +650,8 @@
       "status_error": "Erro de geração",
       "suggested_name_title": "Nome sugerido",
       "counts_title": "Nós e conexões",
-      "nodes_title": "Nós gerados",
-      "edges_title": "Conexões geradas",
+      "nodes_title": "Nós (JSON)",
+      "edges_title": "Conexões do grafo",
       "raw_response_title": "Resposta bruta do modelo",
       "empty_preview": "Ainda não há prévia. Gere um fluxo para inspecionar a saída estruturada.",
       "generating_preview": "Gerando prévia…",
@@ -685,7 +685,8 @@
         "replace_desc": "Sobrescreve o canvas atual com a prévia gerada.",
         "insert_title": "Inserir a partir do nó selecionado",
         "insert_desc": "Mantém o fluxo atual e conecta o subfluxo gerado após o nó selecionado."
-      }
+      },
+      "generate_again_btn": "Gerar novamente"
     },
     "save_preview": {
       "title": "Revisar antes de salvar",
