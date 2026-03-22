@@ -52,6 +52,7 @@ import {
   CheckCircle2,
   GitBranchPlus,
   RotateCcw,
+  Settings2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocale, useTranslations } from "next-intl";
@@ -1014,413 +1015,563 @@ function FlowBuilderContent({
       </Dialog>
 
       <Dialog open={isGeneratorOpen} onOpenChange={setIsGeneratorOpen}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[92vh] w-[min(96vw,1400px)] max-w-none flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 border-b px-6 py-4 text-left">
             <DialogTitle>{t("ai_generator.title")}</DialogTitle>
             <DialogDescription>
               {t("ai_generator.description")}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-6 overflow-hidden lg:grid-cols-[1.1fr_0.9fr] flex-1 min-h-0">
-            <div className="space-y-5 overflow-y-auto pr-1">
-              <div className="space-y-2">
-                <Label htmlFor="ai-flow-prompt">
-                  {t("ai_generator.prompt_label")}
-                </Label>
-                <Textarea
-                  id="ai-flow-prompt"
-                  rows={8}
-                  value={generatorPrompt}
-                  onChange={(event) => setGeneratorPrompt(event.target.value)}
-                  placeholder={t("ai_generator.prompt_placeholder")}
-                  className="resize-none"
-                />
-              </div>
-
-              <div className="space-y-3">
-                <Label>{t("ai_generator.channel_label")}</Label>
-                <RadioGroup
-                  value={generatorChannel}
-                  onValueChange={(value) => {
-                    setGeneratorChannel(value as AutomationAIChannel);
-                    resetGeneratorState();
-                  }}
-                  className="grid gap-3 md:grid-cols-2"
-                >
-                  {(["qr", "api"] as AutomationAIChannel[]).map((channel) => (
-                    <label
-                      key={channel}
-                      className="flex cursor-pointer items-start gap-3 rounded-lg border p-4 hover:border-primary/60"
-                    >
-                      <RadioGroupItem value={channel} className="mt-1" />
-                      <div className="space-y-1">
-                        <div className="font-medium">
-                          {t(`ai_generator.channels.${channel}.title`)}
-                        </div>
-                        <p className="text-sm text-muted-foreground">
-                          {t(`ai_generator.channels.${channel}.description`)}
-                        </p>
-                      </div>
-                    </label>
-                  ))}
-                </RadioGroup>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <Label>{t("ai_generator.temperature_label")}</Label>
-                    <span className="text-xs text-muted-foreground">
-                      {generatorTemperature.toFixed(1)}
-                    </span>
-                  </div>
-                  <Slider
-                    min={0}
-                    max={2}
-                    step={0.1}
-                    value={[generatorTemperature]}
-                    onValueChange={(value) =>
-                      setGeneratorTemperature(value[0] ?? 0.7)
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="ai-flow-max-tokens">
-                    {t("ai_generator.max_tokens_label")}
-                  </Label>
-                  <Input
-                    id="ai-flow-max-tokens"
-                    type="number"
-                    min={128}
-                    max={4096}
-                    step={64}
-                    value={generatorMaxTokens}
-                    onChange={(event) =>
-                      setGeneratorMaxTokens(Number(event.target.value) || 1200)
-                    }
-                  />
-                </div>
-              </div>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>{t("ai_generator.allowed_nodes_title")}</CardTitle>
-                  <CardDescription>
-                    {t("ai_generator.allowed_nodes_desc")}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {AUTOMATION_AI_NODE_CATALOG.filter((node) =>
-                    node.channels.includes(generatorChannel),
-                  ).map((node) => (
-                    <div key={node.type} className="rounded-lg border p-3">
-                      <div className="font-medium text-sm">
-                        {t(node.labelKey)}
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {node.description}
-                      </div>
-                      <div className="text-xs mt-2 text-muted-foreground">
-                        {generatorConstraints[node.type]}
-                      </div>
-                      <div className="text-[11px] mt-2 text-muted-foreground">
-                        {node.examples.join(" · ")}
-                      </div>
+          <div className="flex-1 overflow-y-auto">
+            <div className="grid min-h-full gap-4 px-6 py-4 lg:grid-cols-[1.35fr_0.85fr]">
+              <div className="space-y-4">
+                <Card>
+                  <CardHeader className="pb-4">
+                    <CardTitle>{t("ai_generator.prompt_label")}</CardTitle>
+                    <CardDescription>
+                      {t("ai_generator.prompt_placeholder")}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="ai-flow-prompt">
+                        {t("ai_generator.prompt_label")}
+                      </Label>
+                      <Textarea
+                        id="ai-flow-prompt"
+                        rows={10}
+                        value={generatorPrompt}
+                        onChange={(event) =>
+                          setGeneratorPrompt(event.target.value)
+                        }
+                        placeholder={t("ai_generator.prompt_placeholder")}
+                        className="resize-none"
+                      />
                     </div>
-                  ))}
-                </CardContent>
-              </Card>
-            </div>
 
-            <div className="space-y-4 overflow-y-auto pr-1">
-              <Card>
-                <CardHeader>
-                  <CardTitle>{t("ai_generator.preview_title")}</CardTitle>
-                  <CardDescription>
-                    {t("ai_generator.preview_desc")}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {generationError && (
-                    <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-                      <div className="flex items-center gap-2 font-medium">
-                        <AlertTriangle className="h-4 w-4" />
-                        {generationError}
-                      </div>
-                    </div>
-                  )}
-
-                  {generationValidationErrors.length > 0 && (
-                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
-                      <div className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-400">
-                        <AlertTriangle className="h-4 w-4" />
-                        {t("ai_generator.validation_errors_title")}
-                      </div>
-                      <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-700/90 dark:text-amber-300">
-                        {generationValidationErrors.map((error, index) => (
-                          <li key={`${error}-${index}`}>{error}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {generationResult ? (
-                    <>
-                      <div className="rounded-lg border bg-muted/20 p-3">
-                        <div className="flex items-center gap-2 text-sm font-medium">
-                          <CheckCircle2 className="h-4 w-4 text-green-600" />
-                          {generationResult.suggestedName}
-                        </div>
-                        <div className="mt-2 text-xs text-muted-foreground">
-                          {t("ai_generator.preview_counts", {
-                            nodes: generationResult.nodes.length,
-                            edges: generationResult.edges.length,
-                          })}
-                        </div>
-                      </div>
-
-                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-900 dark:text-amber-100">
-                        <div className="font-medium">
-                          {t("ai_generator.review_notice_title")}
-                        </div>
-                        <p className="mt-1 text-xs text-amber-800/90 dark:text-amber-200/90">
-                          {t("ai_generator.review_notice_description")}
-                        </p>
-                      </div>
-
-                      {generationResult.warnings.length > 0 && (
-                        <div>
-                          <div className="text-sm font-medium mb-2">
-                            {t("ai_generator.warnings_title")}
-                          </div>
-                          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-                            {generationResult.warnings.map((warning, index) => (
-                              <li key={`${warning}-${index}`}>{warning}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {currentFlowHasEditableNodes && (
-                        <div className="space-y-3 rounded-lg border p-3">
-                          <div className="text-sm font-medium">
-                            {t("ai_generator.insert_mode_title")}
-                          </div>
-                          <RadioGroup
-                            value={insertMode}
-                            onValueChange={(value) =>
-                              setInsertMode(value as InsertMode)
-                            }
-                            className="grid gap-3"
-                          >
-                            <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:border-primary/60">
+                    <div className="space-y-3">
+                      <Label>{t("ai_generator.channel_label")}</Label>
+                      <RadioGroup
+                        value={generatorChannel}
+                        onValueChange={(value) => {
+                          setGeneratorChannel(value as AutomationAIChannel);
+                          resetGeneratorState();
+                        }}
+                        className="grid gap-3 md:grid-cols-2"
+                      >
+                        {(["qr", "api"] as AutomationAIChannel[]).map(
+                          (channel) => (
+                            <label
+                              key={channel}
+                              className="flex cursor-pointer items-start gap-3 rounded-lg border p-4 hover:border-primary/60"
+                            >
                               <RadioGroupItem
-                                value="replace"
+                                value={channel}
                                 className="mt-1"
                               />
-                              <div>
-                                <div className="flex items-center gap-2 font-medium">
-                                  <RotateCcw className="h-4 w-4" />{" "}
-                                  {t("ai_generator.insert_modes.replace_title")}
+                              <div className="space-y-1">
+                                <div className="font-medium">
+                                  {t(`ai_generator.channels.${channel}.title`)}
                                 </div>
                                 <p className="text-sm text-muted-foreground">
-                                  {t("ai_generator.insert_modes.replace_desc")}
+                                  {t(
+                                    `ai_generator.channels.${channel}.description`,
+                                  )}
                                 </p>
                               </div>
                             </label>
-                            <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:border-primary/60">
-                              <RadioGroupItem value="insert" className="mt-1" />
-                              <div>
-                                <div className="flex items-center gap-2 font-medium">
-                                  <GitBranchPlus className="h-4 w-4" />{" "}
-                                  {t("ai_generator.insert_modes.insert_title")}
-                                </div>
-                                <p className="text-sm text-muted-foreground">
-                                  {t("ai_generator.insert_modes.insert_desc")}
-                                </p>
-                              </div>
-                            </label>
-                          </RadioGroup>
-                          {insertMode === "insert" && (
-                            <p className="text-xs text-muted-foreground">
-                              {selectedNodeId
-                                ? t("ai_generator.selected_node_ready", {
-                                    nodeId: selectedNodeId,
-                                  })
-                                : t("ai_generator.select_node_hint")}
-                            </p>
-                          )}
-                        </div>
-                      )}
+                          ),
+                        )}
+                      </RadioGroup>
+                    </div>
 
-                      <Separator />
+                    <div className="flex flex-wrap gap-3">
+                      <Button
+                        onClick={handleGenerateFlow}
+                        disabled={isGenerating}
+                        className="min-w-[180px]"
+                      >
+                        {isGenerating ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="mr-2 h-4 w-4" />
+                        )}
+                        {isGenerating
+                          ? t("ai_generator.generating_btn")
+                          : t("ai_generator.generate_btn")}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
 
+                <details className="rounded-lg border bg-card" open>
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium marker:hidden">
+                    <span className="flex items-center gap-2">
+                      <Settings2 className="h-4 w-4 text-muted-foreground" />
+                      {t("ai_generator.advanced_options_title")}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {generatorTemperature.toFixed(1)} · {generatorMaxTokens}
+                    </span>
+                  </summary>
+                  <div className="border-t px-4 py-4">
+                    <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-3">
-                        {generatedFlowSummary && (
-                          <div className="space-y-3">
-                            <div className="text-sm font-medium">
-                              {t("ai_generator.diff_title")}
+                        <div className="flex items-center justify-between gap-2">
+                          <Label>{t("ai_generator.temperature_label")}</Label>
+                          <span className="text-xs text-muted-foreground">
+                            {generatorTemperature.toFixed(1)}
+                          </span>
+                        </div>
+                        <Slider
+                          min={0}
+                          max={2}
+                          step={0.1}
+                          value={[generatorTemperature]}
+                          onValueChange={(value) =>
+                            setGeneratorTemperature(value[0] ?? 0.7)
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="ai-flow-max-tokens">
+                          {t("ai_generator.max_tokens_label")}
+                        </Label>
+                        <Input
+                          id="ai-flow-max-tokens"
+                          type="number"
+                          min={128}
+                          max={4096}
+                          step={64}
+                          value={generatorMaxTokens}
+                          onChange={(event) =>
+                            setGeneratorMaxTokens(
+                              Number(event.target.value) || 1200,
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </details>
+
+                <details className="rounded-lg border bg-card">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium marker:hidden">
+                    <span>{t("ai_generator.allowed_nodes_title")}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {
+                        AUTOMATION_AI_NODE_CATALOG.filter((node) =>
+                          node.channels.includes(generatorChannel),
+                        ).length
+                      }
+                    </span>
+                  </summary>
+                  <div className="border-t px-4 py-4">
+                    <p className="mb-4 text-sm text-muted-foreground">
+                      {t("ai_generator.allowed_nodes_desc")}
+                    </p>
+                    <div className="space-y-3">
+                      {AUTOMATION_AI_NODE_CATALOG.filter((node) =>
+                        node.channels.includes(generatorChannel),
+                      ).map((node) => (
+                        <div key={node.type} className="rounded-lg border p-3">
+                          <div className="text-sm font-medium">
+                            {t(node.labelKey)}
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {node.description}
+                          </div>
+                          <div className="mt-2 text-xs text-muted-foreground">
+                            {generatorConstraints[node.type]}
+                          </div>
+                          <div className="mt-2 text-[11px] text-muted-foreground">
+                            {node.examples.join(" · ")}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </details>
+              </div>
+
+              <div className="space-y-4">
+                <Card>
+                  <CardHeader className="pb-4">
+                    <CardTitle>{t("ai_generator.preview_title")}</CardTitle>
+                    <CardDescription>
+                      {t("ai_generator.preview_desc")}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-lg border bg-muted/20 p-3">
+                        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          {t("ai_generator.status_title")}
+                        </div>
+                        <div className="mt-2 text-sm font-medium">
+                          {generationError
+                            ? t("ai_generator.status_error")
+                            : isGenerating
+                              ? t("ai_generator.status_generating")
+                              : generationResult
+                                ? t("ai_generator.status_ready")
+                                : t("ai_generator.status_idle")}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border bg-muted/20 p-3">
+                        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          {t("ai_generator.suggested_name_title")}
+                        </div>
+                        <div className="mt-2 text-sm font-medium leading-snug">
+                          {generationResult?.suggestedName ?? "—"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-lg border p-3">
+                        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          {t("ai_generator.counts_title")}
+                        </div>
+                        <div className="mt-2 text-sm font-medium">
+                          {generationResult
+                            ? t("ai_generator.preview_counts", {
+                                nodes: generationResult.nodes.length,
+                                edges: generationResult.edges.length,
+                              })
+                            : "—"}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border p-3">
+                        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          {t("ai_generator.insert_mode_title")}
+                        </div>
+                        <div className="mt-2 text-sm font-medium">
+                          {currentFlowHasEditableNodes
+                            ? insertMode === "replace"
+                              ? t("ai_generator.insert_modes.replace_title")
+                              : t("ai_generator.insert_modes.insert_title")
+                            : "—"}
+                        </div>
+                      </div>
+                    </div>
+
+                    {generationError && (
+                      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                        <div className="flex items-center gap-2 font-medium">
+                          <AlertTriangle className="h-4 w-4" />
+                          {generationError}
+                        </div>
+                      </div>
+                    )}
+
+                    {generationValidationErrors.length > 0 && (
+                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
+                        <div className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-400">
+                          <AlertTriangle className="h-4 w-4" />
+                          {t("ai_generator.validation_errors_title")}
+                        </div>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-700/90 dark:text-amber-300">
+                          {generationValidationErrors.map((error, index) => (
+                            <li key={`${error}-${index}`}>{error}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {generationResult ? (
+                      <>
+                        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-900 dark:text-amber-100">
+                          <div className="font-medium">
+                            {t("ai_generator.review_notice_title")}
+                          </div>
+                          <p className="mt-1 text-xs text-amber-800/90 dark:text-amber-200/90">
+                            {t("ai_generator.review_notice_description")}
+                          </p>
+                        </div>
+
+                        {generationResult.warnings.length > 0 && (
+                          <div>
+                            <div className="mb-2 text-sm font-medium">
+                              {t("ai_generator.warnings_title")}
                             </div>
-                            <div className="grid gap-3 md:grid-cols-2">
-                              {(
-                                [
-                                  [
-                                    "outgoingMessages",
-                                    t("ai_generator.diff_sections.messages"),
-                                  ],
-                                  [
-                                    "conditions",
-                                    t("ai_generator.diff_sections.conditions"),
-                                  ],
-                                  [
-                                    "savedVariables",
-                                    t("ai_generator.diff_sections.variables"),
-                                  ],
-                                  [
-                                    "links",
-                                    t("ai_generator.diff_sections.links"),
-                                  ],
-                                ] as const
-                              ).map(([key, title]) => {
-                                const items = generatedFlowSummary[key];
-                                return (
-                                  <div
-                                    key={key}
-                                    className="rounded-lg border p-3"
-                                  >
-                                    <div className="flex items-center justify-between gap-2">
-                                      <div className="text-sm font-medium">
-                                        {title}
-                                      </div>
-                                      <span className="text-xs text-muted-foreground">
-                                        {items.length}
-                                      </span>
-                                    </div>
-                                    {items.length > 0 ? (
-                                      <div className="mt-3 space-y-2">
-                                        {items.map((item) => (
-                                          <div
-                                            key={item.id}
-                                            className="rounded-md bg-muted/40 p-2"
-                                          >
-                                            <div className="text-sm font-medium leading-snug">
-                                              {item.title}
-                                            </div>
-                                            {item.description && (
-                                              <div className="mt-1 text-xs text-muted-foreground">
-                                                {item.description}
-                                              </div>
-                                            )}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    ) : (
-                                      <p className="mt-3 text-xs text-muted-foreground">
-                                        {t("ai_generator.diff_empty")}
-                                      </p>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
+                            <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                              {generationResult.warnings.map(
+                                (warning, index) => (
+                                  <li key={`${warning}-${index}`}>{warning}</li>
+                                ),
+                              )}
+                            </ul>
                           </div>
                         )}
 
-                        <div>
-                          <div className="text-sm font-medium mb-2">
-                            {t("ai_generator.nodes_title")}
-                          </div>
-                          <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
-                            {generationResult.nodes.map((node) => (
-                              <div
-                                key={node.id}
-                                className="rounded-lg border p-3 text-sm"
-                              >
-                                <div className="font-medium">{node.type}</div>
-                                <div className="text-xs text-muted-foreground mt-1">
-                                  {node.id}
-                                </div>
-                                <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-muted-foreground">
-                                  {JSON.stringify(node.data, null, 2)}
-                                </pre>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="text-sm font-medium mb-2">
-                            {t("ai_generator.edges_title")}
-                          </div>
-                          <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                            {generationResult.edges.map((edge) => (
-                              <div
-                                key={edge.id}
-                                className="rounded-lg border p-3 text-xs text-muted-foreground"
-                              >
+                        {currentFlowHasEditableNodes && (
+                          <div className="space-y-3 rounded-lg border p-3">
+                            <div className="text-sm font-medium">
+                              {t("ai_generator.insert_mode_title")}
+                            </div>
+                            <RadioGroup
+                              value={insertMode}
+                              onValueChange={(value) =>
+                                setInsertMode(value as InsertMode)
+                              }
+                              className="grid gap-3"
+                            >
+                              <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:border-primary/60">
+                                <RadioGroupItem
+                                  value="replace"
+                                  className="mt-1"
+                                />
                                 <div>
-                                  {edge.source} → {edge.target}
-                                </div>
-                                {(edge.sourceHandle || edge.targetHandle) && (
-                                  <div className="mt-1">
-                                    {edge.sourceHandle
-                                      ? `sourceHandle=${edge.sourceHandle}`
-                                      : null}
-                                    {edge.sourceHandle && edge.targetHandle
-                                      ? " · "
-                                      : null}
-                                    {edge.targetHandle
-                                      ? `targetHandle=${edge.targetHandle}`
-                                      : null}
+                                  <div className="flex items-center gap-2 font-medium">
+                                    <RotateCcw className="h-4 w-4" />
+                                    {t(
+                                      "ai_generator.insert_modes.replace_title",
+                                    )}
                                   </div>
-                                )}
-                              </div>
-                            ))}
+                                  <p className="text-sm text-muted-foreground">
+                                    {t(
+                                      "ai_generator.insert_modes.replace_desc",
+                                    )}
+                                  </p>
+                                </div>
+                              </label>
+                              <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:border-primary/60">
+                                <RadioGroupItem
+                                  value="insert"
+                                  className="mt-1"
+                                />
+                                <div>
+                                  <div className="flex items-center gap-2 font-medium">
+                                    <GitBranchPlus className="h-4 w-4" />
+                                    {t(
+                                      "ai_generator.insert_modes.insert_title",
+                                    )}
+                                  </div>
+                                  <p className="text-sm text-muted-foreground">
+                                    {t("ai_generator.insert_modes.insert_desc")}
+                                  </p>
+                                </div>
+                              </label>
+                            </RadioGroup>
+                            {insertMode === "insert" && (
+                              <p className="text-xs text-muted-foreground">
+                                {selectedNodeId
+                                  ? t("ai_generator.selected_node_ready", {
+                                      nodeId: selectedNodeId,
+                                    })
+                                  : t("ai_generator.select_node_hint")}
+                              </p>
+                            )}
                           </div>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                      {isGenerating
-                        ? t("ai_generator.generating_preview")
-                        : t("ai_generator.empty_preview")}
-                    </div>
-                  )}
+                        )}
 
-                  {generationRawResponse && !generationResult && (
-                    <details className="rounded-lg border p-3 text-xs text-muted-foreground">
-                      <summary className="cursor-pointer font-medium">
-                        {t("ai_generator.raw_response_title")}
-                      </summary>
-                      <pre className="mt-3 whitespace-pre-wrap break-words">
-                        {generationRawResponse}
-                      </pre>
-                    </details>
-                  )}
-                </CardContent>
-              </Card>
+                        {generatedFlowSummary && (
+                          <>
+                            <Separator />
+                            <div className="space-y-3">
+                              <div className="text-sm font-medium">
+                                {t("ai_generator.diff_title")}
+                              </div>
+                              <div className="grid gap-3 md:grid-cols-2">
+                                {(
+                                  [
+                                    [
+                                      "outgoingMessages",
+                                      t("ai_generator.diff_sections.messages"),
+                                    ],
+                                    [
+                                      "conditions",
+                                      t(
+                                        "ai_generator.diff_sections.conditions",
+                                      ),
+                                    ],
+                                    [
+                                      "savedVariables",
+                                      t("ai_generator.diff_sections.variables"),
+                                    ],
+                                    [
+                                      "links",
+                                      t("ai_generator.diff_sections.links"),
+                                    ],
+                                  ] as const
+                                ).map(([key, title]) => {
+                                  const items = generatedFlowSummary[key];
+                                  return (
+                                    <div
+                                      key={key}
+                                      className="rounded-lg border p-3"
+                                    >
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="text-sm font-medium">
+                                          {title}
+                                        </div>
+                                        <span className="text-xs text-muted-foreground">
+                                          {items.length}
+                                        </span>
+                                      </div>
+                                      {items.length > 0 ? (
+                                        <div className="mt-3 space-y-2">
+                                          {items.map((item) => (
+                                            <div
+                                              key={item.id}
+                                              className="rounded-md bg-muted/40 p-2"
+                                            >
+                                              <div className="text-sm font-medium leading-snug">
+                                                {item.title}
+                                              </div>
+                                              {item.description && (
+                                                <div className="mt-1 text-xs text-muted-foreground">
+                                                  {item.description}
+                                                </div>
+                                              )}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <p className="mt-3 text-xs text-muted-foreground">
+                                          {t("ai_generator.diff_empty")}
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </>
+                        )}
+
+                        <details className="rounded-lg border" open>
+                          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium marker:hidden">
+                            <div className="flex items-center justify-between gap-3">
+                              <span>
+                                {t("ai_generator.technical_details_title")}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {t("ai_generator.preview_counts", {
+                                  nodes: generationResult.nodes.length,
+                                  edges: generationResult.edges.length,
+                                })}
+                              </span>
+                            </div>
+                          </summary>
+                          <div className="space-y-3 border-t px-4 py-4">
+                            <details className="rounded-md border bg-muted/10">
+                              <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium marker:hidden">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span>{t("ai_generator.nodes_title")}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {generationResult.nodes.length}
+                                  </span>
+                                </div>
+                              </summary>
+                              <div className="space-y-2 border-t px-3 py-3">
+                                {generationResult.nodes.map((node) => (
+                                  <div
+                                    key={node.id}
+                                    className="rounded-lg border p-3 text-sm"
+                                  >
+                                    <div className="font-medium">
+                                      {node.type}
+                                    </div>
+                                    <div className="mt-1 text-xs text-muted-foreground">
+                                      {node.id}
+                                    </div>
+                                    <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                                      {JSON.stringify(node.data, null, 2)}
+                                    </pre>
+                                  </div>
+                                ))}
+                              </div>
+                            </details>
+
+                            <details className="rounded-md border bg-muted/10">
+                              <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium marker:hidden">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span>{t("ai_generator.edges_title")}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {generationResult.edges.length}
+                                  </span>
+                                </div>
+                              </summary>
+                              <div className="space-y-2 border-t px-3 py-3">
+                                {generationResult.edges.map((edge) => (
+                                  <div
+                                    key={edge.id}
+                                    className="rounded-lg border p-3 text-xs text-muted-foreground"
+                                  >
+                                    <div>
+                                      {edge.source} → {edge.target}
+                                    </div>
+                                    {(edge.sourceHandle ||
+                                      edge.targetHandle) && (
+                                      <div className="mt-1">
+                                        {edge.sourceHandle
+                                          ? `sourceHandle=${edge.sourceHandle}`
+                                          : null}
+                                        {edge.sourceHandle && edge.targetHandle
+                                          ? " · "
+                                          : null}
+                                        {edge.targetHandle
+                                          ? `targetHandle=${edge.targetHandle}`
+                                          : null}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </details>
+
+                            {generationRawResponse && (
+                              <details className="rounded-md border bg-muted/10">
+                                <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium marker:hidden">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span>
+                                      {t("ai_generator.raw_response_title")}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground">
+                                      JSON
+                                    </span>
+                                  </div>
+                                </summary>
+                                <div className="border-t px-3 py-3">
+                                  <pre className="whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                                    {generationRawResponse}
+                                  </pre>
+                                </div>
+                              </details>
+                            )}
+                          </div>
+                        </details>
+                      </>
+                    ) : (
+                      <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                        {isGenerating
+                          ? t("ai_generator.generating_preview")
+                          : t("ai_generator.empty_preview")}
+                      </div>
+                    )}
+
+                    {generationRawResponse && !generationResult && (
+                      <details className="rounded-lg border p-3 text-xs text-muted-foreground">
+                        <summary className="cursor-pointer font-medium">
+                          {t("ai_generator.raw_response_title")}
+                        </summary>
+                        <pre className="mt-3 whitespace-pre-wrap break-words">
+                          {generationRawResponse}
+                        </pre>
+                      </details>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t px-6 py-4">
             <Button variant="outline" onClick={() => setIsGeneratorOpen(false)}>
               {t("ai_generator.cancel_btn")}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={handleGenerateFlow}
-              disabled={isGenerating}
-            >
-              {isGenerating ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4 mr-2" />
-              )}
-              {isGenerating
-                ? t("ai_generator.generating_btn")
-                : t("ai_generator.generate_btn")}
             </Button>
             <Button
               onClick={handleInsertGeneratedFlow}
