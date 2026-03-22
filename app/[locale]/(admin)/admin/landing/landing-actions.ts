@@ -7,6 +7,7 @@ import { getUser } from '@/lib/db/queries';
 import { db } from '@/lib/db/drizzle';
 import { landingContent, landingPages } from '@/lib/db/schema';
 import { defaultLandingContent } from '@/lib/landing/default-content';
+import { ensureLandingTables } from '@/lib/landing/storage';
 
 const homeSectionSchema = z.object({
   id: z.string().min(1),
@@ -59,6 +60,7 @@ export async function updateLandingContent(payload: z.infer<typeof landingConten
   try {
     await verifyAdmin();
     const validated = landingContentSchema.parse(payload);
+    await ensureLandingTables();
     const current = await db.query.landingContent.findFirst();
 
     if (current) {
@@ -91,6 +93,7 @@ export async function updateLandingContent(payload: z.infer<typeof landingConten
 export async function resetLandingContent() {
   try {
     await verifyAdmin();
+    await ensureLandingTables();
     const current = await db.query.landingContent.findFirst();
 
     if (current) {
@@ -121,6 +124,7 @@ export async function createLandingPage(payload: z.infer<typeof landingPageSchem
   try {
     await verifyAdmin();
     const validated = landingPageSchema.parse(payload);
+    await ensureLandingTables();
 
     await db.insert(landingPages).values({
       name: validated.name,
@@ -143,6 +147,7 @@ export async function updateLandingPage(payload: z.infer<typeof landingPageSchem
   try {
     await verifyAdmin();
     const validatedPage = landingPageSchema.parse(payload);
+    await ensureLandingTables();
 
     const [existing] = await db
       .select({ slug: landingPages.slug })
@@ -179,6 +184,7 @@ export async function updateLandingPage(payload: z.infer<typeof landingPageSchem
 export async function deleteLandingPage(id: number) {
   try {
     await verifyAdmin();
+    await ensureLandingTables();
     const [existing] = await db
       .select({ slug: landingPages.slug })
       .from(landingPages)
