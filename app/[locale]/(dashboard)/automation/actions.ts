@@ -1,23 +1,24 @@
-'use server';
+"use server";
 
-import { db } from '@/lib/db/drizzle';
-import { aiConfigs, automations } from '@/lib/db/schema';
-import { eq, desc } from 'drizzle-orm';
-import { revalidatePath } from 'next/cache';
-import { getTeamForUser } from '@/lib/db/queries';
-import { getAIProviderForConfig } from '@/lib/plugins/ai-chat/service';
-import type { AIMessage } from '@/lib/plugins/ai-chat/types';
+import { db } from "@/lib/db/drizzle";
+import { aiConfigs, automations } from "@/lib/db/schema";
+import { eq, desc } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
+import { getTeamForUser } from "@/lib/db/queries";
+import { automationRequiresManualReview } from "@/lib/automation/ai-draft";
+import { getAIProviderForConfig } from "@/lib/plugins/ai-chat/service";
+import type { AIMessage } from "@/lib/plugins/ai-chat/types";
 import {
   automationAIGenerationRequestSchema,
   buildAutomationFlowGeneratorPrompt,
   extractJsonObject,
   validateGeneratedAutomationFlow,
-} from '@/lib/automation/ai-flow';
+} from "@/lib/automation/ai-flow";
 import {
   type AutomationFlowEdge,
   type AutomationFlowNode,
-} from '@/lib/automation/flow-schema';
-import { prepareAutomationFlowForSave } from '@/lib/automation/flow-normalizer';
+} from "@/lib/automation/flow-schema";
+import { prepareAutomationFlowForSave } from "@/lib/automation/flow-normalizer";
 
 export async function getAutomations() {
   const team = await getTeamForUser();
@@ -27,8 +28,8 @@ export async function getAutomations() {
     where: eq(automations.teamId, team.id),
     orderBy: [desc(automations.updatedAt)],
     with: {
-        instance: true 
-    }
+      instance: true,
+    },
   });
 }
 
@@ -46,56 +47,99 @@ export async function getAutomation(id: number) {
 
 export async function createAutomation(name: string, instanceId: number) {
   const team = await getTeamForUser();
-  if (!team) throw new Error('Unauthorized');
+  if (!team) throw new Error("Unauthorized");
 
-  const [newBot] = await db.insert(automations).values({
-    teamId: team.id,
-    instanceId: instanceId,
-    name: name,
-    nodes: [],
-    edges: [],
-    isActive: false, 
-  }).returning();
+  const [newBot] = await db
+    .insert(automations)
+    .values({
+      teamId: team.id,
+      instanceId: instanceId,
+      name: name,
+      nodes: [],
+      edges: [],
+      isActive: false,
+    })
+    .returning();
 
   return { success: true, id: newBot.id };
 }
 
-export async function saveAutomation(id: number, nodes: AutomationFlowNode[], edges: AutomationFlowEdge[]) {
+export async function saveAutomation(
+  id: number,
+  nodes: AutomationFlowNode[],
+  edges: AutomationFlowEdge[],
+) {
   const team = await getTeamForUser();
-  if (!team) throw new Error('Unauthorized');
+  if (!team) throw new Error("Unauthorized");
+
+  const automation = await db.query.automations.findFirst({
+    where: eq(automations.id, id),
+  });
+
+  if (!automation || automation.teamId !== team.id) {
+    throw new Error("Automation not found.");
+  }
 
   const preparedFlow = prepareAutomationFlowForSave({ nodes, edges });
   if (!preparedFlow.success) {
-    throw new Error(preparedFlow.errors[0] || 'Invalid automation flow.');
+    throw new Error(preparedFlow.errors[0] || "Invalid automation flow.");
   }
 
-  await db.update(automations)
-    .set({ nodes: preparedFlow.nodes, edges: preparedFlow.edges, updatedAt: new Date() })
+  await db
+    .update(automations)
+    .set({
+      nodes: preparedFlow.nodes,
+      edges: preparedFlow.edges,
+      isActive: automationRequiresManualReview(preparedFlow.nodes)
+        ? false
+        : automation.isActive,
+      updatedAt: new Date(),
+    })
     .where(eq(automations.id, id));
 
   revalidatePath(`/automation/${id}`);
-  return { success: true, warnings: preparedFlow.warnings.map((warning) => warning.message) };
+  revalidatePath("/automation");
+  return {
+    success: true,
+    warnings: preparedFlow.warnings.map((warning) => warning.message),
+  };
 }
 
 export async function toggleAutomationStatus(id: number, isActive: boolean) {
-    const team = await getTeamForUser();
-    if (!team) throw new Error('Unauthorized');
+  const team = await getTeamForUser();
+  if (!team) throw new Error("Unauthorized");
 
-    await db.update(automations)
-        .set({ isActive, updatedAt: new Date() })
-        .where(eq(automations.id, id));
-    
-    revalidatePath(`/automation/${id}`);
-    revalidatePath('/automation');
-    return { success: true };
+  const automation = await db.query.automations.findFirst({
+    where: eq(automations.id, id),
+  });
+
+  if (!automation || automation.teamId !== team.id) {
+    throw new Error("Automation not found.");
+  }
+
+  if (
+    isActive &&
+    automationRequiresManualReview(automation.nodes as AutomationFlowNode[])
+  ) {
+    throw new Error("Automation requires manual review before activation.");
+  }
+
+  await db
+    .update(automations)
+    .set({ isActive, updatedAt: new Date() })
+    .where(eq(automations.id, id));
+
+  revalidatePath(`/automation/${id}`);
+  revalidatePath("/automation");
+  return { success: true };
 }
 
 export async function deleteAutomation(id: number) {
   const team = await getTeamForUser();
-  if (!team) throw new Error('Unauthorized');
+  if (!team) throw new Error("Unauthorized");
 
   await db.delete(automations).where(eq(automations.id, id));
-  revalidatePath('/automation');
+  revalidatePath("/automation");
 }
 
 export type GenerateAutomationFlowResult = {
@@ -111,17 +155,19 @@ export type GenerateAutomationFlowResult = {
   };
 };
 
-export async function generateAutomationFlow(input: unknown): Promise<GenerateAutomationFlowResult> {
+export async function generateAutomationFlow(
+  input: unknown,
+): Promise<GenerateAutomationFlowResult> {
   const team = await getTeamForUser();
   if (!team) {
-    return { success: false, error: 'Unauthorized' };
+    return { success: false, error: "Unauthorized" };
   }
 
   const parsedInput = automationAIGenerationRequestSchema.safeParse(input);
   if (!parsedInput.success) {
     return {
       success: false,
-      error: parsedInput.error.issues[0]?.message || 'Invalid request.',
+      error: parsedInput.error.issues[0]?.message || "Invalid request.",
       validationErrors: parsedInput.error.issues.map((issue) => issue.message),
     };
   }
@@ -131,30 +177,42 @@ export async function generateAutomationFlow(input: unknown): Promise<GenerateAu
   });
 
   if (!config) {
-    return { success: false, error: 'AI provider is not configured for this team.' };
+    return {
+      success: false,
+      error: "AI provider is not configured for this team.",
+    };
   }
 
   if (!config.isActive) {
-    return { success: false, error: 'AI is configured but currently disabled for this team.' };
+    return {
+      success: false,
+      error: "AI is configured but currently disabled for this team.",
+    };
   }
 
   const provider = await getAIProviderForConfig({
     ...config,
-    systemPrompt: [config.systemPrompt?.trim(), buildAutomationFlowGeneratorPrompt(parsedInput.data)]
+    systemPrompt: [
+      config.systemPrompt?.trim(),
+      buildAutomationFlowGeneratorPrompt(parsedInput.data),
+    ]
       .filter(Boolean)
-      .join('\n\n'),
-    temperature: String(parsedInput.data.temperature ?? (Number(config.temperature) || 0.7)),
-    maxOutputTokens: parsedInput.data.maxOutputTokens ?? config.maxOutputTokens ?? 1400,
+      .join("\n\n"),
+    temperature: String(
+      parsedInput.data.temperature ?? (Number(config.temperature) || 0.7),
+    ),
+    maxOutputTokens:
+      parsedInput.data.maxOutputTokens ?? config.maxOutputTokens ?? 1400,
   });
 
   const messages: AIMessage[] = [
     {
-      role: 'user',
+      role: "user",
       content: [
         `Generate an automation flow in locale ${parsedInput.data.locale}.`,
         `Channel: ${parsedInput.data.channel}.`,
         `User request: ${parsedInput.data.prompt}`,
-      ].join('\n'),
+      ].join("\n"),
     },
   ];
 
@@ -163,7 +221,10 @@ export async function generateAutomationFlow(input: unknown): Promise<GenerateAu
     const rawResponse = response.content?.trim();
 
     if (!rawResponse) {
-      return { success: false, error: 'The AI provider returned an empty response.' };
+      return {
+        success: false,
+        error: "The AI provider returned an empty response.",
+      };
     }
 
     let parsedJson: unknown;
@@ -172,9 +233,9 @@ export async function generateAutomationFlow(input: unknown): Promise<GenerateAu
     } catch (error) {
       return {
         success: false,
-        error: 'Unable to parse the AI response as JSON.',
+        error: "Unable to parse the AI response as JSON.",
         rawResponse,
-        validationErrors: ['The model returned text that is not valid JSON.'],
+        validationErrors: ["The model returned text that is not valid JSON."],
       };
     }
 
@@ -187,7 +248,7 @@ export async function generateAutomationFlow(input: unknown): Promise<GenerateAu
     if (!validatedFlow.success) {
       return {
         success: false,
-        error: 'The generated flow did not pass validation.',
+        error: "The generated flow did not pass validation.",
         rawResponse,
         validationErrors: validatedFlow.errors,
       };
@@ -199,10 +260,13 @@ export async function generateAutomationFlow(input: unknown): Promise<GenerateAu
       flow: validatedFlow.data,
     };
   } catch (error) {
-    console.error('Failed to generate automation flow:', error);
+    console.error("Failed to generate automation flow:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unexpected error generating the automation flow.',
+      error:
+        error instanceof Error
+          ? error.message
+          : "Unexpected error generating the automation flow.",
     };
   }
 }
