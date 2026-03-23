@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Button } from '@/components/ui/button';
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard,
   Users,
@@ -15,25 +15,27 @@ import {
   Wallet,
   Settings,
   LayoutTemplate,
-} from 'lucide-react';
-import { ThemeSwitcher } from '@/components/theme-switcher';
-import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+  FileCode2,
+} from "lucide-react";
+import { ThemeSwitcher } from "@/components/theme-switcher";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 
 const navItems = [
-  { href: '/admin', label: 'Overview', icon: LayoutDashboard, exact: true },
-  { href: '/admin/users', label: 'Users', icon: Users },
-  { href: '/admin/teams', label: 'Teams', icon: Building },
-  { href: '/admin/plans', label: 'Plans', icon: CreditCard },
-  { href: '/admin/branding', label: 'Branding', icon: Palette },
-  { href: '/admin/landing', label: 'Landing', icon: LayoutTemplate },
-  { href: '/admin/chat-theme', label: 'Chat Theme', icon: MessageSquare },
-  { href: '/admin/payments', label: 'Payments', icon: Wallet },
-  { href: '/admin/settings', label: 'Ajustes', icon: Settings },
+  { href: "/admin", label: "Overview", icon: LayoutDashboard, exact: true },
+  { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/teams", label: "Teams", icon: Building },
+  { href: "/admin/plans", label: "Plans", icon: CreditCard },
+  { href: "/admin/branding", label: "Branding", icon: Palette },
+  { href: "/admin/landing", label: "Landing", icon: LayoutTemplate },
+  { href: "/admin/landing/pages", label: "Paginas", icon: FileCode2 },
+  { href: "/admin/chat-theme", label: "Chat Theme", icon: MessageSquare },
+  { href: "/admin/payments", label: "Payments", icon: Wallet },
+  { href: "/admin/settings", label: "Ajustes", icon: Settings },
 ];
 
 export function AdminSidebar() {
   const pathname = usePathname();
-  const pathnameWithoutLocale = pathname.replace(/^\/[a-z]{2}(?=\/)/, '');
+  const pathnameWithoutLocale = pathname.replace(/^\/[a-z]{2}(?=\/)/, "");
 
   function isActive(href: string, exact?: boolean) {
     if (exact) return pathnameWithoutLocale === href;
@@ -50,7 +52,7 @@ export function AdminSidebar() {
         {navItems.map(({ href, label, icon: Icon, exact }) => (
           <Link key={href} href={href}>
             <Button
-              variant={isActive(href, exact) ? 'secondary' : 'ghost'}
+              variant={isActive(href, exact) ? "secondary" : "ghost"}
               className="w-full justify-start"
             >
               <Icon className="mr-2 h-4 w-4" />
