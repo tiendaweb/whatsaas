@@ -1,8 +1,8 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
-import { Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import { RotateCcw, Save, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,35 +11,16 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { defaultLandingContent } from '@/lib/landing/default-content';
 import type { LandingContentRecord, LandingFaqItem, LandingHomeSection } from '@/lib/landing/types';
-import type { LandingPage } from '@/lib/db/schema';
-import {
-  createLandingPage,
-  deleteLandingPage,
-  resetLandingContent,
-  updateLandingContent,
-  updateLandingPage,
-} from './landing-actions';
-
-function createPageDraft() {
-  return { name: '', slug: '', content: '' };
-}
+import { resetLandingContent, updateLandingContent } from './landing-actions';
 
 export function LandingAdminClient({
   initialContent,
-  initialPages,
 }: {
   initialContent: LandingContentRecord;
-  initialPages: LandingPage[];
 }) {
-  const router = useRouter();
   const [content, setContent] = useState(initialContent);
-  const [pages, setPages] = useState(initialPages);
-  const [newPage, setNewPage] = useState(createPageDraft());
   const [isSavingContent, startSavingContent] = useTransition();
   const [isResetting, startResetting] = useTransition();
-  const [isCreatingPage, startCreatingPage] = useTransition();
-  const [savingPageId, setSavingPageId] = useState<number | null>(null);
-  const [deletingPageId, setDeletingPageId] = useState<number | null>(null);
 
   const totalFaqs = useMemo(() => content.faqItems.length, [content.faqItems.length]);
 
@@ -123,64 +104,32 @@ export function LandingAdminClient({
       toast.success('Contenido restaurado', {
         description: 'Se volvió al contenido base configurado para la landing.',
       });
-      router.refresh();
     });
-  }
-
-  function handleCreatePage() {
-    startCreatingPage(async () => {
-      const result = await createLandingPage(newPage);
-      if (!result.success) {
-        toast.error('No se pudo crear la página', { description: result.message });
-        return;
-      }
-
-      toast.success('Página creada', {
-        description: `La página /${newPage.slug} ya está disponible en la landing.`,
-      });
-      setNewPage(createPageDraft());
-      router.refresh();
-    });
-  }
-
-  function handleUpdatePage(page: LandingPage) {
-    setSavingPageId(page.id);
-    void (async () => {
-      const result = await updateLandingPage(page);
-      setSavingPageId(null);
-      if (!result.success) {
-        toast.error('No se pudo guardar la página', { description: result.message });
-        return;
-      }
-      toast.success('Página actualizada', {
-        description: `Se guardaron los cambios de /${page.slug}.`,
-      });
-    })();
-  }
-
-  function handleDeletePage(page: LandingPage) {
-    setDeletingPageId(page.id);
-    void (async () => {
-      const result = await deleteLandingPage(page.id);
-      setDeletingPageId(null);
-      if (!result.success) {
-        toast.error('No se pudo eliminar', { description: result.message });
-        return;
-      }
-      setPages((current) => current.filter((item) => item.id !== page.id));
-      toast.success('Página eliminada', {
-        description: `La ruta /${page.slug} fue removida.`,
-      });
-    })();
   }
 
   return (
     <div className="space-y-8">
+      <Card className="border-primary/20 bg-primary/5">
+        <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <CardTitle>Landing principal</CardTitle>
+            <CardDescription>
+              Aquí editas únicamente el home y las FAQs. Las páginas internas ahora viven en un editor separado para trabajar una por una.
+            </CardDescription>
+          </div>
+          <Link href="/admin/landing/pages">
+            <Button variant="outline">
+              Administrar páginas internas <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </Link>
+        </CardHeader>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Home editable</CardTitle>
           <CardDescription>
-            Edita las 3 nuevas secciones tipo dashboard y administra el bloque de preguntas frecuentes.
+            Edita las 3 secciones visuales del home con el mensaje comercial que verá el visitante.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-8">
@@ -188,7 +137,7 @@ export function LandingAdminClient({
             <div key={section.id} className="rounded-2xl border border-border/60 p-5">
               <div className="mb-4">
                 <h3 className="text-lg font-semibold">Sección {index + 1}</h3>
-                <p className="text-sm text-muted-foreground">El preview visual del home usa este contenido y mantiene el mockup de UI al lado.</p>
+                <p className="text-sm text-muted-foreground">El preview visual del home usa este contenido junto al mockup de UI.</p>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
@@ -251,7 +200,7 @@ export function LandingAdminClient({
                 <h3 className="font-semibold">Pregunta #{index + 1}</h3>
                 {content.faqItems.length > 15 && (
                   <Button type="button" variant="ghost" size="sm" onClick={() => removeFaqItem(index)}>
-                    <Trash2 className="mr-2 h-4 w-4" /> Quitar
+                    Quitar
                   </Button>
                 )}
               </div>
@@ -277,93 +226,11 @@ export function LandingAdminClient({
 
           <div className="flex flex-wrap gap-3">
             <Button type="button" variant="outline" onClick={addFaqItem}>
-              <Plus className="mr-2 h-4 w-4" /> Agregar pregunta
+              Agregar pregunta
             </Button>
             <Button onClick={handleSaveContent} disabled={isSavingContent}>
               <Save className="mr-2 h-4 w-4" /> {isSavingContent ? 'Guardando...' : 'Guardar FAQs'}
             </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Páginas adicionales</CardTitle>
-          <CardDescription>
-            Crea páginas nuevas con nombre, slug y contenido. Se publican automáticamente en la ruta indicada.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-8">
-          <div className="rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-5">
-            <h3 className="text-lg font-semibold">Nueva página</h3>
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Nombre</Label>
-                <Input value={newPage.name} onChange={(event) => setNewPage((current) => ({ ...current, name: event.target.value }))} />
-              </div>
-              <div className="space-y-2">
-                <Label>Slug</Label>
-                <Input value={newPage.slug} onChange={(event) => setNewPage((current) => ({ ...current, slug: event.target.value }))} placeholder="ej: nosotros" />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label>Contenido</Label>
-                <Textarea rows={8} value={newPage.content} onChange={(event) => setNewPage((current) => ({ ...current, content: event.target.value }))} />
-              </div>
-            </div>
-            <Button className="mt-4" onClick={handleCreatePage} disabled={isCreatingPage}>
-              <Plus className="mr-2 h-4 w-4" /> {isCreatingPage ? 'Creando...' : 'Crear página'}
-            </Button>
-          </div>
-
-          <div className="space-y-4">
-            {pages.length === 0 ? (
-              <div className="rounded-2xl border border-border/60 p-6 text-sm text-muted-foreground">
-                Aún no hay páginas adicionales. Crea una para mostrar rutas como /nosotros, /servicios o /partners.
-              </div>
-            ) : (
-              pages.map((page, index) => (
-                <div key={page.id} className="rounded-2xl border border-border/60 p-5">
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-lg font-semibold">Página {index + 1}</h3>
-                      <p className="text-sm text-muted-foreground">Disponible en /{page.slug}</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button type="button" variant="outline" onClick={() => handleUpdatePage(page)} disabled={savingPageId === page.id}>
-                        <Save className="mr-2 h-4 w-4" /> {savingPageId === page.id ? 'Guardando...' : 'Guardar'}
-                      </Button>
-                      <Button type="button" variant="destructive" onClick={() => handleDeletePage(page)} disabled={deletingPageId === page.id}>
-                        <Trash2 className="mr-2 h-4 w-4" /> {deletingPageId === page.id ? 'Eliminando...' : 'Eliminar'}
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label>Nombre</Label>
-                      <Input
-                        value={page.name}
-                        onChange={(event) => setPages((current) => current.map((item) => item.id === page.id ? { ...item, name: event.target.value } : item))}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Slug</Label>
-                      <Input
-                        value={page.slug}
-                        onChange={(event) => setPages((current) => current.map((item) => item.id === page.id ? { ...item, slug: event.target.value } : item))}
-                      />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>Contenido</Label>
-                      <Textarea
-                        rows={8}
-                        value={page.content}
-                        onChange={(event) => setPages((current) => current.map((item) => item.id === page.id ? { ...item, content: event.target.value } : item))}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
           </div>
         </CardContent>
       </Card>

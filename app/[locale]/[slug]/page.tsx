@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import Logo from '@/components/interface/Logo';
+import { PublicLandingPageBuilder } from '@/components/landing/public-page-builder';
 import { Button } from '@/components/ui/button';
 import { getBranding } from '@/lib/db/queries/branding';
 import { getLandingPageBySlug } from '@/lib/db/queries/landing';
@@ -24,7 +25,7 @@ export default async function PublicLandingPage({
   return (
     <main className="min-h-screen bg-background">
       <header className="border-b border-border/60 bg-background/90 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
           <Logo />
           <Link href="/">
             <Button variant="outline">
@@ -34,14 +35,19 @@ export default async function PublicLandingPage({
         </div>
       </header>
 
-      <section className="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:px-8">
+      <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:px-8">
         <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">{siteName}</p>
-        <h1 className="mt-4 text-4xl font-bold tracking-tight md:text-5xl">{page.name}</h1>
-        <p className="mt-4 text-lg text-muted-foreground">/{page.slug}</p>
+        <p className="mt-3 text-sm text-muted-foreground">/{page.slug}</p>
 
-        <article className="prose prose-zinc mt-10 max-w-none whitespace-pre-wrap text-base leading-8 text-foreground dark:prose-invert">
-          {page.content}
-        </article>
+        <div className="mt-8">
+          <PublicLandingPageBuilder sections={page.sections} />
+        </div>
+
+        {page.content.trim() ? (
+          <article className="prose prose-zinc mt-10 max-w-none whitespace-pre-wrap rounded-[32px] border border-border/60 bg-muted/20 p-8 text-base leading-8 text-foreground dark:prose-invert">
+            {page.content}
+          </article>
+        ) : null}
       </section>
     </main>
   );

@@ -7,6 +7,7 @@ import { getUser } from '@/lib/db/queries';
 import { db } from '@/lib/db/drizzle';
 import { landingContent, landingPages } from '@/lib/db/schema';
 import { defaultLandingContent } from '@/lib/landing/default-content';
+import { createDefaultLandingPageSections } from '@/lib/landing/page-sections';
 import { ensureLandingTables } from '@/lib/landing/storage';
 
 const homeSectionSchema = z.object({
@@ -23,6 +24,58 @@ const faqSchema = z.object({
   answer: z.string().trim().min(1, 'La respuesta es requerida.').max(700),
 });
 
+const statItemSchema = z.object({
+  id: z.string().min(1),
+  value: z.string().trim().min(1).max(80),
+  label: z.string().trim().min(1).max(120),
+  description: z.string().trim().min(1).max(220),
+});
+
+const highlightItemSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().trim().min(1).max(120),
+  description: z.string().trim().min(1).max(220),
+});
+
+const pageSectionSchema = z.discriminatedUnion('type', [
+  z.object({
+    id: z.string().min(1),
+    type: z.literal('hero'),
+    eyebrow: z.string().trim().min(1).max(120),
+    title: z.string().trim().min(1).max(220),
+    description: z.string().trim().min(1).max(500),
+    primaryCtaLabel: z.string().trim().min(1).max(80),
+    primaryCtaHref: z.string().trim().min(1).max(200),
+    secondaryCtaLabel: z.string().trim().min(1).max(80),
+    secondaryCtaHref: z.string().trim().min(1).max(200),
+  }),
+  z.object({
+    id: z.string().min(1),
+    type: z.literal('stats'),
+    eyebrow: z.string().trim().min(1).max(120),
+    title: z.string().trim().min(1).max(220),
+    description: z.string().trim().min(1).max(500),
+    items: z.array(statItemSchema).min(1).max(3),
+  }),
+  z.object({
+    id: z.string().min(1),
+    type: z.literal('highlights'),
+    eyebrow: z.string().trim().min(1).max(120),
+    title: z.string().trim().min(1).max(220),
+    description: z.string().trim().min(1).max(500),
+    items: z.array(highlightItemSchema).min(1).max(4),
+  }),
+  z.object({
+    id: z.string().min(1),
+    type: z.literal('cta'),
+    eyebrow: z.string().trim().min(1).max(120),
+    title: z.string().trim().min(1).max(220),
+    description: z.string().trim().min(1).max(500),
+    primaryCtaLabel: z.string().trim().min(1).max(80),
+    primaryCtaHref: z.string().trim().min(1).max(200),
+  }),
+]);
+
 const landingContentSchema = z.object({
   homeSections: z.array(homeSectionSchema).length(3),
   faqItems: z.array(faqSchema).min(15).max(30),
@@ -37,7 +90,19 @@ const landingPageSchema = z.object({
     .max(140)
     .transform((value) => value.toLowerCase())
     .refine((value) => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value), 'Usa solo letras, números y guiones.'),
-  content: z.string().trim().min(1, 'El contenido es requerido.').max(10000),
+  content: z.string().trim().max(10000).default(''),
+  sections: z.array(pageSectionSchema).length(4),
+});
+
+const createLandingPageSchema = z.object({
+  name: z.string().trim().min(1, 'El nombre es requerido.').max(120),
+  slug: z
+    .string()
+    .trim()
+    .min(1, 'El slug es requerido.')
+    .max(140)
+    .transform((value) => value.toLowerCase())
+    .refine((value) => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value), 'Usa solo letras, números y guiones.'),
 });
 
 async function verifyAdmin() {
@@ -51,6 +116,7 @@ async function verifyAdmin() {
 function revalidateLanding(slug?: string) {
   revalidatePath('/', 'layout');
   revalidatePath('/admin/landing');
+  revalidatePath('/admin/landing/pages');
   if (slug) {
     revalidatePath(`/${slug}`);
   }
@@ -120,20 +186,24 @@ export async function resetLandingContent() {
   }
 }
 
-export async function createLandingPage(payload: z.infer<typeof landingPageSchema>) {
+export async function createLandingPage(payload: z.infer<typeof createLandingPageSchema>) {
   try {
     await verifyAdmin();
-    const validated = landingPageSchema.parse(payload);
+    const validated = createLandingPageSchema.parse(payload);
     await ensureLandingTables();
 
-    await db.insert(landingPages).values({
-      name: validated.name,
-      slug: validated.slug,
-      content: validated.content,
-    });
+    const [created] = await db
+      .insert(landingPages)
+      .values({
+        name: validated.name,
+        slug: validated.slug,
+        content: '',
+        sections: createDefaultLandingPageSections(validated.name),
+      })
+      .returning({ id: landingPages.id, slug: landingPages.slug });
 
     revalidateLanding(validated.slug);
-    return { success: true as const };
+    return { success: true as const, pageId: created.id, slug: created.slug };
   } catch (error) {
     console.error(error);
     return {
@@ -165,13 +235,14 @@ export async function updateLandingPage(payload: z.infer<typeof landingPageSchem
         name: validatedPage.name,
         slug: validatedPage.slug,
         content: validatedPage.content,
+        sections: validatedPage.sections,
         updatedAt: new Date(),
       })
       .where(eq(landingPages.id, payload.id));
 
     revalidateLanding(existing.slug);
     revalidateLanding(validatedPage.slug);
-    return { success: true as const };
+    return { success: true as const, slug: validatedPage.slug };
   } catch (error) {
     console.error(error);
     return {
