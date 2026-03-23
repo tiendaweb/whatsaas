@@ -18,6 +18,7 @@ export type LandingContentRecord = {
 };
 
 export type LandingPageContentMode = "builder" | "react";
+export type LandingSectionUiPlacement = "left" | "right" | "bottom";
 
 export type LandingPageSectionStatsItem = {
   id: string;
@@ -32,42 +33,36 @@ export type LandingPageSectionHighlightItem = {
   description: string;
 };
 
-export type LandingPageHeroSection = {
+type LandingPageSectionBase = {
   id: string;
-  type: "hero";
   eyebrow: string;
   title: string;
   description: string;
+  uiPlacement: LandingSectionUiPlacement;
+  customCode: string;
+  compiledCustomCode: string | null;
+};
+
+export type LandingPageHeroSection = LandingPageSectionBase & {
+  type: "hero";
   primaryCtaLabel: string;
   primaryCtaHref: string;
   secondaryCtaLabel: string;
   secondaryCtaHref: string;
 };
 
-export type LandingPageStatsSection = {
-  id: string;
+export type LandingPageStatsSection = LandingPageSectionBase & {
   type: "stats";
-  eyebrow: string;
-  title: string;
-  description: string;
   items: LandingPageSectionStatsItem[];
 };
 
-export type LandingPageHighlightsSection = {
-  id: string;
+export type LandingPageHighlightsSection = LandingPageSectionBase & {
   type: "highlights";
-  eyebrow: string;
-  title: string;
-  description: string;
   items: LandingPageSectionHighlightItem[];
 };
 
-export type LandingPageCtaSection = {
-  id: string;
+export type LandingPageCtaSection = LandingPageSectionBase & {
   type: "cta";
-  eyebrow: string;
-  title: string;
-  description: string;
   primaryCtaLabel: string;
   primaryCtaHref: string;
 };

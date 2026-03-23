@@ -19,7 +19,7 @@ export default async function AdminLandingPageEditor({
       <div>
         <h1 className="text-3xl font-bold">Editor de página</h1>
         <p className="text-muted-foreground">
-          Ajusta esta página en un editor individual con cuatro secciones reutilizadas del sistema.
+          Ajusta esta página con un editor por tabs, subsidebar de secciones y bloques dinámicos reordenables.
         </p>
       </div>
       <LandingPageEditorClient initialPage={page} />

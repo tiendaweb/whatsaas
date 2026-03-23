@@ -7,8 +7,9 @@ import { getUser } from "@/lib/db/queries";
 import { db } from "@/lib/db/drizzle";
 import { landingContent, landingPages } from "@/lib/db/schema";
 import { defaultLandingContent } from "@/lib/landing/default-content";
-import { createDefaultLandingPageSections } from "@/lib/landing/page-sections";
+import { createDefaultLandingPageSections, normalizeLandingPageSections } from "@/lib/landing/page-sections";
 import { ensureLandingTables } from "@/lib/landing/storage";
+import { compileLandingSectionWidget } from "@/lib/landing/runtime";
 import { GeminiProvider } from "@/lib/plugins/ai-chat/providers/gemini";
 import { OpenAIProvider } from "@/lib/plugins/ai-chat/providers/openai";
 import type { AIMessage, AIProvider } from "@/lib/plugins/ai-chat/types";
@@ -44,40 +45,40 @@ const highlightItemSchema = z.object({
   description: z.string().trim().min(1).max(220),
 });
 
+const sectionUiSchema = z.enum(["left", "right", "bottom"]);
+
+const sharedPageSectionSchema = {
+  id: z.string().min(1),
+  eyebrow: z.string().trim().min(1).max(120),
+  title: z.string().trim().min(1).max(220),
+  description: z.string().trim().min(1).max(500),
+  uiPlacement: sectionUiSchema.default("right"),
+  customCode: z.string().max(12000).default(""),
+  compiledCustomCode: z.string().max(40000).nullable().optional().default(null),
+};
+
 const pageSectionSchema = z.discriminatedUnion("type", [
   z.object({
-    id: z.string().min(1),
+    ...sharedPageSectionSchema,
     type: z.literal("hero"),
-    eyebrow: z.string().trim().min(1).max(120),
-    title: z.string().trim().min(1).max(220),
-    description: z.string().trim().min(1).max(500),
     primaryCtaLabel: z.string().trim().min(1).max(80),
     primaryCtaHref: z.string().trim().min(1).max(200),
     secondaryCtaLabel: z.string().trim().min(1).max(80),
     secondaryCtaHref: z.string().trim().min(1).max(200),
   }),
   z.object({
-    id: z.string().min(1),
+    ...sharedPageSectionSchema,
     type: z.literal("stats"),
-    eyebrow: z.string().trim().min(1).max(120),
-    title: z.string().trim().min(1).max(220),
-    description: z.string().trim().min(1).max(500),
     items: z.array(statItemSchema).min(1).max(3),
   }),
   z.object({
-    id: z.string().min(1),
+    ...sharedPageSectionSchema,
     type: z.literal("highlights"),
-    eyebrow: z.string().trim().min(1).max(120),
-    title: z.string().trim().min(1).max(220),
-    description: z.string().trim().min(1).max(500),
     items: z.array(highlightItemSchema).min(1).max(4),
   }),
   z.object({
-    id: z.string().min(1),
+    ...sharedPageSectionSchema,
     type: z.literal("cta"),
-    eyebrow: z.string().trim().min(1).max(120),
-    title: z.string().trim().min(1).max(220),
-    description: z.string().trim().min(1).max(500),
     primaryCtaLabel: z.string().trim().min(1).max(80),
     primaryCtaHref: z.string().trim().min(1).max(200),
   }),
@@ -103,7 +104,7 @@ const landingPageSchema = z.object({
   contentMode: z.enum(["builder", "react"]).default("builder"),
   content: z.string().max(30000).default(""),
   externalPrompt: z.string().max(20000).default(""),
-  sections: z.array(pageSectionSchema).length(4),
+  sections: z.array(pageSectionSchema).min(1).max(16),
 });
 
 const createLandingPageSchema = z.object({
@@ -199,6 +200,17 @@ function buildLandingPageGenerationPrompt(
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+async function compileSectionsForStorage(sections: z.infer<typeof pageSectionSchema>[]) {
+  return Promise.all(
+    normalizeLandingPageSections(sections, "Página custom").map(async (section) => ({
+      ...section,
+      compiledCustomCode: section.customCode.trim()
+        ? await compileLandingSectionWidget(section.customCode)
+        : null,
+    })),
+  );
 }
 
 function normalizeGeneratedTsx(raw: string) {
@@ -331,6 +343,7 @@ export async function updateLandingPage(
   try {
     await verifyAdmin();
     const validatedPage = landingPageSchema.parse(payload);
+    const compiledSections = await compileSectionsForStorage(validatedPage.sections);
     await ensureLandingTables();
 
     const [existing] = await db
@@ -351,7 +364,7 @@ export async function updateLandingPage(
         contentMode: validatedPage.contentMode,
         content: validatedPage.content,
         externalPrompt: validatedPage.externalPrompt,
-        sections: validatedPage.sections,
+        sections: compiledSections,
         updatedAt: new Date(),
       })
       .where(eq(landingPages.id, payload.id));
@@ -367,6 +380,24 @@ export async function updateLandingPage(
         error instanceof Error
           ? error.message
           : "No se pudo actualizar la página.",
+    };
+  }
+}
+
+export async function compileLandingSectionCode(payload: { code: string }) {
+  try {
+    await verifyAdmin();
+    const compiledCode = await compileLandingSectionWidget(payload.code);
+
+    return { success: true as const, compiledCode };
+  } catch (error) {
+    console.error(error);
+    return {
+      success: false as const,
+      message:
+        error instanceof Error
+          ? error.message
+          : "No se pudo compilar la UI de la sección.",
     };
   }
 }
