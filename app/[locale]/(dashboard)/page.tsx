@@ -16,7 +16,13 @@ import {
   Settings,
   Phone,
   Inbox,
-  Plus
+  Plus,
+  BrainCircuit,
+  BadgeDollarSign,
+  ShieldCheck,
+  Workflow,
+  Target,
+  TimerReset
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -250,6 +256,84 @@ function FeatureCard({ icon: Icon, title, description, delay }: { icon: any, tit
 }
 
 
+function ImpactSection() {
+  const metrics = [
+    { value: '24/7', label: 'Atención activa', description: 'Tus clientes reciben respuesta y seguimiento incluso cuando tu equipo no está pegado al chat.' },
+    { value: '+38%', label: 'Más cierres', description: 'Empujas conversaciones con intención real en vez de dejar ventas tiradas por falta de orden.' },
+    { value: '-62%', label: 'Menos caos', description: 'Se acaba el rebote entre asesores, las respuestas tardías y los mensajes perdidos.' },
+  ];
+
+  return (
+    <section className="border-y border-border bg-muted/20 py-24">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="grid gap-10 lg:grid-cols-[0.95fr_1.05fr]">
+          <div>
+            <Badge variant="secondary" className="mb-4 bg-primary/10 text-primary">Impacto inmediato</Badge>
+            <h2 className="text-3xl font-bold tracking-tight md:text-4xl">Deja de usar WhatsApp como si fuera un chat suelto y conviértelo en una máquina de ventas y seguimiento.</h2>
+            <p className="mt-5 text-lg leading-8 text-muted-foreground">Cuando todo vive en un solo sistema, tu negocio responde mejor, recupera oportunidades y deja de depender del talento heroico de una sola persona.</p>
+            <div className="mt-8 space-y-4">
+              {[
+                'Atiende más sin contratar de golpe.',
+                'Recupera leads que hoy se te escapan por demora.',
+                'Haz que soporte, ventas y operaciones trabajen como un solo frente.',
+              ].map((item) => (
+                <div key={item} className="flex items-start gap-3 rounded-2xl border border-border/50 bg-background p-4">
+                  <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1">
+            {metrics.map((metric, index) => (
+              <div key={metric.label} className={`rounded-3xl border border-border/60 bg-background p-6 shadow-sm ${index === 1 ? 'lg:translate-x-6' : ''}`}>
+                <p className="text-4xl font-bold tracking-tight text-primary">{metric.value}</p>
+                <p className="mt-2 text-lg font-semibold">{metric.label}</p>
+                <p className="mt-3 text-sm leading-7 text-muted-foreground">{metric.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SolutionsStrip() {
+  const solutions = [
+    { icon: Workflow, title: 'Automatiza seguimiento', description: 'Persigue prospectos, agenda demos y acelera respuestas sin depender del humor del día.' },
+    { icon: BadgeDollarSign, title: 'Aprieta ventas', description: 'Detecta intención, prioriza compradores y dale foco a lo que sí genera ingreso.' },
+    { icon: ShieldCheck, title: 'Ordena soporte', description: 'Evita quejas repetidas, rebotes eternos y clientes molestos por falta de contexto.' },
+    { icon: BrainCircuit, title: 'Escala con IA', description: 'Reduce carga operativa y mantén ritmo sin convertir al equipo en una central de incendios.' },
+    { icon: Target, title: 'Recupera leads', description: 'Vuelve a tocar contactos dormidos con mensajes y secuencias que reactivan interés.' },
+    { icon: TimerReset, title: 'Recorta tiempos', description: 'Menos espera, menos fricción y más conversaciones llevadas al siguiente paso.' },
+  ];
+
+  return (
+    <section className="py-24">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-3xl text-center">
+          <Badge variant="secondary" className="mb-4 bg-primary/10 text-primary">Soluciones que atacan el problema real</Badge>
+          <h2 className="text-3xl font-bold tracking-tight md:text-4xl">WhatSaaS no está hecho para verse bonito. Está hecho para quitarte fricción, desorden y fugas de dinero.</h2>
+          <p className="mt-5 text-lg text-muted-foreground">Cada módulo empuja una parte crítica del negocio para que atiendas mejor, cierres más y operes con una disciplina que normalmente solo logran equipos mucho más grandes.</p>
+        </div>
+
+        <div className="mt-14 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+          {solutions.map((solution) => (
+            <div key={solution.title} className="rounded-3xl border border-border/60 bg-card p-6 shadow-sm transition-transform duration-300 hover:-translate-y-1 hover:shadow-lg">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                <solution.icon className="h-6 w-6" />
+              </div>
+              <h3 className="mt-5 text-xl font-semibold">{solution.title}</h3>
+              <p className="mt-3 text-sm leading-7 text-muted-foreground">{solution.description}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 
 export default async function HomePage() {
   
@@ -353,6 +437,8 @@ export default async function HomePage() {
         </div>
       </section>
 
+      <ImpactSection />
+
       {landingContent.homeSections.map((section, index) => (
         <LandingFeatureShowcase
           key={section.id}
@@ -360,6 +446,8 @@ export default async function HomePage() {
           reverse={index % 2 === 1}
         />
       ))}
+
+      <SolutionsStrip />
 
       <LandingFaqSection items={landingContent.faqItems} />
 

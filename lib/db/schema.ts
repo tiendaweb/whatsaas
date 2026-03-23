@@ -765,6 +765,7 @@ export const landingPages = pgTable('landing_pages', {
   name: varchar('name', { length: 120 }).notNull(),
   slug: varchar('slug', { length: 140 }).notNull().unique(),
   content: text('content').notNull().default(''),
+  sections: jsonb('sections').$type<import('@/lib/landing/types').LandingPageSection[]>().notNull().default([]),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

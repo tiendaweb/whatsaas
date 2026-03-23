@@ -2,6 +2,7 @@ import { asc, eq } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { landingContent, landingPages } from '@/lib/db/schema';
 import { defaultLandingContent } from '@/lib/landing/default-content';
+import { normalizeLandingPageSections } from '@/lib/landing/page-sections';
 import { withLandingStorageFallback } from '@/lib/landing/storage';
 import type { LandingContentRecord } from '@/lib/landing/types';
 
@@ -21,6 +22,17 @@ function mergeLandingContent(record?: {
   };
 }
 
+function normalizeLandingPageRecord<T extends {
+  name: string;
+  content: string;
+  sections?: Parameters<typeof normalizeLandingPageSections>[0];
+}>(page: T) {
+  return {
+    ...page,
+    sections: normalizeLandingPageSections(page.sections, page.name, page.content),
+  };
+}
+
 export async function getLandingContent(): Promise<LandingContentRecord> {
   return withLandingStorageFallback(
     'getLandingContent',
@@ -35,8 +47,27 @@ export async function getLandingContent(): Promise<LandingContentRecord> {
 export async function getLandingPages() {
   return withLandingStorageFallback(
     'getLandingPages',
-    async () => await db.select().from(landingPages).orderBy(asc(landingPages.createdAt)),
+    async () => {
+      const pages = await db.select().from(landingPages).orderBy(asc(landingPages.createdAt));
+      return pages.map(normalizeLandingPageRecord);
+    },
     () => [],
+  );
+}
+
+export async function getLandingPageById(id: number) {
+  return withLandingStorageFallback(
+    'getLandingPageById',
+    async () => {
+      const [page] = await db
+        .select()
+        .from(landingPages)
+        .where(eq(landingPages.id, id))
+        .limit(1);
+
+      return page ? normalizeLandingPageRecord(page) : null;
+    },
+    () => null,
   );
 }
 
@@ -50,7 +81,7 @@ export async function getLandingPageBySlug(slug: string) {
         .where(eq(landingPages.slug, slug))
         .limit(1);
 
-      return page ?? null;
+      return page ? normalizeLandingPageRecord(page) : null;
     },
     () => null,
   );

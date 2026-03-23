@@ -55,11 +55,17 @@ export async function ensureLandingTables() {
         name varchar(120) NOT NULL,
         slug varchar(140) NOT NULL UNIQUE,
         content text NOT NULL DEFAULT '',
+        sections jsonb NOT NULL DEFAULT '[]'::jsonb,
         created_at timestamp NOT NULL DEFAULT now(),
         updated_at timestamp NOT NULL DEFAULT now()
       );
     `);
   }
+
+  await db.execute(sql`
+    ALTER TABLE landing_pages
+    ADD COLUMN IF NOT EXISTS sections jsonb NOT NULL DEFAULT '[]'::jsonb;
+  `);
 
   landingTablesBootstrapped = true;
 }
