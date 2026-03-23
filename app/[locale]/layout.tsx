@@ -1,6 +1,5 @@
 import '../../app/globals.css';
 import type { Metadata, Viewport } from 'next';
-import { Manrope } from 'next/font/google';
 import { getUser, getTeamForUser } from '@/lib/db/queries';
 import { SWRConfig } from 'swr';
 import { ThemeProvider } from '@/components/theme-provider';
@@ -12,7 +11,6 @@ import { getMessages } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { locales } from '@/i18n/request';
 
-const manrope = Manrope({ subsets: ['latin'] });
 
 export const viewport: Viewport = {
   maximumScale: 1,
@@ -56,7 +54,7 @@ export default async function LocaleLayout({
     <html
       lang={locale}
       suppressHydrationWarning
-      className={`bg-background text-foreground ${manrope.className}`}
+      className="bg-background text-foreground"
     >
       <body className="min-h-[100dvh] bg-background">
         <NextIntlClientProvider messages={messages}>
