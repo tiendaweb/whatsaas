@@ -17,6 +17,8 @@ export type LandingContentRecord = {
   faqItems: LandingFaqItem[];
 };
 
+export type LandingPageContentMode = "builder" | "react";
+
 export type LandingPageSectionStatsItem = {
   id: string;
   value: string;
@@ -32,7 +34,7 @@ export type LandingPageSectionHighlightItem = {
 
 export type LandingPageHeroSection = {
   id: string;
-  type: 'hero';
+  type: "hero";
   eyebrow: string;
   title: string;
   description: string;
@@ -44,7 +46,7 @@ export type LandingPageHeroSection = {
 
 export type LandingPageStatsSection = {
   id: string;
-  type: 'stats';
+  type: "stats";
   eyebrow: string;
   title: string;
   description: string;
@@ -53,7 +55,7 @@ export type LandingPageStatsSection = {
 
 export type LandingPageHighlightsSection = {
   id: string;
-  type: 'highlights';
+  type: "highlights";
   eyebrow: string;
   title: string;
   description: string;
@@ -62,7 +64,7 @@ export type LandingPageHighlightsSection = {
 
 export type LandingPageCtaSection = {
   id: string;
-  type: 'cta';
+  type: "cta";
   eyebrow: string;
   title: string;
   description: string;

@@ -1,15 +1,17 @@
-import { asc, eq } from 'drizzle-orm';
-import { db } from '@/lib/db/drizzle';
-import { landingContent, landingPages } from '@/lib/db/schema';
-import { defaultLandingContent } from '@/lib/landing/default-content';
-import { normalizeLandingPageSections } from '@/lib/landing/page-sections';
-import { withLandingStorageFallback } from '@/lib/landing/storage';
-import type { LandingContentRecord } from '@/lib/landing/types';
+import { asc, eq } from "drizzle-orm";
+import { db } from "@/lib/db/drizzle";
+import { landingContent, landingPages } from "@/lib/db/schema";
+import { defaultLandingContent } from "@/lib/landing/default-content";
+import { normalizeLandingPageSections } from "@/lib/landing/page-sections";
+import { withLandingStorageFallback } from "@/lib/landing/storage";
+import type { LandingContentRecord } from "@/lib/landing/types";
 
-function mergeLandingContent(record?: {
-  homeSections: LandingContentRecord['homeSections'];
-  faqItems: LandingContentRecord['faqItems'];
-} | null): LandingContentRecord {
+function mergeLandingContent(
+  record?: {
+    homeSections: LandingContentRecord["homeSections"];
+    faqItems: LandingContentRecord["faqItems"];
+  } | null,
+): LandingContentRecord {
   return {
     homeSections:
       record?.homeSections && record.homeSections.length > 0
@@ -22,20 +24,30 @@ function mergeLandingContent(record?: {
   };
 }
 
-function normalizeLandingPageRecord<T extends {
-  name: string;
-  content: string;
-  sections?: Parameters<typeof normalizeLandingPageSections>[0];
-}>(page: T) {
+function normalizeLandingPageRecord<
+  T extends {
+    name: string;
+    content: string;
+    contentMode?: import("@/lib/landing/types").LandingPageContentMode | null;
+    externalPrompt?: string | null;
+    sections?: Parameters<typeof normalizeLandingPageSections>[0];
+  },
+>(page: T) {
   return {
     ...page,
-    sections: normalizeLandingPageSections(page.sections, page.name, page.content),
+    contentMode: page.contentMode ?? "builder",
+    externalPrompt: page.externalPrompt ?? "",
+    sections: normalizeLandingPageSections(
+      page.sections,
+      page.name,
+      page.content,
+    ),
   };
 }
 
 export async function getLandingContent(): Promise<LandingContentRecord> {
   return withLandingStorageFallback(
-    'getLandingContent',
+    "getLandingContent",
     async () => {
       const record = await db.query.landingContent.findFirst();
       return mergeLandingContent(record);
@@ -46,9 +58,12 @@ export async function getLandingContent(): Promise<LandingContentRecord> {
 
 export async function getLandingPages() {
   return withLandingStorageFallback(
-    'getLandingPages',
+    "getLandingPages",
     async () => {
-      const pages = await db.select().from(landingPages).orderBy(asc(landingPages.createdAt));
+      const pages = await db
+        .select()
+        .from(landingPages)
+        .orderBy(asc(landingPages.createdAt));
       return pages.map(normalizeLandingPageRecord);
     },
     () => [],
@@ -57,7 +72,7 @@ export async function getLandingPages() {
 
 export async function getLandingPageById(id: number) {
   return withLandingStorageFallback(
-    'getLandingPageById',
+    "getLandingPageById",
     async () => {
       const [page] = await db
         .select()
@@ -73,7 +88,7 @@ export async function getLandingPageById(id: number) {
 
 export async function getLandingPageBySlug(slug: string) {
   return withLandingStorageFallback(
-    'getLandingPageBySlug',
+    "getLandingPageBySlug",
     async () => {
       const [page] = await db
         .select()

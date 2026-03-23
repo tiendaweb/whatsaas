@@ -1,11 +1,13 @@
-import Link from 'next/link';
-import { notFound } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
-import Logo from '@/components/interface/Logo';
-import { PublicLandingPageBuilder } from '@/components/landing/public-page-builder';
-import { Button } from '@/components/ui/button';
-import { getBranding } from '@/lib/db/queries/branding';
-import { getLandingPageBySlug } from '@/lib/db/queries/landing';
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
+import Logo from "@/components/interface/Logo";
+import { PublicLandingPageBuilder } from "@/components/landing/public-page-builder";
+import { RuntimeLandingPageRenderer } from "@/components/landing/runtime-page-renderer";
+import { Button } from "@/components/ui/button";
+import { getBranding } from "@/lib/db/queries/branding";
+import { getLandingPageBySlug } from "@/lib/db/queries/landing";
+import { compileLandingPageComponent } from "@/lib/landing/runtime";
 
 export default async function PublicLandingPage({
   params,
@@ -20,7 +22,12 @@ export default async function PublicLandingPage({
   }
 
   const branding = await getBranding();
-  const siteName = branding?.name || 'WhatSaaS';
+  const siteName = branding?.name || "WhatSaaS";
+  const shouldRenderReact =
+    page.contentMode === "react" && page.content.trim().length > 0;
+  const compiledCode = shouldRenderReact
+    ? await compileLandingPageComponent(page.content)
+    : null;
 
   return (
     <main className="min-h-screen bg-background">
@@ -36,14 +43,23 @@ export default async function PublicLandingPage({
       </header>
 
       <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:px-8">
-        <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">{siteName}</p>
+        <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">
+          {siteName}
+        </p>
         <p className="mt-3 text-sm text-muted-foreground">/{page.slug}</p>
 
         <div className="mt-8">
-          <PublicLandingPageBuilder sections={page.sections} />
+          {shouldRenderReact ? (
+            <RuntimeLandingPageRenderer
+              compiledCode={compiledCode}
+              sourceCode={page.content}
+            />
+          ) : (
+            <PublicLandingPageBuilder sections={page.sections} />
+          )}
         </div>
 
-        {page.content.trim() ? (
+        {!shouldRenderReact && page.content.trim() ? (
           <article className="prose prose-zinc mt-10 max-w-none whitespace-pre-wrap rounded-[32px] border border-border/60 bg-muted/20 p-8 text-base leading-8 text-foreground dark:prose-invert">
             {page.content}
           </article>
