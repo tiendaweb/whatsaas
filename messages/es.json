@@ -76,7 +76,8 @@
     "campaigns": "Campañas",
     "settings": "Configuración",
     "sign_out": "Cerrar sesión",
-    "toggle_theme": "Alternar tema"
+    "toggle_theme": "Alternar tema",
+    "drafts": "Borradores"
   },
   "Dashboard": {
     "title": "Embudo de Ventas",
@@ -432,7 +433,8 @@
     "failed_to_create_api_key_toast": "Error al crear clave API",
     "key_created_successfully_dialog_title": "Clave Creada con Éxito",
     "key_created_successfully_dialog_desc": "Por favor copia tu clave ahora. No podrás verla completa nuevamente si actualizas.",
-    "done_btn": "Hecho"
+    "done_btn": "Hecho",
+    "perm_drafts": "Borradores"
   },
   "Automation": {
     "ConditionProperties": {

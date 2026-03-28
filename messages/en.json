@@ -76,7 +76,8 @@
     "campaigns": "Campaigns",
     "settings": "Settings",
     "sign_out": "Sign out",
-    "toggle_theme": "Toggle theme"
+    "toggle_theme": "Toggle theme",
+    "drafts": "Drafts"
   },
   "Dashboard": {
     "title": "Sales Pipeline",
@@ -432,7 +433,8 @@
     "failed_to_create_api_key_toast": "Failed to create API key",
     "key_created_successfully_dialog_title": "Key Created Successfully",
     "key_created_successfully_dialog_desc": "Please copy your key now. You won't be able to see it again in full if you refresh.",
-    "done_btn": "Done"
+    "done_btn": "Done",
+    "perm_drafts": "Drafts"
   },
   "Automation": {
     "ConditionProperties": {

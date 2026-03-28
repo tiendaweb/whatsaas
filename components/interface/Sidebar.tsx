@@ -14,7 +14,8 @@ import {
   ChevronRight,
   Megaphone,
   Bot,
-  LayoutDashboard 
+  LayoutDashboard,
+  FileText,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -42,6 +43,7 @@ const NAV_PERMISSION_MAP: Record<string, keyof Omit<MemberPermissions, 'chatVisi
   '/automation': 'automation',
   '/settings/ai': 'aiAgent',
   '/contacts': 'contacts',
+  '/drafts': 'drafts',
   '/templates': 'templates',
   '/campaigns': 'campaigns',
 };
@@ -60,6 +62,7 @@ export function Sidebar() {
     { href: '/automation', icon: Zap, label: t('automation'), feature: 'isFlowBuilderEnabled' },
     { href: '/settings/ai', icon: Bot, label: t('ai_agent'), feature: 'isAiEnabled' },
     { href: '/contacts', icon: Users, label: t('contacts'), feature: null },
+    { href: '/drafts', icon: FileText, label: t('drafts'), feature: null },
     { href: '/analytics', icon: LayoutDashboard, label: t('dashboard'), feature: null },
     { href: '/templates', icon: LayoutTemplate, label: t('templates'), feature: 'isTemplatesEnabled' },
     { href: '/campaigns', icon: Megaphone, label: t('campaigns'), feature: 'isCampaignsEnabled' },
