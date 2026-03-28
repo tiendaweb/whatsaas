@@ -154,29 +154,35 @@ export function DraftEditorModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] p-0 overflow-hidden">
+        <DialogHeader className="px-6 pt-6 pb-3 border-b">
           <DialogTitle>{draft ? 'Editar borrador' : 'Nuevo borrador'}</DialogTitle>
           <DialogDescription>
             Define título, contenido y metadatos. El modo avanzado es opcional.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="space-y-3">
-            <div className="space-y-1">
+        <div className="px-6 py-4 overflow-y-auto space-y-4">
+          <div className="rounded-lg border p-4 space-y-3">
+            <div className="space-y-1.5">
               <Label>Título</Label>
               <Input value={title} onChange={(event) => setTitle(event.target.value)} />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <Label>Contenido</Label>
               <Textarea
                 value={content}
                 onChange={(event) => setContent(event.target.value)}
-                className="min-h-[220px]"
+                className="min-h-[220px] max-h-[360px] resize-y"
               />
+              <p className="text-xs text-muted-foreground">
+                Puedes usar placeholders con formato <code>[[nombre]]</code>.
+              </p>
             </div>
-            <div className="space-y-1">
+          </div>
+
+          <div className="rounded-lg border p-4 space-y-3">
+            <div className="space-y-1.5">
               <Label>Categoría</Label>
               <Select value={categoryId} onValueChange={setCategoryId}>
                 <SelectTrigger>
@@ -192,7 +198,8 @@ export function DraftEditorModal({
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
+
+            <div className="space-y-2.5">
               <Label>Etiquetas</Label>
               <div className="flex flex-wrap gap-2">
                 {tags.map((tag) => (
@@ -210,91 +217,89 @@ export function DraftEditorModal({
             </div>
           </div>
 
-          <div className="space-y-3">
-            <div className="rounded-lg border p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-sm">Modo avanzado</p>
-                  <p className="text-xs text-muted-foreground">
-                    Guarda relaciones y workflow solo si está habilitado.
-                  </p>
-                </div>
-                <Switch checked={advancedMode} onCheckedChange={setAdvancedMode} />
+          <div className="rounded-lg border p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">Modo avanzado</p>
+                <p className="text-xs text-muted-foreground">
+                  Guarda relaciones y workflow solo si está habilitado.
+                </p>
               </div>
-
-              {advancedMode && (
-                <div className="grid grid-cols-1 gap-2">
-                  <Select value={contactId} onValueChange={setContactId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Contacto (opcional)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Sin contacto</SelectItem>
-                      {contacts.map((contact) => (
-                        <SelectItem key={contact.id} value={String(contact.id)}>
-                          {contact.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  <Select value={assignedUserId} onValueChange={setAssignedUserId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Agente (opcional)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Sin agente</SelectItem>
-                      {agents.map((agent) => (
-                        <SelectItem key={agent.id} value={String(agent.id)}>
-                          {agent.name ?? agent.email}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  <Select value={departmentId} onValueChange={setDepartmentId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Departamento (opcional)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Sin departamento</SelectItem>
-                      {departments.map((department) => (
-                        <SelectItem key={department.id} value={String(department.id)}>
-                          {department.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
+              <Switch checked={advancedMode} onCheckedChange={setAdvancedMode} />
             </div>
 
             {advancedMode && (
-              <DraftWorkflowCanvas
-                value={workflow}
-                onChange={setWorkflow}
-                departments={departments}
-              />
-            )}
+              <div className="grid grid-cols-1 gap-2">
+                <Select value={contactId} onValueChange={setContactId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Contacto (opcional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sin contacto</SelectItem>
+                    {contacts.map((contact) => (
+                      <SelectItem key={contact.id} value={String(contact.id)}>
+                        {contact.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
-            <div className="rounded-lg border p-3">
-              <p className="text-sm font-medium mb-2">Placeholders detectados</p>
-              <div className="flex flex-wrap gap-2">
-                {detectedPlaceholders.length === 0 ? (
-                  <span className="text-xs text-muted-foreground">No hay placeholders.</span>
-                ) : (
-                  detectedPlaceholders.map((placeholder) => (
-                    <code key={placeholder} className="text-xs bg-muted px-2 py-1 rounded">
-                      [[{placeholder}]]
-                    </code>
-                  ))
-                )}
+                <Select value={assignedUserId} onValueChange={setAssignedUserId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Agente (opcional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sin agente</SelectItem>
+                    {agents.map((agent) => (
+                      <SelectItem key={agent.id} value={String(agent.id)}>
+                        {agent.name ?? agent.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={departmentId} onValueChange={setDepartmentId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Departamento (opcional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sin departamento</SelectItem>
+                    {departments.map((department) => (
+                      <SelectItem key={department.id} value={String(department.id)}>
+                        {department.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+            )}
+          </div>
+
+          {advancedMode && (
+            <DraftWorkflowCanvas
+              value={workflow}
+              onChange={setWorkflow}
+              departments={departments}
+            />
+          )}
+
+          <div className="rounded-lg border p-4">
+            <p className="text-sm font-medium mb-2">Placeholders detectados</p>
+            <div className="flex flex-wrap gap-2">
+              {detectedPlaceholders.length === 0 ? (
+                <span className="text-xs text-muted-foreground">No hay placeholders.</span>
+              ) : (
+                detectedPlaceholders.map((placeholder) => (
+                  <code key={placeholder} className="text-xs bg-muted px-2 py-1 rounded">
+                    [[{placeholder}]]
+                  </code>
+                ))
+              )}
             </div>
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="px-6 py-4 border-t bg-background">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
