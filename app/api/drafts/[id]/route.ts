@@ -15,6 +15,40 @@ function parseOptionalInt(value: unknown): number | null {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
+function parseWorkflow(value: unknown) {
+  if (!value || typeof value !== 'object') return undefined;
+
+  const rawStages = Array.isArray((value as any).stages) ? (value as any).stages : [];
+  const rawTasks = Array.isArray((value as any).tasks) ? (value as any).tasks : [];
+
+  const stages = rawStages
+    .map((stage: any, index: number) => ({
+      id: String(stage?.id ?? `stage_${index}`),
+      name: String(stage?.name ?? '').trim(),
+      order: Number.isFinite(Number(stage?.order)) ? Number(stage.order) : index,
+      departmentId: parseOptionalInt(stage?.departmentId),
+    }))
+    .filter((stage: any) => stage.name.length > 0)
+    .sort((a: any, b: any) => a.order - b.order)
+    .map((stage: any, index: number) => ({ ...stage, order: index }));
+
+  const stageIds = new Set(stages.map((stage: any) => stage.id));
+  const tasks = rawTasks
+    .map((task: any, index: number) => ({
+      id: String(task?.id ?? `task_${index}`),
+      stageId: String(task?.stageId ?? ''),
+      name: String(task?.name ?? '').trim(),
+      order: Number.isFinite(Number(task?.order)) ? Number(task.order) : index,
+      type: task?.type === 'group' || task?.type === 'subtask' ? task.type : 'task',
+      parentTaskId: task?.parentTaskId ? String(task.parentTaskId) : null,
+    }))
+    .filter((task: any) => task.name.length > 0 && stageIds.has(task.stageId))
+    .sort((a: any, b: any) => a.order - b.order)
+    .map((task: any, index: number) => ({ ...task, order: index }));
+
+  return { stages, tasks };
+}
+
 function normalizeDraft(draft: any) {
   const tags = (draft.tagLinks ?? []).map((tagLink: any) => tagLink.tag);
 
@@ -92,12 +126,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     const categoryId = parseOptionalInt(body?.categoryId);
-    const assignedUserId = parseOptionalInt(body?.assignedUserId);
-    const departmentId = parseOptionalInt(body?.departmentId);
-    const contactId = parseOptionalInt(body?.contactId);
+    const advancedMode = Boolean(body?.advancedMode);
+    const assignedUserId = advancedMode ? parseOptionalInt(body?.assignedUserId) : null;
+    const departmentId = advancedMode ? parseOptionalInt(body?.departmentId) : null;
+    const contactId = advancedMode ? parseOptionalInt(body?.contactId) : null;
     const isArchived = Boolean(body?.isArchived);
 
-    const stages = Array.isArray(body?.stages) ? body.stages : undefined;
+    const stages = advancedMode ? parseWorkflow(body?.stages) ?? { stages: [], tasks: [] } : null;
 
     const tagIds: number[] = Array.isArray(body?.tagIds)
       ? Array.from(
