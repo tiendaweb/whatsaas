@@ -2,8 +2,46 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db/drizzle';
 import { getUser } from '@/lib/db/queries';
 import { teamMembers } from '@/lib/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, asc } from 'drizzle-orm';
 import { TeamRole, ROLE_PRESETS, MemberPermissions } from '@/lib/permissions';
+
+export const dynamic = 'force-dynamic';
+
+export async function GET() {
+  try {
+    const user = await getUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const currentMember = await db.query.teamMembers.findFirst({
+      where: eq(teamMembers.userId, user.id),
+    });
+
+    if (!currentMember) {
+      return NextResponse.json([]);
+    }
+
+    const members = await db.query.teamMembers.findMany({
+      where: eq(teamMembers.teamId, currentMember.teamId),
+      orderBy: [asc(teamMembers.role)],
+      with: {
+        user: {
+          columns: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    return NextResponse.json(members);
+  } catch (error: any) {
+    console.error('Error fetching team members:', error.message);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
 
 export async function PUT(request: Request) {
   try {
@@ -20,7 +58,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Only owners can manage roles' }, { status: 403 });
     }
 
-    const { memberId, role, permissions } = await request.json() as {
+    const { memberId, role, permissions } = (await request.json()) as {
       memberId: number;
       role: TeamRole;
       permissions?: MemberPermissions;

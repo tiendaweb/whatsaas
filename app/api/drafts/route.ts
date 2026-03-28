@@ -25,6 +25,40 @@ function parseTagIds(searchParams: URLSearchParams): number[] {
   return Array.from(new Set(fromMulti));
 }
 
+function parseWorkflow(value: unknown) {
+  if (!value || typeof value !== 'object') return undefined;
+
+  const rawStages = Array.isArray((value as any).stages) ? (value as any).stages : [];
+  const rawTasks = Array.isArray((value as any).tasks) ? (value as any).tasks : [];
+
+  const stages = rawStages
+    .map((stage: any, index: number) => ({
+      id: String(stage?.id ?? `stage_${index}`),
+      name: String(stage?.name ?? '').trim(),
+      order: Number.isFinite(Number(stage?.order)) ? Number(stage.order) : index,
+      departmentId: parseOptionalInt(stage?.departmentId ? String(stage.departmentId) : null),
+    }))
+    .filter((stage: any) => stage.name.length > 0)
+    .sort((a: any, b: any) => a.order - b.order)
+    .map((stage: any, index: number) => ({ ...stage, order: index }));
+
+  const stageIds = new Set(stages.map((stage: any) => stage.id));
+  const tasks = rawTasks
+    .map((task: any, index: number) => ({
+      id: String(task?.id ?? `task_${index}`),
+      stageId: String(task?.stageId ?? ''),
+      name: String(task?.name ?? '').trim(),
+      order: Number.isFinite(Number(task?.order)) ? Number(task.order) : index,
+      type: task?.type === 'group' || task?.type === 'subtask' ? task.type : 'task',
+      parentTaskId: task?.parentTaskId ? String(task.parentTaskId) : null,
+    }))
+    .filter((task: any) => task.name.length > 0 && stageIds.has(task.stageId))
+    .sort((a: any, b: any) => a.order - b.order)
+    .map((task: any, index: number) => ({ ...task, order: index }));
+
+  return { stages, tasks };
+}
+
 function normalizeDraft(draft: any) {
   const tags = (draft.tagLinks ?? []).map((tagLink: any) => tagLink.tag);
 
@@ -136,9 +170,10 @@ export async function POST(request: NextRequest) {
     }
 
     const categoryId = parseOptionalInt(body?.categoryId ? String(body.categoryId) : null);
-    const assignedUserId = parseOptionalInt(body?.assignedUserId ? String(body.assignedUserId) : null);
-    const departmentId = parseOptionalInt(body?.departmentId ? String(body.departmentId) : null);
-    const contactId = parseOptionalInt(body?.contactId ? String(body.contactId) : null);
+    const advancedMode = Boolean(body?.advancedMode);
+    const assignedUserId = advancedMode ? parseOptionalInt(body?.assignedUserId ? String(body.assignedUserId) : null) : null;
+    const departmentId = advancedMode ? parseOptionalInt(body?.departmentId ? String(body.departmentId) : null) : null;
+    const contactId = advancedMode ? parseOptionalInt(body?.contactId ? String(body.contactId) : null) : null;
     const tagIds: number[] = Array.isArray(body?.tagIds)
       ? Array.from(
           new Set(
@@ -149,7 +184,7 @@ export async function POST(request: NextRequest) {
         )
       : [];
 
-    const stages = Array.isArray(body?.stages) ? body.stages : undefined;
+    const stages = advancedMode ? parseWorkflow(body?.stages) ?? { stages: [], tasks: [] } : null;
 
     const createdDraftId = await db.transaction(async (tx) => {
       const [draft] = await tx

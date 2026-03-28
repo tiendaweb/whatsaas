@@ -349,13 +349,22 @@ export const messageDrafts = pgTable(
     departmentId: integer("department_id").references(() => departments.id, {
       onDelete: "set null",
     }),
-    stages: jsonb("stages").$type<
-      Array<{
+    stages: jsonb("stages").$type<{
+      stages: Array<{
         id: string;
-        title?: string;
-        content?: string;
-      }>
-    >(),
+        name: string;
+        order: number;
+        departmentId?: number | null;
+      }>;
+      tasks: Array<{
+        id: string;
+        stageId: string;
+        name: string;
+        order: number;
+        type: "task" | "subtask" | "group";
+        parentTaskId?: string | null;
+      }>;
+    }>(),
     isArchived: boolean("is_archived").notNull().default(false),
     createdBy: integer("created_by")
       .notNull()
