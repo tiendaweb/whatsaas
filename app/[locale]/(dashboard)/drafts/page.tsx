@@ -23,7 +23,21 @@ import type {
   DraftTag,
 } from '@/components/drafts/types';
 
-const fetcher = (url: string) => fetch(url).then((response) => response.json());
+const fetcher = async (url: string) => {
+  const response = await fetch(url);
+  const payload = await response.json();
+
+  if (!response.ok) {
+    console.error(`Failed to fetch ${url}:`, payload);
+    return null;
+  }
+
+  return payload;
+};
+
+function ensureArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value : [];
+}
 
 export default function DraftsPage() {
   const [query, setQuery] = useState('');
@@ -39,13 +53,15 @@ export default function DraftsPage() {
   const { data: departments } = useSWR<any[]>('/api/departments', fetcher);
   const { data: teamMembers } = useSWR<any[]>('/api/team/members', fetcher);
 
-  const normalizedDepartments: DraftDepartment[] = useMemo(
-    () => (departments ?? []).map((department) => ({ id: department.id, name: department.name })),
-    [departments],
-  );
+  const normalizedDepartments: DraftDepartment[] = useMemo(() => {
+    return ensureArray<any>(departments).map((department) => ({
+      id: department.id,
+      name: department.name,
+    }));
+  }, [departments]);
 
   const normalizedAgents: DraftAgent[] = useMemo(() => {
-    const fromMembers = (teamMembers ?? []).map((member) => ({
+    const fromMembers = ensureArray<any>(teamMembers).map((member) => ({
       id: member.user.id,
       name: member.user.name,
       email: member.user.email,
@@ -55,7 +71,7 @@ export default function DraftsPage() {
   }, [teamMembers]);
 
   const filteredDrafts = useMemo(() => {
-    return (drafts ?? []).filter((draft) => {
+    return ensureArray<DraftItem>(drafts).filter((draft) => {
       if (query.trim()) {
         const text = `${draft.title} ${draft.content}`.toLowerCase();
         if (!text.includes(query.toLowerCase())) return false;
@@ -119,7 +135,7 @@ export default function DraftsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas las categorías</SelectItem>
-            {(categories ?? []).map((category) => (
+            {ensureArray<DraftCategory>(categories).map((category) => (
               <SelectItem key={category.id} value={String(category.id)}>
                 {category.name}
               </SelectItem>
@@ -133,7 +149,7 @@ export default function DraftsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas las etiquetas</SelectItem>
-            {(tags ?? []).map((tag) => (
+            {ensureArray<DraftTag>(tags).map((tag) => (
               <SelectItem key={tag.id} value={String(tag.id)}>
                 {tag.name}
               </SelectItem>
@@ -163,9 +179,9 @@ export default function DraftsPage() {
         open={isModalOpen}
         onOpenChange={setIsModalOpen}
         draft={editingDraft}
-        categories={categories ?? []}
-        tags={tags ?? []}
-        contacts={(contacts ?? []).map((item) => ({ id: item.id, name: item.name }))}
+        categories={ensureArray<DraftCategory>(categories)}
+        tags={ensureArray<DraftTag>(tags)}
+        contacts={ensureArray<DraftContact>(contacts).map((item) => ({ id: item.id, name: item.name }))}
         departments={normalizedDepartments}
         agents={normalizedAgents}
         onSaved={refreshDrafts}
