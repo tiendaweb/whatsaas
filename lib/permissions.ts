@@ -6,6 +6,7 @@ export type MemberPermissions = {
   automation: boolean;
   aiAgent: boolean;
   contacts: boolean;
+  drafts: boolean;
   templates: boolean;
   campaigns: boolean;
   settings: boolean;
@@ -17,6 +18,7 @@ export const ROLE_PRESETS: Record<TeamRole, MemberPermissions> = {
     automation: true,
     aiAgent: true,
     contacts: true,
+    drafts: true,
     templates: true,
     campaigns: true,
     settings: true,
@@ -26,6 +28,7 @@ export const ROLE_PRESETS: Record<TeamRole, MemberPermissions> = {
     automation: true,
     aiAgent: true,
     contacts: true,
+    drafts: true,
     templates: true,
     campaigns: true,
     settings: false,
@@ -35,6 +38,7 @@ export const ROLE_PRESETS: Record<TeamRole, MemberPermissions> = {
     automation: false,
     aiAgent: false,
     contacts: false,
+    drafts: false,
     templates: false,
     campaigns: false,
     settings: false,
@@ -76,6 +80,7 @@ export const ROUTE_PERMISSIONS: Record<string, PermissionResource> = {
   '/automation': 'automation',
   '/settings/ai': 'aiAgent',
   '/contacts': 'contacts',
+  '/drafts': 'drafts',
   '/templates': 'templates',
   '/campaigns': 'campaigns',
   '/settings': 'settings',

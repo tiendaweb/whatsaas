@@ -287,6 +287,119 @@ export const departments = pgTable(
   }),
 );
 
+export const messageDraftCategories = pgTable(
+  "message_draft_categories",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 100 }).notNull(),
+    color: varchar("color", { length: 20 }).default("gray"),
+    order: integer("order").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamNameUnique: unique("team_message_draft_category_name_idx").on(
+      table.teamId,
+      table.name,
+    ),
+    teamIdIndex: index("message_draft_category_team_id_idx").on(table.teamId),
+  }),
+);
+
+export const messageDraftTags = pgTable(
+  "message_draft_tags",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 100 }).notNull(),
+    color: varchar("color", { length: 20 }).default("gray"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamNameUnique: unique("team_message_draft_tag_name_idx").on(
+      table.teamId,
+      table.name,
+    ),
+    teamIdIndex: index("message_draft_tag_team_id_idx").on(table.teamId),
+  }),
+);
+
+export const messageDrafts = pgTable(
+  "message_drafts",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 255 }).notNull(),
+    content: text("content").notNull(),
+    categoryId: integer("category_id").references(() => messageDraftCategories.id, {
+      onDelete: "set null",
+    }),
+    contactId: integer("contact_id").references(() => contacts.id, {
+      onDelete: "set null",
+    }),
+    assignedUserId: integer("assigned_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    departmentId: integer("department_id").references(() => departments.id, {
+      onDelete: "set null",
+    }),
+    stages: jsonb("stages").$type<
+      Array<{
+        id: string;
+        title?: string;
+        content?: string;
+      }>
+    >(),
+    isArchived: boolean("is_archived").notNull().default(false),
+    createdBy: integer("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    updatedBy: integer("updated_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamIdIndex: index("message_draft_team_id_idx").on(table.teamId),
+    categoryIdIndex: index("message_draft_category_id_idx").on(table.categoryId),
+    assignedUserIdIndex: index("message_draft_assigned_user_id_idx").on(
+      table.assignedUserId,
+    ),
+    departmentIdIndex: index("message_draft_department_id_idx").on(
+      table.departmentId,
+    ),
+    contactIdIndex: index("message_draft_contact_id_idx").on(table.contactId),
+    titleIndex: index("message_draft_title_idx").on(table.title),
+  }),
+);
+
+export const messageDraftTagLinks = pgTable(
+  "message_draft_tag_links",
+  {
+    draftId: integer("draft_id")
+      .notNull()
+      .references(() => messageDrafts.id, { onDelete: "cascade" }),
+    tagId: integer("tag_id")
+      .notNull()
+      .references(() => messageDraftTags.id, { onDelete: "cascade" }),
+  },
+  (table) => ({
+    draftTagUnique: unique("message_draft_tag_link_idx").on(
+      table.draftId,
+      table.tagId,
+    ),
+    draftIdIndex: index("message_draft_tag_link_draft_id_idx").on(table.draftId),
+    tagIdIndex: index("message_draft_tag_link_tag_id_idx").on(table.tagId),
+  }),
+);
+
 export const departmentMembers = pgTable(
   "department_members",
   {
@@ -694,7 +807,81 @@ export const departmentsRelations = relations(departments, ({ one, many }) => ({
   }),
   members: many(departmentMembers),
   contacts: many(contacts),
+  messageDrafts: many(messageDrafts),
 }));
+
+export const messageDraftCategoriesRelations = relations(
+  messageDraftCategories,
+  ({ one, many }) => ({
+    team: one(teams, {
+      fields: [messageDraftCategories.teamId],
+      references: [teams.id],
+    }),
+    drafts: many(messageDrafts),
+  }),
+);
+
+export const messageDraftTagsRelations = relations(
+  messageDraftTags,
+  ({ one, many }) => ({
+    team: one(teams, {
+      fields: [messageDraftTags.teamId],
+      references: [teams.id],
+    }),
+    draftLinks: many(messageDraftTagLinks),
+  }),
+);
+
+export const messageDraftsRelations = relations(
+  messageDrafts,
+  ({ one, many }) => ({
+    team: one(teams, {
+      fields: [messageDrafts.teamId],
+      references: [teams.id],
+    }),
+    category: one(messageDraftCategories, {
+      fields: [messageDrafts.categoryId],
+      references: [messageDraftCategories.id],
+    }),
+    contact: one(contacts, {
+      fields: [messageDrafts.contactId],
+      references: [contacts.id],
+    }),
+    assignedUser: one(users, {
+      fields: [messageDrafts.assignedUserId],
+      references: [users.id],
+    }),
+    department: one(departments, {
+      fields: [messageDrafts.departmentId],
+      references: [departments.id],
+    }),
+    createdByUser: one(users, {
+      fields: [messageDrafts.createdBy],
+      references: [users.id],
+      relationName: "message_draft_created_by_user",
+    }),
+    updatedByUser: one(users, {
+      fields: [messageDrafts.updatedBy],
+      references: [users.id],
+      relationName: "message_draft_updated_by_user",
+    }),
+    tagLinks: many(messageDraftTagLinks),
+  }),
+);
+
+export const messageDraftTagLinksRelations = relations(
+  messageDraftTagLinks,
+  ({ one }) => ({
+    draft: one(messageDrafts, {
+      fields: [messageDraftTagLinks.draftId],
+      references: [messageDrafts.id],
+    }),
+    tag: one(messageDraftTags, {
+      fields: [messageDraftTagLinks.tagId],
+      references: [messageDraftTags.id],
+    }),
+  }),
+);
 
 export const departmentMembersRelations = relations(
   departmentMembers,
@@ -722,6 +909,9 @@ export const teamsRelations = relations(teams, ({ one, many }) => ({
   evolutionInstances: many(evolutionInstances),
   contacts: many(contacts),
   tags: many(tags),
+  messageDraftCategories: many(messageDraftCategories),
+  messageDraftTags: many(messageDraftTags),
+  messageDrafts: many(messageDrafts),
   funnelStages: many(funnelStages),
   quickReplies: many(quickReplies),
   wabaTemplates: many(wabaTemplates),
@@ -736,6 +926,13 @@ export const usersRelations = relations(users, ({ many }) => ({
   invitationsSent: many(invitations),
   contactsAssigned: many(contacts),
   departmentMembers: many(departmentMembers),
+  messageDraftsAssigned: many(messageDrafts),
+  messageDraftsCreated: many(messageDrafts, {
+    relationName: "message_draft_created_by_user",
+  }),
+  messageDraftsUpdated: many(messageDrafts, {
+    relationName: "message_draft_updated_by_user",
+  }),
 }));
 
 export const invitationsRelations = relations(invitations, ({ one }) => ({
@@ -862,6 +1059,7 @@ export const contactsRelations = relations(contacts, ({ one, many }) => ({
     references: [funnelStages.id],
   }),
   contactTags: many(contactTags),
+  messageDrafts: many(messageDrafts),
 }));
 
 export const contactTagsRelations = relations(contactTags, ({ one }) => ({
@@ -1087,6 +1285,15 @@ export type Department = typeof departments.$inferSelect;
 export type NewDepartment = typeof departments.$inferInsert;
 export type DepartmentMember = typeof departmentMembers.$inferSelect;
 export type NewDepartmentMember = typeof departmentMembers.$inferInsert;
+
+export type MessageDraftCategory = typeof messageDraftCategories.$inferSelect;
+export type NewMessageDraftCategory = typeof messageDraftCategories.$inferInsert;
+export type MessageDraftTag = typeof messageDraftTags.$inferSelect;
+export type NewMessageDraftTag = typeof messageDraftTags.$inferInsert;
+export type MessageDraft = typeof messageDrafts.$inferSelect;
+export type NewMessageDraft = typeof messageDrafts.$inferInsert;
+export type MessageDraftTagLink = typeof messageDraftTagLinks.$inferSelect;
+export type NewMessageDraftTagLink = typeof messageDraftTagLinks.$inferInsert;
 
 export type MessageReaction = typeof messageReactions.$inferSelect;
 export type NewMessageReaction = typeof messageReactions.$inferInsert;

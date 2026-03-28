@@ -76,7 +76,8 @@
     "campaigns": "Campanhas",
     "settings": "Configurações",
     "sign_out": "Sair",
-    "toggle_theme": "Alternar tema"
+    "toggle_theme": "Alternar tema",
+    "drafts": "Rascunhos"
   },
   "Dashboard": {
     "title": "Pipeline de Vendas",
@@ -432,7 +433,8 @@
     "failed_to_create_api_key_toast": "Falha ao criar chave de API",
     "key_created_successfully_dialog_title": "Chave Criada com Sucesso",
     "key_created_successfully_dialog_desc": "Por favor, copie sua chave agora. Você não poderá vê-la completa novamente se atualizar a página.",
-    "done_btn": "Pronto"
+    "done_btn": "Pronto",
+    "perm_drafts": "Rascunhos"
   },
   "Automation": {
     "ConditionProperties": {

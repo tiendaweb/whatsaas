@@ -266,6 +266,7 @@ function PermissionsDialog({
     { key: 'automation', label: t('perm_automation') },
     { key: 'aiAgent', label: t('perm_ai_agent') },
     { key: 'contacts', label: t('perm_contacts') },
+    { key: 'drafts', label: t('perm_drafts') },
     { key: 'templates', label: t('perm_templates') },
     { key: 'campaigns', label: t('perm_campaigns') },
     { key: 'settings', label: t('perm_settings') },
