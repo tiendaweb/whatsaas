@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button';
 import { DraftBoard } from '@/components/drafts/DraftBoard';
 import { DraftCategorySidebar } from '@/components/drafts/DraftCategorySidebar';
 import { DraftEditorModal } from '@/components/drafts/DraftEditorModal';
-import { DraftPreviewCard } from '@/components/drafts/DraftPreviewCard';
 import type {
   DraftAgent,
   DraftCategory,
@@ -52,7 +51,6 @@ export default function DraftsPage() {
   const [query, setQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingDraft, setEditingDraft] = useState<DraftItem | null>(null);
-  const [selectedDraftId, setSelectedDraftId] = useState<number | null>(null);
   const [activeCategoryDroppableId, setActiveCategoryDroppableId] = useState<string>(NONE_DROPPABLE_ID);
 
   const { data: drafts, isLoading: loadingDrafts } = useSWR<DraftItem[]>('/api/drafts', fetcher);
@@ -157,19 +155,6 @@ export default function DraftsPage() {
 
   const activeDrafts = draftsByDroppable.get(activeCategoryDroppableId) ?? [];
 
-  useEffect(() => {
-    if (filteredDrafts.length === 0) {
-      setSelectedDraftId(null);
-      return;
-    }
-
-    const stillExists = filteredDrafts.some((draft) => draft.id === selectedDraftId);
-    if (!stillExists) {
-      setSelectedDraftId(filteredDrafts[0].id);
-    }
-  }, [filteredDrafts, selectedDraftId]);
-
-  const selectedDraft = filteredDrafts.find((draft) => draft.id === selectedDraftId) ?? null;
 
   const handleModalCreate = () => {
     setEditingDraft(null);
@@ -370,24 +355,8 @@ export default function DraftsPage() {
                   droppableId={activeCategoryDroppableId}
                   columnName={activeColumnName}
                   drafts={activeDrafts}
-                  selectedDraftId={selectedDraftId}
-                  onSelectDraft={setSelectedDraftId}
-                  onOpenDetail={handleModalEdit}
+                  onEditDraft={handleModalEdit}
                 />
-
-                <div className="rounded-xl border bg-muted/30 p-3 md:p-5">
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <h2 className="text-sm font-semibold">Detalle del borrador seleccionado</h2>
-                  </div>
-                  {!selectedDraft ? (
-                    <div className="h-full min-h-[180px] flex flex-col items-center justify-center text-muted-foreground">
-                      <FileText className="h-12 w-12 opacity-30 mb-2" />
-                      <p>Selecciona un borrador para ver el detalle.</p>
-                    </div>
-                  ) : (
-                    <DraftPreviewCard draft={selectedDraft} onEdit={handleModalEdit} />
-                  )}
-                </div>
               </div>
             </div>
           </DragDropContext>
