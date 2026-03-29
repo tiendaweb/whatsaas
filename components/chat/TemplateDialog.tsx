@@ -73,12 +73,13 @@ export function TemplateDialog({ open, onOpenChange, onSendTemplate }: TemplateD
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[480px]">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[480px] max-h-[90dvh] overflow-hidden p-0 flex flex-col">
+        <DialogHeader className="sticky top-0 z-10 border-b bg-background px-6 py-4">
           <DialogTitle>{t('select_template_label')}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4 py-2">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+        <div className="flex flex-col gap-4">
           <Select value={selectedTemplateId} onValueChange={(val) => { setSelectedTemplateId(val); setTemplateVariables({}); }}>
             <SelectTrigger>
               <SelectValue placeholder={t('choose_template_placeholder')} />
@@ -115,8 +116,9 @@ export function TemplateDialog({ open, onOpenChange, onSendTemplate }: TemplateD
             </div>
           )}
         </div>
+        </div>
 
-        <DialogFooter>
+        <DialogFooter className="sticky bottom-0 border-t bg-background px-6 py-4">
           <Button variant="outline" onClick={handleClose}>{t('cancel_btn')}</Button>
           <Button
             onClick={handleSend}

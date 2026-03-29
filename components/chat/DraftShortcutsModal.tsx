@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { FileText, Loader2, Sparkles } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import type { DraftItem } from '@/components/drafts/types';
 
@@ -43,6 +43,7 @@ export function DraftShortcutsModal({
   const [variables, setVariables] = useState<Record<string, string>>({});
   const [selectedDraft, setSelectedDraft] = useState<DraftItem | null>(null);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
+  const [isInferringVariables, setIsInferringVariables] = useState(false);
 
   const filteredDrafts = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -90,7 +91,7 @@ export function DraftShortcutsModal({
   const handleInsert = () => {
     if (!selectedDraft) return;
 
-    if (placeholders.length > 0 && hasUnfilledPlaceholders) {
+    if (selectedDraft.draftType === 'dynamic' && placeholders.length > 0 && hasUnfilledPlaceholders) {
       toast.error('Completá todas las variables antes de insertar.');
       return;
     }
@@ -111,10 +112,55 @@ export function DraftShortcutsModal({
     setVariables({});
   };
 
+  const handleInferVariablesWithAi = async () => {
+    if (!selectedDraft) return;
+
+    setIsInferringVariables(true);
+    try {
+      const response = await fetch('/api/drafts/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: 'Detecta variables necesarias para personalizar este borrador y devuelve placeholders [[variable]] claros.',
+          mode: 'variables',
+          baseContent: selectedDraft.content,
+          draftType: 'dynamic',
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result?.error || 'No se pudieron inferir variables con IA.');
+      }
+
+      const aiPlaceholders = extractDraftPlaceholders(result.content ?? '');
+      if (aiPlaceholders.length === 0) {
+        toast.error('La IA no detectó variables útiles.');
+        return;
+      }
+
+      setSelectedDraft({ ...selectedDraft, content: result.content });
+      setVariables((prev) => {
+        const next = { ...prev };
+        aiPlaceholders.forEach((placeholder) => {
+          if (!next[placeholder]) next[placeholder] = '';
+        });
+        return next;
+      });
+
+      toast.success('Variables detectadas con IA.');
+    } catch (error: any) {
+      console.error('draft.shortcuts.ai.variables.error', error);
+      toast.error(error?.message || 'Error detectando variables con IA.');
+    } finally {
+      setIsInferringVariables(false);
+    }
+  };
+
   const handleSelectDraft = (draft: DraftItem) => {
     const draftPlaceholders = extractDraftPlaceholders(draft.content);
 
-    if (draftPlaceholders.length === 0) {
+    if (draft.draftType === 'static' && draftPlaceholders.length === 0) {
       if (!draft.content.trim()) {
         toast.error('El borrador no puede insertarse vacío.');
         return;
@@ -138,7 +184,7 @@ export function DraftShortcutsModal({
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
-          className="fixed inset-0 h-[100dvh] w-screen max-h-none max-w-none translate-x-0 translate-y-0 gap-0 rounded-none p-0"
+          className="w-[96vw] max-w-5xl max-h-[90dvh] overflow-hidden gap-0 rounded-lg p-0 flex flex-col"
           onKeyDown={(event) => {
             if (!open) return;
 
@@ -168,7 +214,7 @@ export function DraftShortcutsModal({
             }
           }}
         >
-          <DialogHeader className="border-b px-6 py-4">
+          <DialogHeader className="sticky top-0 z-10 border-b bg-background px-6 py-4">
             <DialogTitle>Paso 1: Elegí borrador</DialogTitle>
             <DialogDescription>Atajos: ↑/↓ para navegar, Enter para seleccionar y Esc para cerrar.</DialogDescription>
           </DialogHeader>
@@ -213,7 +259,7 @@ export function DraftShortcutsModal({
                 </div>
               </div>
             </div>
-            <div className="hidden items-center justify-center p-6 md:flex">
+            <div className="hidden min-h-0 items-center justify-center p-6 md:flex">
               <p className="text-sm text-muted-foreground">Seleccioná un borrador para continuar al paso de variables.</p>
             </div>
           </div>
@@ -230,15 +276,18 @@ export function DraftShortcutsModal({
           }
         }}
       >
-        <DialogContent className="max-h-[90dvh] w-[95vw] max-w-2xl overflow-hidden">
-          <DialogHeader>
+        <DialogContent className="max-h-[90dvh] w-[95vw] max-w-2xl overflow-hidden p-0 flex flex-col">
+          <DialogHeader className="sticky top-0 z-10 border-b bg-background px-6 py-4">
             <DialogTitle>Paso 2: Completar variables</DialogTitle>
             <DialogDescription>
-              {selectedDraft?.title ? `${selectedDraft.title}. ` : ''}Si no hay variables, podés insertar directamente.
+              {selectedDraft?.title ? `${selectedDraft.title}. ` : ''}
+              {selectedDraft?.draftType === 'dynamic'
+                ? 'Borrador dinámico: debes completar variables o pedir ayuda a IA.'
+                : 'Borrador estático con variables opcionales.'}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 overflow-y-auto pr-1">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
             {placeholders.length > 0 ? (
               <div className="space-y-3">
                 {placeholders.map((placeholder) => (
@@ -258,7 +307,19 @@ export function DraftShortcutsModal({
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">Este borrador no tiene variables dinámicas.</p>
+              <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+                <p className="text-sm text-muted-foreground">Este borrador no tiene variables detectadas.</p>
+                {selectedDraft?.draftType === 'dynamic' && (
+                  <Button type="button" variant="outline" onClick={handleInferVariablesWithAi} disabled={isInferringVariables}>
+                    {isInferringVariables ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="mr-2 h-4 w-4" />
+                    )}
+                    Dejar que IA proponga variables
+                  </Button>
+                )}
+              </div>
             )}
 
             {selectedDraft && (
@@ -274,11 +335,14 @@ export function DraftShortcutsModal({
             )}
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="sticky bottom-0 flex justify-end gap-2 border-t bg-background px-6 py-4">
             <Button variant="outline" onClick={() => setIsFormModalOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleInsert} disabled={!selectedDraft || hasUnfilledPlaceholders}>
+            <Button
+              onClick={handleInsert}
+              disabled={!selectedDraft || (selectedDraft?.draftType === 'dynamic' && hasUnfilledPlaceholders)}
+            >
               Insertar
             </Button>
           </div>

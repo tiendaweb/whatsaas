@@ -59,18 +59,19 @@ export function QuickRepliesModal({ open, onOpenChange }: { open: boolean, onOpe
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[500px] max-h-[90dvh] overflow-hidden p-0 flex flex-col">
+        <DialogHeader className="sticky top-0 z-10 border-b bg-background px-6 py-4">
           <DialogTitle>Quick Replies</DialogTitle>
           <DialogDescription>Manage your shortcuts. Type /shortcut to use them.</DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+        <div className="grid gap-4">
           <div className="grid grid-cols-4 gap-2">
             <Input placeholder="Shortcut (e.g. hi)" value={newShortcut} onChange={(e) => setNewShortcut(e.target.value)} className="col-span-1" />
             <Input placeholder="Full message content..." value={newContent} onChange={(e) => setNewContent(e.target.value)} className="col-span-3" />
           </div>
           <Button onClick={handleAdd} disabled={!newShortcut || !newContent}>Add New</Button>
-          <div className="max-h-[300px] overflow-y-auto space-y-2 mt-2">
+          <div className="min-h-0 max-h-[300px] overflow-y-auto space-y-2 mt-2">
             {shortcuts.map(s => (
               <div key={s.id} className="flex items-center justify-between p-2 border rounded bg-muted">
                 <div>
@@ -81,6 +82,7 @@ export function QuickRepliesModal({ open, onOpenChange }: { open: boolean, onOpe
               </div>
             ))}
           </div>
+        </div>
         </div>
       </DialogContent>
     </Dialog>
