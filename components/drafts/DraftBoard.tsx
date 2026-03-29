@@ -1,28 +1,33 @@
 'use client';
 
+import { useMemo, useState } from 'react';
 import { Draggable, Droppable } from '@hello-pangea/dnd';
-import { ExternalLink, GripVertical } from 'lucide-react';
+import { ChevronDown, ChevronUp, Edit3, GripVertical } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { DraftContentPreview } from './DraftContentPreview';
 import type { DraftItem } from './types';
 
 type Props = {
   droppableId: string;
   columnName: string;
   drafts: DraftItem[];
-  selectedDraftId: number | null;
-  onSelectDraft: (draftId: number) => void;
-  onOpenDetail: (draft: DraftItem) => void;
+  onEditDraft: (draft: DraftItem) => void;
 };
 
-export function DraftBoard({
-  droppableId,
-  columnName,
-  drafts,
-  selectedDraftId,
-  onSelectDraft,
-  onOpenDetail,
-}: Props) {
+export function DraftBoard({ droppableId, columnName, drafts, onEditDraft }: Props) {
+  const [expandedDraftId, setExpandedDraftId] = useState<number | null>(null);
+
+  const draftLineEstimate = useMemo(() => {
+    return new Map(
+      drafts.map((draft) => [
+        draft.id,
+        draft.content.split('\n').reduce((acc, line) => acc + Math.max(1, Math.ceil(line.length / 90)), 0),
+      ]),
+    );
+  }, [drafts]);
+
   return (
     <Droppable droppableId={droppableId} type="DRAFT">
       {(provided, snapshot) => (
@@ -44,7 +49,9 @@ export function DraftBoard({
               <p className="text-xs text-muted-foreground">Arrastra borradores aquí.</p>
             ) : (
               drafts.map((draft, index) => {
-                const selected = selectedDraftId === draft.id;
+                const expanded = expandedDraftId === draft.id;
+                const showExpandAction = (draftLineEstimate.get(draft.id) ?? 0) > 2;
+
                 return (
                   <Draggable key={draft.id} draggableId={`draft-${draft.id}`} index={index}>
                     {(draggableProvided, draggableSnapshot) => (
@@ -52,8 +59,8 @@ export function DraftBoard({
                         ref={draggableProvided.innerRef}
                         {...draggableProvided.draggableProps}
                         className={cn(
-                          'rounded-lg border p-3 space-y-2 transition',
-                          selected ? 'border-primary bg-primary/5' : 'border-border bg-background',
+                          'rounded-lg border p-3 space-y-3 transition',
+                          expanded ? 'border-primary bg-primary/5' : 'border-border bg-background',
                           draggableSnapshot.isDragging && 'shadow-md ring-1 ring-primary/40',
                         )}
                       >
@@ -67,17 +74,47 @@ export function DraftBoard({
                             <GripVertical className="h-4 w-4" />
                           </button>
 
-                          <button type="button" className="w-full text-left" onClick={() => onSelectDraft(draft.id)}>
-                            <h4 className="text-sm font-semibold truncate">{draft.title}</h4>
-                            <p className="text-xs text-muted-foreground line-clamp-2 mt-1">{draft.content}</p>
-                          </button>
-                        </div>
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <h4 className="text-sm font-semibold truncate">{draft.title}</h4>
+                                <div className="flex flex-wrap gap-2 mt-1">
+                                  {draft.category?.name && <Badge variant="secondary">{draft.category.name}</Badge>}
+                                  {draft.tags.map((tag) => (
+                                    <Badge key={tag.id} variant="outline">
+                                      {tag.name}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
 
-                        <div className="flex justify-end">
-                          <Button size="sm" onClick={() => onOpenDetail(draft)}>
-                            <ExternalLink className="h-3.5 w-3.5 mr-1" />
-                            Abrir detalle
-                          </Button>
+                              <div className="flex items-center gap-1">
+                                {showExpandAction && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setExpandedDraftId((prev) => (prev === draft.id ? null : draft.id))}
+                                  >
+                                    {expanded ? (
+                                      <>
+                                        <ChevronUp className="h-4 w-4 mr-1" /> Colapsar
+                                      </>
+                                    ) : (
+                                      <>
+                                        <ChevronDown className="h-4 w-4 mr-1" /> Expandir
+                                      </>
+                                    )}
+                                  </Button>
+                                )}
+                                <Button size="sm" variant="outline" onClick={() => onEditDraft(draft)}>
+                                  <Edit3 className="h-3.5 w-3.5 mr-1" /> Editar
+                                </Button>
+                              </div>
+                            </div>
+
+                            <DraftContentPreview content={draft.content} clampLines={expanded ? undefined : 2} />
+                          </div>
                         </div>
                       </article>
                     )}
