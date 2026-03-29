@@ -297,6 +297,7 @@ export const messageDraftCategories = pgTable(
     name: varchar("name", { length: 100 }).notNull(),
     color: varchar("color", { length: 20 }).default("gray"),
     order: integer("order").notNull().default(0),
+    position: integer("position").notNull().default(0),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => ({

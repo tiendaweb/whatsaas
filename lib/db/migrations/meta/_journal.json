@@ -99,6 +99,13 @@
       "when": 1774723502167,
       "tag": "0014_message_drafts",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1774756371562,
+      "tag": "0015_draft_category_position",
+      "breakpoints": true
     }
   ]
 }

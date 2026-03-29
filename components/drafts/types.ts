@@ -23,6 +23,8 @@ export type DraftCategory = {
   id: number;
   name: string;
   color?: string | null;
+  position: number;
+  workspaceKey?: string | null;
 };
 
 export type DraftTag = {
