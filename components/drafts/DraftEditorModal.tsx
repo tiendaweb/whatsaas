@@ -61,6 +61,7 @@ export function DraftEditorModal({
   departments,
   onSaved,
 }: Props) {
+  const isEditMode = Boolean(draft);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [categoryId, setCategoryId] = useState<string>('none');
@@ -116,17 +117,27 @@ export function DraftEditorModal({
 
     setIsSaving(true);
     try {
-      const payload = {
-        title: title.trim(),
-        content: content.trim(),
-        categoryId: categoryId === 'none' ? null : Number(categoryId),
-        tagIds: selectedTagIds,
-        advancedMode,
-        contactId: advancedMode && contactId !== 'none' ? Number(contactId) : null,
-        assignedUserId: advancedMode && assignedUserId !== 'none' ? Number(assignedUserId) : null,
-        departmentId: advancedMode && departmentId !== 'none' ? Number(departmentId) : null,
-        stages: advancedMode ? workflow : null,
-      };
+      const payload = isEditMode
+        ? {
+            title: title.trim(),
+            content: content.trim(),
+            categoryId: categoryId === 'none' ? null : Number(categoryId),
+            tagIds: selectedTagIds,
+            contactId: advancedMode && contactId !== 'none' ? Number(contactId) : null,
+            assignedUserId: advancedMode && assignedUserId !== 'none' ? Number(assignedUserId) : null,
+            departmentId: advancedMode && departmentId !== 'none' ? Number(departmentId) : null,
+            stages: advancedMode ? workflow : null,
+          }
+        : {
+            title: title.trim(),
+            content: content.trim(),
+            categoryId: null,
+            tagIds: [],
+            contactId: null,
+            assignedUserId: null,
+            departmentId: null,
+            stages: null,
+          };
 
       const endpoint = draft ? `/api/drafts/${draft.id}` : '/api/drafts';
       const method = draft ? 'PUT' : 'POST';
@@ -156,9 +167,11 @@ export function DraftEditorModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] p-0 overflow-hidden">
         <DialogHeader className="px-6 pt-6 pb-3 border-b">
-          <DialogTitle>{draft ? 'Editar borrador' : 'Nuevo borrador'}</DialogTitle>
+          <DialogTitle>{isEditMode ? 'Editar borrador' : 'Nuevo borrador'}</DialogTitle>
           <DialogDescription>
-            Define título, contenido y metadatos. El modo avanzado es opcional.
+            {isEditMode
+              ? 'Edita título, contenido y todos los metadatos del borrador.'
+              : 'Crea un borrador rápido con título y contenido.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -176,106 +189,112 @@ export function DraftEditorModal({
                 className="min-h-[220px] max-h-[360px] resize-y"
               />
               <p className="text-xs text-muted-foreground">
-                Puedes usar placeholders con formato <code>[[nombre]]</code>.
+                {isEditMode
+                  ? 'Puedes usar placeholders con formato [[nombre]].'
+                  : 'Completa el contenido base. Podrás agregar metadatos al editar.'}
               </p>
             </div>
           </div>
 
-          <div className="rounded-lg border p-4 space-y-3">
-            <div className="space-y-1.5">
-              <Label>Categoría</Label>
-              <Select value={categoryId} onValueChange={setCategoryId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Sin categoría" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Sin categoría</SelectItem>
-                  {categories.map((category) => (
-                    <SelectItem key={category.id} value={String(category.id)}>
-                      {category.name}
-                    </SelectItem>
+          {isEditMode && (
+            <div className="rounded-lg border p-4 space-y-3">
+              <div className="space-y-1.5">
+                <Label>Categoría</Label>
+                <Select value={categoryId} onValueChange={setCategoryId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Sin categoría" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sin categoría</SelectItem>
+                    {categories.map((category) => (
+                      <SelectItem key={category.id} value={String(category.id)}>
+                        {category.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2.5">
+                <Label>Etiquetas</Label>
+                <div className="flex flex-wrap gap-2">
+                  {tags.map((tag) => (
+                    <Button
+                      key={tag.id}
+                      size="sm"
+                      variant={selectedTagIds.includes(tag.id) ? 'default' : 'outline'}
+                      type="button"
+                      onClick={() => toggleTag(tag.id)}
+                    >
+                      {tag.name}
+                    </Button>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2.5">
-              <Label>Etiquetas</Label>
-              <div className="flex flex-wrap gap-2">
-                {tags.map((tag) => (
-                  <Button
-                    key={tag.id}
-                    size="sm"
-                    variant={selectedTagIds.includes(tag.id) ? 'default' : 'outline'}
-                    type="button"
-                    onClick={() => toggleTag(tag.id)}
-                  >
-                    {tag.name}
-                  </Button>
-                ))}
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          <div className="rounded-lg border p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium text-sm">Modo avanzado</p>
-                <p className="text-xs text-muted-foreground">
-                  Guarda relaciones y workflow solo si está habilitado.
-                </p>
+          {isEditMode && (
+            <div className="rounded-lg border p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-sm">Modo avanzado</p>
+                  <p className="text-xs text-muted-foreground">
+                    Guarda relaciones y workflow solo si está habilitado.
+                  </p>
+                </div>
+                <Switch checked={advancedMode} onCheckedChange={setAdvancedMode} />
               </div>
-              <Switch checked={advancedMode} onCheckedChange={setAdvancedMode} />
+
+              {advancedMode && (
+                <div className="grid grid-cols-1 gap-2">
+                  <Select value={contactId} onValueChange={setContactId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Contacto (opcional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Sin contacto</SelectItem>
+                      {contacts.map((contact) => (
+                        <SelectItem key={contact.id} value={String(contact.id)}>
+                          {contact.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={assignedUserId} onValueChange={setAssignedUserId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Agente (opcional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Sin agente</SelectItem>
+                      {agents.map((agent) => (
+                        <SelectItem key={agent.id} value={String(agent.id)}>
+                          {agent.name ?? agent.email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={departmentId} onValueChange={setDepartmentId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Departamento (opcional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Sin departamento</SelectItem>
+                      {departments.map((department) => (
+                        <SelectItem key={department.id} value={String(department.id)}>
+                          {department.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
+          )}
 
-            {advancedMode && (
-              <div className="grid grid-cols-1 gap-2">
-                <Select value={contactId} onValueChange={setContactId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Contacto (opcional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sin contacto</SelectItem>
-                    {contacts.map((contact) => (
-                      <SelectItem key={contact.id} value={String(contact.id)}>
-                        {contact.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select value={assignedUserId} onValueChange={setAssignedUserId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Agente (opcional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sin agente</SelectItem>
-                    {agents.map((agent) => (
-                      <SelectItem key={agent.id} value={String(agent.id)}>
-                        {agent.name ?? agent.email}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select value={departmentId} onValueChange={setDepartmentId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Departamento (opcional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sin departamento</SelectItem>
-                    {departments.map((department) => (
-                      <SelectItem key={department.id} value={String(department.id)}>
-                        {department.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </div>
-
-          {advancedMode && (
+          {isEditMode && advancedMode && (
             <DraftWorkflowCanvas
               value={workflow}
               onChange={setWorkflow}
@@ -283,20 +302,22 @@ export function DraftEditorModal({
             />
           )}
 
-          <div className="rounded-lg border p-4">
-            <p className="text-sm font-medium mb-2">Placeholders detectados</p>
-            <div className="flex flex-wrap gap-2">
-              {detectedPlaceholders.length === 0 ? (
-                <span className="text-xs text-muted-foreground">No hay placeholders.</span>
-              ) : (
-                detectedPlaceholders.map((placeholder) => (
-                  <code key={placeholder} className="text-xs bg-muted px-2 py-1 rounded">
-                    [[{placeholder}]]
-                  </code>
-                ))
-              )}
+          {isEditMode && (
+            <div className="rounded-lg border p-4">
+              <p className="text-sm font-medium mb-2">Placeholders detectados</p>
+              <div className="flex flex-wrap gap-2">
+                {detectedPlaceholders.length === 0 ? (
+                  <span className="text-xs text-muted-foreground">No hay placeholders.</span>
+                ) : (
+                  detectedPlaceholders.map((placeholder) => (
+                    <code key={placeholder} className="text-xs bg-muted px-2 py-1 rounded">
+                      [[{placeholder}]]
+                    </code>
+                  ))
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         <DialogFooter className="px-6 py-4 border-t bg-background">

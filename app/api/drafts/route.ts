@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { and, desc, eq, ilike, inArray, or } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { checkRoutePermission } from '@/lib/auth/permissions-guard';
+import { ensureDraftStorage } from '@/lib/drafts/bootstrap';
+import { parseDraftWritePayload } from '@/lib/drafts/payload';
 import {
   contacts,
   departments,
@@ -29,40 +31,6 @@ function parseTagIds(searchParams: URLSearchParams): number[] {
     .filter((value) => Number.isInteger(value) && value > 0);
 
   return Array.from(new Set(fromMulti));
-}
-
-function parseWorkflow(value: unknown) {
-  if (!value || typeof value !== 'object') return undefined;
-
-  const rawStages = Array.isArray((value as any).stages) ? (value as any).stages : [];
-  const rawTasks = Array.isArray((value as any).tasks) ? (value as any).tasks : [];
-
-  const stages = rawStages
-    .map((stage: any, index: number) => ({
-      id: String(stage?.id ?? `stage_${index}`),
-      name: String(stage?.name ?? '').trim(),
-      order: Number.isFinite(Number(stage?.order)) ? Number(stage.order) : index,
-      departmentId: parseOptionalInt(stage?.departmentId ? String(stage.departmentId) : null),
-    }))
-    .filter((stage: any) => stage.name.length > 0)
-    .sort((a: any, b: any) => a.order - b.order)
-    .map((stage: any, index: number) => ({ ...stage, order: index }));
-
-  const stageIds = new Set(stages.map((stage: any) => stage.id));
-  const tasks = rawTasks
-    .map((task: any, index: number) => ({
-      id: String(task?.id ?? `task_${index}`),
-      stageId: String(task?.stageId ?? ''),
-      name: String(task?.name ?? '').trim(),
-      order: Number.isFinite(Number(task?.order)) ? Number(task.order) : index,
-      type: task?.type === 'group' || task?.type === 'subtask' ? task.type : 'task',
-      parentTaskId: task?.parentTaskId ? String(task.parentTaskId) : null,
-    }))
-    .filter((task: any) => task.name.length > 0 && stageIds.has(task.stageId))
-    .sort((a: any, b: any) => a.order - b.order)
-    .map((task: any, index: number) => ({ ...task, order: index }));
-
-  return { stages, tasks };
 }
 
 function normalizeDraft(draft: any) {
@@ -161,6 +129,11 @@ async function validateDraftReferences(params: {
 
 export async function GET(request: NextRequest) {
   try {
+    const storageReady = await ensureDraftStorage('api.drafts.GET');
+    if (!storageReady.ok) {
+      return NextResponse.json({ error: storageReady.clientMessage }, { status: storageReady.status });
+    }
+
     const { error, context } = await checkRoutePermission('drafts');
     if (error || !context) return error ?? NextResponse.json([], { status: 200 });
 
@@ -225,33 +198,28 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const storageReady = await ensureDraftStorage('api.drafts.POST');
+    if (!storageReady.ok) {
+      return NextResponse.json({ error: storageReady.clientMessage }, { status: storageReady.status });
+    }
+
     const { error, context } = await checkRoutePermission('drafts');
     if (error || !context) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const body = await request.json();
-    const title = String(body?.title ?? '').trim();
-    const content = String(body?.content ?? '').trim();
-
-    if (!title || !content) {
-      return NextResponse.json({ error: 'title and content are required' }, { status: 400 });
+    let rawBody: unknown;
+    try {
+      rawBody = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
     }
 
-    const categoryId = parseOptionalInt(body?.categoryId ? String(body.categoryId) : null);
-    const advancedMode = Boolean(body?.advancedMode);
-    const assignedUserId = advancedMode ? parseOptionalInt(body?.assignedUserId ? String(body.assignedUserId) : null) : null;
-    const departmentId = advancedMode ? parseOptionalInt(body?.departmentId ? String(body.departmentId) : null) : null;
-    const contactId = advancedMode ? parseOptionalInt(body?.contactId ? String(body.contactId) : null) : null;
-    const tagIds: number[] = Array.isArray(body?.tagIds)
-      ? Array.from(
-          new Set(
-            body.tagIds
-              .map((tagId: unknown) => Number(tagId))
-              .filter((tagId: number) => Number.isInteger(tagId) && tagId > 0),
-          ),
-        )
-      : [];
+    const payloadResult = parseDraftWritePayload(rawBody);
+    if (!payloadResult.ok) {
+      return NextResponse.json({ error: payloadResult.error }, { status: 400 });
+    }
 
-    const stages = advancedMode ? parseWorkflow(body?.stages) ?? { stages: [], tasks: [] } : null;
+    const { title, content, categoryId, assignedUserId, departmentId, contactId, tagIds, stages } =
+      payloadResult.value;
     const refsValidation = await validateDraftReferences({
       teamId: context.teamId,
       categoryId,
