@@ -49,10 +49,20 @@ export type DraftContact = {
   name: string;
 };
 
+export type DraftType = 'static' | 'dynamic';
+
+export type DraftAiMetadata = {
+  prompt: string;
+  mode: 'create' | 'rewrite' | 'variables';
+  generatedAt: string;
+} | null;
+
 export type DraftItem = {
   id: number;
   title: string;
   content: string;
+  draftType: DraftType;
+  aiMetadata: DraftAiMetadata;
   categoryId: number | null;
   contactId: number | null;
   assignedUserId: number | null;

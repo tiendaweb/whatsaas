@@ -42,6 +42,8 @@ function normalizeDraft(draft: any) {
     teamId: draft.teamId,
     title: draft.title,
     content: draft.content,
+    draftType: draft.draftType,
+    aiMetadata: draft.aiMetadata ?? null,
     categoryId: draft.categoryId,
     contactId: draft.contactId,
     assignedUserId: draft.assignedUserId,
@@ -218,7 +220,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: payloadResult.error }, { status: 400 });
     }
 
-    const { title, content, categoryId, assignedUserId, departmentId, contactId, tagIds, stages } =
+    const { title, content, draftType, aiMetadata, categoryId, assignedUserId, departmentId, contactId, tagIds, stages } =
       payloadResult.value;
     const refsValidation = await validateDraftReferences({
       teamId: context.teamId,
@@ -239,6 +241,8 @@ export async function POST(request: NextRequest) {
           teamId: context.teamId,
           title,
           content,
+          draftType,
+          aiMetadata,
           categoryId,
           assignedUserId,
           departmentId,

@@ -338,6 +338,12 @@ export const messageDrafts = pgTable(
       .references(() => teams.id, { onDelete: "cascade" }),
     title: varchar("title", { length: 255 }).notNull(),
     content: text("content").notNull(),
+    draftType: varchar("draft_type", { length: 20 }).notNull().default("static"),
+    aiMetadata: jsonb("ai_metadata").$type<{
+      prompt: string;
+      mode: "create" | "rewrite" | "variables";
+      generatedAt: string;
+    }>(),
     categoryId: integer("category_id").references(() => messageDraftCategories.id, {
       onDelete: "set null",
     }),

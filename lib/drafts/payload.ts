@@ -3,6 +3,12 @@ type ParseSuccess = {
   value: {
     title: string;
     content: string;
+    draftType: 'static' | 'dynamic';
+    aiMetadata: {
+      prompt: string;
+      mode: 'create' | 'rewrite' | 'variables';
+      generatedAt: string;
+    } | null;
     categoryId: number | null;
     tagIds: number[];
     contactId: number | null;
@@ -34,6 +40,42 @@ function parseRequiredText(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : null;
+}
+
+function parseDraftType(value: unknown): 'static' | 'dynamic' | 'invalid' {
+  if (value === undefined || value === null || value === '') return 'static';
+  if (value === 'static' || value === 'dynamic') return value;
+  return 'invalid';
+}
+
+function parseAiMetadata(
+  value: unknown,
+):
+  | {
+      prompt: string;
+      mode: 'create' | 'rewrite' | 'variables';
+      generatedAt: string;
+    }
+  | null
+  | 'invalid' {
+  if (value === undefined || value === null) return null;
+  if (!isRecord(value)) return 'invalid';
+
+  const prompt = parseRequiredText(value.prompt);
+  if (!prompt) return 'invalid';
+
+  const mode = value.mode;
+  if (mode !== 'create' && mode !== 'rewrite' && mode !== 'variables') return 'invalid';
+
+  if (typeof value.generatedAt !== 'string') return 'invalid';
+  const generatedAtDate = new Date(value.generatedAt);
+  if (Number.isNaN(generatedAtDate.getTime())) return 'invalid';
+
+  return {
+    prompt,
+    mode,
+    generatedAt: generatedAtDate.toISOString(),
+  };
 }
 
 function parseOptionalPositiveInt(value: unknown): number | null | 'invalid' {
@@ -121,6 +163,8 @@ function parseWorkflow(value: unknown) {
 /**
  * Body contract for draft create/update:
  * - Required: title, content (non-empty strings).
+ * - Optional: draftType ("static" | "dynamic"), defaults to "static".
+ * - Optional: aiMetadata { prompt, mode, generatedAt } or null.
  * - Optional relations: categoryId/contactId/assignedUserId/departmentId -> positive integer or null.
  * - Optional arrays: tagIds -> list of positive integers (defaults to []).
  * - Optional workflow: stages -> object { stages: [], tasks: [] } or null.
@@ -134,6 +178,19 @@ export function parseDraftWritePayload(body: unknown): ParseResult {
   const content = parseRequiredText(body.content);
   if (!title || !content) {
     return { ok: false, error: 'title and content are required' };
+  }
+
+  const draftType = parseDraftType(body.draftType);
+  if (draftType === 'invalid') {
+    return { ok: false, error: 'draftType must be "static" or "dynamic"' };
+  }
+
+  const aiMetadata = parseAiMetadata(body.aiMetadata);
+  if (aiMetadata === 'invalid') {
+    return {
+      ok: false,
+      error: 'aiMetadata must be null or an object with prompt, mode(create|rewrite|variables), generatedAt',
+    };
   }
 
   const categoryId = parseOptionalPositiveInt(body.categoryId);
@@ -162,6 +219,6 @@ export function parseDraftWritePayload(body: unknown): ParseResult {
 
   return {
     ok: true,
-    value: { title, content, categoryId, tagIds, contactId, assignedUserId, departmentId, stages },
+    value: { title, content, draftType, aiMetadata, categoryId, tagIds, contactId, assignedUserId, departmentId, stages },
   };
 }

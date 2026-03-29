@@ -29,6 +29,8 @@ function normalizeDraft(draft: any) {
     teamId: draft.teamId,
     title: draft.title,
     content: draft.content,
+    draftType: draft.draftType,
+    aiMetadata: draft.aiMetadata ?? null,
     categoryId: draft.categoryId,
     contactId: draft.contactId,
     assignedUserId: draft.assignedUserId,
@@ -172,7 +174,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: payloadResult.error }, { status: 400 });
     }
     const isArchived = Boolean((body as any)?.isArchived);
-    const { title, content, categoryId, assignedUserId, departmentId, contactId, stages, tagIds } =
+    const { title, content, draftType, aiMetadata, categoryId, assignedUserId, departmentId, contactId, stages, tagIds } =
       payloadResult.value;
     const refsValidation = await validateDraftReferences({
       teamId: context.teamId,
@@ -192,6 +194,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         .set({
           title,
           content,
+          draftType,
+          aiMetadata,
           categoryId,
           assignedUserId,
           departmentId,
