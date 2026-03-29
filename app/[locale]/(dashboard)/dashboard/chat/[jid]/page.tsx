@@ -27,7 +27,6 @@ import { DraftShortcutsModal } from '@/components/chat/DraftShortcutsModal';
 import { DateSeparator } from '@/components/chat/DateSeparator';
 import { useTheme } from 'next-themes';
 import { useTranslations } from 'next-intl';
-import { Input } from '@/components/ui/input';
 import type { DraftItem } from '@/components/drafts/types';
 
 type ImproveReplyMode = 'improve' | 'orthography' | 'stylize';
@@ -82,10 +81,7 @@ export default function ChatPage() {
   const [improvedReply, setImprovedReply] = useState('');
   const [isImprovingReply, setIsImprovingReply] = useState(false);
   const [showQuickReplySuggestions, setShowQuickReplySuggestions] = useState(false);
-  const [showDraftSuggestions, setShowDraftSuggestions] = useState(false);
-  const [draftVariablesModalOpen, setDraftVariablesModalOpen] = useState(false);
-  const [selectedDraft, setSelectedDraft] = useState<DraftItem | null>(null);
-  const [draftVariables, setDraftVariables] = useState<Record<string, string>>({});
+  const [draftShortcutQuery, setDraftShortcutQuery] = useState('');
   const lastImproveContextChatIdRef = useRef<number | null>(null);
   const [chatSidebarCollapsed, setChatSidebarCollapsed] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -197,23 +193,6 @@ export default function ChatPage() {
     return quickReplies.filter(r => r.shortcut.toLowerCase().startsWith(search));
   }, [newMessage, quickReplies]);
 
-  const filteredDraftSuggestions = useMemo(() => {
-    if (!newMessage.startsWith('##') || !drafts) return [];
-    const search = newMessage.slice(2).trim().toLowerCase();
-    if (!search) return drafts;
-    return drafts.filter((draft) => draft.title.toLowerCase().includes(search));
-  }, [newMessage, drafts]);
-
-  const draftPlaceholders = useMemo(() => {
-    if (!selectedDraft) return [];
-    const regex = /\[\[([\w\-. ]+)\]\]/g;
-    const set = new Set<string>();
-    for (const match of selectedDraft.content.matchAll(regex)) {
-      const key = match[1]?.trim();
-      if (key) set.add(key);
-    }
-    return Array.from(set);
-  }, [selectedDraft]);
 
   const handleMediaClick = (messageId: string) => {
     const clickedIndex = mediaMessages.findIndex(msg => msg.id === messageId);
@@ -253,8 +232,10 @@ export default function ChatPage() {
   }, [newMessage, filteredQuickReplies]);
 
   useEffect(() => {
-    setShowDraftSuggestions(newMessage.startsWith('##') && filteredDraftSuggestions.length > 0);
-  }, [newMessage, filteredDraftSuggestions]);
+    if (!newMessage.startsWith('##')) return;
+    setDraftShortcutQuery(newMessage.slice(2).trim());
+    setDraftShortcutsOpen(true);
+  }, [newMessage]);
 
   const { cache: swrCache, mutate: globalMutate } = useSWRConfig();
 
@@ -620,24 +601,11 @@ export default function ChatPage() {
     }
   };
 
-  const handleSelectDraft = useCallback((draft: DraftItem) => {
-    setSelectedDraft(draft);
-    setDraftVariables({});
-    setDraftVariablesModalOpen(true);
-    setShowDraftSuggestions(false);
-    setDraftShortcutsOpen(false);
-  }, []);
-
-  const handleInsertDraft = useCallback(() => {
-    if (!selectedDraft) return;
-    const renderedText = selectedDraft.content.replace(/\[\[([\w\-. ]+)\]\]/g, (_, rawKey: string) => {
-      const key = rawKey.trim();
-      return draftVariables[key] ?? '';
-    });
+  const handleInsertDraft = useCallback((renderedText: string) => {
     setNewMessage(renderedText);
-    setDraftVariablesModalOpen(false);
+    setDraftShortcutsOpen(false);
     toast.success('Borrador insertado en el chat.');
-  }, [draftVariables, selectedDraft]);
+  }, []);
 
   const handleSyncMessages = async (limit: number = 50) => {
     if (!remoteJid || !currentChat?.instanceId) return;
@@ -943,10 +911,10 @@ export default function ChatPage() {
               filteredQuickReplies={filteredQuickReplies}
               draftsShortcutsOpen={draftShortcutsOpen}
               setDraftsShortcutsOpen={setDraftShortcutsOpen}
-              showDraftSuggestions={showDraftSuggestions}
-              setShowDraftSuggestions={setShowDraftSuggestions}
-              filteredDraftSuggestions={filteredDraftSuggestions}
-              onPickDraft={handleSelectDraft}
+              showDraftSuggestions={false}
+              setShowDraftSuggestions={() => undefined}
+              filteredDraftSuggestions={[]}
+              onPickDraft={() => undefined}
               isWindowExpired={isWindowExpired}
               onOpenTemplateDialog={() => setTemplateDialogOpen(true)}
               isGroup={isGroup}
@@ -985,45 +953,10 @@ export default function ChatPage() {
         open={draftShortcutsOpen}
         onOpenChange={setDraftShortcutsOpen}
         drafts={drafts ?? []}
-        onSelectDraft={handleSelectDraft}
+        initialQuery={draftShortcutQuery}
+        onInsertDraft={handleInsertDraft}
       />
       <TemplateDialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen} onSendTemplate={handleSendTemplate} />
-      <Dialog open={draftVariablesModalOpen} onOpenChange={setDraftVariablesModalOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Insertar borrador</DialogTitle>
-            <DialogDescription>Completa variables dinámicas antes de insertar el borrador.</DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
-            <p className="text-sm font-medium">{selectedDraft?.title}</p>
-            {draftPlaceholders.length > 0 ? (
-              draftPlaceholders.map((placeholder) => (
-                <div key={placeholder} className="space-y-1">
-                  <p className="text-xs text-muted-foreground">{placeholder}</p>
-                  <Input
-                    value={draftVariables[placeholder] ?? ''}
-                    onChange={(event) =>
-                      setDraftVariables((prev) => ({
-                        ...prev,
-                        [placeholder]: event.target.value,
-                      }))
-                    }
-                    placeholder={`Ingresa ${placeholder}`}
-                  />
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-muted-foreground">Este borrador no tiene variables dinámicas.</p>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDraftVariablesModalOpen(false)}>Cancelar</Button>
-            <Button onClick={handleInsertDraft}>Insertar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
       <Dialog open={improveDialogOpen} onOpenChange={setImproveDialogOpen}>
         <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col overflow-hidden sm:max-w-2xl">
           <DialogHeader>
