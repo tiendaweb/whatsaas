@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import useSWR, { mutate } from 'swr';
 import { FileText, Loader2, Plus, Search } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DraftBoard } from '@/components/drafts/DraftBoard';
 import { DraftEditorModal } from '@/components/drafts/DraftEditorModal';
 import { DraftPreviewCard } from '@/components/drafts/DraftPreviewCard';
 import type {
@@ -39,7 +41,7 @@ export default function DraftsPage() {
   const [selectedDraftId, setSelectedDraftId] = useState<number | null>(null);
 
   const { data: drafts, isLoading: loadingDrafts } = useSWR<DraftItem[]>('/api/drafts', fetcher);
-  const { data: categories } = useSWR<DraftCategory[]>('/api/drafts/categories', fetcher);
+  const { data: categories, mutate: mutateCategories } = useSWR<DraftCategory[]>('/api/drafts/categories', fetcher);
   const { data: tags } = useSWR<DraftTag[]>('/api/drafts/tags', fetcher);
   const { data: contacts } = useSWR<DraftContact[]>('/api/contacts/list', fetcher);
   const { data: departments } = useSWR<any[]>('/api/departments', fetcher);
@@ -70,6 +72,35 @@ export default function DraftsPage() {
     });
   }, [drafts, query]);
 
+  const sortedCategories = useMemo(() => {
+    return [...ensureArray<DraftCategory>(categories)].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  }, [categories]);
+
+  const boardColumns = useMemo(() => {
+    const byCategory = new Map<number | null, DraftItem[]>();
+
+    for (const draft of filteredDrafts) {
+      const key = draft.categoryId ?? null;
+      byCategory.set(key, [...(byCategory.get(key) ?? []), draft]);
+    }
+
+    const categoryColumns = sortedCategories.map((category) => ({
+      ...category,
+      drafts: byCategory.get(category.id) ?? [],
+    }));
+
+    return [
+      ...categoryColumns,
+      {
+        id: -1,
+        name: 'Sin categoría',
+        color: 'gray',
+        position: categoryColumns.length,
+        drafts: byCategory.get(null) ?? [],
+      },
+    ];
+  }, [filteredDrafts, sortedCategories]);
+
   useEffect(() => {
     if (filteredDrafts.length === 0) {
       setSelectedDraftId(null);
@@ -98,74 +129,185 @@ export default function DraftsPage() {
     mutate('/api/drafts');
   };
 
+  const handleCreateCategory = async () => {
+    const name = window.prompt('Nombre de la nueva categoría/workspace:')?.trim();
+    if (!name) return;
+
+    const response = await fetch('/api/drafts/categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      toast.error(payload?.error || 'No se pudo crear la categoría.');
+      return;
+    }
+
+    toast.success('Categoría creada.');
+    mutateCategories();
+  };
+
+  const handleRenameCategory = async (category: DraftCategory) => {
+    if (category.id < 0) return;
+
+    const name = window.prompt('Nuevo nombre de categoría/workspace:', category.name)?.trim();
+    if (!name || name === category.name) return;
+
+    const response = await fetch('/api/drafts/categories', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'rename', id: category.id, name }),
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      toast.error(payload?.error || 'No se pudo renombrar la categoría.');
+      return;
+    }
+
+    toast.success('Categoría renombrada.');
+    mutateCategories();
+  };
+
+  const handleDeleteCategory = async (category: DraftCategory) => {
+    if (category.id < 0) return;
+
+    const confirmed = window.confirm(`¿Eliminar la categoría "${category.name}"?`);
+    if (!confirmed) return;
+
+    const response = await fetch(`/api/drafts/categories?id=${category.id}`, { method: 'DELETE' });
+    const payload = await response.json();
+
+    if (!response.ok) {
+      toast.error(payload?.error || 'No se pudo eliminar la categoría.');
+      return;
+    }
+
+    toast.success('Categoría eliminada.');
+    mutateCategories();
+    refreshDrafts();
+  };
+
+  const handleReorderCategories = async (next: DraftCategory[]) => {
+    const realCategories = next.filter((item) => item.id > 0);
+    if (realCategories.length === 0) return;
+
+    const response = await fetch('/api/drafts/categories', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'reorder',
+        items: realCategories.map((category, index) => ({ id: category.id, position: index })),
+      }),
+    });
+
+    if (!response.ok) {
+      const payload = await response.json();
+      toast.error(payload?.error || 'No se pudo reordenar categorías.');
+      return;
+    }
+
+    mutateCategories();
+  };
+
+  const handleMoveDraft = async (draft: DraftItem, categoryId: number | null) => {
+    const response = await fetch(`/api/drafts/${draft.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: draft.title,
+        content: draft.content,
+        categoryId,
+        tagIds: draft.tags.map((tag) => tag.id),
+        contactId: draft.contactId,
+        assignedUserId: draft.assignedUserId,
+        departmentId: draft.departmentId,
+        stages: draft.stages ?? null,
+      }),
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      toast.error(payload?.error || 'No se pudo mover el borrador.');
+      return;
+    }
+
+    toast.success('Borrador movido.');
+    refreshDrafts();
+  };
+
   return (
     <div className="flex flex-col h-full bg-muted/40 p-4 md:p-6 overflow-hidden">
       <header className="flex justify-between items-center mb-4 shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Borradores</h1>
           <p className="text-sm text-muted-foreground">
-            Biblioteca de respuestas con vista previa y variables dinámicas.
+            Biblioteca de respuestas con vista por categorías/workspaces.
           </p>
         </div>
-        <Button onClick={handleModalCreate}>
-          <Plus className="h-4 w-4 mr-2" /> Nuevo borrador
-        </Button>
+
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handleCreateCategory}>
+            <Plus className="h-4 w-4 mr-2" /> Nueva categoría
+          </Button>
+          <Button onClick={handleModalCreate}>
+            <Plus className="h-4 w-4 mr-2" /> Nuevo borrador
+          </Button>
+        </div>
       </header>
 
       <section className="flex-1 min-h-0 rounded-xl border bg-background overflow-hidden">
-        <div className="h-full grid grid-cols-1 md:grid-cols-[300px_minmax(0,1fr)]">
-          <aside className="border-r bg-card/40 p-3 md:p-4 min-h-0">
-            <div className="relative mb-3">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                className="pl-10"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Buscar borrador..."
+        <div className="h-full overflow-y-auto p-3 md:p-4 space-y-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              className="pl-10"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Buscar borrador..."
+            />
+          </div>
+
+          {loadingDrafts ? (
+            <div className="h-32 flex items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : filteredDrafts.length === 0 ? (
+            <div className="h-40 flex flex-col items-center justify-center text-muted-foreground text-center px-2">
+              <FileText className="h-8 w-8 mb-2 opacity-40" />
+              <p className="text-sm">No hay borradores para los filtros actuales.</p>
+            </div>
+          ) : (
+            <>
+              <DraftBoard
+                columns={boardColumns}
+                categories={sortedCategories}
+                selectedDraftId={selectedDraftId}
+                onSelectDraft={setSelectedDraftId}
+                onOpenDetail={handleModalEdit}
+                onRenameCategory={handleRenameCategory}
+                onDeleteCategory={handleDeleteCategory}
+                onMoveDraft={handleMoveDraft}
+                onReorderCategories={handleReorderCategories}
               />
-            </div>
 
-            <div className="space-y-2 overflow-y-auto max-h-[calc(100vh-290px)] pr-1">
-              {loadingDrafts ? (
-                <div className="h-32 flex items-center justify-center">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <div className="rounded-xl border bg-muted/30 p-3 md:p-5">
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <h2 className="text-sm font-semibold">Detalle del borrador seleccionado</h2>
                 </div>
-              ) : filteredDrafts.length === 0 ? (
-                <div className="h-40 flex flex-col items-center justify-center text-muted-foreground text-center px-2">
-                  <FileText className="h-8 w-8 mb-2 opacity-40" />
-                  <p className="text-sm">No hay borradores.</p>
-                </div>
-              ) : (
-                filteredDrafts.map((draft) => {
-                  const selected = draft.id === selectedDraftId;
-                  return (
-                    <button
-                      key={draft.id}
-                      type="button"
-                      onClick={() => setSelectedDraftId(draft.id)}
-                      className={`w-full text-left rounded-lg border px-3 py-2 transition ${
-                        selected ? 'border-primary bg-primary/5' : 'border-border hover:bg-accent'
-                      }`}
-                    >
-                      <p className="text-sm font-semibold truncate">{draft.title}</p>
-                      <p className="text-xs text-muted-foreground truncate mt-1">{draft.content}</p>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </aside>
-
-          <main className="p-3 md:p-5 overflow-y-auto min-h-0 bg-muted/30">
-            {!selectedDraft ? (
-              <div className="h-full min-h-[220px] flex flex-col items-center justify-center text-muted-foreground">
-                <FileText className="h-12 w-12 opacity-30 mb-2" />
-                <p>Selecciona un borrador para ver el detalle.</p>
+                {!selectedDraft ? (
+                  <div className="h-full min-h-[180px] flex flex-col items-center justify-center text-muted-foreground">
+                    <FileText className="h-12 w-12 opacity-30 mb-2" />
+                    <p>Selecciona un borrador para ver el detalle.</p>
+                  </div>
+                ) : (
+                  <DraftPreviewCard draft={selectedDraft} onEdit={handleModalEdit} />
+                )}
               </div>
-            ) : (
-              <DraftPreviewCard draft={selectedDraft} onEdit={handleModalEdit} />
-            )}
-          </main>
+            </>
+          )}
         </div>
       </section>
 

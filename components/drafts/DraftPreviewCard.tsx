@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Check, Copy, Edit3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,8 @@ const PLACEHOLDER_REGEX = /\[\[([\w\-. ]+)\]\]/g;
 export function DraftPreviewCard({ draft, onEdit }: Props) {
   const [variables, setVariables] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [showExpandAction, setShowExpandAction] = useState(false);
 
   const placeholders = useMemo(() => {
     const set = new Set<string>();
@@ -40,6 +42,15 @@ export function DraftPreviewCard({ draft, onEdit }: Props) {
     window.setTimeout(() => setCopied(false), 1200);
   };
 
+  useEffect(() => {
+    setExpanded(false);
+    const estimatedLines = renderedPreview.split('\n').reduce((acc, line) => {
+      const visualLines = Math.max(1, Math.ceil(line.length / 90));
+      return acc + visualLines;
+    }, 0);
+    setShowExpandAction(estimatedLines > 10);
+  }, [renderedPreview, draft.id]);
+
   return (
     <article className="rounded-xl border bg-card overflow-hidden">
       <header className="px-4 md:px-5 pt-4 pb-3 border-b bg-background flex items-start justify-between gap-3">
@@ -62,10 +73,6 @@ export function DraftPreviewCard({ draft, onEdit }: Props) {
       </header>
 
       <div className="p-4 md:p-5 space-y-4">
-        <div>
-          <p className="text-sm whitespace-pre-wrap">{renderedPreview}</p>
-        </div>
-
         {placeholders.length > 0 && (
           <section className="rounded-lg border bg-muted/30 p-3 space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Variables dinámicas</p>
@@ -88,6 +95,15 @@ export function DraftPreviewCard({ draft, onEdit }: Props) {
             </div>
           </section>
         )}
+
+        <div className="space-y-2">
+          <p className={`text-sm whitespace-pre-wrap ${expanded ? '' : 'line-clamp-10'}`}>{renderedPreview}</p>
+          {showExpandAction && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => setExpanded((prev) => !prev)}>
+              {expanded ? 'Ver menos' : 'Ver más'}
+            </Button>
+          )}
+        </div>
 
         <div className="flex justify-end">
           <Button onClick={handleCopy} className="min-w-[140px]">
