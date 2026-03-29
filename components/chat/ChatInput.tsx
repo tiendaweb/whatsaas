@@ -8,6 +8,7 @@ import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import { RecordingStatus, QuickReply } from './types';
 import { formatTimer } from './utils';
 import { useTranslations } from 'next-intl';
+import type { DraftItem } from '@/components/drafts/types';
 
 interface ChatInputProps {
   isInternalNote: boolean;
@@ -29,11 +30,16 @@ interface ChatInputProps {
   fileInputRef: React.RefObject<HTMLInputElement>;
   handleFileIconClick: (accept: string) => void;
   onEmojiClick: (emojiData: EmojiClickData) => void;
-  quickRepliesOpen: boolean;
   setQuickRepliesOpen: (val: boolean) => void;
   showQuickReplySuggestions: boolean;
   setShowQuickReplySuggestions: (val: boolean) => void;
   filteredQuickReplies: QuickReply[];
+  draftsShortcutsOpen: boolean;
+  setDraftsShortcutsOpen: (val: boolean) => void;
+  showDraftSuggestions: boolean;
+  setShowDraftSuggestions: (val: boolean) => void;
+  filteredDraftSuggestions: DraftItem[];
+  onPickDraft: (draft: DraftItem) => void;
   isWindowExpired?: boolean;
   onOpenTemplateDialog?: () => void;
   isGroup?: boolean;
@@ -45,12 +51,15 @@ export function ChatInput({
   audioUrl, isAudioPlaying, toggleAudioPlayback, audioPlayerRef,
   fileInputRef, handleFileIconClick, onEmojiClick,
   setQuickRepliesOpen, showQuickReplySuggestions, setShowQuickReplySuggestions, filteredQuickReplies,
+  draftsShortcutsOpen, setDraftsShortcutsOpen, showDraftSuggestions, setShowDraftSuggestions, filteredDraftSuggestions, onPickDraft,
   isWindowExpired, onOpenTemplateDialog, isGroup
 }: ChatInputProps) {
   const t = useTranslations('Chat');
   const showAudioUi = recordingStatus === 'recording' || recordingStatus === 'review';
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [selectedQuickReplyIndex, setSelectedQuickReplyIndex] = useState(0);
+  const [selectedDraftSuggestionIndex, setSelectedDraftSuggestionIndex] = useState(0);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -82,6 +91,18 @@ export function ChatInput({
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
   }, [previewUrl]);
+
+  useEffect(() => {
+    if (selectedQuickReplyIndex >= filteredQuickReplies.length) {
+      setSelectedQuickReplyIndex(0);
+    }
+  }, [filteredQuickReplies, selectedQuickReplyIndex]);
+
+  useEffect(() => {
+    if (selectedDraftSuggestionIndex >= filteredDraftSuggestions.length) {
+      setSelectedDraftSuggestionIndex(0);
+    }
+  }, [filteredDraftSuggestions, selectedDraftSuggestionIndex]);
 
   if (selectedFile) {
     const isImage = selectedFile.type.startsWith('image/');
@@ -150,6 +171,11 @@ export function ChatInput({
                   <Zap className="h-4 w-4" />
                 </Button>
               )}
+              {!isGroup && (
+                <Button variant="ghost" size="icon" className="rounded-full text-muted-foreground h-9 w-9 mb-1" onClick={() => setDraftsShortcutsOpen(!draftsShortcutsOpen)}>
+                  <FileText className="h-4 w-4" />
+                </Button>
+              )}
 
               {!isInternalNote && (
                 <DropdownMenu>
@@ -185,10 +211,11 @@ export function ChatInput({
               <>
                 {showQuickReplySuggestions && (
                   <div className="absolute bottom-full mb-2 left-0 w-full bg-popover border shadow-lg rounded-md max-h-48 overflow-y-auto z-50">
-                    {filteredQuickReplies.map(qr => (
+                    {filteredQuickReplies.map((qr, index) => (
                       <div
                         key={qr.id}
-                        className="p-2 hover:bg-muted cursor-pointer text-sm border-b last:border-0"
+                        className={`p-2 cursor-pointer text-sm border-b last:border-0 ${selectedQuickReplyIndex === index ? 'bg-muted' : 'hover:bg-muted'}`}
+                        onMouseEnter={() => setSelectedQuickReplyIndex(index)}
                         onClick={() => {
                           setNewMessage(qr.content);
                           setShowQuickReplySuggestions(false);
@@ -201,12 +228,83 @@ export function ChatInput({
                   </div>
                 )}
 
+                {showDraftSuggestions && (
+                  <div className="absolute bottom-full mb-2 left-0 w-full bg-popover border shadow-lg rounded-md max-h-48 overflow-y-auto z-50">
+                    {filteredDraftSuggestions.map((draft, index) => (
+                      <div
+                        key={draft.id}
+                        className={`p-2 cursor-pointer text-sm border-b last:border-0 ${selectedDraftSuggestionIndex === index ? 'bg-muted' : 'hover:bg-muted'}`}
+                        onMouseEnter={() => setSelectedDraftSuggestionIndex(index)}
+                        onClick={() => onPickDraft(draft)}
+                      >
+                        <span className="font-bold text-primary mr-2">##{draft.title}</span>
+                        <span className="text-muted-foreground truncate">{draft.content}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <Textarea
                   placeholder={isInternalNote ? t('add_internal_note_placeholder') : t('type_message_placeholder')}
                   className={`min-h-[40px] max-h-[120px] resize-none py-3 ${isInternalNote ? 'bg-background border-yellow-400 dark:border-yellow-600 focus-visible:ring-yellow-400' : 'bg-background rounded-2xl'}`}
                   value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
+                  onChange={(e) => {
+                    setNewMessage(e.target.value);
+                    setSelectedQuickReplyIndex(0);
+                    setSelectedDraftSuggestionIndex(0);
+                  }}
                   onKeyDown={(e) => {
+                    if (showDraftSuggestions && filteredDraftSuggestions.length > 0) {
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setSelectedDraftSuggestionIndex((prev) => (prev + 1) % filteredDraftSuggestions.length);
+                        return;
+                      }
+                      if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setSelectedDraftSuggestionIndex((prev) => (prev - 1 + filteredDraftSuggestions.length) % filteredDraftSuggestions.length);
+                        return;
+                      }
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        const selected = filteredDraftSuggestions[selectedDraftSuggestionIndex];
+                        if (selected) onPickDraft(selected);
+                        return;
+                      }
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setShowDraftSuggestions(false);
+                        return;
+                      }
+                    }
+
+                    if (showQuickReplySuggestions && filteredQuickReplies.length > 0) {
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setSelectedQuickReplyIndex((prev) => (prev + 1) % filteredQuickReplies.length);
+                        return;
+                      }
+                      if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setSelectedQuickReplyIndex((prev) => (prev - 1 + filteredQuickReplies.length) % filteredQuickReplies.length);
+                        return;
+                      }
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        const selected = filteredQuickReplies[selectedQuickReplyIndex];
+                        if (selected) {
+                          setNewMessage(selected.content);
+                          setShowQuickReplySuggestions(false);
+                        }
+                        return;
+                      }
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setShowQuickReplySuggestions(false);
+                        return;
+                      }
+                    }
+
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
                       onSendText(e);

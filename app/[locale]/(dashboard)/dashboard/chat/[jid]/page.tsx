@@ -23,9 +23,12 @@ import { MessageBubble } from '@/components/chat/MessageBubble';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { TemplateDialog } from '@/components/chat/TemplateDialog';
 import { QuickRepliesModal } from '@/components/chat/QuickRepliesModal';
+import { DraftShortcutsModal } from '@/components/chat/DraftShortcutsModal';
 import { DateSeparator } from '@/components/chat/DateSeparator';
 import { useTheme } from 'next-themes';
 import { useTranslations } from 'next-intl';
+import { Input } from '@/components/ui/input';
+import type { DraftItem } from '@/components/drafts/types';
 
 type ImproveReplyMode = 'improve' | 'orthography' | 'stylize';
 
@@ -69,6 +72,7 @@ export default function ChatPage() {
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [quickRepliesOpen, setQuickRepliesOpen] = useState(false);
+  const [draftShortcutsOpen, setDraftShortcutsOpen] = useState(false);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [improveDialogOpen, setImproveDialogOpen] = useState(false);
   const [improveMode, setImproveMode] = useState<ImproveReplyMode>('improve');
@@ -78,6 +82,10 @@ export default function ChatPage() {
   const [improvedReply, setImprovedReply] = useState('');
   const [isImprovingReply, setIsImprovingReply] = useState(false);
   const [showQuickReplySuggestions, setShowQuickReplySuggestions] = useState(false);
+  const [showDraftSuggestions, setShowDraftSuggestions] = useState(false);
+  const [draftVariablesModalOpen, setDraftVariablesModalOpen] = useState(false);
+  const [selectedDraft, setSelectedDraft] = useState<DraftItem | null>(null);
+  const [draftVariables, setDraftVariables] = useState<Record<string, string>>({});
   const lastImproveContextChatIdRef = useRef<number | null>(null);
   const [chatSidebarCollapsed, setChatSidebarCollapsed] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -152,6 +160,7 @@ export default function ChatPage() {
   const { data: instances } = useSWR<any[]>('/api/instance/details', fetcher);
   const activeInstance = instances?.find(i => i.dbId === currentChat?.instanceId);
   const { data: quickReplies } = useSWR<QuickReply[]>('/api/quick-replies', fetcher);
+  const { data: drafts } = useSWR<DraftItem[]>('/api/drafts', fetcher);
 
   const mediaMessages = useMemo(() => {
     if (!messages) return [];
@@ -187,6 +196,24 @@ export default function ChatPage() {
     const search = newMessage.slice(1).toLowerCase();
     return quickReplies.filter(r => r.shortcut.toLowerCase().startsWith(search));
   }, [newMessage, quickReplies]);
+
+  const filteredDraftSuggestions = useMemo(() => {
+    if (!newMessage.startsWith('##') || !drafts) return [];
+    const search = newMessage.slice(2).trim().toLowerCase();
+    if (!search) return drafts;
+    return drafts.filter((draft) => draft.title.toLowerCase().includes(search));
+  }, [newMessage, drafts]);
+
+  const draftPlaceholders = useMemo(() => {
+    if (!selectedDraft) return [];
+    const regex = /\[\[([\w\-. ]+)\]\]/g;
+    const set = new Set<string>();
+    for (const match of selectedDraft.content.matchAll(regex)) {
+      const key = match[1]?.trim();
+      if (key) set.add(key);
+    }
+    return Array.from(set);
+  }, [selectedDraft]);
 
   const handleMediaClick = (messageId: string) => {
     const clickedIndex = mediaMessages.findIndex(msg => msg.id === messageId);
@@ -224,6 +251,10 @@ export default function ChatPage() {
   useEffect(() => {
     setShowQuickReplySuggestions(newMessage.startsWith('/') && filteredQuickReplies.length > 0);
   }, [newMessage, filteredQuickReplies]);
+
+  useEffect(() => {
+    setShowDraftSuggestions(newMessage.startsWith('##') && filteredDraftSuggestions.length > 0);
+  }, [newMessage, filteredDraftSuggestions]);
 
   const { cache: swrCache, mutate: globalMutate } = useSWRConfig();
 
@@ -589,6 +620,25 @@ export default function ChatPage() {
     }
   };
 
+  const handleSelectDraft = useCallback((draft: DraftItem) => {
+    setSelectedDraft(draft);
+    setDraftVariables({});
+    setDraftVariablesModalOpen(true);
+    setShowDraftSuggestions(false);
+    setDraftShortcutsOpen(false);
+  }, []);
+
+  const handleInsertDraft = useCallback(() => {
+    if (!selectedDraft) return;
+    const renderedText = selectedDraft.content.replace(/\[\[([\w\-. ]+)\]\]/g, (_, rawKey: string) => {
+      const key = rawKey.trim();
+      return draftVariables[key] ?? '';
+    });
+    setNewMessage(renderedText);
+    setDraftVariablesModalOpen(false);
+    toast.success('Borrador insertado en el chat.');
+  }, [draftVariables, selectedDraft]);
+
   const handleSyncMessages = async (limit: number = 50) => {
     if (!remoteJid || !currentChat?.instanceId) return;
     setIsSyncingMessages(true);
@@ -887,11 +937,16 @@ export default function ChatPage() {
               fileInputRef={fileInputRef as unknown as React.RefObject<HTMLInputElement>}
               handleFileIconClick={handleFileIconClick}
               onEmojiClick={onEmojiClick}
-              quickRepliesOpen={quickRepliesOpen}
               setQuickRepliesOpen={setQuickRepliesOpen}
               showQuickReplySuggestions={showQuickReplySuggestions}
               setShowQuickReplySuggestions={setShowQuickReplySuggestions}
               filteredQuickReplies={filteredQuickReplies}
+              draftsShortcutsOpen={draftShortcutsOpen}
+              setDraftsShortcutsOpen={setDraftShortcutsOpen}
+              showDraftSuggestions={showDraftSuggestions}
+              setShowDraftSuggestions={setShowDraftSuggestions}
+              filteredDraftSuggestions={filteredDraftSuggestions}
+              onPickDraft={handleSelectDraft}
               isWindowExpired={isWindowExpired}
               onOpenTemplateDialog={() => setTemplateDialogOpen(true)}
               isGroup={isGroup}
@@ -926,7 +981,49 @@ export default function ChatPage() {
       <ChatSidebar chatDetails={chatDetails} isCollapsed={chatSidebarCollapsed} onToggleCollapse={toggleChatSidebar} isGroup={isGroup} onSyncMessages={() => handleSyncMessages(100)} isSyncingMessages={isSyncingMessages} />
 
       <QuickRepliesModal open={quickRepliesOpen} onOpenChange={setQuickRepliesOpen} />
+      <DraftShortcutsModal
+        open={draftShortcutsOpen}
+        onOpenChange={setDraftShortcutsOpen}
+        drafts={drafts ?? []}
+        onSelectDraft={handleSelectDraft}
+      />
       <TemplateDialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen} onSendTemplate={handleSendTemplate} />
+      <Dialog open={draftVariablesModalOpen} onOpenChange={setDraftVariablesModalOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Insertar borrador</DialogTitle>
+            <DialogDescription>Completa variables dinámicas antes de insertar el borrador.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+            <p className="text-sm font-medium">{selectedDraft?.title}</p>
+            {draftPlaceholders.length > 0 ? (
+              draftPlaceholders.map((placeholder) => (
+                <div key={placeholder} className="space-y-1">
+                  <p className="text-xs text-muted-foreground">{placeholder}</p>
+                  <Input
+                    value={draftVariables[placeholder] ?? ''}
+                    onChange={(event) =>
+                      setDraftVariables((prev) => ({
+                        ...prev,
+                        [placeholder]: event.target.value,
+                      }))
+                    }
+                    placeholder={`Ingresa ${placeholder}`}
+                  />
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">Este borrador no tiene variables dinámicas.</p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDraftVariablesModalOpen(false)}>Cancelar</Button>
+            <Button onClick={handleInsertDraft}>Insertar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={improveDialogOpen} onOpenChange={setImproveDialogOpen}>
         <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col overflow-hidden sm:max-w-2xl">
           <DialogHeader>
