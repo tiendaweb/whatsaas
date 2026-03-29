@@ -54,11 +54,23 @@ async function bootstrapDraftTables() {
         name varchar(100) NOT NULL,
         color varchar(20) DEFAULT 'gray',
         "order" integer NOT NULL DEFAULT 0,
+        position integer NOT NULL DEFAULT 0,
         created_at timestamp NOT NULL DEFAULT now(),
         CONSTRAINT team_message_draft_category_name_idx UNIQUE (team_id, name)
       );
     `);
   }
+
+  await db.execute(sql`
+    ALTER TABLE message_draft_categories
+    ADD COLUMN IF NOT EXISTS position integer NOT NULL DEFAULT 0;
+  `);
+
+  await db.execute(sql`
+    UPDATE message_draft_categories
+    SET position = "order"
+    WHERE position = 0;
+  `);
 
   if (!hasTags) {
     await db.execute(sql`

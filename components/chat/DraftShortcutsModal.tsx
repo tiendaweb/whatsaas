@@ -27,6 +27,8 @@ export function DraftShortcutsModal({
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [variables, setVariables] = useState<Record<string, string>>({});
+  const [selectedDraft, setSelectedDraft] = useState<DraftItem | null>(null);
+  const [isFormModalOpen, setIsFormModalOpen] = useState(false);
 
   const filteredDrafts = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -35,7 +37,7 @@ export function DraftShortcutsModal({
     return drafts.filter((draft) => draft.title.toLowerCase().includes(normalized));
   }, [drafts, query]);
 
-  const selectedDraft = filteredDrafts[selectedIndex] ?? null;
+  const highlightedDraft = filteredDrafts[selectedIndex] ?? null;
 
   const placeholders = useMemo(() => {
     if (!selectedDraft) return [];
@@ -51,12 +53,15 @@ export function DraftShortcutsModal({
     if (!open) {
       setQuery('');
       setSelectedIndex(0);
-      setVariables({});
+      if (!isFormModalOpen) {
+        setVariables({});
+        setSelectedDraft(null);
+      }
       return;
     }
 
     setQuery(initialQuery.trim());
-  }, [initialQuery, open]);
+  }, [initialQuery, isFormModalOpen, open]);
 
   useEffect(() => {
     if (selectedIndex >= filteredDrafts.length) {
@@ -76,13 +81,21 @@ export function DraftShortcutsModal({
     });
 
     onInsertDraft(rendered);
+    setIsFormModalOpen(false);
+  };
+
+  const handleSelectDraft = (draft: DraftItem) => {
+    setSelectedDraft(draft);
+    setVariables({});
+    setIsFormModalOpen(true);
     onOpenChange(false);
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="w-screen h-screen max-w-none max-h-none rounded-none p-0 gap-0"
+        className="fixed inset-0 w-screen h-[100dvh] max-w-none max-h-none translate-x-0 translate-y-0 rounded-none p-0 gap-0"
         onKeyDown={(event) => {
           if (!open) return;
 
@@ -101,7 +114,9 @@ export function DraftShortcutsModal({
           if (event.key === 'Enter') {
             if ((event.target as HTMLElement).tagName.toLowerCase() === 'input') return;
             event.preventDefault();
-            handleInsert();
+            if (highlightedDraft) {
+              handleSelectDraft(highlightedDraft);
+            }
           }
 
           if (event.key === 'Escape') {
@@ -140,7 +155,7 @@ export function DraftShortcutsModal({
                             : 'border-transparent hover:border-border hover:bg-muted/50'
                         }`}
                         onMouseEnter={() => setSelectedIndex(index)}
-                        onClick={() => setSelectedIndex(index)}
+                        onClick={() => handleSelectDraft(draft)}
                       >
                         <div className="flex items-center gap-2">
                           <FileText className="h-4 w-4 text-muted-foreground" />
@@ -154,60 +169,74 @@ export function DraftShortcutsModal({
               </div>
             </div>
           </div>
-
-          <div className="p-6 overflow-y-auto">
-            {selectedDraft ? (
-              <div className="space-y-4">
-                <div>
-                  <h3 className="font-semibold text-lg">{selectedDraft.title}</h3>
-                  <p className="text-sm text-muted-foreground mt-1">Completa variables y presiona insertar.</p>
-                </div>
-
-                {placeholders.length > 0 ? (
-                  <div className="space-y-3">
-                    {placeholders.map((placeholder) => (
-                      <div key={placeholder} className="space-y-1">
-                        <p className="text-sm font-medium">{placeholder}</p>
-                        <Input
-                          value={variables[placeholder] ?? ''}
-                          onChange={(event) =>
-                            setVariables((prev) => ({
-                              ...prev,
-                              [placeholder]: event.target.value,
-                            }))
-                          }
-                          placeholder={`Valor para ${placeholder}`}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Este borrador no tiene variables dinámicas.</p>
-                )}
-
-                <div className="rounded-md border bg-muted/30 p-3">
-                  <p className="text-xs font-semibold text-muted-foreground mb-1">Vista previa</p>
-                  <p className="text-sm whitespace-pre-wrap">
-                    {selectedDraft.content.replace(PLACEHOLDER_REGEX, (_, rawKey: string) => {
-                      const key = rawKey.trim();
-                      return variables[key] ?? '';
-                    })}
-                  </p>
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button variant="outline" onClick={() => onOpenChange(false)}>
-                    Cancelar
-                  </Button>
-                  <Button onClick={handleInsert}>Insertar</Button>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">Selecciona un borrador para continuar.</p>
-            )}
+          <div className="hidden md:flex p-6 overflow-y-auto items-center justify-center">
+            <p className="text-sm text-muted-foreground">Selecciona un borrador para abrir el formulario dinámico.</p>
           </div>
         </div>
       </DialogContent>
     </Dialog>
+
+    <Dialog
+      open={isFormModalOpen}
+      onOpenChange={(nextOpen) => {
+        setIsFormModalOpen(nextOpen);
+        if (!nextOpen) {
+          setSelectedDraft(null);
+          setVariables({});
+        }
+      }}
+    >
+      <DialogContent className="w-[95vw] max-w-2xl max-h-[90dvh] overflow-hidden">
+        <DialogHeader>
+          <DialogTitle>{selectedDraft?.title ?? 'Borrador'}</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 overflow-y-auto pr-1">
+          {placeholders.length > 0 ? (
+            <div className="space-y-3">
+              {placeholders.map((placeholder) => (
+                <div key={placeholder} className="space-y-1">
+                  <p className="text-sm font-medium">{placeholder}</p>
+                  <Input
+                    value={variables[placeholder] ?? ''}
+                    onChange={(event) =>
+                      setVariables((prev) => ({
+                        ...prev,
+                        [placeholder]: event.target.value,
+                      }))
+                    }
+                    placeholder={`Valor para ${placeholder}`}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Este borrador no tiene variables dinámicas.</p>
+          )}
+
+          {selectedDraft && (
+            <div className="rounded-md border bg-muted/30 p-3">
+              <p className="text-xs font-semibold text-muted-foreground mb-1">Vista previa</p>
+              <p className="text-sm whitespace-pre-wrap">
+                {selectedDraft.content.replace(PLACEHOLDER_REGEX, (_, rawKey: string) => {
+                  const key = rawKey.trim();
+                  return variables[key] ?? '';
+                })}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={() => setIsFormModalOpen(false)}>
+            Cancelar
+          </Button>
+          <Button onClick={handleInsert} disabled={!selectedDraft}>
+            Insertar
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
