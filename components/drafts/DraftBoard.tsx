@@ -113,7 +113,11 @@ export function DraftBoard({ droppableId, columnName, drafts, onEditDraft }: Pro
                               </div>
                             </div>
 
-                            <DraftContentPreview content={draft.content} clampLines={expanded ? undefined : 2} />
+                            <DraftContentPreview
+                              content={draft.content}
+                              clampLines={expanded ? undefined : 2}
+                              showVariableInputs={draft.draftType === 'dynamic'}
+                            />
                           </div>
                         </div>
                       </article>

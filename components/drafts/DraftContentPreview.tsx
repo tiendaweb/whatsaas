@@ -10,11 +10,19 @@ type Props = {
   content: string;
   clampLines?: number;
   className?: string;
+  showVariableInputs?: boolean;
+  predefinedVariables?: string[];
 };
 
 const PLACEHOLDER_REGEX = /\[\[([\w\-. ]+)\]\]/g;
 
-export function DraftContentPreview({ content, clampLines, className }: Props) {
+export function DraftContentPreview({
+  content,
+  clampLines,
+  className,
+  showVariableInputs,
+  predefinedVariables,
+}: Props) {
   const [variables, setVariables] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState(false);
 
@@ -26,6 +34,16 @@ export function DraftContentPreview({ content, clampLines, className }: Props) {
     }
     return Array.from(set);
   }, [content]);
+
+  const variableFields = useMemo(() => {
+    if (placeholders.length > 0) return placeholders;
+    if (showVariableInputs && (predefinedVariables?.length ?? 0) > 0) {
+      return Array.from(new Set(predefinedVariables?.map((variable) => variable.trim()).filter(Boolean)));
+    }
+    return [];
+  }, [placeholders, predefinedVariables, showVariableInputs]);
+
+  const showVariableSection = showVariableInputs === true || placeholders.length > 0;
 
   const renderedPreview = useMemo(() => {
     return content.replace(PLACEHOLDER_REGEX, (_, rawKey: string) => {
@@ -42,26 +60,33 @@ export function DraftContentPreview({ content, clampLines, className }: Props) {
 
   return (
     <div className={`space-y-4 ${className ?? ''}`}>
-      {placeholders.length > 0 && (
+      {showVariableSection && (
         <section className="rounded-lg border bg-muted/30 p-3 space-y-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Variables dinámicas</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {placeholders.map((placeholder) => (
-              <div key={placeholder} className="space-y-1">
-                <p className="text-xs text-muted-foreground">{placeholder}</p>
-                <Input
-                  value={variables[placeholder] ?? ''}
-                  onChange={(event) =>
-                    setVariables((prev) => ({
-                      ...prev,
-                      [placeholder]: event.target.value,
-                    }))
-                  }
-                  placeholder={`Ingresa ${placeholder}`}
-                />
-              </div>
-            ))}
-          </div>
+          {variableFields.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {variableFields.map((placeholder) => (
+                <div key={placeholder} className="space-y-1">
+                  <p className="text-xs text-muted-foreground">{placeholder}</p>
+                  <Input
+                    value={variables[placeholder] ?? ''}
+                    onChange={(event) =>
+                      setVariables((prev) => ({
+                        ...prev,
+                        [placeholder]: event.target.value,
+                      }))
+                    }
+                    placeholder={`Ingresa ${placeholder}`}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Este borrador no detectó variables automáticamente. Agrega placeholders como [[nombre]] para
+              completarlas aquí.
+            </p>
+          )}
         </section>
       )}
 
