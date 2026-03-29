@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { DragDropContext, type DropResult } from '@hello-pangea/dnd';
 import useSWR, { mutate } from 'swr';
-import { FileText, Loader2, Plus, Search } from 'lucide-react';
+import { FileText, Loader2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { DraftBoard } from '@/components/drafts/DraftBoard';
+import { DraftCategorySidebar } from '@/components/drafts/DraftCategorySidebar';
 import { DraftEditorModal } from '@/components/drafts/DraftEditorModal';
 import { DraftPreviewCard } from '@/components/drafts/DraftPreviewCard';
 import type {
@@ -30,6 +31,19 @@ const fetcher = async (url: string) => {
   return payload;
 };
 
+const NONE_DROPPABLE_ID = 'none';
+
+const toDroppableId = (categoryId: number | null) =>
+  categoryId == null ? NONE_DROPPABLE_ID : `category-${categoryId}`;
+
+const fromDroppableId = (droppableId: string): number | null => {
+  if (droppableId === NONE_DROPPABLE_ID) return null;
+  if (!droppableId.startsWith('category-')) return null;
+
+  const value = Number(droppableId.replace('category-', ''));
+  return Number.isNaN(value) ? null : value;
+};
+
 function ensureArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? value : [];
 }
@@ -39,6 +53,7 @@ export default function DraftsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingDraft, setEditingDraft] = useState<DraftItem | null>(null);
   const [selectedDraftId, setSelectedDraftId] = useState<number | null>(null);
+  const [activeCategoryDroppableId, setActiveCategoryDroppableId] = useState<string>(NONE_DROPPABLE_ID);
 
   const { data: drafts, isLoading: loadingDrafts } = useSWR<DraftItem[]>('/api/drafts', fetcher);
   const { data: categories, mutate: mutateCategories } = useSWR<DraftCategory[]>('/api/drafts/categories', fetcher);
@@ -64,6 +79,39 @@ export default function DraftsPage() {
     return Array.from(new Map(fromMembers.map((agent) => [agent.id, agent])).values());
   }, [teamMembers]);
 
+  const sortedCategories = useMemo(() => {
+    return [...ensureArray<DraftCategory>(categories)].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  }, [categories]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const queryCategory = params.get('category');
+    const storedCategory = window.localStorage.getItem('drafts.activeCategory');
+    const nextCategory = queryCategory || storedCategory || NONE_DROPPABLE_ID;
+    setActiveCategoryDroppableId(toDroppableId(fromDroppableId(nextCategory)));
+  }, []);
+
+  useEffect(() => {
+    const categoryId = fromDroppableId(activeCategoryDroppableId);
+
+    if (categoryId !== null && !sortedCategories.some((category) => category.id === categoryId)) {
+      setActiveCategoryDroppableId(NONE_DROPPABLE_ID);
+      return;
+    }
+
+    window.localStorage.setItem('drafts.activeCategory', activeCategoryDroppableId);
+    const params = new URLSearchParams(window.location.search);
+
+    if (categoryId === null) {
+      params.delete('category');
+    } else {
+      params.set('category', String(categoryId));
+    }
+
+    const nextUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`;
+    window.history.replaceState(null, '', nextUrl);
+  }, [activeCategoryDroppableId, sortedCategories]);
+
   const filteredDrafts = useMemo(() => {
     return ensureArray<DraftItem>(drafts).filter((draft) => {
       if (!query.trim()) return true;
@@ -72,34 +120,42 @@ export default function DraftsPage() {
     });
   }, [drafts, query]);
 
-  const sortedCategories = useMemo(() => {
-    return [...ensureArray<DraftCategory>(categories)].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-  }, [categories]);
-
-  const boardColumns = useMemo(() => {
-    const byCategory = new Map<number | null, DraftItem[]>();
+  const draftsByDroppable = useMemo(() => {
+    const map = new Map<string, DraftItem[]>();
 
     for (const draft of filteredDrafts) {
-      const key = draft.categoryId ?? null;
-      byCategory.set(key, [...(byCategory.get(key) ?? []), draft]);
+      const droppableId = toDroppableId(draft.categoryId ?? null);
+      map.set(droppableId, [...(map.get(droppableId) ?? []), draft]);
     }
 
-    const categoryColumns = sortedCategories.map((category) => ({
+    return map;
+  }, [filteredDrafts]);
+
+  const sidebarItems = useMemo(() => {
+    const categoryItems = sortedCategories.map((category) => ({
       ...category,
-      drafts: byCategory.get(category.id) ?? [],
+      droppableId: toDroppableId(category.id),
+      draftCount: draftsByDroppable.get(toDroppableId(category.id))?.length ?? 0,
     }));
 
     return [
-      ...categoryColumns,
       {
         id: -1,
         name: 'Sin categoría',
         color: 'gray',
-        position: categoryColumns.length,
-        drafts: byCategory.get(null) ?? [],
+        position: Number.MAX_SAFE_INTEGER,
+        droppableId: NONE_DROPPABLE_ID,
+        draftCount: draftsByDroppable.get(NONE_DROPPABLE_ID)?.length ?? 0,
+        fixed: true,
       },
+      ...categoryItems,
     ];
-  }, [filteredDrafts, sortedCategories]);
+  }, [draftsByDroppable, sortedCategories]);
+
+  const activeColumnName =
+    sidebarItems.find((item) => item.droppableId === activeCategoryDroppableId)?.name ?? 'Sin categoría';
+
+  const activeDrafts = draftsByDroppable.get(activeCategoryDroppableId) ?? [];
 
   useEffect(() => {
     if (filteredDrafts.length === 0) {
@@ -238,6 +294,34 @@ export default function DraftsPage() {
     refreshDrafts();
   };
 
+  const handleDragEnd = (result: DropResult) => {
+    if (!result.destination) return;
+
+    if (result.type === 'COLUMN') {
+      if (result.source.index === result.destination.index) return;
+      const next = [...sortedCategories];
+      const [moved] = next.splice(result.source.index, 1);
+      next.splice(result.destination.index, 0, moved);
+      void handleReorderCategories(next);
+      return;
+    }
+
+    if (result.type !== 'DRAFT') return;
+
+    const sourceCategoryId = fromDroppableId(result.source.droppableId);
+    const destinationCategoryId = fromDroppableId(result.destination.droppableId);
+
+    if (sourceCategoryId === destinationCategoryId) return;
+
+    const draftId = Number(result.draggableId.replace('draft-', ''));
+    if (Number.isNaN(draftId)) return;
+
+    const draft = filteredDrafts.find((item) => item.id === draftId);
+    if (!draft) return;
+
+    void handleMoveDraft(draft, destinationCategoryId);
+  };
+
   return (
     <div className="flex flex-col h-full bg-muted/40 p-4 md:p-6 overflow-hidden">
       <header className="flex justify-between items-center mb-4 shrink-0">
@@ -259,56 +343,55 @@ export default function DraftsPage() {
       </header>
 
       <section className="flex-1 min-h-0 rounded-xl border bg-background overflow-hidden">
-        <div className="h-full overflow-y-auto p-3 md:p-4 space-y-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              className="pl-10"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Buscar borrador..."
-            />
+        {loadingDrafts ? (
+          <div className="h-full flex items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
-
-          {loadingDrafts ? (
-            <div className="h-32 flex items-center justify-center">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : filteredDrafts.length === 0 ? (
-            <div className="h-40 flex flex-col items-center justify-center text-muted-foreground text-center px-2">
-              <FileText className="h-8 w-8 mb-2 opacity-40" />
-              <p className="text-sm">No hay borradores para los filtros actuales.</p>
-            </div>
-          ) : (
-            <>
-              <DraftBoard
-                columns={boardColumns}
-                categories={sortedCategories}
-                selectedDraftId={selectedDraftId}
-                onSelectDraft={setSelectedDraftId}
-                onOpenDetail={handleModalEdit}
+        ) : filteredDrafts.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-muted-foreground text-center px-2">
+            <FileText className="h-8 w-8 mb-2 opacity-40" />
+            <p className="text-sm">No hay borradores para los filtros actuales.</p>
+          </div>
+        ) : (
+          <DragDropContext onDragEnd={handleDragEnd}>
+            <div className="h-full flex flex-col md:flex-row min-h-0">
+              <DraftCategorySidebar
+                items={sidebarItems}
+                activeDroppableId={activeCategoryDroppableId}
+                query={query}
+                onQueryChange={setQuery}
+                onSelect={setActiveCategoryDroppableId}
                 onRenameCategory={handleRenameCategory}
                 onDeleteCategory={handleDeleteCategory}
-                onMoveDraft={handleMoveDraft}
-                onReorderCategories={handleReorderCategories}
               />
 
-              <div className="rounded-xl border bg-muted/30 p-3 md:p-5">
-                <div className="flex items-center justify-between gap-2 mb-3">
-                  <h2 className="text-sm font-semibold">Detalle del borrador seleccionado</h2>
-                </div>
-                {!selectedDraft ? (
-                  <div className="h-full min-h-[180px] flex flex-col items-center justify-center text-muted-foreground">
-                    <FileText className="h-12 w-12 opacity-30 mb-2" />
-                    <p>Selecciona un borrador para ver el detalle.</p>
+              <div className="flex-1 min-h-0 p-3 md:p-4 space-y-4 overflow-y-auto">
+                <DraftBoard
+                  droppableId={activeCategoryDroppableId}
+                  columnName={activeColumnName}
+                  drafts={activeDrafts}
+                  selectedDraftId={selectedDraftId}
+                  onSelectDraft={setSelectedDraftId}
+                  onOpenDetail={handleModalEdit}
+                />
+
+                <div className="rounded-xl border bg-muted/30 p-3 md:p-5">
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <h2 className="text-sm font-semibold">Detalle del borrador seleccionado</h2>
                   </div>
-                ) : (
-                  <DraftPreviewCard draft={selectedDraft} onEdit={handleModalEdit} />
-                )}
+                  {!selectedDraft ? (
+                    <div className="h-full min-h-[180px] flex flex-col items-center justify-center text-muted-foreground">
+                      <FileText className="h-12 w-12 opacity-30 mb-2" />
+                      <p>Selecciona un borrador para ver el detalle.</p>
+                    </div>
+                  ) : (
+                    <DraftPreviewCard draft={selectedDraft} onEdit={handleModalEdit} />
+                  )}
+                </div>
               </div>
-            </>
-          )}
-        </div>
+            </div>
+          </DragDropContext>
+        )}
       </section>
 
       <DraftEditorModal
