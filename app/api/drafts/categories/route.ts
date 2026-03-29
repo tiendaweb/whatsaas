@@ -65,7 +65,6 @@ export async function POST(request: NextRequest) {
         teamId: context.teamId,
         name,
         color,
-        order: position,
         position,
       })
       .returning();
@@ -161,7 +160,7 @@ export async function PATCH(request: NextRequest) {
 
         await db
           .update(messageDraftCategories)
-          .set({ position, order: position })
+          .set({ position })
           .where(and(eq(messageDraftCategories.id, categoryId), eq(messageDraftCategories.teamId, context.teamId)));
       }
 
