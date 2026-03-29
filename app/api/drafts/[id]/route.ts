@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { checkRoutePermission } from '@/lib/auth/permissions-guard';
+import { ensureDraftStorage } from '@/lib/drafts/bootstrap';
+import { parseDraftWritePayload } from '@/lib/drafts/payload';
 import {
   contacts,
   departments,
@@ -16,46 +18,6 @@ import {
 function parseId(value: string): number | null {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
-}
-
-function parseOptionalInt(value: unknown): number | null {
-  if (value === null || value === undefined || value === '' || value === 'null') return null;
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
-}
-
-function parseWorkflow(value: unknown) {
-  if (!value || typeof value !== 'object') return undefined;
-
-  const rawStages = Array.isArray((value as any).stages) ? (value as any).stages : [];
-  const rawTasks = Array.isArray((value as any).tasks) ? (value as any).tasks : [];
-
-  const stages = rawStages
-    .map((stage: any, index: number) => ({
-      id: String(stage?.id ?? `stage_${index}`),
-      name: String(stage?.name ?? '').trim(),
-      order: Number.isFinite(Number(stage?.order)) ? Number(stage.order) : index,
-      departmentId: parseOptionalInt(stage?.departmentId),
-    }))
-    .filter((stage: any) => stage.name.length > 0)
-    .sort((a: any, b: any) => a.order - b.order)
-    .map((stage: any, index: number) => ({ ...stage, order: index }));
-
-  const stageIds = new Set(stages.map((stage: any) => stage.id));
-  const tasks = rawTasks
-    .map((task: any, index: number) => ({
-      id: String(task?.id ?? `task_${index}`),
-      stageId: String(task?.stageId ?? ''),
-      name: String(task?.name ?? '').trim(),
-      order: Number.isFinite(Number(task?.order)) ? Number(task.order) : index,
-      type: task?.type === 'group' || task?.type === 'subtask' ? task.type : 'task',
-      parentTaskId: task?.parentTaskId ? String(task.parentTaskId) : null,
-    }))
-    .filter((task: any) => task.name.length > 0 && stageIds.has(task.stageId))
-    .sort((a: any, b: any) => a.order - b.order)
-    .map((task: any, index: number) => ({ ...task, order: index }));
-
-  return { stages, tasks };
 }
 
 function normalizeDraft(draft: any) {
@@ -154,6 +116,11 @@ async function validateDraftReferences(params: {
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const storageReady = await ensureDraftStorage('api.drafts.[id].GET');
+    if (!storageReady.ok) {
+      return NextResponse.json({ error: storageReady.clientMessage }, { status: storageReady.status });
+    }
+
     const { error, context } = await checkRoutePermission('drafts');
     if (error || !context) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -182,37 +149,31 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const storageReady = await ensureDraftStorage('api.drafts.[id].PUT');
+    if (!storageReady.ok) {
+      return NextResponse.json({ error: storageReady.clientMessage }, { status: storageReady.status });
+    }
+
     const { error, context } = await checkRoutePermission('drafts');
     if (error || !context) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const draftId = parseId((await params).id);
     if (!draftId) return NextResponse.json({ error: 'Invalid draft id' }, { status: 400 });
 
-    const body = await request.json();
-    const title = String(body?.title ?? '').trim();
-    const content = String(body?.content ?? '').trim();
-    if (!title || !content) {
-      return NextResponse.json({ error: 'title and content are required' }, { status: 400 });
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
     }
 
-    const categoryId = parseOptionalInt(body?.categoryId);
-    const advancedMode = Boolean(body?.advancedMode);
-    const assignedUserId = advancedMode ? parseOptionalInt(body?.assignedUserId) : null;
-    const departmentId = advancedMode ? parseOptionalInt(body?.departmentId) : null;
-    const contactId = advancedMode ? parseOptionalInt(body?.contactId) : null;
-    const isArchived = Boolean(body?.isArchived);
-
-    const stages = advancedMode ? parseWorkflow(body?.stages) ?? { stages: [], tasks: [] } : null;
-
-    const tagIds: number[] = Array.isArray(body?.tagIds)
-      ? Array.from(
-          new Set(
-            body.tagIds
-              .map((tagId: unknown) => Number(tagId))
-              .filter((tagId: number) => Number.isInteger(tagId) && tagId > 0),
-          ),
-        )
-      : [];
+    const payloadResult = parseDraftWritePayload(body);
+    if (!payloadResult.ok) {
+      return NextResponse.json({ error: payloadResult.error }, { status: 400 });
+    }
+    const isArchived = Boolean((body as any)?.isArchived);
+    const { title, content, categoryId, assignedUserId, departmentId, contactId, stages, tagIds } =
+      payloadResult.value;
     const refsValidation = await validateDraftReferences({
       teamId: context.teamId,
       categoryId,
@@ -293,6 +254,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
 export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const storageReady = await ensureDraftStorage('api.drafts.[id].DELETE');
+    if (!storageReady.ok) {
+      return NextResponse.json({ error: storageReady.clientMessage }, { status: storageReady.status });
+    }
+
     const { error, context } = await checkRoutePermission('drafts');
     if (error || !context) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 

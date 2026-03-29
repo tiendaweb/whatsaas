@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { and, asc, eq } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { checkRoutePermission } from '@/lib/auth/permissions-guard';
+import { ensureDraftStorage } from '@/lib/drafts/bootstrap';
 import { messageDraftCategories } from '@/lib/db/schema';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    const storageReady = await ensureDraftStorage('api.drafts.categories.GET');
+    if (!storageReady.ok) {
+      return NextResponse.json({ error: storageReady.clientMessage }, { status: storageReady.status });
+    }
+
     const { error, context } = await checkRoutePermission('drafts');
     if (error || !context) return error ?? NextResponse.json([]);
 
@@ -25,6 +31,11 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const storageReady = await ensureDraftStorage('api.drafts.categories.POST');
+    if (!storageReady.ok) {
+      return NextResponse.json({ error: storageReady.clientMessage }, { status: storageReady.status });
+    }
+
     const { error, context } = await checkRoutePermission('drafts');
     if (error || !context) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -60,6 +71,11 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const storageReady = await ensureDraftStorage('api.drafts.categories.DELETE');
+    if (!storageReady.ok) {
+      return NextResponse.json({ error: storageReady.clientMessage }, { status: storageReady.status });
+    }
+
     const { error, context } = await checkRoutePermission('drafts');
     if (error || !context) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
