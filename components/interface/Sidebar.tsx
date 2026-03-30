@@ -16,6 +16,7 @@ import {
   Bot,
   LayoutDashboard,
   FileText,
+  Plug,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -38,6 +39,7 @@ import type { MemberPermissions } from '@/lib/permissions';
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 type MembershipData = { role: string; permissions: MemberPermissions };
+type PluginNavItem = { href: string; label: string; icon?: string; order?: number };
 
 const NAV_PERMISSION_MAP: Record<string, keyof Omit<MemberPermissions, 'chatVisibility'>> = {
   '/automation': 'automation',
@@ -55,6 +57,7 @@ export function Sidebar() {
   const { data: user } = useSWR<User>('/api/user', fetcher);
   const { data: features } = useSWR('/api/features/all', fetcher);
   const { data: membership } = useSWR<MembershipData>('/api/team/membership', fetcher);
+  const { data: pluginNavItems } = useSWR<PluginNavItem[]>('/api/plugins/nav', fetcher);
   const [isExpanded, setIsExpanded] = useState(false);
 
   const allNavItems = [
@@ -77,6 +80,16 @@ export function Sidebar() {
     }
     return true;
   });
+
+  const dynamicPluginNavItems =
+    pluginNavItems?.map((item) => ({
+      href: item.href,
+      icon: Plug,
+      label: item.label,
+      feature: null,
+    })) ?? [];
+
+  const mergedNavItems = [...navItems, ...dynamicPluginNavItems];
 
   async function handleSignOut() {
     await signOut();
@@ -109,7 +122,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 flex flex-col gap-2 p-3">
-        {navItems.map((item) => {
+        {mergedNavItems.map((item) => {
           const isActive = pathname === item.href || (item.href !== '/dashboard' && item.href !== '/analytics' && pathname.startsWith(item.href));
           return (
             <Link

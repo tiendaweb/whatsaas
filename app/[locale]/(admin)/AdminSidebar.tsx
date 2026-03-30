@@ -16,6 +16,7 @@ import {
   Settings,
   LayoutTemplate,
   FileCode2,
+  Puzzle,
 } from "lucide-react";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
@@ -30,6 +31,7 @@ const navItems = [
   { href: "/admin/landing/pages", label: "Paginas", icon: FileCode2 },
   { href: "/admin/chat-theme", label: "Chat Theme", icon: MessageSquare },
   { href: "/admin/payments", label: "Payments", icon: Wallet },
+  { href: "/admin/plugins", label: "Plugins", icon: Puzzle },
   { href: "/admin/settings", label: "Ajustes", icon: Settings },
 ];
 
