@@ -119,7 +119,7 @@ export function Sidebar() {
     <aside 
       className={cn(
         "flex flex-col h-screen bg-background border-r border-border transition-all duration-300 ease-in-out z-50",
-        isExpanded ? "w-64" : "w-[70px]"
+        isExpanded ? "w-56" : "w-[70px]"
       )}
     >
       <div className="h-[60px] flex items-center justify-center border-b border-border relative">
