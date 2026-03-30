@@ -100,7 +100,7 @@ export function Sidebar() {
   const dynamicPluginNavItems =
     pluginNavItems?.map((item) => {
       const isMarketplace = item.href.startsWith('/plugins/marketplace');
-      const marketplaceLabel = hasMarketplaceEntitlements ? `${item.label} · Contratado` : item.label;
+      const marketplaceLabel = hasMarketplaceEntitlements ? `${item.label}` : item.label;
 
       return {
         href: item.href,
