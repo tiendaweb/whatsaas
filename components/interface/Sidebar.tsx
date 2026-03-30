@@ -17,6 +17,10 @@ import {
   LayoutDashboard,
   FileText,
   Plug,
+  Rocket,
+  CalendarDays,
+  NotebookText,
+  type LucideIcon,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -40,6 +44,14 @@ const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 type MembershipData = { role: string; permissions: MemberPermissions };
 type PluginNavItem = { href: string; label: string; icon?: string; order?: number };
+
+const PLUGIN_NAV_ICON_MAP: Record<string, LucideIcon> = {
+  Bot,
+  CalendarDays,
+  NotebookText,
+  Plug,
+  Rocket,
+};
 
 const NAV_PERMISSION_MAP: Record<string, keyof Omit<MemberPermissions, 'chatVisibility'>> = {
   '/automation': 'automation',
@@ -84,7 +96,7 @@ export function Sidebar() {
   const dynamicPluginNavItems =
     pluginNavItems?.map((item) => ({
       href: item.href,
-      icon: Plug,
+      icon: item.icon ? (PLUGIN_NAV_ICON_MAP[item.icon] ?? Plug) : Plug,
       label: item.label,
       feature: null,
     })) ?? [];

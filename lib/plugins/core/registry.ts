@@ -11,6 +11,7 @@ const pluginLoaders: Record<string, PluginLoader> = {
   'ai-chat': () => import('@/lib/plugins/ai-chat/manifest'),
   notes: () => import('@/lib/plugins/notes/manifest'),
   calendar: () => import('@/lib/plugins/calendar/manifest'),
+  marketplace: () => import('@/lib/plugins/marketplace/manifest'),
 };
 
 const manifestCache = new Map<string, AppPluginManifest>();
