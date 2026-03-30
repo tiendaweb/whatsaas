@@ -1,10 +1,6 @@
 import { notFound } from 'next/navigation';
 import { getTeamForUser } from '@/lib/db/queries';
 import { resolvePluginRouteForTeam } from '@/lib/plugins/core/dashboard-loader';
-import { NotesDashboard } from '@/lib/plugins/notes/ui/NotesDashboard';
-import { NotesSettings } from '@/lib/plugins/notes/ui/NotesSettings';
-import { CalendarDashboard } from '@/lib/plugins/calendar/ui/CalendarDashboard';
-import { CalendarSettings } from '@/lib/plugins/calendar/ui/CalendarSettings';
 
 type PluginPageProps = {
   params: Promise<{
@@ -21,20 +17,12 @@ export default async function PluginPage({ params }: PluginPageProps) {
     notFound();
   }
 
-  const path = `/plugins/${pluginId}${slug?.length ? `/${slug.join('/')}` : ''}`;
-  const resolved = await resolvePluginRouteForTeam(team.id, path);
+  const resolved = await resolvePluginRouteForTeam(team.id, pluginId, slug);
 
   if (!resolved) {
     notFound();
   }
 
-  if (pluginId === 'notes') {
-    return slug?.[0] === 'settings' ? <NotesSettings /> : <NotesDashboard />;
-  }
-
-  if (pluginId === 'calendar') {
-    return slug?.[0] === 'settings' ? <CalendarSettings /> : <CalendarDashboard />;
-  }
-
-  return <div className="p-6 text-sm text-muted-foreground">{resolved.route.title}</div>;
+  const PageRenderer = resolved.renderer;
+  return <PageRenderer pluginId={pluginId} slug={slug} routeTitle={resolved.route.title} />;
 }
