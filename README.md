@@ -121,6 +121,14 @@ Plataforma SaaS para operación comercial y soporte sobre WhatsApp, con gestión
 - Plugin local `ai-chat` ya presente en `lib/plugins`.
 - Arquitectura en transición hacia mayor extensibilidad por plugins, empezando por pagos.
 
+### Reglas de activación de plugins de app
+- Cada plugin declara `activationMode` (`system | global | user | hybrid`) en su manifest.
+- `system` siempre está activo y no puede desactivarse desde admin.
+- `global` se controla por team.
+- `user` se controla por asignación individual.
+- `hybrid` permite default por team con override por usuario.
+- `marketplace` está marcado como `system` y se auto-provisiona activo para cada team.
+
 ### Pagos hoy
 Actualmente el core está acoplado principalmente a Stripe en:
 - `lib/payments/stripe.ts`

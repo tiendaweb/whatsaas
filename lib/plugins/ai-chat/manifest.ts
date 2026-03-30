@@ -8,7 +8,8 @@ const aiChatSettingsSchema = z.object({
 
 const manifest: AppPluginManifest<typeof aiChatSettingsSchema> = {
   id: 'ai-chat',
-  displayName: 'AI Chat Assistant',
+  displayName:  'AI Chat Assistant',
+  activationMode: 'global',
   scopes: ['dashboard.nav', 'dashboard.page', 'admin.settings'],
   routes: [
     {

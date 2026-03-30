@@ -7,7 +7,8 @@ const marketplaceSettingsSchema = z.object({
 
 const manifest: AppPluginManifest<typeof marketplaceSettingsSchema> = {
   id: 'marketplace',
-  displayName: 'Marketplace',
+  displayName:  'Marketplace',
+  activationMode: 'system',
   scopes: ['dashboard.nav', 'dashboard.page'],
   routes: [
     { path: '/plugins/marketplace', title: 'Marketplace', scope: 'dashboard.page' },

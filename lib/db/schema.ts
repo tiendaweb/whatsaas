@@ -1455,6 +1455,50 @@ export const teamPlugins = pgTable(
   }),
 );
 
+export const pluginSystemStates = pgTable(
+  "plugin_system_states",
+  {
+    id: serial("id").primaryKey(),
+    pluginId: varchar("plugin_id", { length: 80 }).notNull().unique(),
+    enabledByDefault: boolean("enabled_by_default").notNull().default(false),
+    updatedBy: integer("updated_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    pluginEnabledIdx: index("plugin_system_states_enabled_idx").on(table.enabledByDefault),
+  }),
+);
+
+export const teamMemberPlugins = pgTable(
+  "team_member_plugins",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    pluginId: varchar("plugin_id", { length: 80 }).notNull(),
+    enabled: boolean("enabled").notNull().default(false),
+    updatedBy: integer("updated_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamUserPluginUnique: unique("team_member_plugins_team_user_plugin_idx").on(
+      table.teamId,
+      table.userId,
+      table.pluginId,
+    ),
+    teamUserIdx: index("team_member_plugins_team_user_idx").on(table.teamId, table.userId),
+    teamPluginIdx: index("team_member_plugins_team_plugin_idx").on(table.teamId, table.pluginId),
+  }),
+);
+
 export const teamNotes = pgTable(
   "team_notes",
   {
@@ -1737,6 +1781,10 @@ export type NewTeamMarketplaceEntitlement =
 
 export type TeamPlugin = typeof teamPlugins.$inferSelect;
 export type NewTeamPlugin = typeof teamPlugins.$inferInsert;
+export type PluginSystemState = typeof pluginSystemStates.$inferSelect;
+export type NewPluginSystemState = typeof pluginSystemStates.$inferInsert;
+export type TeamMemberPlugin = typeof teamMemberPlugins.$inferSelect;
+export type NewTeamMemberPlugin = typeof teamMemberPlugins.$inferInsert;
 export type TeamNote = typeof teamNotes.$inferSelect;
 export type NewTeamNote = typeof teamNotes.$inferInsert;
 export type TeamEvent = typeof teamEvents.$inferSelect;

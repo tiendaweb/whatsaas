@@ -8,7 +8,8 @@ const notesSettingsSchema = z.object({
 
 const manifest: AppPluginManifest<typeof notesSettingsSchema> = {
   id: 'notes',
-  displayName: 'Team Notes',
+  displayName:  'Team Notes',
+  activationMode: 'global',
   scopes: ['dashboard.nav', 'dashboard.page', 'admin.settings'],
   routes: [
     { path: '/plugins/notes', title: 'Notas de equipo', scope: 'dashboard.page' },
