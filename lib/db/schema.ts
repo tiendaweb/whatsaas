@@ -1243,6 +1243,147 @@ export const paymentWebhookEvents = pgTable(
   }),
 );
 
+export const marketplaceItems = pgTable(
+  "marketplace_items",
+  {
+    id: serial("id").primaryKey(),
+    title: varchar("title", { length: 180 }).notNull(),
+    subtitle: varchar("subtitle", { length: 255 }),
+    iconUrl: text("icon_url"),
+    imageUrl: text("image_url"),
+    description: text("description"),
+    category: varchar("category", { length: 80 }).notNull().default("general"),
+    tags: jsonb("tags").$type<string[]>().notNull().default([]),
+    interfaceBlocks: jsonb("interface_blocks")
+      .$type<Record<string, unknown>[]>()
+      .notNull()
+      .default([]),
+    customFields: jsonb("custom_fields")
+      .$type<Record<string, unknown>[]>()
+      .notNull()
+      .default([]),
+    status: varchar("status", { length: 30 }).notNull().default("draft"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    categoryStatusIdx: index("marketplace_items_category_status_idx").on(
+      table.category,
+      table.status,
+    ),
+  }),
+);
+
+export const marketplaceItemPrices = pgTable(
+  "marketplace_item_prices",
+  {
+    id: serial("id").primaryKey(),
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => marketplaceItems.id, { onDelete: "cascade" }),
+    billingType: varchar("billing_type", { length: 20 }).notNull(),
+    amount: integer("amount").notNull().default(0),
+    currency: varchar("currency", { length: 3 }).notNull().default("usd"),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    itemEnabledIdx: index("marketplace_item_prices_item_enabled_idx").on(
+      table.itemId,
+      table.enabled,
+    ),
+  }),
+);
+
+export const marketplaceOrders = pgTable(
+  "marketplace_orders",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => marketplaceItems.id, { onDelete: "restrict" }),
+    status: varchar("status", { length: 40 }).notNull().default("pending_review"),
+    total: integer("total").notNull().default(0),
+    requestedBy: integer("requested_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    reviewedBy: integer("reviewed_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    reviewedAt: timestamp("reviewed_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamStatusIdx: index("marketplace_orders_team_status_idx").on(
+      table.teamId,
+      table.status,
+    ),
+    statusCreatedIdx: index("marketplace_orders_status_created_at_idx").on(
+      table.status,
+      table.createdAt,
+    ),
+  }),
+);
+
+export const marketplaceOrderLines = pgTable(
+  "marketplace_order_lines",
+  {
+    id: serial("id").primaryKey(),
+    orderId: integer("order_id")
+      .notNull()
+      .references(() => marketplaceOrders.id, { onDelete: "cascade" }),
+    priceId: integer("price_id")
+      .notNull()
+      .references(() => marketplaceItemPrices.id, { onDelete: "restrict" }),
+    quantity: integer("quantity").notNull().default(1),
+    unitAmount: integer("unit_amount").notNull(),
+    currency: varchar("currency", { length: 3 }).notNull().default("usd"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    orderIdIdx: index("marketplace_order_lines_order_id_idx").on(table.orderId),
+  }),
+);
+
+export const marketplaceOrderStatusEvents = pgTable(
+  "marketplace_order_status_events",
+  {
+    id: serial("id").primaryKey(),
+    orderId: integer("order_id")
+      .notNull()
+      .references(() => marketplaceOrders.id, { onDelete: "cascade" }),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    previousStatus: varchar("previous_status", { length: 40 }),
+    nextStatus: varchar("next_status", { length: 40 }).notNull(),
+    changedBy: integer("changed_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    reason: text("reason"),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    orderCreatedIdx: index("marketplace_order_status_events_order_created_idx").on(
+      table.orderId,
+      table.createdAt,
+    ),
+    teamCreatedIdx: index("marketplace_order_status_events_team_created_idx").on(
+      table.teamId,
+      table.createdAt,
+    ),
+  }),
+);
+
 export const teamPlugins = pgTable(
   "team_plugins",
   {
@@ -1383,6 +1524,83 @@ export const passwordResetTokensRelations = relations(
   }),
 );
 
+export const marketplaceItemsRelations = relations(
+  marketplaceItems,
+  ({ many }) => ({
+    prices: many(marketplaceItemPrices),
+    orders: many(marketplaceOrders),
+  }),
+);
+
+export const marketplaceItemPricesRelations = relations(
+  marketplaceItemPrices,
+  ({ one, many }) => ({
+    item: one(marketplaceItems, {
+      fields: [marketplaceItemPrices.itemId],
+      references: [marketplaceItems.id],
+    }),
+    orderLines: many(marketplaceOrderLines),
+  }),
+);
+
+export const marketplaceOrdersRelations = relations(
+  marketplaceOrders,
+  ({ one, many }) => ({
+    team: one(teams, {
+      fields: [marketplaceOrders.teamId],
+      references: [teams.id],
+    }),
+    item: one(marketplaceItems, {
+      fields: [marketplaceOrders.itemId],
+      references: [marketplaceItems.id],
+    }),
+    requestedByUser: one(users, {
+      fields: [marketplaceOrders.requestedBy],
+      references: [users.id],
+      relationName: "marketplace_order_requested_by_user",
+    }),
+    reviewedByUser: one(users, {
+      fields: [marketplaceOrders.reviewedBy],
+      references: [users.id],
+      relationName: "marketplace_order_reviewed_by_user",
+    }),
+    lines: many(marketplaceOrderLines),
+    statusEvents: many(marketplaceOrderStatusEvents),
+  }),
+);
+
+export const marketplaceOrderLinesRelations = relations(
+  marketplaceOrderLines,
+  ({ one }) => ({
+    order: one(marketplaceOrders, {
+      fields: [marketplaceOrderLines.orderId],
+      references: [marketplaceOrders.id],
+    }),
+    price: one(marketplaceItemPrices, {
+      fields: [marketplaceOrderLines.priceId],
+      references: [marketplaceItemPrices.id],
+    }),
+  }),
+);
+
+export const marketplaceOrderStatusEventsRelations = relations(
+  marketplaceOrderStatusEvents,
+  ({ one }) => ({
+    order: one(marketplaceOrders, {
+      fields: [marketplaceOrderStatusEvents.orderId],
+      references: [marketplaceOrders.id],
+    }),
+    team: one(teams, {
+      fields: [marketplaceOrderStatusEvents.teamId],
+      references: [teams.id],
+    }),
+    changedByUser: one(users, {
+      fields: [marketplaceOrderStatusEvents.changedBy],
+      references: [users.id],
+    }),
+  }),
+);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Team = typeof teams.$inferSelect;
@@ -1442,6 +1660,19 @@ export type NewPaymentProviderSetting =
 
 export type ManualPayment = typeof manualPayments.$inferSelect;
 export type NewManualPayment = typeof manualPayments.$inferInsert;
+
+export type MarketplaceItem = typeof marketplaceItems.$inferSelect;
+export type NewMarketplaceItem = typeof marketplaceItems.$inferInsert;
+export type MarketplaceItemPrice = typeof marketplaceItemPrices.$inferSelect;
+export type NewMarketplaceItemPrice = typeof marketplaceItemPrices.$inferInsert;
+export type MarketplaceOrder = typeof marketplaceOrders.$inferSelect;
+export type NewMarketplaceOrder = typeof marketplaceOrders.$inferInsert;
+export type MarketplaceOrderLine = typeof marketplaceOrderLines.$inferSelect;
+export type NewMarketplaceOrderLine = typeof marketplaceOrderLines.$inferInsert;
+export type MarketplaceOrderStatusEvent =
+  typeof marketplaceOrderStatusEvents.$inferSelect;
+export type NewMarketplaceOrderStatusEvent =
+  typeof marketplaceOrderStatusEvents.$inferInsert;
 
 export type TeamPlugin = typeof teamPlugins.$inferSelect;
 export type NewTeamPlugin = typeof teamPlugins.$inferInsert;
