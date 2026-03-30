@@ -1,8 +1,9 @@
 import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
-import { teamMembers, teamPlugins } from '@/lib/db/schema';
+import { pluginSystemStates, teamMemberPlugins, teamMembers, teamPlugins } from '@/lib/db/schema';
 import type { AppPluginManifest, PluginNavItem } from './types';
 import type { MemberPermissions } from '@/lib/permissions';
+import { ensureSystemPluginStateForTeam } from './service';
 
 type PluginManifestModule = { default: AppPluginManifest };
 type PluginLoader = () => Promise<PluginManifestModule>;
@@ -46,36 +47,63 @@ export type TeamPluginResolution = {
   manifest: AppPluginManifest;
 };
 
-export async function resolveActivePluginsForTeam(teamId: number): Promise<TeamPluginResolution[]> {
+export async function resolveActivePluginsForTeam(teamId: number, userId?: number): Promise<TeamPluginResolution[]> {
   const manifests = await getRegisteredPlugins();
-  let installed: Array<typeof teamPlugins.$inferSelect> = [];
 
-  try {
-    installed = await db
-      .select()
-      .from(teamPlugins)
-      .where(and(eq(teamPlugins.teamId, teamId), eq(teamPlugins.installed, true), eq(teamPlugins.enabled, true)));
-  } catch {
-    return [];
-  }
+  await ensureSystemPluginStateForTeam(teamId);
 
-  const manifestMap = new Map(manifests.map((item) => [item.id, item]));
+  const [installed, systemDefaults, userOverrides] = await Promise.all([
+    db.select().from(teamPlugins).where(eq(teamPlugins.teamId, teamId)),
+    db.select().from(pluginSystemStates),
+    userId
+      ? db
+          .select()
+          .from(teamMemberPlugins)
+          .where(and(eq(teamMemberPlugins.teamId, teamId), eq(teamMemberPlugins.userId, userId)))
+      : Promise.resolve([] as Array<typeof teamMemberPlugins.$inferSelect>),
+  ]);
 
-  return installed
-    .map((row) => {
-      const manifest = manifestMap.get(row.pluginId);
-      if (!manifest) return null;
+  const teamStateMap = new Map(installed.map((row) => [row.pluginId, row]));
+  const systemStateMap = new Map(systemDefaults.map((row) => [row.pluginId, row]));
+  const userOverrideMap = new Map(userOverrides.map((row) => [row.pluginId, row]));
 
+  return manifests
+    .filter((manifest) => {
+      if (manifest.activationMode === 'system') {
+        return true;
+      }
+
+      if (manifest.activationMode === 'global') {
+        return teamStateMap.get(manifest.id)?.enabled === true;
+      }
+
+      if (manifest.activationMode === 'user') {
+        return userOverrideMap.get(manifest.id)?.enabled === true;
+      }
+
+      const override = userOverrideMap.get(manifest.id);
+      if (override) {
+        return override.enabled;
+      }
+
+      const teamEnabled = teamStateMap.get(manifest.id)?.enabled;
+      if (typeof teamEnabled === 'boolean') {
+        return teamEnabled;
+      }
+
+      return systemStateMap.get(manifest.id)?.enabledByDefault === true;
+    })
+    .map((manifest) => {
+      const row = teamStateMap.get(manifest.id);
       return {
-        pluginId: row.pluginId,
-        enabled: row.enabled,
-        installedAt: row.installedAt,
-        installedBy: row.installedBy,
-        settings: (row.settings as Record<string, unknown>) ?? {},
+        pluginId: manifest.id,
+        enabled: true,
+        installedAt: row?.installedAt ?? new Date(0),
+        installedBy: row?.installedBy ?? null,
+        settings: (row?.settings as Record<string, unknown>) ?? {},
         manifest,
       } satisfies TeamPluginResolution;
-    })
-    .filter((item): item is TeamPluginResolution => item !== null);
+    });
 }
 
 const pluginPermissionMap: Record<string, keyof Omit<MemberPermissions, 'chatVisibility'>> = {
@@ -86,7 +114,7 @@ const pluginPermissionMap: Record<string, keyof Omit<MemberPermissions, 'chatVis
 };
 
 export async function resolveDashboardNavForTeam(teamId: number, userId?: number): Promise<PluginNavItem[]> {
-  const activePlugins = await resolveActivePluginsForTeam(teamId);
+  const activePlugins = await resolveActivePluginsForTeam(teamId, userId);
   let memberPermissions: MemberPermissions | null = null;
   let memberRole: string | null = null;
 

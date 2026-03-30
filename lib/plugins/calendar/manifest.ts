@@ -8,7 +8,8 @@ const calendarSettingsSchema = z.object({
 
 const manifest: AppPluginManifest<typeof calendarSettingsSchema> = {
   id: 'calendar',
-  displayName: 'Team Calendar',
+  displayName:  'Team Calendar',
+  activationMode: 'global',
   scopes: ['dashboard.nav', 'dashboard.page', 'admin.settings'],
   routes: [
     { path: '/plugins/calendar', title: 'Calendario del equipo', scope: 'dashboard.page' },

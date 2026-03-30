@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 export const pluginScopeSchema = z.enum(['dashboard.nav', 'dashboard.page', 'admin.settings']);
 export type PluginScope = z.infer<typeof pluginScopeSchema>;
+export const pluginActivationModeSchema = z.enum(['system', 'global', 'user', 'hybrid']);
+export type PluginActivationMode = z.infer<typeof pluginActivationModeSchema>;
 
 export const pluginNavItemSchema = z.object({
   label: z.string().min(1),
@@ -32,6 +34,7 @@ export type PluginLifecycleHandler = (context: PluginInstallContext) => Promise<
 export type AppPluginManifest<TSettings extends z.ZodTypeAny = z.ZodTypeAny> = {
   id: string;
   displayName: string;
+  activationMode: PluginActivationMode;
   scopes: PluginScope[];
   routes: PluginRoute[];
   navItems: PluginNavItem[];
