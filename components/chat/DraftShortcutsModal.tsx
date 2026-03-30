@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileText, Loader2, Sparkles } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -44,6 +44,7 @@ export function DraftShortcutsModal({
   const [selectedDraft, setSelectedDraft] = useState<DraftItem | null>(null);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [isInferringVariables, setIsInferringVariables] = useState(false);
+  const placeholderInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const filteredDrafts = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -184,7 +185,7 @@ export function DraftShortcutsModal({
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
-          className="w-[96vw] max-w-5xl max-h-[90dvh] overflow-hidden gap-0 rounded-lg p-0 flex flex-col"
+          className="h-[100dvh] w-[100vw] max-h-[100dvh] max-w-none overflow-hidden gap-0 rounded-none p-0 flex flex-col"
           onKeyDown={(event) => {
             if (!open) return;
 
@@ -200,8 +201,7 @@ export function DraftShortcutsModal({
               setSelectedIndex((prev) => (prev - 1 + filteredDrafts.length) % filteredDrafts.length);
             }
 
-            if (event.key === 'Enter') {
-              if ((event.target as HTMLElement).tagName.toLowerCase() === 'input') return;
+            if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault();
               if (highlightedDraft) {
                 handleSelectDraft(highlightedDraft);
@@ -226,6 +226,7 @@ export function DraftShortcutsModal({
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Escribí para filtrar por título"
+                className="focus-visible:border-zinc-700 focus-visible:ring-zinc-700"
               />
 
               <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border">
@@ -276,7 +277,23 @@ export function DraftShortcutsModal({
           }
         }}
       >
-        <DialogContent className="max-h-[90dvh] w-[95vw] max-w-2xl overflow-hidden p-0 flex flex-col">
+        <DialogContent
+          className="h-[100dvh] w-[100vw] max-h-[100dvh] max-w-none overflow-hidden p-0 flex flex-col rounded-none"
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' || event.shiftKey) return;
+            if (!selectedDraft) return;
+
+            event.preventDefault();
+            if (!hasUnfilledPlaceholders) {
+              handleInsert();
+              return;
+            }
+
+            const firstEmptyPlaceholder = placeholders.find((placeholder) => !(variables[placeholder] ?? '').trim());
+            if (!firstEmptyPlaceholder) return;
+            placeholderInputRefs.current[firstEmptyPlaceholder]?.focus();
+          }}
+        >
           <DialogHeader className="sticky top-0 z-10 border-b bg-background px-6 py-4">
             <DialogTitle>Paso 2: Completar variables</DialogTitle>
             <DialogDescription>
@@ -294,6 +311,9 @@ export function DraftShortcutsModal({
                   <div key={placeholder} className="space-y-1">
                     <p className="text-sm font-medium">{placeholder}</p>
                     <Input
+                      ref={(node) => {
+                        placeholderInputRefs.current[placeholder] = node;
+                      }}
                       value={variables[placeholder] ?? ''}
                       onChange={(event) =>
                         setVariables((prev) => ({
@@ -302,6 +322,7 @@ export function DraftShortcutsModal({
                         }))
                       }
                       placeholder={`Valor para ${placeholder}`}
+                      className="focus-visible:border-zinc-700 focus-visible:ring-zinc-700"
                     />
                   </div>
                 ))}
