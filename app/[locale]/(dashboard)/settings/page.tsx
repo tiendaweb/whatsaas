@@ -270,6 +270,10 @@ function PermissionsDialog({
     { key: 'templates', label: t('perm_templates') },
     { key: 'campaigns', label: t('perm_campaigns') },
     { key: 'settings', label: t('perm_settings') },
+    { key: 'notesRead', label: 'Notes: lectura' },
+    { key: 'notesWrite', label: 'Notes: escritura' },
+    { key: 'calendarRead', label: 'Calendar: lectura' },
+    { key: 'calendarWrite', label: 'Calendar: escritura' },
   ];
 
   return (

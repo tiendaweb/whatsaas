@@ -10,6 +10,10 @@ export type MemberPermissions = {
   templates: boolean;
   campaigns: boolean;
   settings: boolean;
+  notesRead: boolean;
+  notesWrite: boolean;
+  calendarRead: boolean;
+  calendarWrite: boolean;
   chatVisibility: ChatVisibility;
 };
 
@@ -22,6 +26,10 @@ export const ROLE_PRESETS: Record<TeamRole, MemberPermissions> = {
     templates: true,
     campaigns: true,
     settings: true,
+    notesRead: true,
+    notesWrite: true,
+    calendarRead: true,
+    calendarWrite: true,
     chatVisibility: 'all',
   },
   admin: {
@@ -32,6 +40,10 @@ export const ROLE_PRESETS: Record<TeamRole, MemberPermissions> = {
     templates: true,
     campaigns: true,
     settings: false,
+    notesRead: true,
+    notesWrite: true,
+    calendarRead: true,
+    calendarWrite: true,
     chatVisibility: 'all',
   },
   agent: {
@@ -42,6 +54,10 @@ export const ROLE_PRESETS: Record<TeamRole, MemberPermissions> = {
     templates: false,
     campaigns: false,
     settings: false,
+    notesRead: false,
+    notesWrite: false,
+    calendarRead: false,
+    calendarWrite: false,
     chatVisibility: 'assigned',
   },
 };
@@ -83,5 +99,7 @@ export const ROUTE_PERMISSIONS: Record<string, PermissionResource> = {
   '/drafts': 'drafts',
   '/templates': 'templates',
   '/campaigns': 'campaigns',
+  '/plugins/notes': 'notesRead',
+  '/plugins/calendar': 'calendarRead',
   '/settings': 'settings',
 };

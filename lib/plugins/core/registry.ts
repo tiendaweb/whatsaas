@@ -1,13 +1,16 @@
 import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
-import { teamPlugins } from '@/lib/db/schema';
+import { teamMembers, teamPlugins } from '@/lib/db/schema';
 import type { AppPluginManifest, PluginNavItem } from './types';
+import type { MemberPermissions } from '@/lib/permissions';
 
 type PluginManifestModule = { default: AppPluginManifest };
 type PluginLoader = () => Promise<PluginManifestModule>;
 
 const pluginLoaders: Record<string, PluginLoader> = {
   'ai-chat': () => import('@/lib/plugins/ai-chat/manifest'),
+  notes: () => import('@/lib/plugins/notes/manifest'),
+  calendar: () => import('@/lib/plugins/calendar/manifest'),
 };
 
 const manifestCache = new Map<string, AppPluginManifest>();
@@ -70,11 +73,39 @@ export async function resolveActivePluginsForTeam(teamId: number): Promise<TeamP
     .filter((item): item is TeamPluginResolution => item !== null);
 }
 
-export async function resolveDashboardNavForTeam(teamId: number): Promise<PluginNavItem[]> {
+const pluginPermissionMap: Record<string, keyof Omit<MemberPermissions, 'chatVisibility'>> = {
+  'notes.read': 'notesRead',
+  'notes.write': 'notesWrite',
+  'calendar.read': 'calendarRead',
+  'calendar.write': 'calendarWrite',
+};
+
+export async function resolveDashboardNavForTeam(teamId: number, userId?: number): Promise<PluginNavItem[]> {
   const activePlugins = await resolveActivePluginsForTeam(teamId);
+  let memberPermissions: MemberPermissions | null = null;
+  let memberRole: string | null = null;
+
+  if (userId) {
+    const member = await db.query.teamMembers.findFirst({
+      where: and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)),
+      columns: {
+        role: true,
+        permissions: true,
+      },
+    });
+    memberPermissions = (member?.permissions as MemberPermissions | null) ?? null;
+    memberRole = member?.role ?? null;
+  }
 
   return activePlugins
     .flatMap((plugin) => plugin.manifest.navItems)
     .filter((item) => item.href.startsWith('/'))
+    .filter((item) => {
+      if (!item.requiredPermission || !userId) return true;
+      if (memberRole === 'owner') return true;
+      const permissionKey = pluginPermissionMap[item.requiredPermission];
+      if (!permissionKey) return true;
+      return memberPermissions?.[permissionKey] === true;
+    })
     .sort((a, b) => a.order - b.order);
 }
