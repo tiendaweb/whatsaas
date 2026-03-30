@@ -5,9 +5,17 @@ import { eq } from 'drizzle-orm';
 import { getUser } from '@/lib/db/queries';
 import { PaymentPlugin } from './types';
 import { getProviderConfig } from '@/lib/payments/provider-settings';
+import { NextResponse } from 'next/server';
+import { consolePaymentAuditLogger } from './audit';
 
 export const mercadoPagoPlugin: PaymentPlugin = {
   id: 'mercadopago',
+  async validateConfig() {
+    const mp = await getProviderConfig('mercadopago');
+    if (!mp.accessToken) {
+      throw new Error('Mercado Pago no está configurado. Falta access token.');
+    }
+  },
   async createCheckout({ team, priceId, planId }) {
     const user = await getUser();
     const redirectQuery = new URLSearchParams({
@@ -80,4 +88,50 @@ export const mercadoPagoPlugin: PaymentPlugin = {
 
     redirect(checkoutUrl);
   },
+  async handleWebhook(request) {
+    await mercadoPagoPlugin.validateConfig();
+    const payload = await request.json().catch(() => ({}));
+    const providerStatus = String(payload?.data?.status ?? payload?.status ?? 'pending');
+    const canonicalStatus = mercadoPagoPlugin.normalizePaymentStatus(providerStatus);
+
+    await mercadoPagoPlugin.audit.recordStatusChange({
+      provider: 'mercadopago',
+      paymentReference: String(payload?.data?.id ?? payload?.id ?? 'unknown'),
+      previousStatus: null,
+      nextStatus: canonicalStatus,
+      actor: 'webhook',
+      metadata: payload,
+    });
+
+    return NextResponse.json({ received: true });
+  },
+  normalizePaymentStatus(providerStatus) {
+    const normalized = providerStatus.toLowerCase();
+
+    if (normalized === 'approved' || normalized === 'accredited' || normalized === 'paid') {
+      return 'paid';
+    }
+
+    if (normalized === 'in_process' || normalized === 'pending' || normalized === 'authorized') {
+      return 'pending';
+    }
+
+    if (normalized === 'cancelled' || normalized === 'canceled') {
+      return 'canceled';
+    }
+
+    if (normalized === 'rejected' || normalized === 'refunded' || normalized === 'charged_back') {
+      return 'rejected';
+    }
+
+    return 'failed';
+  },
+  async getPublicConfig() {
+    const mp = await getProviderConfig('mercadopago');
+    return {
+      provider: 'mercadopago',
+      publicKey: mp.publicKey,
+    };
+  },
+  audit: consolePaymentAuditLogger,
 };
