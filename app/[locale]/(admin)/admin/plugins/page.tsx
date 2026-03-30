@@ -4,6 +4,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { getPluginsAdminData, saveTeamPluginAction } from './actions';
+import { MarketplaceAIGenerator } from './marketplace/MarketplaceAIGenerator';
 
 type PageProps = {
   searchParams: Promise<{ teamId?: string }>;
@@ -92,6 +93,9 @@ export default async function AdminPluginsPage({ searchParams }: PageProps) {
           </CardContent>
         </Card>
       ))}
+
+
+      <MarketplaceAIGenerator selectedTeamId={data.selectedTeamId} />
     </div>
   );
 }
