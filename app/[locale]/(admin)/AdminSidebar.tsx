@@ -32,6 +32,8 @@ const navItems = [
   { href: "/admin/chat-theme", label: "Chat Theme", icon: MessageSquare },
   { href: "/admin/payments", label: "Payments", icon: Wallet },
   { href: "/admin/plugins", label: "Plugins", icon: Puzzle },
+  { href: "/admin/marketplace/items", label: "Marketplace Items", icon: Puzzle },
+  { href: "/admin/marketplace/orders", label: "Marketplace Orders", icon: Puzzle },
   { href: "/admin/settings", label: "Ajustes", icon: Settings },
 ];
 

@@ -22,7 +22,9 @@
       "activity": "Activity",
       "activity_desc": "Audit logs",
       "security": "Security",
-      "security_desc": "Password & 2FA"
+      "security_desc": "Password & 2FA",
+      "upgrades": "Upgrades",
+      "upgrades_desc": "Marketplace subscriptions and add-ons"
     },
     "footer": {
       "help": "Need help?",

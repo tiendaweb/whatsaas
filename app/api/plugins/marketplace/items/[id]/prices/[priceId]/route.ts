@@ -6,7 +6,7 @@ import { marketplaceItemPrices } from '@/lib/db/schema';
 import { getMarketplaceAdminContext, getMarketplaceContext } from '../../../../_lib/context';
 
 const updatePriceSchema = z.object({
-  billingType: z.enum(['free', 'monthly', 'yearly', 'setup']).optional(),
+  billingType: z.enum(['one_time', 'free', 'monthly', 'yearly', 'setup']).optional(),
   amount: z.number().int().min(0).optional(),
   currency: z.string().length(3).optional(),
   enabled: z.boolean().optional(),

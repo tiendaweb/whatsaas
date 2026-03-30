@@ -44,6 +44,7 @@ const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 type MembershipData = { role: string; permissions: MemberPermissions };
 type PluginNavItem = { href: string; label: string; icon?: string; order?: number };
+type EntitlementStatus = { id: number; itemId: number; status: string };
 
 const PLUGIN_NAV_ICON_MAP: Record<string, LucideIcon> = {
   Bot,
@@ -70,6 +71,7 @@ export function Sidebar() {
   const { data: features } = useSWR('/api/features/all', fetcher);
   const { data: membership } = useSWR<MembershipData>('/api/team/membership', fetcher);
   const { data: pluginNavItems } = useSWR<PluginNavItem[]>('/api/plugins/nav', fetcher);
+  const { data: entitlements } = useSWR<EntitlementStatus[]>('/api/plugins/marketplace/entitlements', fetcher);
   const [isExpanded, setIsExpanded] = useState(false);
 
   const allNavItems = [
@@ -93,13 +95,20 @@ export function Sidebar() {
     return true;
   });
 
+  const hasMarketplaceEntitlements = (entitlements ?? []).some((entry) => entry.status === 'active');
+
   const dynamicPluginNavItems =
-    pluginNavItems?.map((item) => ({
-      href: item.href,
-      icon: item.icon ? (PLUGIN_NAV_ICON_MAP[item.icon] ?? Plug) : Plug,
-      label: item.label,
-      feature: null,
-    })) ?? [];
+    pluginNavItems?.map((item) => {
+      const isMarketplace = item.href.startsWith('/plugins/marketplace');
+      const marketplaceLabel = hasMarketplaceEntitlements ? `${item.label} · Contratado` : `${item.label} · Disponible`;
+
+      return {
+        href: item.href,
+        icon: item.icon ? (PLUGIN_NAV_ICON_MAP[item.icon] ?? Plug) : Plug,
+        label: isMarketplace ? marketplaceLabel : item.label,
+        feature: null,
+      };
+    }) ?? [];
 
   const mergedNavItems = [...navItems, ...dynamicPluginNavItems];
 
