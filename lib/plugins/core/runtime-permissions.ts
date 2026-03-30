@@ -8,7 +8,7 @@ export async function getPluginRequestContext(requiredPermission: keyof Omit<Mem
     return { ok: false as const, status: 401, message: 'Unauthorized' };
   }
 
-  if (membership.role !== 'owner' && membership.permissions?.[requiredPermission] !== true) {
+  if (membership.role !== 'owner' && membership.role !== 'admin' && membership.permissions?.[requiredPermission] !== true) {
     return { ok: false as const, status: 403, message: 'Forbidden' };
   }
 
