@@ -244,17 +244,10 @@ export function DraftShortcutsModal({
                 </div>
                 <div>
                   <h2 className="text-xl font-bold tracking-tight">Centro de Borradores</h2>
-                  <p className="text-muted-foreground text-xs font-medium">Busca y selecciona un copy para insertar</p>
+                  <p className="text-muted-foreground text-xs font-medium">Busca y selecciona un copy para insertar -  ↑↓ Navegar - Enter Seleccionar </p>
                 </div>
               </div>
-              <div className="hidden md:flex gap-3 text-[10px] font-mono text-muted-foreground uppercase tracking-widest">
-                <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-muted border">
-                  <Keyboard className="w-3 h-3" /> ↑↓ Navegar
-                </span>
-                <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-muted border">
-                  Enter Seleccionar
-                </span>
-              </div>
+              
             </header>
 
             <main className="flex flex-1 overflow-hidden">
@@ -383,7 +376,7 @@ export function DraftShortcutsModal({
             </header>
 
             <main className="flex-1 overflow-y-auto custom-scrollbar">
-              <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-16 p-10 lg:p-16 items-start">
+              <div className=" mx-auto grid grid-cols-1 lg:grid-cols-1 gap-16 p-10 lg:p-16 items-start">
                 
                 {/* Panel de Inputs */}
                 <div className="space-y-10">
