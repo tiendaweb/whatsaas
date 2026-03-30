@@ -11,6 +11,9 @@ export class GeminiProvider implements AIProvider {
   private attachments: { name: string; url: string; type: string; size: number }[];
 
   constructor(config: AIProviderConfig) {
+    if (!config.apiKey?.trim()) {
+      throw new Error("Gemini API key is required.");
+    }
     this.client = new GoogleGenAI({ apiKey: config.apiKey });
     this.modelName = config.model;
     this.attachments = config.attachments || [];
@@ -34,6 +37,9 @@ export class GeminiProvider implements AIProvider {
 
         if (url.startsWith('http') || url.startsWith('https')) {
             const fetchRes = await fetch(url);
+            if (!fetchRes.ok) {
+                return null;
+            }
             const arrayBuffer = await fetchRes.arrayBuffer();
             fileData = Buffer.from(arrayBuffer).toString('base64');
             mimeType = fetchRes.headers.get('content-type') || mimeType;
@@ -51,7 +57,7 @@ export class GeminiProvider implements AIProvider {
             else if (cleanPath.endsWith('.csv')) mimeType = 'text/csv';
             else if (cleanPath.endsWith('.ogg')) mimeType = 'audio/ogg';
             else if (cleanPath.endsWith('.wav')) mimeType = 'audio/wav';
-            else if (cleanPath.endsWith('.mp3')) mimeType = 'audio/mp3';
+            else if (cleanPath.endsWith('.mp3')) mimeType = 'audio/mpeg';
             else if (cleanPath.endsWith('.mp4')) mimeType = 'video/mp4';
         }
         return { data: fileData, mimeType };
