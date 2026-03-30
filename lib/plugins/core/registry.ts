@@ -74,7 +74,12 @@ export async function resolveActivePluginsForTeam(teamId: number, userId?: numbe
       }
 
       if (manifest.activationMode === 'global') {
-        return teamStateMap.get(manifest.id)?.enabled === true;
+        const teamEnabled = teamStateMap.get(manifest.id)?.enabled;
+        if (typeof teamEnabled === 'boolean') {
+          return teamEnabled;
+        }
+
+        return systemStateMap.get(manifest.id)?.enabledByDefault === true;
       }
 
       if (manifest.activationMode === 'user') {
