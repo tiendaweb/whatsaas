@@ -1210,6 +1210,38 @@ export const manualPayments = pgTable("manual_payments", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+export const teamPlugins = pgTable(
+  "team_plugins",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    pluginId: varchar("plugin_id", { length: 80 }).notNull(),
+    installed: boolean("installed").notNull().default(false),
+    enabled: boolean("enabled").notNull().default(false),
+    settings: jsonb("settings")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    installedBy: integer("installed_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    installedAt: timestamp("installed_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamPluginUnique: unique("team_plugins_team_id_plugin_id_idx").on(
+      table.teamId,
+      table.pluginId,
+    ),
+    teamEnabledIdx: index("team_plugins_team_enabled_idx").on(
+      table.teamId,
+      table.enabled,
+    ),
+  }),
+);
+
 export const passwordResetTokens = pgTable("password_reset_tokens", {
   id: serial("id").primaryKey(),
   userId: integer("user_id")
@@ -1290,6 +1322,9 @@ export type NewPaymentProviderSetting =
 
 export type ManualPayment = typeof manualPayments.$inferSelect;
 export type NewManualPayment = typeof manualPayments.$inferInsert;
+
+export type TeamPlugin = typeof teamPlugins.$inferSelect;
+export type NewTeamPlugin = typeof teamPlugins.$inferInsert;
 
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type NewApiKey = typeof apiKeys.$inferInsert;
