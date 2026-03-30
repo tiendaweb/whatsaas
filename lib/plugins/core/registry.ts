@@ -107,7 +107,7 @@ export async function resolveDashboardNavForTeam(teamId: number, userId?: number
     .filter((item) => item.href.startsWith('/'))
     .filter((item) => {
       if (!item.requiredPermission || !userId) return true;
-      if (memberRole === 'owner') return true;
+      if (memberRole === 'owner' || memberRole === 'admin') return true;
       const permissionKey = pluginPermissionMap[item.requiredPermission];
       if (!permissionKey) return true;
       return memberPermissions?.[permissionKey] === true;
