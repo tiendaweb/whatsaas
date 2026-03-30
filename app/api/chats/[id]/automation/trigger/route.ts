@@ -32,21 +32,21 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (!chat) return NextResponse.json({ error: 'Chat not found' }, { status: 404 });
     if (!chat.instanceId) return NextResponse.json({ automations: [] });
 
-    const activeAutomations = await db.query.automations.findMany({
+    const teamAutomations = await db.query.automations.findMany({
       where: and(
         eq(automations.teamId, team.id),
         eq(automations.instanceId, chat.instanceId),
-        eq(automations.isActive, true),
       ),
       columns: {
         id: true,
         name: true,
+        isActive: true,
         nodes: true,
       },
       orderBy: [asc(automations.name)],
     });
 
-    const payload = activeAutomations.map((automation) => {
+    const payload = teamAutomations.map((automation) => {
       const nodes = (automation.nodes as AutomationCanvasNode[]) || [];
       const availableStartNodes = nodes
         .filter((node) => node.type !== 'start')
@@ -59,6 +59,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return {
         id: automation.id,
         name: automation.name,
+        isActive: automation.isActive,
         availableStartNodes,
       };
     });

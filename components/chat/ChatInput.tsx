@@ -249,7 +249,14 @@ export function ChatInput({
                   className={`min-h-[40px] max-h-[120px] resize-none py-3 ${isInternalNote ? 'bg-background border-yellow-400 dark:border-yellow-600 focus-visible:ring-yellow-400' : 'bg-background rounded-2xl'}`}
                   value={newMessage}
                   onChange={(e) => {
-                    setNewMessage(e.target.value);
+                    const value = e.target.value;
+                    if (!isInternalNote && value.trim() === '+++') {
+                      window.dispatchEvent(new Event('chat:open-trigger-automation'));
+                      setNewMessage('');
+                      return;
+                    }
+
+                    setNewMessage(value);
                     setSelectedQuickReplyIndex(0);
                     setSelectedDraftSuggestionIndex(0);
                   }}

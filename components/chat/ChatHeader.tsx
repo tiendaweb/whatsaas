@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, X, Check, Loader2, Zap, ZapOff, Bot, BotOff, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, X, Loader2, Zap, ZapOff, Bot, BotOff, ChevronLeft, ChevronRight, Workflow } from 'lucide-react';
 import { ChatDetails } from './types';
 import { ServiceWindowTimer } from './ServiceWindowTimer';
 import { toast } from 'sonner';
@@ -61,6 +61,7 @@ type TriggerAutomationNode = {
 type TriggerAutomationItem = {
   id: number;
   name: string;
+  isActive: boolean;
   availableStartNodes: TriggerAutomationNode[];
 };
 
@@ -190,6 +191,7 @@ export function ChatHeader({ chatDetails, showSearch, setShowSearch, searchQuery
   };
 
   const handleOpenTriggerModal = () => {
+    if (!activeChat || isGroup) return;
     setIsTriggerModalOpen(true);
     setSelectedAutomationId('');
     setSelectedStartNodeId('start');
@@ -221,6 +223,27 @@ export function ChatHeader({ chatDetails, showSearch, setShowSearch, searchQuery
       setIsTriggeringAutomation(false);
     }
   };
+
+  useEffect(() => {
+    if (isGroup) return;
+
+    const openModalShortcut = () => handleOpenTriggerModal();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.code === 'Space') {
+        event.preventDefault();
+        openModalShortcut();
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('chat:open-trigger-automation', openModalShortcut);
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('chat:open-trigger-automation', openModalShortcut);
+    };
+  }, [activeChat, isGroup]);
 
   return (
     <header className="flex items-center justify-between p-3 border-b bg-card shadow-sm z-10 shrink-0 h-[60px]">
@@ -271,7 +294,7 @@ export function ChatHeader({ chatDetails, showSearch, setShowSearch, searchQuery
                   onClick={handleOpenTriggerModal}
                   disabled={!activeChat}
                 >
-                  <Zap className="h-4 w-4" />
+                  <Workflow className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -406,7 +429,7 @@ export function ChatHeader({ chatDetails, showSearch, setShowSearch, searchQuery
                 <SelectContent>
                   {availableAutomations.map((automation) => (
                     <SelectItem key={automation.id} value={automation.id.toString()}>
-                      {automation.name}
+                      {automation.name} · {automation.isActive ? t('active_status') : t('inactive_status')}
                     </SelectItem>
                   ))}
                 </SelectContent>

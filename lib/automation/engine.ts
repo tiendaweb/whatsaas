@@ -331,8 +331,7 @@ export async function triggerAutomationManually(
     where: and(
       eq(automations.id, options.automationId),
       eq(automations.teamId, teamId),
-      eq(automations.instanceId, instanceId),
-      eq(automations.isActive, true)
+      eq(automations.instanceId, instanceId)
     )
   });
 
