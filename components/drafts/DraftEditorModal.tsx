@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Sparkles } from 'lucide-react';
+import { Loader2, Sparkles, Variable, Type, Layout, Settings2, Tag as TagIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { DraftWorkflowCanvas } from './DraftWorkflowCanvas';
 import type {
   DraftAgent,
@@ -49,7 +50,6 @@ type Props = {
 };
 
 const PLACEHOLDER_REGEX = /\[\[([\w\-. ]+)\]\]/g;
-
 const emptyWorkflow: DraftWorkflow = { stages: [], tasks: [] };
 
 function extractPlaceholders(content: string): string[] {
@@ -94,6 +94,7 @@ export function DraftEditorModal({
   const [workflow, setWorkflow] = useState<DraftWorkflow>(emptyWorkflow);
   const [isSaving, setIsSaving] = useState(false);
 
+  // --- Lógica original mantenida ---
   useEffect(() => {
     if (!open) return;
     setTitle(draft?.title ?? '');
@@ -104,17 +105,14 @@ export function DraftEditorModal({
     setAiPrompt('');
     const initialPlaceholders = extractPlaceholders(draft?.content ?? '');
     setPlaceholderEditor(initialPlaceholders.join('\n'));
-
     setCategoryId(draft?.categoryId ? String(draft.categoryId) : 'none');
     setSelectedTagIds(draft?.tags?.map((tag) => tag.id) ?? []);
-
     const hasAdvanced = Boolean(
       draft?.contactId ||
-        draft?.assignedUserId ||
-        draft?.departmentId ||
-        (draft?.stages && ((draft.stages.stages?.length ?? 0) > 0 || (draft.stages.tasks?.length ?? 0) > 0)),
+      draft?.assignedUserId ||
+      draft?.departmentId ||
+      (draft?.stages && ((draft.stages.stages?.length ?? 0) > 0 || (draft.stages.tasks?.length ?? 0) > 0))
     );
-
     setAdvancedMode(hasAdvanced);
     setContactId(draft?.contactId ? String(draft.contactId) : 'none');
     setAssignedUserId(draft?.assignedUserId ? String(draft.assignedUserId) : 'none');
@@ -127,361 +125,322 @@ export function DraftEditorModal({
   useEffect(() => {
     if (draftType !== 'dynamic') return;
     setPlaceholderEditor((prev) => {
-      const currentNormalized = prev
-        .split('\n')
-        .map((entry) => normalizePlaceholderName(entry))
-        .filter(Boolean)
-        .join('\n');
-      const detectedNormalized = detectedPlaceholders.map((entry) => normalizePlaceholderName(entry)).join('\n');
+      const currentNormalized = prev.split('\n').map(normalizePlaceholderName).filter(Boolean).join('\n');
+      const detectedNormalized = detectedPlaceholders.map(normalizePlaceholderName).join('\n');
       return currentNormalized || detectedNormalized;
     });
   }, [detectedPlaceholders, draftType]);
 
   const toggleTag = (tagId: number) => {
-    setSelectedTagIds((prev) =>
-      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId],
-    );
+    setSelectedTagIds((prev) => prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]);
   };
 
   const handleNormalizeDynamicContent = () => {
-    const names = placeholderEditor
-      .split('\n')
-      .map((entry) => normalizePlaceholderName(entry))
-      .filter(Boolean);
-
+    const names = placeholderEditor.split('\n').map(normalizePlaceholderName).filter(Boolean);
     if (names.length === 0) {
-      toast.error('Para borradores dinámicos define al menos una variable.');
+      toast.error('Define al menos una variable.');
       return false;
     }
-
     const uniqueNames = Array.from(new Set(names));
     const foundInContent = extractPlaceholders(content);
-
     let nextContent = content;
     if (foundInContent.length > 0) {
       foundInContent.forEach((placeholder, index) => {
         const replacement = uniqueNames[index] ?? placeholder;
-        const from = new RegExp(`\\[\\[${placeholder.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\]\\]`, 'g');
+        const from = new RegExp(`\\[\\[${placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]\\]`, 'g');
         nextContent = nextContent.replace(from, `[[${replacement}]]`);
       });
     } else {
       nextContent = `${content.trim()}\n\n${uniqueNames.map((name) => `[[${name}]]`).join('\n')}`.trim();
     }
-
     setContent(nextContent);
     setPlaceholderEditor(uniqueNames.join('\n'));
     return true;
   };
 
   const handleGenerateWithAi = async () => {
-    if (!aiPrompt.trim()) {
-      toast.error('Escribe un prompt para generar con IA.');
-      return;
-    }
-
+    if (!aiPrompt.trim()) { toast.error('Escribe un prompt.'); return; }
     setIsGenerating(true);
     try {
       const response = await fetch('/api/drafts/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: aiPrompt.trim(),
-          mode: aiMode,
-          baseContent: content,
-          draftType,
-        }),
+        body: JSON.stringify({ prompt: aiPrompt.trim(), mode: aiMode, baseContent: content, draftType }),
       });
-
       const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result?.error || 'No se pudo generar el borrador.');
-      }
-
+      if (!response.ok) throw new Error(result?.error || 'Error IA');
       setContent(result.content ?? '');
       setAiMetadata(result.metadata ?? null);
-      toast.success('Contenido generado con IA.');
-    } catch (error: any) {
-      console.error('drafts.generate.ai.error', error);
-      toast.error(error?.message || 'Error generando contenido con IA.');
-    } finally {
-      setIsGenerating(false);
-    }
+      toast.success('Contenido generado.');
+    } catch (error: any) { toast.error(error?.message); } finally { setIsGenerating(false); }
   };
 
   const handleSave = async () => {
-    if (!title.trim() || !content.trim()) {
-      toast.error('Título y contenido son obligatorios.');
-      return;
-    }
-
-    if (draftType === 'dynamic') {
-      const ok = handleNormalizeDynamicContent();
-      if (!ok) return;
-    }
-
+    if (!title.trim() || !content.trim()) { toast.error('Faltan campos.'); return; }
+    if (draftType === 'dynamic' && !handleNormalizeDynamicContent()) return;
     setIsSaving(true);
     try {
       const payload = {
-        title: title.trim(),
-        content: content.trim(),
-        draftType,
-        aiMetadata,
-        categoryId: isEditMode ? (categoryId === 'none' ? null : Number(categoryId)) : null,
-        tagIds: isEditMode ? selectedTagIds : [],
-        contactId: isEditMode && advancedMode && contactId !== 'none' ? Number(contactId) : null,
-        assignedUserId: isEditMode && advancedMode && assignedUserId !== 'none' ? Number(assignedUserId) : null,
-        departmentId: isEditMode && advancedMode && departmentId !== 'none' ? Number(departmentId) : null,
-        stages: isEditMode && advancedMode ? workflow : null,
+        title: title.trim(), content: content.trim(), draftType, aiMetadata,
+        categoryId: categoryId === 'none' ? null : Number(categoryId),
+        tagIds: selectedTagIds,
+        contactId: advancedMode && contactId !== 'none' ? Number(contactId) : null,
+        assignedUserId: advancedMode && assignedUserId !== 'none' ? Number(assignedUserId) : null,
+        departmentId: advancedMode && departmentId !== 'none' ? Number(departmentId) : null,
+        stages: advancedMode ? workflow : null,
       };
-
-      const endpoint = draft ? `/api/drafts/${draft.id}` : '/api/drafts';
-      const method = draft ? 'PUT' : 'POST';
-
-      const response = await fetch(endpoint, {
-        method,
+      const response = await fetch(draft ? `/api/drafts/${draft.id}` : '/api/drafts', {
+        method: draft ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result?.error || 'No se pudo guardar el borrador.');
-      }
-
-      toast.success(draft ? 'Borrador actualizado.' : 'Borrador creado.');
+      if (!response.ok) throw new Error('Error al guardar');
+      toast.success('Guardado.');
       onOpenChange(false);
       onSaved();
-    } catch (error: any) {
-      console.error('drafts.save.error', error);
-      toast.error(error?.message || 'Error guardando borrador.');
-    } finally {
-      setIsSaving(false);
-    }
+    } catch (error: any) { toast.error(error?.message); } finally { setIsSaving(false); }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] max-w-2xl max-h-[90dvh] overflow-hidden p-0 flex flex-col">
-        <DialogHeader className="sticky top-0 z-10 border-b bg-background px-6 pt-6 pb-3">
-          <DialogTitle>{isEditMode ? 'Editar borrador' : 'Nuevo borrador'}</DialogTitle>
-          <DialogDescription>
-            {isEditMode
-              ? 'Edita título, contenido y todos los metadatos del borrador.'
-              : 'Crea un borrador rápido con título, tipo y contenido.'}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4 space-y-4">
-          <div className="rounded-lg border p-4 space-y-3">
-            <div className="space-y-1.5">
-              <Label>Título</Label>
-              <Input value={title} onChange={(event) => setTitle(event.target.value)} />
+      <DialogContent className="max-w-4xl max-h-[95dvh] overflow-hidden p-0 flex flex-col gap-0 border-none shadow-2xl">
+        
+        {/* HEADER ESTILO PREMIUM */}
+        <DialogHeader className="p-6 bg-primary text-primary-foreground">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-white/20 rounded-lg">
+              <Type className="h-5 w-5" />
             </div>
-
-            <div className="space-y-1.5">
-              <Label>Tipo de nota</Label>
-              <Select value={draftType} onValueChange={(value) => setDraftType(value as DraftType)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona un tipo" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="static">Nota estática</SelectItem>
-                  <SelectItem value="dynamic">Nota dinámica</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Generar con IA</Label>
-              <div className="grid gap-2 md:grid-cols-[160px_1fr_auto]">
-                <Select value={aiMode} onValueChange={(value) => setAiMode(value as 'create' | 'rewrite' | 'variables')}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="create">Crear</SelectItem>
-                    <SelectItem value="rewrite">Reescribir</SelectItem>
-                    <SelectItem value="variables">Variables</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Input
-                  value={aiPrompt}
-                  onChange={(event) => setAiPrompt(event.target.value)}
-                  placeholder="Describe qué quieres generar"
-                />
-                <Button type="button" variant="secondary" onClick={handleGenerateWithAi} disabled={isGenerating}>
-                  {isGenerating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
-                  Generar con IA
-                </Button>
-              </div>
-              {aiMetadata && (
-                <p className="text-xs text-muted-foreground">
-                  Última generación IA: {new Date(aiMetadata.generatedAt).toLocaleString()} · modo {aiMetadata.mode}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Contenido</Label>
-              <Textarea
-                value={content}
-                onChange={(event) => setContent(event.target.value)}
-                className="min-h-[220px] max-h-[360px] resize-y"
-              />
-              <p className="text-xs text-muted-foreground">
-                {draftType === 'dynamic'
-                  ? 'Usa placeholders con formato [[nombre_variable]].'
-                  : 'Contenido final estático, listo para insertar.'}
-              </p>
+            <div>
+              <DialogTitle className="text-xl">{isEditMode ? 'Editar Borrador' : 'Crear Nuevo Borrador'}</DialogTitle>
+              <DialogDescription className="text-primary-foreground/80">
+                Configura la estructura y lógica del mensaje para {isEditMode ? title : 'tu equipo'}.
+              </DialogDescription>
             </div>
           </div>
+        </DialogHeader>
 
-          {draftType === 'dynamic' && (
-            <div className="rounded-lg border p-4 space-y-2">
-              <p className="text-sm font-medium">Variables dinámicas detectadas/editar</p>
-              <Textarea
-                value={placeholderEditor}
-                onChange={(event) => setPlaceholderEditor(event.target.value)}
-                className="min-h-[96px]"
-                placeholder={'nombre_cliente\nfecha_vencimiento\nlink_pago'}
-              />
-              <div className="flex justify-end">
-                <Button type="button" variant="outline" onClick={handleNormalizeDynamicContent}>
-                  Aplicar placeholders al contenido
-                </Button>
-              </div>
+        <div className="flex-1 overflow-y-auto bg-secondary/5">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-0">
+            
+            {/* COLUMNA IZQUIERDA: CONTENIDO Y EDITOR */}
+            <div className="lg:col-span-7 p-6 space-y-6 border-r border-border/50">
+              
+              <section className="space-y-4">
+                <div className="flex items-center gap-2 text-sm font-bold text-muted-foreground uppercase tracking-wider">
+                  <Layout className="h-4 w-4" /> Cuerpo del Mensaje
+                </div>
+                
+                <div className="space-y-4 bg-background p-4 rounded-xl border shadow-sm">
+                  <div className="space-y-2">
+                    <Label className="text-xs uppercase font-bold text-muted-foreground">Título del Borrador</Label>
+                    <Input 
+                      value={title} 
+                      onChange={(e) => setTitle(e.target.value)} 
+                      placeholder="Ej: Bienvenida Cliente Nuevo"
+                      className="text-lg font-semibold bg-secondary/20 border-none focus-visible:ring-primary"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs uppercase font-bold text-muted-foreground">Contenido</Label>
+                    <Textarea
+                      value={content}
+                      onChange={(e) => setContent(e.target.value)}
+                      className="min-h-[250px] font-mono text-sm leading-relaxed bg-secondary/10 border-none focus-visible:ring-primary"
+                      placeholder="Escribe tu mensaje aquí..."
+                    />
+                  </div>
+                </div>
+              </section>
+
+              {/* GENERADOR IA INTEGRADO */}
+              <section className="bg-primary/5 rounded-xl border border-primary/20 p-4 space-y-4">
+                <div className="flex items-center gap-2 text-sm font-bold text-primary uppercase">
+                  <Sparkles className="h-4 w-4" /> Asistente de IA
+                </div>
+                <div className="flex gap-2">
+                  <Select value={aiMode} onValueChange={(v: any) => setAiMode(v)}>
+                    <SelectTrigger className="w-[130px] bg-background">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="create">Crear</SelectItem>
+                      <SelectItem value="rewrite">Reescribir</SelectItem>
+                      <SelectItem value="variables">Variables</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    value={aiPrompt}
+                    onChange={(e) => setAiPrompt(e.target.value)}
+                    placeholder="Describe el tono o cambio..."
+                    className="flex-1 bg-background"
+                  />
+                  <Button onClick={handleGenerateWithAi} disabled={isGenerating} size="icon">
+                    {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </section>
             </div>
-          )}
 
-          {isEditMode && (
-            <div className="rounded-lg border p-4 space-y-3">
-              <div className="space-y-1.5">
-                <Label>Categoría</Label>
-                <Select value={categoryId} onValueChange={setCategoryId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sin categoría" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sin categoría</SelectItem>
-                    {categories.map((category) => (
-                      <SelectItem key={category.id} value={String(category.id)}>
-                        {category.name}
-                      </SelectItem>
+            {/* COLUMNA DERECHA: CONFIGURACIÓN Y VARIABLES */}
+            <div className="lg:col-span-5 p-6 space-y-6 bg-background">
+              
+              {/* TIPO Y CATEGORÍA */}
+              <section className="space-y-4">
+                <div className="flex items-center gap-2 text-sm font-bold text-muted-foreground uppercase tracking-wider">
+                  <Settings2 className="h-4 w-4" /> Configuración
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-bold">Tipo</Label>
+                    <Select value={draftType} onValueChange={(v: any) => setDraftType(v)}>
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="static">Estática</SelectItem>
+                        <SelectItem value="dynamic">Dinámica</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-bold">Categoría</Label>
+                    <Select value={categoryId} onValueChange={setCategoryId}>
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Sin Categoría</SelectItem>
+                        {categories.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-[10px] uppercase font-bold flex items-center gap-1">
+                    <TagIcon className="h-3 w-3" /> Etiquetas
+                  </Label>
+                  <div className="flex flex-wrap gap-1.5 p-2 border rounded-lg bg-secondary/5">
+                    {tags.map(tag => (
+                      <Badge
+                        key={tag.id}
+                        variant={selectedTagIds.includes(tag.id) ? "default" : "outline"}
+                        className="cursor-pointer transition-all"
+                        onClick={() => toggleTag(tag.id)}
+                      >
+                        {tag.name}
+                      </Badge>
                     ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2.5">
-                <Label>Etiquetas</Label>
-                <div className="flex flex-wrap gap-2">
-                  {tags.map((tag) => (
-                    <Button
-                      key={tag.id}
-                      size="sm"
-                      variant={selectedTagIds.includes(tag.id) ? 'default' : 'outline'}
-                      type="button"
-                      onClick={() => toggleTag(tag.id)}
-                    >
-                      {tag.name}
-                    </Button>
-                  ))}
+                  </div>
                 </div>
-              </div>
-            </div>
-          )}
+              </section>
 
-          {isEditMode && (
-            <div className="rounded-lg border p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-sm">Modo avanzado</p>
-                  <p className="text-xs text-muted-foreground">
-                    Guarda relaciones y workflow solo si está habilitado.
-                  </p>
-                </div>
-                <Switch checked={advancedMode} onCheckedChange={setAdvancedMode} />
-              </div>
-
-              {advancedMode && (
-                <div className="grid grid-cols-1 gap-2">
-                  <Select value={contactId} onValueChange={setContactId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Contacto (opcional)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Sin contacto</SelectItem>
-                      {contacts.map((contact) => (
-                        <SelectItem key={contact.id} value={String(contact.id)}>
-                          {contact.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  <Select value={assignedUserId} onValueChange={setAssignedUserId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Agente (opcional)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Sin agente</SelectItem>
-                      {agents.map((agent) => (
-                        <SelectItem key={agent.id} value={String(agent.id)}>
-                          {agent.name ?? agent.email}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  <Select value={departmentId} onValueChange={setDepartmentId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Departamento (opcional)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Sin departamento</SelectItem>
-                      {departments.map((department) => (
-                        <SelectItem key={department.id} value={String(department.id)}>
-                          {department.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              {/* SECCIÓN DINÁMICA: VARIABLES */}
+              {draftType === 'dynamic' && (
+                <section className="space-y-4 p-4 bg-blue-50/50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-900/30">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase">
+                      <Variable className="h-4 w-4" /> Variables Dinámicas
+                    </div>
+                  </div>
+                  <Textarea
+                    value={placeholderEditor}
+                    onChange={(e) => setPlaceholderEditor(e.target.value)}
+                    className="min-h-[80px] text-xs font-mono"
+                    placeholder="nombre_cliente&#10;monto_pago"
+                  />
+                  <Button variant="outline" size="sm" className="w-full text-xs h-8" onClick={handleNormalizeDynamicContent}>
+                    Vincular Variables al Texto
+                  </Button>
+                </section>
               )}
-            </div>
-          )}
 
-          {isEditMode && advancedMode && (
-            <DraftWorkflowCanvas
-              value={workflow}
-              onChange={setWorkflow}
-              departments={departments}
-            />
-          )}
+              {/* MODO AVANZADO (Switch) */}
+              <section className="pt-4 border-t">
+                <div className="flex items-center justify-between p-3 rounded-lg border bg-secondary/10">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-bold">Modo Flujos</Label>
+                    <p className="text-[10px] text-muted-foreground uppercase">Workflows & CRM</p>
+                  </div>
+                  <Switch checked={advancedMode} onCheckedChange={setAdvancedMode} />
+                </div>
 
-          <div className="rounded-lg border p-4">
-            <p className="text-sm font-medium mb-2">Placeholders detectados</p>
-            <div className="flex flex-wrap gap-2">
-              {detectedPlaceholders.length === 0 ? (
-                <span className="text-xs text-muted-foreground">No hay placeholders.</span>
-              ) : (
-                detectedPlaceholders.map((placeholder) => (
-                  <code key={placeholder} className="text-xs bg-muted px-2 py-1 rounded">
-                    [[{placeholder}]]
-                  </code>
-                ))
-              )}
+                {advancedMode && (
+  <div className="mt-4 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+    {/* Selector de Contacto */}
+    <div className="space-y-1">
+      <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Contacto Vinculado</Label>
+      <Select value={contactId} onValueChange={setContactId}>
+        <SelectTrigger className="h-9 bg-background">
+          <SelectValue placeholder="Seleccionar contacto" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="none">Sin contacto</SelectItem>
+          {contacts.map((c) => (
+            <SelectItem key={c.id} value={String(c.id)}>
+              {c.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+
+    {/* Selector de Agente/Usuario */}
+    <div className="space-y-1">
+      <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Agente Asignado</Label>
+      <Select value={assignedUserId} onValueChange={setAssignedUserId}>
+        <SelectTrigger className="h-9 bg-background">
+          <SelectValue placeholder="Seleccionar agente" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="none">Sin agente</SelectItem>
+          {agents.map((a) => (
+            <SelectItem key={a.id} value={String(a.id)}>
+              {a.name ?? a.email}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+
+    {/* Selector de Departamento */}
+    <div className="space-y-1">
+      <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Departamento</Label>
+      <Select value={departmentId} onValueChange={setDepartmentId}>
+        <SelectTrigger className="h-9 bg-background">
+          <SelectValue placeholder="Seleccionar departamento" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="none">Sin departamento</SelectItem>
+          {departments.map((d) => (
+            <SelectItem key={d.id} value={String(d.id)}>
+              {d.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  </div>
+)}
+              </section>
             </div>
           </div>
         </div>
 
-        <DialogFooter className="sticky bottom-0 border-t bg-background px-6 py-4">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
-          <Button type="button" onClick={handleSave} disabled={isSaving || isGenerating}>
-            {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            Guardar
+        {/* WORKFLOW CANVAS (Si aplica) */}
+        {isEditMode && advancedMode && (
+          <div className="border-t bg-secondary/5 p-4 max-h-[300px] overflow-y-auto">
+            <DraftWorkflowCanvas value={workflow} onChange={setWorkflow} departments={departments} />
+          </div>
+        )}
+
+        <DialogFooter className="p-4 border-t bg-background shrink-0">
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancelar</Button>
+          <Button onClick={handleSave} disabled={isSaving} className="min-w-[120px]">
+            {isSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : 'Guardar Borrador'}
           </Button>
         </DialogFooter>
       </DialogContent>
