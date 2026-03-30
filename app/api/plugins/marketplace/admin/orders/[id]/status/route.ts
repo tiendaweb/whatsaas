@@ -3,6 +3,10 @@ import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/lib/db/drizzle';
 import { marketplaceOrderStatusEvents, marketplaceOrders } from '@/lib/db/schema';
+import {
+  activateMarketplaceEntitlement,
+  revokeMarketplaceEntitlement,
+} from '@/lib/plugins/marketplace/server/entitlements';
 import { getMarketplaceAdminContext } from '../../../../_lib/context';
 
 const updateStatusSchema = z.object({
@@ -73,6 +77,26 @@ export async function PATCH(
       },
       createdAt: new Date(),
     });
+
+    if (parsed.data.status === 'approved') {
+      await activateMarketplaceEntitlement({
+        teamId: existing.teamId,
+        itemId: existing.itemId,
+        sourceOrderId: orderId,
+        changedBy: context.user.id,
+        executor: tx,
+      });
+    }
+
+    if (parsed.data.status === 'rejected' || parsed.data.status === 'canceled') {
+      await revokeMarketplaceEntitlement({
+        teamId: existing.teamId,
+        itemId: existing.itemId,
+        sourceOrderId: orderId,
+        changedBy: context.user.id,
+        executor: tx,
+      });
+    }
   });
 
   const updated = await db.query.marketplaceOrders.findFirst({
