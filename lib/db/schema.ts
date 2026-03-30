@@ -1275,6 +1275,93 @@ export const teamPlugins = pgTable(
   }),
 );
 
+export const teamNotes = pgTable(
+  "team_notes",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 180 }).notNull(),
+    content: text("content").notNull().default(""),
+    tags: jsonb("tags").$type<string[]>().notNull().default([]),
+    pinned: boolean("pinned").notNull().default(false),
+    status: varchar("status", { length: 30 }).notNull().default("todo"),
+    dueDate: timestamp("due_date"),
+    createdBy: integer("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    updatedBy: integer("updated_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamStatusIdx: index("team_notes_team_status_idx").on(table.teamId, table.status),
+    teamDueIdx: index("team_notes_team_due_idx").on(table.teamId, table.dueDate),
+  }),
+);
+
+export const teamEvents = pgTable(
+  "team_events",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 180 }).notNull(),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    attendees: jsonb("attendees").$type<string[]>().notNull().default([]),
+    notes: text("notes").notNull().default(""),
+    reminderAt: timestamp("reminder_at", { withTimezone: true }),
+    status: varchar("status", { length: 30 }).notNull().default("scheduled"),
+    departmentId: integer("department_id").references(() => departments.id, {
+      onDelete: "set null",
+    }),
+    relatedUserId: integer("related_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    contactId: integer("contact_id").references(() => contacts.id, {
+      onDelete: "set null",
+    }),
+    createdBy: integer("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    updatedBy: integer("updated_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamStartIdx: index("team_events_team_start_idx").on(table.teamId, table.startsAt),
+    teamStatusIdx: index("team_events_team_status_idx").on(table.teamId, table.status),
+  }),
+);
+
+export const teamNotifications = pgTable(
+  "team_notifications",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
+    type: varchar("type", { length: 50 }).notNull(),
+    title: varchar("title", { length: 180 }).notNull(),
+    body: text("body").notNull(),
+    entityType: varchar("entity_type", { length: 50 }),
+    entityId: integer("entity_id"),
+    readAt: timestamp("read_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamUnreadIdx: index("team_notifications_team_unread_idx").on(table.teamId, table.readAt),
+  }),
+);
+
 export const passwordResetTokens = pgTable("password_reset_tokens", {
   id: serial("id").primaryKey(),
   userId: integer("user_id")
@@ -1358,6 +1445,12 @@ export type NewManualPayment = typeof manualPayments.$inferInsert;
 
 export type TeamPlugin = typeof teamPlugins.$inferSelect;
 export type NewTeamPlugin = typeof teamPlugins.$inferInsert;
+export type TeamNote = typeof teamNotes.$inferSelect;
+export type NewTeamNote = typeof teamNotes.$inferInsert;
+export type TeamEvent = typeof teamEvents.$inferSelect;
+export type NewTeamEvent = typeof teamEvents.$inferInsert;
+export type TeamNotification = typeof teamNotifications.$inferSelect;
+export type NewTeamNotification = typeof teamNotifications.$inferInsert;
 
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type NewApiKey = typeof apiKeys.$inferInsert;

@@ -8,6 +8,7 @@ export const pluginNavItemSchema = z.object({
   href: z.string().min(1),
   icon: z.string().optional(),
   order: z.number().int().default(100),
+  requiredPermission: z.string().min(1).optional(),
 });
 
 export type PluginNavItem = z.infer<typeof pluginNavItemSchema>;

@@ -1,7 +1,10 @@
 import { notFound } from 'next/navigation';
 import { getTeamForUser } from '@/lib/db/queries';
 import { resolvePluginRouteForTeam } from '@/lib/plugins/core/dashboard-loader';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { NotesDashboard } from '@/lib/plugins/notes/ui/NotesDashboard';
+import { NotesSettings } from '@/lib/plugins/notes/ui/NotesSettings';
+import { CalendarDashboard } from '@/lib/plugins/calendar/ui/CalendarDashboard';
+import { CalendarSettings } from '@/lib/plugins/calendar/ui/CalendarSettings';
 
 type PluginPageProps = {
   params: Promise<{
@@ -25,16 +28,13 @@ export default async function PluginPage({ params }: PluginPageProps) {
     notFound();
   }
 
-  return (
-    <div className="p-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>{resolved.route.title}</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          Plugin <strong>{resolved.plugin.manifest.displayName}</strong> cargado desde el runtime dinámico.
-        </CardContent>
-      </Card>
-    </div>
-  );
+  if (pluginId === 'notes') {
+    return slug?.[0] === 'settings' ? <NotesSettings /> : <NotesDashboard />;
+  }
+
+  if (pluginId === 'calendar') {
+    return slug?.[0] === 'settings' ? <CalendarSettings /> : <CalendarDashboard />;
+  }
+
+  return <div className="p-6 text-sm text-muted-foreground">{resolved.route.title}</div>;
 }
