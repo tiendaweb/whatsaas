@@ -83,6 +83,8 @@ async function persistProviderConfig(formData: FormData): Promise<SaveProviderCo
     config.successUrl = (formData.get('successUrl') as string) || '';
     config.failureUrl = (formData.get('failureUrl') as string) || '';
     config.pendingUrl = (formData.get('pendingUrl') as string) || '';
+    config.checkoutMode = (formData.get('checkoutMode') as string) === 'subscription' ? 'subscription' : 'payment';
+    config.subscriptionReason = (formData.get('subscriptionReason') as string) || '';
   }
 
   try {

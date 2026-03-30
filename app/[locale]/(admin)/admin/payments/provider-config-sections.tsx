@@ -116,6 +116,21 @@ export function ProviderConfigSections({ stripe, manual, mp }: Props) {
                 <Label>Pending URL</Label>
                 <Input name="pendingUrl" defaultValue={mpConfig.pendingUrl || ''} />
               </div>
+              <div className="space-y-2">
+                <Label>Checkout Mode</Label>
+                <select
+                  name="checkoutMode"
+                  defaultValue={mpConfig.checkoutMode || 'payment'}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="payment">Payment (Checkout Pro)</option>
+                  <option value="subscription">Subscription (Preapproval)</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Subscription Reason</Label>
+                <Input name="subscriptionReason" defaultValue={mpConfig.subscriptionReason || ''} placeholder="Plan subscription" />
+              </div>
             </div>
             <div className="flex items-center gap-6">
               <label className="flex items-center gap-2 text-sm">

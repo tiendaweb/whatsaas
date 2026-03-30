@@ -120,6 +120,13 @@
       "when": 1774835025782,
       "tag": "0017_app_plugins",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1774837960397,
+      "tag": "0018_payment_webhook_events",
+      "breakpoints": true
     }
   ]
 }

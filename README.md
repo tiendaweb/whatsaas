@@ -209,6 +209,8 @@ Tabla nueva `manual_payments`:
 - `MP_SUCCESS_URL`
 - `MP_FAILURE_URL`
 - `MP_PENDING_URL`
+- `MP_CHECKOUT_MODE` (`payment` o `subscription`)
+- `MP_SUBSCRIPTION_REASON` (opcional para preapproval/subscriptions)
 
 ### Reglas clave
 - Validar credenciales al iniciar (`validateConfig`).

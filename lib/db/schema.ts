@@ -1210,6 +1210,39 @@ export const manualPayments = pgTable("manual_payments", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+export const paymentWebhookEvents = pgTable(
+  "payment_webhook_events",
+  {
+    id: serial("id").primaryKey(),
+    provider: varchar("provider", { length: 50 }).notNull(),
+    topic: varchar("topic", { length: 80 }).notNull(),
+    eventId: varchar("event_id", { length: 191 }),
+    paymentId: varchar("payment_id", { length: 191 }),
+    status: varchar("status", { length: 20 }).notNull().default("processing"),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    errorMessage: text("error_message"),
+    processedAt: timestamp("processed_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    providerEventUnique: unique("payment_webhook_events_provider_event_id_uidx").on(
+      table.provider,
+      table.eventId,
+    ),
+    providerPaymentUnique: unique(
+      "payment_webhook_events_provider_payment_id_uidx",
+    ).on(table.provider, table.paymentId),
+    providerStatusIdx: index("payment_webhook_events_provider_status_idx").on(
+      table.provider,
+      table.status,
+    ),
+  }),
+);
+
 export const teamPlugins = pgTable(
   "team_plugins",
   {
