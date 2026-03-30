@@ -447,10 +447,10 @@ export function DraftShortcutsModal({
                      <div className="relative z-10 flex-1">
                       <div className="flex items-center gap-2 mb-8 opacity-40">
                         <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                        <p className="font-mono text-[10px] uppercase tracking-[0.2em]">Compilando borrador en vivo</p>
+                        <p className="font-mono text-[10px] uppercase tracking-[0.2em]">Vista Previa</p>
                       </div>
                       
-                      <p className="text-xl md:text-2xl leading-[1.6] font-medium tracking-tight text-zinc-100">
+                      <p className="text-sm md:text-2xl leading-[1.6] font-medium tracking-tight text-zinc-100">
                         {selectedDraft.content.split(PLACEHOLDER_REGEX).map((part, i) => {
                           const isKey = placeholders.includes(part);
                           if (isKey) {
