@@ -4,6 +4,8 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { DraftShortcutsModal } from '@/components/chat/DraftShortcutsModal';
+import type { DraftItem } from '@/components/drafts/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from '@/components/ui/badge';
 import { X, Save, Plus, Trash2, UploadCloud, Loader2 } from 'lucide-react';
@@ -68,6 +70,9 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
   const [footerText, setFooterText] = useState('');
   const [buttonText, setButtonText] = useState('');
   const [ctaUrl, setCtaUrl] = useState('');
+  const [draftShortcutsOpen, setDraftShortcutsOpen] = useState(false);
+  const [draftShortcutQuery, setDraftShortcutQuery] = useState('');
+  const [draftInsertTarget, setDraftInsertTarget] = useState<'label' | 'title' | 'bodyText' | 'footerText' | 'buttonText' | null>(null);
   const [buttons, setButtons] = useState<ButtonMessageButton[]>([]);
   const [listItems, setListItems] = useState<ListMessageItem[]>([]);
 
@@ -81,6 +86,7 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
   const { data: teamData } = useSWR<any>(shouldFetchCRM ? '/api/team' : null, fetcher);
   const { data: customFields } = useSWR<any[]>(shouldFetchCRM ? '/api/custom-fields' : null, fetcher);
   const { data: departmentsList } = useSWR<any[]>(shouldFetchCRM ? '/api/departments' : null, fetcher);
+  const { data: drafts } = useSWR<DraftItem[]>('/api/drafts', fetcher);
   
   const agents = teamData?.teamMembers?.map((tm: any) => tm.user) || [];
   const selectedNodeMeta = selectedNode ? getAutomationNodeCatalogEntry(selectedNode.type) : null;
@@ -315,6 +321,32 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
     setConditions((current) => current.map((condition, index) => index === idx ? { ...condition, [field]: val } : condition));
   };
 
+  const maybeOpenDraftShortcuts = (
+    value: string,
+    target: 'label' | 'title' | 'bodyText' | 'footerText' | 'buttonText',
+  ) => {
+    if (!value.startsWith('##')) return;
+    setDraftShortcutQuery(value.slice(2).trim());
+    setDraftInsertTarget(target);
+    setDraftShortcutsOpen(true);
+  };
+
+  const handleInsertDraft = (renderedText: string) => {
+    if (draftInsertTarget === 'label') setLabel(renderedText);
+    if (draftInsertTarget === 'title') setTitle(renderedText);
+    if (draftInsertTarget === 'bodyText') setBodyText(renderedText);
+    if (draftInsertTarget === 'footerText') setFooterText(renderedText);
+    if (draftInsertTarget === 'buttonText') setButtonText(renderedText);
+    setDraftInsertTarget(null);
+    setDraftShortcutsOpen(false);
+    toast.success('Borrador insertado en el nodo.');
+  };
+
+  const handleDraftModalOpenChange = (open: boolean) => {
+    setDraftShortcutsOpen(open);
+    if (!open) setDraftInsertTarget(null);
+  };
+
   return (
     <aside className="flex w-[clamp(18rem,24vw,22rem)] min-w-[18rem] max-w-[22rem] min-h-0 shrink-0 resize-x flex-col overflow-hidden border-l border-border bg-background">
       <div className="p-4 border-b border-border flex justify-between items-center bg-muted/30 shrink-0">
@@ -330,7 +362,17 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
         {(selectedNode.type === 'message' || selectedNode.type === 'options' || selectedNode.type === 'collect') && (
           <div className="space-y-2">
             <Label>{selectedNode.type === 'collect' ? t('question_label') : t('message_text_label')}</Label>
-            <Textarea rows={4} value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t('type_placeholder')} className="resize-none" />
+            <Textarea
+              rows={4}
+              value={label}
+              onChange={(e) => {
+                const nextValue = e.target.value;
+                setLabel(nextValue);
+                maybeOpenDraftShortcuts(nextValue, 'label');
+              }}
+              placeholder={t('type_placeholder')}
+              className="resize-none"
+            />
           </div>
         )}
 
@@ -447,19 +489,54 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
           <div className="space-y-4">
              <div className="space-y-2">
               <Label>{t('header_text_optional_label')}</Label>
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('header_text_placeholder')} />
+              <Input
+                value={title}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setTitle(nextValue);
+                  maybeOpenDraftShortcuts(nextValue, 'title');
+                }}
+                placeholder={t('header_text_placeholder')}
+              />
             </div>
             <div className="space-y-2">
               <Label>{t('body_text_label')} <span className="text-destructive">*</span></Label>
-              <Textarea rows={4} value={bodyText} onChange={(e) => setBodyText(e.target.value)} placeholder={t('body_text_placeholder')} className="resize-none" />
+              <Textarea
+                rows={4}
+                value={bodyText}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setBodyText(nextValue);
+                  maybeOpenDraftShortcuts(nextValue, 'bodyText');
+                }}
+                placeholder={t('body_text_placeholder')}
+                className="resize-none"
+              />
             </div>
             <div className="space-y-2">
               <Label>{t('footer_text_optional_label')}</Label>
-              <Input value={footerText} onChange={(e) => setFooterText(e.target.value)} placeholder={t('footer_text_placeholder')} />
+              <Input
+                value={footerText}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setFooterText(nextValue);
+                  maybeOpenDraftShortcuts(nextValue, 'footerText');
+                }}
+                placeholder={t('footer_text_placeholder')}
+              />
             </div>
             <div className="space-y-2">
               <Label>{t('button_text_label')} <span className="text-destructive">*</span></Label>
-              <Input value={buttonText} onChange={(e) => setButtonText(e.target.value)} placeholder={t('button_text_placeholder')} maxLength={listButtonTextFieldMeta?.max} />
+              <Input
+                value={buttonText}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setButtonText(nextValue);
+                  maybeOpenDraftShortcuts(nextValue, 'buttonText');
+                }}
+                placeholder={t('button_text_placeholder')}
+                maxLength={listButtonTextFieldMeta?.max}
+              />
             </div>
             <div className="space-y-3 pt-4 border-t border-border">
                 <div className="flex justify-between items-center">
@@ -489,15 +566,42 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>{t('header_optional_label')}</Label>
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('enter_header_text_placeholder')} />
+              <Input
+                value={title}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setTitle(nextValue);
+                  maybeOpenDraftShortcuts(nextValue, 'title');
+                }}
+                placeholder={t('enter_header_text_placeholder')}
+              />
             </div>
             <div className="space-y-2">
               <Label>{t('value_text_label')} <span className="text-destructive">*</span></Label>
-              <Textarea rows={4} value={bodyText} onChange={(e) => setBodyText(e.target.value)} placeholder={t('enter_value_text_placeholder')} className="resize-none" />
+              <Textarea
+                rows={4}
+                value={bodyText}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setBodyText(nextValue);
+                  maybeOpenDraftShortcuts(nextValue, 'bodyText');
+                }}
+                placeholder={t('enter_value_text_placeholder')}
+                className="resize-none"
+              />
             </div>
             <div className="space-y-2">
               <Label>{t('button_text_label')} <span className="text-destructive">*</span></Label>
-              <Input value={buttonText} onChange={(e) => setButtonText(e.target.value)} placeholder={t('click_here_placeholder')} maxLength={listButtonTextFieldMeta?.max} />
+              <Input
+                value={buttonText}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setButtonText(nextValue);
+                  maybeOpenDraftShortcuts(nextValue, 'buttonText');
+                }}
+                placeholder={t('click_here_placeholder')}
+                maxLength={listButtonTextFieldMeta?.max}
+              />
             </div>
             <div className="space-y-2">
               <Label>{t('button_link_label')} <span className="text-destructive">*</span></Label>
@@ -505,7 +609,15 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
             </div>
             <div className="space-y-2">
               <Label>{t('footer_optional_label')}</Label>
-              <Input value={footerText} onChange={(e) => setFooterText(e.target.value)} placeholder={t('enter_footer_text_placeholder')} />
+              <Input
+                value={footerText}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setFooterText(nextValue);
+                  maybeOpenDraftShortcuts(nextValue, 'footerText');
+                }}
+                placeholder={t('enter_footer_text_placeholder')}
+              />
             </div>
           </div>
         )}
@@ -514,11 +626,29 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>{t('message_text_required_label')} <span className="text-destructive">*</span></Label>
-              <Textarea rows={4} value={bodyText} onChange={(e) => setBodyText(e.target.value)} placeholder={t('enter_message_text_placeholder')} className="resize-none" />
+              <Textarea
+                rows={4}
+                value={bodyText}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setBodyText(nextValue);
+                  maybeOpenDraftShortcuts(nextValue, 'bodyText');
+                }}
+                placeholder={t('enter_message_text_placeholder')}
+                className="resize-none"
+              />
             </div>
              <div className="space-y-2">
               <Label>{t('footer_optional_label')}</Label>
-              <Input value={footerText} onChange={(e) => setFooterText(e.target.value)} placeholder={t('enter_footer_text_placeholder')} />
+              <Input
+                value={footerText}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setFooterText(nextValue);
+                  maybeOpenDraftShortcuts(nextValue, 'footerText');
+                }}
+                placeholder={t('enter_footer_text_placeholder')}
+              />
             </div>
             <div className="space-y-3 pt-4 border-t border-border">
                 <div className="flex justify-between items-center">
@@ -696,6 +826,13 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
       <div className="p-4 border-t border-border bg-muted/30 shrink-0">
         <Button className="w-full" onClick={handleSave}><Save className="h-4 w-4 mr-2" /> {t('save_changes_btn')}</Button>
       </div>
+      <DraftShortcutsModal
+        open={draftShortcutsOpen}
+        onOpenChange={handleDraftModalOpenChange}
+        drafts={drafts ?? []}
+        initialQuery={draftShortcutQuery}
+        onInsertDraft={handleInsertDraft}
+      />
     </aside>
   );
 }
