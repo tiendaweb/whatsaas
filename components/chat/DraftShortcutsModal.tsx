@@ -214,7 +214,7 @@ export function DraftShortcutsModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="fixed inset-0 left-0 top-0 h-[100dvh] w-[100vw] max-w-none m-0 translate-x-0 translate-y-0 !rounded-none border-0 p-0 flex flex-col bg-[#fafafa] dark:bg-[#09090b] overflow-hidden outline-none"
+        className="fixed left-1/2 top-1/2 h-[90vh] w-[90vh] max-h-[90vh] max-w-[90vh] -translate-x-1/2 -translate-y-1/2 rounded-3xl border p-0 flex flex-col bg-[#fafafa] dark:bg-[#09090b] overflow-hidden outline-none"
         onKeyDown={handleContainerKeyDown}
       >
         <style dangerouslySetInnerHTML={{ __html: `
@@ -480,8 +480,7 @@ export function DraftShortcutsModal({
                       </p>
                      </div>
 
-                     <div className="mt-12 pt-8 border-t border-white/10 flex items-center justify-between relative z-10 opacity-60">
-                        <div className="text-[10px] font-bold uppercase tracking-[0.2em]">Listo para el envío</div>
+                     <div className="mt-12 pt-8 border-t border-white/10 flex items-center justify-end relative z-10 opacity-60">
                         <SendHorizontal className="w-5 h-5 text-blue-500" />
                      </div>
                   </div>
