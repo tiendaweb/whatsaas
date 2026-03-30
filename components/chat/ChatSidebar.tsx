@@ -922,7 +922,7 @@ export function ChatSidebar({ chatDetails, isCollapsed = false, onToggleCollapse
   return (
     <aside className={cn(
       "flex flex-col border-l bg-card shrink-0 h-screen transition-all duration-300 ease-in-out overflow-hidden",
-      isCollapsed ? "w-0 border-l-0" : "w-80"
+      isCollapsed ? "w-0 border-l-0" : "w-72"
     )}>
       {!isCollapsed && renderSidebarContent()}
     </aside>
