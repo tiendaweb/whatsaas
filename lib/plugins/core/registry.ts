@@ -46,13 +46,17 @@ export type TeamPluginResolution = {
 };
 
 export async function resolveActivePluginsForTeam(teamId: number): Promise<TeamPluginResolution[]> {
-  const [manifests, installed] = await Promise.all([
-    getRegisteredPlugins(),
-    db
+  const manifests = await getRegisteredPlugins();
+  let installed: Array<typeof teamPlugins.$inferSelect> = [];
+
+  try {
+    installed = await db
       .select()
       .from(teamPlugins)
-      .where(and(eq(teamPlugins.teamId, teamId), eq(teamPlugins.installed, true), eq(teamPlugins.enabled, true))),
-  ]);
+      .where(and(eq(teamPlugins.teamId, teamId), eq(teamPlugins.installed, true), eq(teamPlugins.enabled, true)));
+  } catch {
+    return [];
+  }
 
   const manifestMap = new Map(manifests.map((item) => [item.id, item]));
 

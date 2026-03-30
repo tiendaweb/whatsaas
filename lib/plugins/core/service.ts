@@ -4,10 +4,17 @@ import { teamPlugins } from '@/lib/db/schema';
 import { getRegisteredPluginById, getRegisteredPlugins } from './registry';
 
 export async function listPluginsForTeam(teamId: number) {
-  const [availablePlugins, installedPlugins] = await Promise.all([
-    getRegisteredPlugins(),
-    db.select().from(teamPlugins).where(eq(teamPlugins.teamId, teamId)),
-  ]);
+  const availablePlugins = await getRegisteredPlugins();
+  let installedPlugins: Array<typeof teamPlugins.$inferSelect> = [];
+
+  try {
+    installedPlugins = await db.select().from(teamPlugins).where(eq(teamPlugins.teamId, teamId));
+  } catch (error) {
+    throw new Error(
+      `No se pudo leer la configuración de plugins para el equipo ${teamId}. Verifica migraciones de base de datos (team_plugins).`,
+      { cause: error },
+    );
+  }
 
   const installedMap = new Map(installedPlugins.map((plugin) => [plugin.pluginId, plugin]));
 

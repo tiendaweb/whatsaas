@@ -15,7 +15,7 @@ const manifest: AppPluginManifest<typeof calendarSettingsSchema> = {
     { path: '/plugins/calendar/settings', title: 'Configuración de calendario', scope: 'dashboard.page' },
   ],
   navItems: [
-    { label: 'Calendario', href: '/plugins/calendar', icon: 'CalendarDays', order: 46, requiredPermission: 'calendar.read' },
+    { label: 'Tareas', href: '/plugins/calendar', icon: 'CalendarDays', order: 46, requiredPermission: 'calendar.read' },
   ],
   settingsSchema: calendarSettingsSchema,
   featureFlags: [],

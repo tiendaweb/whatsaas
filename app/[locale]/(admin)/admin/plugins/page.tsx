@@ -42,6 +42,17 @@ export default async function AdminPluginsPage({ searchParams }: PageProps) {
         </CardContent>
       </Card>
 
+      {data.error && (
+        <Card className="border-destructive/50">
+          <CardHeader>
+            <CardTitle className="text-destructive">Error cargando plugins</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">{data.error}</p>
+          </CardContent>
+        </Card>
+      )}
+
       {data.plugins.map(({ manifest, state }) => (
         <Card key={manifest.id}>
           <CardHeader>
