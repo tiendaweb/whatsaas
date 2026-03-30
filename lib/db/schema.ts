@@ -1384,6 +1384,45 @@ export const marketplaceOrderStatusEvents = pgTable(
   }),
 );
 
+export const teamMarketplaceEntitlements = pgTable(
+  "team_marketplace_entitlements",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => marketplaceItems.id, { onDelete: "restrict" }),
+    status: varchar("status", { length: 40 }).notNull().default("inactive"),
+    sourceOrderId: integer("source_order_id").references(() => marketplaceOrders.id, {
+      onDelete: "set null",
+    }),
+    startsAt: timestamp("starts_at").notNull().defaultNow(),
+    endsAt: timestamp("ends_at"),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamItemUnique: unique("team_marketplace_entitlements_team_item_uidx").on(
+      table.teamId,
+      table.itemId,
+    ),
+    teamStatusIdx: index("team_marketplace_entitlements_team_status_idx").on(
+      table.teamId,
+      table.status,
+    ),
+    itemStatusIdx: index("team_marketplace_entitlements_item_status_idx").on(
+      table.itemId,
+      table.status,
+    ),
+  }),
+);
+
 export const teamPlugins = pgTable(
   "team_plugins",
   {
@@ -1601,6 +1640,24 @@ export const marketplaceOrderStatusEventsRelations = relations(
   }),
 );
 
+export const teamMarketplaceEntitlementsRelations = relations(
+  teamMarketplaceEntitlements,
+  ({ one }) => ({
+    team: one(teams, {
+      fields: [teamMarketplaceEntitlements.teamId],
+      references: [teams.id],
+    }),
+    item: one(marketplaceItems, {
+      fields: [teamMarketplaceEntitlements.itemId],
+      references: [marketplaceItems.id],
+    }),
+    sourceOrder: one(marketplaceOrders, {
+      fields: [teamMarketplaceEntitlements.sourceOrderId],
+      references: [marketplaceOrders.id],
+    }),
+  }),
+);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Team = typeof teams.$inferSelect;
@@ -1673,6 +1730,10 @@ export type MarketplaceOrderStatusEvent =
   typeof marketplaceOrderStatusEvents.$inferSelect;
 export type NewMarketplaceOrderStatusEvent =
   typeof marketplaceOrderStatusEvents.$inferInsert;
+export type TeamMarketplaceEntitlement =
+  typeof teamMarketplaceEntitlements.$inferSelect;
+export type NewTeamMarketplaceEntitlement =
+  typeof teamMarketplaceEntitlements.$inferInsert;
 
 export type TeamPlugin = typeof teamPlugins.$inferSelect;
 export type NewTeamPlugin = typeof teamPlugins.$inferInsert;
