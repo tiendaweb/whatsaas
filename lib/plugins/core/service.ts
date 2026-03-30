@@ -1,13 +1,37 @@
 import { and, eq } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { teamPlugins } from '@/lib/db/schema';
 import { getRegisteredPluginById, getRegisteredPlugins } from './registry';
+
+async function ensureTeamPluginsTable() {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS team_plugins (
+      id serial PRIMARY KEY,
+      team_id integer NOT NULL,
+      plugin_id text NOT NULL,
+      installed boolean NOT NULL DEFAULT false,
+      enabled boolean NOT NULL DEFAULT false,
+      settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+      installed_by integer,
+      installed_at timestamp NOT NULL DEFAULT now(),
+      updated_at timestamp NOT NULL DEFAULT now(),
+      CONSTRAINT team_plugins_team_id_plugin_id_idx UNIQUE(team_id, plugin_id)
+    );
+  `);
+
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS team_plugins_team_enabled_idx
+    ON team_plugins(team_id, enabled);
+  `);
+}
 
 export async function listPluginsForTeam(teamId: number) {
   const availablePlugins = await getRegisteredPlugins();
   let installedPlugins: Array<typeof teamPlugins.$inferSelect> = [];
 
   try {
+    await ensureTeamPluginsTable();
     installedPlugins = await db.select().from(teamPlugins).where(eq(teamPlugins.teamId, teamId));
   } catch (error) {
     throw new Error(
@@ -39,6 +63,8 @@ export async function saveTeamPluginState(input: {
   settings: Record<string, unknown>;
   actorUserId?: number;
 }) {
+  await ensureTeamPluginsTable();
+
   const manifest = await getRegisteredPluginById(input.pluginId);
   if (!manifest) {
     throw new Error('Plugin no encontrado en el registry.');
