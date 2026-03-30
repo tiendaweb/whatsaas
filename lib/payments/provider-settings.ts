@@ -15,6 +15,8 @@ export type ProviderConfigMap = {
     successUrl?: string;
     failureUrl?: string;
     pendingUrl?: string;
+    checkoutMode?: 'payment' | 'subscription';
+    subscriptionReason?: string;
   };
 };
 
@@ -56,9 +58,10 @@ let paymentTablesBootstrapped = false;
 async function ensurePaymentTables() {
   if (paymentTablesBootstrapped) return;
 
-  const [hasProviderSettings, hasManualPayments] = await Promise.all([
+  const [hasProviderSettings, hasManualPayments, hasWebhookEvents] = await Promise.all([
     relationExists('payment_provider_settings'),
     relationExists('manual_payments'),
+    relationExists('payment_webhook_events'),
   ]);
 
   if (!hasProviderSettings) {
@@ -91,6 +94,36 @@ async function ensurePaymentTables() {
         created_at timestamp NOT NULL DEFAULT now(),
         updated_at timestamp NOT NULL DEFAULT now()
       );
+    `);
+  }
+
+  if (!hasWebhookEvents) {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS payment_webhook_events (
+        id serial PRIMARY KEY,
+        provider varchar(50) NOT NULL,
+        topic varchar(80) NOT NULL,
+        event_id varchar(191),
+        payment_id varchar(191),
+        status varchar(20) NOT NULL DEFAULT 'processing',
+        payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+        error_message text,
+        processed_at timestamp,
+        created_at timestamp NOT NULL DEFAULT now(),
+        updated_at timestamp NOT NULL DEFAULT now()
+      );
+    `);
+
+    await db.execute(sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS payment_webhook_events_provider_event_id_uidx
+      ON payment_webhook_events (provider, event_id)
+      WHERE event_id IS NOT NULL;
+    `);
+
+    await db.execute(sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS payment_webhook_events_provider_payment_id_uidx
+      ON payment_webhook_events (provider, payment_id)
+      WHERE payment_id IS NOT NULL;
     `);
   }
 

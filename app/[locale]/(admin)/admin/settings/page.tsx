@@ -104,6 +104,18 @@ export default async function AdminSettingsPage() {
               <div className="space-y-2"><Label>Success URL</Label><Input name="successUrl" defaultValue={mpConfig.successUrl || ''} /></div>
               <div className="space-y-2"><Label>Failure URL</Label><Input name="failureUrl" defaultValue={mpConfig.failureUrl || ''} /></div>
               <div className="space-y-2"><Label>Pending URL</Label><Input name="pendingUrl" defaultValue={mpConfig.pendingUrl || ''} /></div>
+              <div className="space-y-2">
+                <Label>Checkout Mode</Label>
+                <select
+                  name="checkoutMode"
+                  defaultValue={mpConfig.checkoutMode || 'payment'}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="payment">Payment (Checkout Pro)</option>
+                  <option value="subscription">Subscription (Preapproval)</option>
+                </select>
+              </div>
+              <div className="space-y-2"><Label>Subscription Reason</Label><Input name="subscriptionReason" defaultValue={mpConfig.subscriptionReason || ''} /></div>
             </div>
             <div className="flex items-center gap-6">
               <label className="flex items-center gap-2 text-sm">
