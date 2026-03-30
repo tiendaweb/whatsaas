@@ -11,6 +11,7 @@ import { getMarketplaceAdminContext } from '../../../../_lib/context';
 
 const updateStatusSchema = z.object({
   status: z.enum(['approved', 'rejected', 'canceled']),
+  paymentMethod: z.enum(['manual_transfer', 'mercadopago', 'stripe', 'cash', 'other']).default('other'),
   reason: z.string().max(1000).nullable().optional(),
 });
 
@@ -74,27 +75,67 @@ export async function PATCH(
       reason: parsed.data.reason ?? null,
       metadata: {
         reviewedBy: context.user.id,
+        paymentMethod: parsed.data.paymentMethod,
+        auditScope: 'order_review',
       },
       createdAt: new Date(),
     });
 
     if (parsed.data.status === 'approved') {
-      await activateMarketplaceEntitlement({
+      const entitlementWindow = await activateMarketplaceEntitlement({
         teamId: existing.teamId,
         itemId: existing.itemId,
         sourceOrderId: orderId,
         changedBy: context.user.id,
         executor: tx,
       });
+
+      await tx.insert(marketplaceOrderStatusEvents).values({
+        orderId,
+        teamId: existing.teamId,
+        previousStatus: parsed.data.status,
+        nextStatus: 'entitlement_active',
+        changedBy: context.user.id,
+        reason: 'Entitlement activado tras aprobación.',
+        metadata: {
+          paymentMethod: parsed.data.paymentMethod,
+          entitlement: {
+            startsAt: entitlementWindow.startsAt.toISOString(),
+            endsAt: entitlementWindow.endsAt?.toISOString() ?? null,
+            billingType: entitlementWindow.billingType,
+            durationDays: entitlementWindow.durationDays,
+          },
+          auditScope: 'entitlement',
+        },
+        createdAt: new Date(),
+      });
     }
 
     if (parsed.data.status === 'rejected' || parsed.data.status === 'canceled') {
-      await revokeMarketplaceEntitlement({
+      const revokedWindow = await revokeMarketplaceEntitlement({
         teamId: existing.teamId,
         itemId: existing.itemId,
         sourceOrderId: orderId,
         changedBy: context.user.id,
         executor: tx,
+      });
+
+      await tx.insert(marketplaceOrderStatusEvents).values({
+        orderId,
+        teamId: existing.teamId,
+        previousStatus: parsed.data.status,
+        nextStatus: 'entitlement_revoked',
+        changedBy: context.user.id,
+        reason: parsed.data.reason ?? 'Entitlement revocado por revisión.',
+        metadata: {
+          paymentMethod: parsed.data.paymentMethod,
+          entitlement: {
+            startsAt: revokedWindow.startsAt.toISOString(),
+            endsAt: revokedWindow.endsAt?.toISOString() ?? null,
+          },
+          auditScope: 'entitlement',
+        },
+        createdAt: new Date(),
       });
     }
   });

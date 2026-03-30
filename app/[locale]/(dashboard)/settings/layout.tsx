@@ -13,6 +13,7 @@ import {
   QrCode, 
   Bot, 
   Terminal,
+  Rocket,
   ChevronRight,
   LifeBuoy
 } from 'lucide-react';
@@ -73,6 +74,13 @@ export default function SettingsLayout({
       label: t('nav.developers'),
       description: t('nav.developers_desc'),
       restricted: true,
+    },
+    {
+      href: '/settings/upgrades',
+      icon: Rocket,
+      label: t('nav.upgrades'),
+      description: t('nav.upgrades_desc'),
+      restricted: false,
     },
     {
       href: '/settings/activity',

@@ -6,7 +6,7 @@ import { marketplaceItemPrices, marketplaceItems } from '@/lib/db/schema';
 import { getMarketplaceAdminContext, getMarketplaceContext } from '../../../_lib/context';
 
 const createPriceSchema = z.object({
-  billingType: z.enum(['free', 'monthly', 'yearly', 'setup']),
+  billingType: z.enum(['one_time', 'free', 'monthly', 'yearly', 'setup']),
   amount: z.number().int().min(0),
   currency: z.string().length(3).default('usd'),
   enabled: z.boolean().default(true),

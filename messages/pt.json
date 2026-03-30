@@ -22,7 +22,9 @@
       "activity": "Atividade",
       "activity_desc": "Logs de auditoria",
       "security": "Segurança",
-      "security_desc": "Senha e 2FA"
+      "security_desc": "Senha e 2FA",
+      "upgrades": "Upgrades",
+      "upgrades_desc": "Assinaturas e add-ons do marketplace"
     },
     "footer": {
       "help": "Precisa de ajuda?",

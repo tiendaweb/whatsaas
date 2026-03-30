@@ -22,7 +22,9 @@
       "activity": "Actividad",
       "activity_desc": "Registros de auditoría",
       "security": "Seguridad",
-      "security_desc": "Contraseña y 2FA"
+      "security_desc": "Contraseña y 2FA",
+      "upgrades": "Upgrades",
+      "upgrades_desc": "Suscripciones y add-ons del marketplace"
     },
     "footer": {
       "help": "¿Necesitas ayuda?",
