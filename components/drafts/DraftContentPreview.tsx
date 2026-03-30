@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { Check, Copy } from 'lucide-react';
+import { useMemo, useState, useEffect } from 'react';
+import { Check, Copy, Variable, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -38,7 +38,7 @@ export function DraftContentPreview({
   const variableFields = useMemo(() => {
     if (placeholders.length > 0) return placeholders;
     if (showVariableInputs && (predefinedVariables?.length ?? 0) > 0) {
-      return Array.from(new Set(predefinedVariables?.map((variable) => variable.trim()).filter(Boolean)));
+      return Array.from(new Set(predefinedVariables?.map((v) => v.trim()).filter(Boolean)));
     }
     return [];
   }, [placeholders, predefinedVariables, showVariableInputs]);
@@ -48,63 +48,101 @@ export function DraftContentPreview({
   const renderedPreview = useMemo(() => {
     return content.replace(PLACEHOLDER_REGEX, (_, rawKey: string) => {
       const key = rawKey.trim();
-      return variables[key] ?? `[[${key}]]`;
+      // Si la variable está vacía, resaltamos el placeholder para que el usuario sepa que falta
+      return variables[key] || `[[${key}]]`;
     });
   }, [content, variables]);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(renderedPreview);
     setCopied(true);
-    window.setTimeout(() => setCopied(false), 1200);
+    window.setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <div className={`space-y-4 ${className ?? ''}`}>
+    <div className={cn("space-y-4", className)}>
+      {/* SECCIÓN DE VARIABLES: Diseño en grilla compacta */}
       {showVariableSection && (
-        <section className="rounded-lg border bg-muted/30 p-3 space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Variables dinámicas</p>
+        <section className="bg-secondary/30 rounded-xl p-4 border border-border/50">
+          <div className="flex items-center gap-2 mb-3">
+            <Variable className="h-3.5 w-3.5 text-primary" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              Completar Variables
+            </span>
+          </div>
+          
           {variableFields.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
               {variableFields.map((placeholder) => (
-                <div key={placeholder} className="space-y-1">
-                  <p className="text-xs text-muted-foreground">{placeholder}</p>
+                <div key={placeholder} className="group flex flex-col gap-1">
+                  <label className="text-[11px] font-medium text-muted-foreground ml-1">
+                    {placeholder.replace(/_/g, ' ')}
+                  </label>
                   <Input
                     value={variables[placeholder] ?? ''}
-                    onChange={(event) =>
-                      setVariables((prev) => ({
-                        ...prev,
-                        [placeholder]: event.target.value,
-                      }))
+                    onChange={(e) =>
+                      setVariables((prev) => ({ ...prev, [placeholder]: e.target.value }))
                     }
-                    placeholder={`Ingresa ${placeholder}`}
+                    placeholder="..."
+                    className="h-8 text-xs bg-background border-none shadow-sm focus-visible:ring-1 focus-visible:ring-primary/50"
                   />
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-xs text-muted-foreground">
-              Este borrador no detectó variables automáticamente. Agrega placeholders como [[nombre]] para
-              completarlas aquí.
+            <p className="text-[11px] text-muted-foreground italic">
+              No se detectaron variables dinámicas.
             </p>
           )}
         </section>
       )}
 
-      <p
-        className={cn(
-          'text-sm whitespace-pre-wrap',
-          clampLines === 2 && 'line-clamp-2',
-          clampLines === 3 && 'line-clamp-3',
-          clampLines === 10 && 'line-clamp-10',
-        )}
-      >
-        {renderedPreview}
-      </p>
+      {/* BURBUJA DE MENSAJE (PREVIEW FINAL) */}
+      <div className="relative group">
+        <div className={cn(
+          "bg-background border rounded-2xl p-4 shadow-sm transition-all",
+          "hover:border-primary/30",
+          copied && "ring-2 ring-green-500/20 border-green-500/50"
+        )}>
+          <div className="flex items-center gap-2 mb-2 opacity-50">
+            <MessageSquare className="h-3 w-3" />
+            <span className="text-[10px] font-medium uppercase">Vista Previa del Mensaje</span>
+          </div>
 
-      <div className="flex justify-end">
-        <Button onClick={handleCopy} className="min-w-[140px]">
-          {copied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />} Copiar listo
-        </Button>
+          <p className={cn(
+            'text-[13px] md:text-sm whitespace-pre-wrap leading-relaxed text-foreground/90',
+            clampLines && `line-clamp-${clampLines}`
+          )}>
+            {/* Resaltado visual de lo que falta completar */}
+            {renderedPreview.split(/(\[\[.*?\]\])/g).map((part, i) => (
+              part.startsWith('[[') ? (
+                <span key={i} className="text-primary font-bold bg-primary/5 px-1 rounded">
+                  {part}
+                </span>
+              ) : part
+            ))}
+          </p>
+
+          {/* BOTÓN DE COPIAR FLOTANTE/INTEGRADO */}
+          <div className="mt-4 flex justify-end">
+            <Button 
+              onClick={handleCopy} 
+              size="sm"
+              className={cn(
+                "h-9 px-4 rounded-full transition-all duration-300",
+                copied 
+                  ? "bg-green-600 hover:bg-green-700 text-white" 
+                  : "bg-primary text-primary-foreground hover:scale-105"
+              )}
+            >
+              {copied ? (
+                <><Check className="h-3.5 w-3.5 mr-2" /> ¡Copiado!</>
+              ) : (
+                <><Copy className="h-3.5 w-3.5 mr-2" /> Copiar para enviar</>
+              )}
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );
