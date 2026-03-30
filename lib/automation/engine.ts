@@ -308,6 +308,94 @@ export async function processAutomation(
   return false;
 }
 
+type ManualTriggerOptions = {
+  automationId: number;
+  startNodeId?: string | null;
+};
+
+export async function triggerAutomationManually(
+  teamId: number,
+  chatId: number,
+  remoteJid: string,
+  instanceId: number,
+  options: ManualTriggerOptions
+): Promise<boolean> {
+  const instance = await db.query.evolutionInstances.findFirst({
+    where: eq(evolutionInstances.id, instanceId),
+    columns: { accessToken: true, instanceName: true, metaToken: true, metaPhoneNumberId: true }
+  });
+
+  if (!instance || !instance.accessToken) return false;
+
+  const automation = await db.query.automations.findFirst({
+    where: and(
+      eq(automations.id, options.automationId),
+      eq(automations.teamId, teamId),
+      eq(automations.instanceId, instanceId),
+      eq(automations.isActive, true)
+    )
+  });
+
+  if (!automation) return false;
+
+  const flow: FlowData = {
+    nodes: automation.nodes as AutomationCanvasNode[],
+    edges: automation.edges as AutomationCanvasEdge[],
+  };
+
+  const startNode = flow.nodes.find((node) => node.type === 'start');
+  if (!startNode) return false;
+
+  if (options.startNodeId && options.startNodeId !== 'start') {
+    const targetNode = flow.nodes.find((node) => node.id === options.startNodeId && node.type !== 'start');
+    if (!targetNode) return false;
+  }
+
+  const existingSession = await db.query.automationSessions.findFirst({
+    where: and(
+      eq(automationSessions.chatId, chatId),
+      eq(automationSessions.status, 'active')
+    ),
+    columns: { id: true }
+  });
+
+  if (existingSession) {
+    await db.update(automationSessions)
+      .set({ status: 'completed', updatedAt: new Date() })
+      .where(eq(automationSessions.id, existingSession.id));
+  }
+
+  const [newSession] = await db.insert(automationSessions).values({
+    teamId,
+    automationId: automation.id,
+    chatId,
+    currentNodeId: startNode.id,
+    status: 'active'
+  }).returning();
+
+  await pusherServer.trigger(`team-${teamId}`, 'chat-status-update', {
+    chatId, type: 'automation', status: 'active'
+  });
+
+  const config: InstanceConfig = {
+    accessToken: instance.accessToken,
+    instanceName: instance.instanceName,
+    metaToken: instance.metaToken,
+    metaPhoneNumberId: instance.metaPhoneNumberId
+  };
+
+  if (options.startNodeId && options.startNodeId !== 'start') {
+    await executeStep(newSession, flow, options.startNodeId, '', config, remoteJid, teamId, chatId);
+    return true;
+  }
+
+  const edge = flow.edges.find((item) => item.source === startNode.id);
+  if (!edge) return false;
+
+  await executeStep(newSession, flow, edge.target, '', config, remoteJid, teamId, chatId);
+  return true;
+}
+
 async function executeStep(
     session: typeof automationSessions.$inferSelect, 
     flow: FlowData, 

@@ -29,6 +29,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import useSWR, { useSWRConfig } from 'swr';
 import { useTranslations } from 'next-intl';
 
@@ -42,6 +50,18 @@ type FunnelStage = {
 type ContactData = {
   id: number;
   funnelStage: FunnelStage | null;
+};
+
+type TriggerAutomationNode = {
+  id: string;
+  type: string;
+  label: string;
+};
+
+type TriggerAutomationItem = {
+  id: number;
+  name: string;
+  availableStartNodes: TriggerAutomationNode[];
 };
 
 interface ChatHeaderProps {
@@ -64,6 +84,10 @@ export function ChatHeader({ chatDetails, showSearch, setShowSearch, searchQuery
   const [isClosing, setIsClosing] = useState(false);
   const [isTogglingAi, setIsTogglingAi] = useState(false);
   const [isSettingFunnel, setIsSettingFunnel] = useState(false);
+  const [isTriggerModalOpen, setIsTriggerModalOpen] = useState(false);
+  const [selectedAutomationId, setSelectedAutomationId] = useState<string>('');
+  const [selectedStartNodeId, setSelectedStartNodeId] = useState<string>('start');
+  const [isTriggeringAutomation, setIsTriggeringAutomation] = useState(false);
 
   const remoteJid = chatDetails.remoteJid;
   const { data: contact, mutate: mutateContact } = useSWR<ContactData | null>(
@@ -84,6 +108,14 @@ export function ChatHeader({ chatDetails, showSearch, setShowSearch, searchQuery
     activeChat?.id ? `/api/chats/${activeChat.id}/ai-status` : null,
     fetcher
   );
+  const { data: triggerData, mutate: mutateTriggerData } = useSWR<{ automations: TriggerAutomationItem[] }>(
+    isTriggerModalOpen && activeChat?.id ? `/api/chats/${activeChat.id}/automation/trigger` : null,
+    fetcher
+  );
+
+  const availableAutomations = triggerData?.automations || [];
+  const selectedAutomation = availableAutomations.find((automation) => automation.id.toString() === selectedAutomationId);
+  const selectedAutomationNodes = selectedAutomation?.availableStartNodes || [];
 
   const handleEndChat = async () => {
     if (!activeChat?.id) return;
@@ -157,6 +189,39 @@ export function ChatHeader({ chatDetails, showSearch, setShowSearch, searchQuery
     }
   };
 
+  const handleOpenTriggerModal = () => {
+    setIsTriggerModalOpen(true);
+    setSelectedAutomationId('');
+    setSelectedStartNodeId('start');
+    mutateTriggerData();
+  };
+
+  const handleTriggerAutomation = async () => {
+    if (!activeChat?.id || !selectedAutomationId) return;
+
+    setIsTriggeringAutomation(true);
+    try {
+      const response = await fetch(`/api/chats/${activeChat.id}/automation/trigger`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          automationId: Number(selectedAutomationId),
+          startNodeId: selectedStartNodeId,
+        }),
+      });
+
+      if (!response.ok) throw new Error();
+
+      toast.success(t('trigger_automation_success_toast'));
+      mutateSession();
+      setIsTriggerModalOpen(false);
+    } catch (error) {
+      toast.error(t('trigger_automation_error_toast'));
+    } finally {
+      setIsTriggeringAutomation(false);
+    }
+  };
+
   return (
     <header className="flex items-center justify-between p-3 border-b bg-card shadow-sm z-10 shrink-0 h-[60px]">
       <div className="flex items-center gap-3">
@@ -193,6 +258,27 @@ export function ChatHeader({ chatDetails, showSearch, setShowSearch, searchQuery
               ))}
             </SelectContent>
           </Select>
+        )}
+
+        {!isGroup && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  onClick={handleOpenTriggerModal}
+                  disabled={!activeChat}
+                >
+                  <Zap className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{t('trigger_automation_tooltip')}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
 
         {!isGroup && (
@@ -299,6 +385,67 @@ export function ChatHeader({ chatDetails, showSearch, setShowSearch, searchQuery
           {isSidebarCollapsed ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
         </Button>
       </div>
+
+      <Dialog open={isTriggerModalOpen} onOpenChange={setIsTriggerModalOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>{t('trigger_automation_dialog_title')}</DialogTitle>
+            <DialogDescription>{t('trigger_automation_dialog_desc')}</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t('trigger_automation_select_label')}</label>
+              <Select value={selectedAutomationId} onValueChange={(value) => {
+                setSelectedAutomationId(value);
+                setSelectedStartNodeId('start');
+              }}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('trigger_automation_select_placeholder')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableAutomations.map((automation) => (
+                    <SelectItem key={automation.id} value={automation.id.toString()}>
+                      {automation.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t('trigger_automation_start_from_label')}</label>
+              <Select
+                value={selectedStartNodeId}
+                onValueChange={setSelectedStartNodeId}
+                disabled={!selectedAutomationId}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t('trigger_automation_start_from_placeholder')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="start">{t('trigger_automation_start_from_beginning')}</SelectItem>
+                  {selectedAutomationNodes.map((node) => (
+                    <SelectItem key={node.id} value={node.id}>
+                      {node.label} ({node.type})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsTriggerModalOpen(false)}>
+              {t('cancel_btn')}
+            </Button>
+            <Button onClick={handleTriggerAutomation} disabled={!selectedAutomationId || isTriggeringAutomation}>
+              {isTriggeringAutomation ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {t('trigger_automation_btn')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </header>
   );
 }
