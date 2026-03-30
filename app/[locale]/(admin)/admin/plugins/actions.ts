@@ -25,16 +25,27 @@ export async function getPluginsAdminData(selectedTeamId?: number) {
       selectedTeamId: null,
       teams,
       plugins: [],
+      error: null as string | null,
     };
   }
 
-  const plugins = await listPluginsForTeam(teamId);
+  try {
+    const plugins = await listPluginsForTeam(teamId);
 
-  return {
-    selectedTeamId: teamId,
-    teams,
-    plugins,
-  };
+    return {
+      selectedTeamId: teamId,
+      teams,
+      plugins,
+      error: null as string | null,
+    };
+  } catch (error) {
+    return {
+      selectedTeamId: teamId,
+      teams,
+      plugins: [],
+      error: error instanceof Error ? error.message : 'No se pudieron cargar los plugins.',
+    };
+  }
 }
 
 export async function saveTeamPluginAction(formData: FormData) {

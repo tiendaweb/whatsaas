@@ -174,6 +174,7 @@ export function DraftShortcutsModal({
       onOpenChange(false);
       return;
     }
+    setVariables({});
     setSelectedDraft(draft);
   };
 
@@ -213,7 +214,7 @@ export function DraftShortcutsModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="fixed inset-0 h-[100dvh] w-[100vw] max-w-none m-0 !rounded-none border-0 p-0 flex flex-col bg-[#fafafa] dark:bg-[#09090b] overflow-hidden outline-none"
+        className="fixed inset-0 left-0 top-0 h-[100dvh] w-[100vw] max-w-none m-0 translate-x-0 translate-y-0 !rounded-none border-0 p-0 flex flex-col bg-[#fafafa] dark:bg-[#09090b] overflow-hidden outline-none"
         onKeyDown={handleContainerKeyDown}
       >
         <style dangerouslySetInnerHTML={{ __html: `
@@ -364,7 +365,10 @@ export function DraftShortcutsModal({
               <Button 
                 variant="outline" 
                 size="icon" 
-                onClick={() => setSelectedDraft(null)} 
+                onClick={() => {
+                  setSelectedDraft(null);
+                  setVariables({});
+                }} 
                 className="w-12 h-12 rounded-2xl hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all active:scale-90"
               >
                 <ArrowLeft className="h-5 w-5" />
