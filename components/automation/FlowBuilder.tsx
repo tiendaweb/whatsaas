@@ -148,7 +148,9 @@ const CONTROL_STACK_HEIGHT = 116;
 const OVERLAY_GAP = 16;
 const HORIZONTAL_SPACING = 380;
 const VERTICAL_SPACING = 170;
-const LIST_VERTICAL_SPACING = 210;
+const LIST_VERTICAL_SPACING = 50;
+const DEFAULT_NODE_HEIGHT = 120;
+const ORTHOGONAL_GRID_SIZE = 80;
 
 type InsertMode = "replace" | "insert";
 type ArrangeMode =
@@ -318,160 +320,109 @@ function getArrangementPositions({
   edges: AutomationCanvasEdge[];
   mode: ArrangeMode;
 }) {
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const incomingCount = new Map<string, number>();
-  const outgoing = new Map<string, string[]>();
+  const nodeById = new Map(nodes.map((node) => [node.id, node] as const));
+  const incomingAll = new Map<string, string[]>();
+  const outgoingAll = new Map<string, string[]>();
+  const incomingDAG = new Map<string, string[]>();
+  const outgoingDAG = new Map<string, string[]>();
+  const arrangedPositions = new Map<string, { x: number; y: number }>();
+  const cycleEdges = new Set<string>();
+
+  const getNodeHeight = (node: AutomationCanvasNode) =>
+    (node as AutomationCanvasNode & { measured?: { height?: number } }).measured?.height ??
+    node.height ??
+    DEFAULT_NODE_HEIGHT;
 
   for (const node of nodes) {
-    incomingCount.set(node.id, 0);
-    outgoing.set(node.id, []);
+    incomingAll.set(node.id, []);
+    outgoingAll.set(node.id, []);
+    incomingDAG.set(node.id, []);
+    outgoingDAG.set(node.id, []);
   }
 
   for (const edge of edges) {
-    const sourceNode = nodeById.get(edge.source);
-    const targetNode = nodeById.get(edge.target);
-    if (!sourceNode || !targetNode) {
+    if (!nodeById.has(edge.source) || !nodeById.has(edge.target)) {
       continue;
     }
+    outgoingAll.set(edge.source, [...(outgoingAll.get(edge.source) ?? []), edge.target]);
+    incomingAll.set(edge.target, [...(incomingAll.get(edge.target) ?? []), edge.source]);
+  }
 
-    const isBackEdge =
-      targetNode.position.x < sourceNode.position.x ||
-      targetNode.position.y < sourceNode.position.y;
+  const visitState = new Map<string, 0 | 1 | 2>();
+  const markCycles = (nodeId: string) => {
+    visitState.set(nodeId, 1);
+    for (const target of outgoingAll.get(nodeId) ?? []) {
+      const state = visitState.get(target) ?? 0;
+      if (state === 0) {
+        markCycles(target);
+      } else if (state === 1) {
+        cycleEdges.add(`${nodeId}->${target}`);
+      }
+    }
+    visitState.set(nodeId, 2);
+  };
 
-    if (mode === "hierarchy_ignore_back_edges" && isBackEdge) {
+  for (const node of nodes) {
+    if ((visitState.get(node.id) ?? 0) === 0) {
+      markCycles(node.id);
+    }
+  }
+
+  for (const edge of edges) {
+    if (!nodeById.has(edge.source) || !nodeById.has(edge.target)) {
       continue;
     }
-
-    outgoing.set(edge.source, [...(outgoing.get(edge.source) ?? []), edge.target]);
-    incomingCount.set(edge.target, (incomingCount.get(edge.target) ?? 0) + 1);
+    if (cycleEdges.has(`${edge.source}->${edge.target}`)) {
+      continue;
+    }
+    outgoingDAG.set(edge.source, [...(outgoingDAG.get(edge.source) ?? []), edge.target]);
+    incomingDAG.set(edge.target, [...(incomingDAG.get(edge.target) ?? []), edge.source]);
   }
 
   const startNode =
     nodes.find((node) => node.type === "start") ??
+    [...nodes].sort((a, b) => a.position.x - b.position.x || a.position.y - b.position.y)[0] ??
     null;
-  const startNodeId = startNode?.id ?? null;
+  const roots = startNode
+    ? [startNode.id, ...nodes.filter((n) => n.id !== startNode.id && (incomingDAG.get(n.id)?.length ?? 0) === 0).map((n) => n.id)]
+    : nodes.filter((n) => (incomingDAG.get(n.id)?.length ?? 0) === 0).map((n) => n.id);
 
-  const reachableFromStart = new Set<string>();
-  if (startNodeId) {
-    const queue = [startNodeId];
-    while (queue.length > 0) {
-      const currentId = queue.shift();
-      if (!currentId || reachableFromStart.has(currentId)) {
-        continue;
-      }
-      reachableFromStart.add(currentId);
-      for (const target of outgoing.get(currentId) ?? []) {
-        if (!reachableFromStart.has(target)) {
-          queue.push(target);
-        }
-      }
+  const computeLevels = () => {
+    const inDegree = new Map<string, number>();
+    const queue: string[] = [];
+    const levelByNode = new Map<string, number>();
+    for (const node of nodes) {
+      const deg = incomingDAG.get(node.id)?.length ?? 0;
+      inDegree.set(node.id, deg);
+      if (deg === 0) queue.push(node.id);
     }
-  }
-
-  const roots = nodes
-    .filter((node) => {
-      if ((incomingCount.get(node.id) ?? 0) !== 0) {
-        return false;
-      }
-      if (startNodeId && node.id !== startNodeId && reachableFromStart.has(node.id)) {
-        return false;
-      }
-      return true;
-    })
-    .sort((a, b) => {
-      if (a.type === "start" && b.type !== "start") return -1;
-      if (a.type !== "start" && b.type === "start") return 1;
-      return a.position.y - b.position.y;
-    });
-
-  const levelByNode = new Map<string, number>();
-  if (startNodeId) {
-    const queue = [startNodeId];
-    levelByNode.set(startNodeId, 0);
-
-    while (queue.length > 0) {
-      const currentId = queue.shift();
-      if (!currentId) continue;
-
-      const currentLevel = levelByNode.get(currentId) ?? 0;
-
-      for (const target of outgoing.get(currentId) ?? []) {
-        if (target === startNodeId) {
-          continue;
-        }
-        const nextLevel = currentLevel + 1;
-        const previous = levelByNode.get(target);
-        if (previous === undefined || nextLevel > previous) {
-          levelByNode.set(target, nextLevel);
-        }
-        if (previous === undefined) {
-          queue.push(target);
-        }
-      }
+    for (const rootId of roots) {
+      levelByNode.set(rootId, 0);
+      if (!queue.includes(rootId)) queue.unshift(rootId);
     }
-
-    let looseColumn = -1;
-    const looseRoots = roots.filter((node) => node.id !== startNodeId);
-
-    for (const looseRoot of looseRoots) {
-      if (levelByNode.has(looseRoot.id)) {
-        continue;
-      }
-      const rootLevel = looseColumn;
-      looseColumn -= 1;
-      levelByNode.set(looseRoot.id, rootLevel);
-      const looseQueue = [looseRoot.id];
-
-      while (looseQueue.length > 0) {
-        const currentId = looseQueue.shift();
-        if (!currentId) continue;
-        const currentLevel = levelByNode.get(currentId) ?? rootLevel;
-
-        for (const target of outgoing.get(currentId) ?? []) {
-          if (target === startNodeId || levelByNode.has(target) || reachableFromStart.has(target)) {
-            continue;
-          }
-          levelByNode.set(target, currentLevel + 1);
-          looseQueue.push(target);
-        }
-      }
-    }
-  } else {
-    const workingIncomingCount = new Map(incomingCount);
-    const queue = roots.map((node) => node.id);
-    roots.forEach((node) => levelByNode.set(node.id, 0));
-
     while (queue.length > 0) {
       const currentId = queue.shift();
       if (!currentId) continue;
       const currentLevel = levelByNode.get(currentId) ?? 0;
-
-      for (const target of outgoing.get(currentId) ?? []) {
+      for (const target of outgoingDAG.get(currentId) ?? []) {
         levelByNode.set(target, Math.max(levelByNode.get(target) ?? 0, currentLevel + 1));
-        workingIncomingCount.set(target, (workingIncomingCount.get(target) ?? 0) - 1);
-        if ((workingIncomingCount.get(target) ?? 0) <= 0) {
+        inDegree.set(target, (inDegree.get(target) ?? 0) - 1);
+        if ((inDegree.get(target) ?? 0) <= 0) {
           queue.push(target);
         }
       }
     }
-  }
-
-  let fallbackLevel = Math.max(...Array.from(levelByNode.values()), 0);
-  for (const node of nodes) {
-    if (!levelByNode.has(node.id)) {
-      fallbackLevel = startNodeId ? fallbackLevel - 1 : fallbackLevel + 1;
-      levelByNode.set(node.id, fallbackLevel);
+    let fallbackLevel = Math.max(0, ...Array.from(levelByNode.values()));
+    for (const node of nodes) {
+      if (!levelByNode.has(node.id)) {
+        fallbackLevel += 1;
+        levelByNode.set(node.id, fallbackLevel);
+      }
     }
-  }
+    return levelByNode;
+  };
 
-  const nodesByLevel = new Map<number, AutomationCanvasNode[]>();
-  for (const node of nodes) {
-    const level = levelByNode.get(node.id) ?? 0;
-    nodesByLevel.set(level, [...(nodesByLevel.get(level) ?? []), node]);
-  }
-
-  const sortedLevels = Array.from(nodesByLevel.keys()).sort((a, b) => a - b);
-  const arrangedPositions = new Map<string, { x: number; y: number }>();
+  const levelByNode = computeLevels();
 
   if (mode === "vertical_list") {
     const ordered = [...nodes].sort((a, b) => {
@@ -479,50 +430,156 @@ function getArrangementPositions({
       if (levelDiff !== 0) return levelDiff;
       return a.position.y - b.position.y;
     });
-
-    ordered.forEach((node, index) => {
-      arrangedPositions.set(node.id, { x: 0, y: index * LIST_VERTICAL_SPACING });
-    });
-
+    let currentY = 0;
+    const fixedX = 0;
+    for (const node of ordered) {
+      arrangedPositions.set(node.id, { x: fixedX, y: currentY });
+      currentY += getNodeHeight(node) + LIST_VERTICAL_SPACING;
+    }
     return arrangedPositions;
   }
 
-  const largestColumn = Math.max(
-    ...sortedLevels.map((level) => nodesByLevel.get(level)?.length ?? 0),
-    1,
-  );
-
-  sortedLevels.forEach((level) => {
-    const levelNodes = [...(nodesByLevel.get(level) ?? [])].sort((a, b) => {
-      if (mode === "straight_lines") {
-        const outgoingA = outgoing.get(a.id)?.length ?? 0;
-        const outgoingB = outgoing.get(b.id)?.length ?? 0;
-        if (outgoingA !== outgoingB) {
-          return outgoingB - outgoingA;
+  if (mode === "spaced_tree") {
+    const childrenByParent = new Map<string, string[]>();
+    for (const node of nodes) {
+      childrenByParent.set(node.id, [...(outgoingDAG.get(node.id) ?? [])]);
+    }
+    const depthByNode = new Map<string, number>();
+    const treeParent = new Map<string, string | null>();
+    for (const rootId of roots) {
+      const queue = [{ id: rootId, depth: 0 }];
+      treeParent.set(rootId, null);
+      while (queue.length > 0) {
+        const current = queue.shift();
+        if (!current) continue;
+        const previousDepth = depthByNode.get(current.id);
+        if (previousDepth !== undefined && previousDepth >= current.depth) continue;
+        depthByNode.set(current.id, current.depth);
+        for (const target of childrenByParent.get(current.id) ?? []) {
+          if (!treeParent.has(target)) treeParent.set(target, current.id);
+          queue.push({ id: target, depth: current.depth + 1 });
         }
       }
-      return a.position.y - b.position.y;
-    });
+    }
 
-    const horizontalSpacing =
-      mode === "spaced_tree" ? HORIZONTAL_SPACING * 1.35 : HORIZONTAL_SPACING;
-    const verticalSpacing =
-      mode === "straight_lines"
-        ? VERTICAL_SPACING * 0.82
-        : mode === "spaced_tree"
-          ? VERTICAL_SPACING * 1.45
-          : VERTICAL_SPACING;
-    const columnHeight = (levelNodes.length - 1) * verticalSpacing;
-    const verticalOffset = ((largestColumn - 1) * verticalSpacing - columnHeight) / 2;
+    let cursorY = 0;
+    const verticalGap = VERTICAL_SPACING * 1.85;
+    const horizontalGap = HORIZONTAL_SPACING * 1.6;
+    const assignTreeY = (nodeId: string): number => {
+      const children = (childrenByParent.get(nodeId) ?? []).filter(
+        (childId) => treeParent.get(childId) === nodeId,
+      );
+      if (children.length === 0) {
+        const leafY = cursorY;
+        cursorY += verticalGap;
+        return leafY;
+      }
+      const childYs = children.map((childId) => assignTreeY(childId));
+      return (Math.min(...childYs) + Math.max(...childYs)) / 2;
+    };
 
-    levelNodes.forEach((node, index) => {
-      arrangedPositions.set(node.id, {
-        x: level * horizontalSpacing,
-        y: verticalOffset + index * verticalSpacing,
+    for (const rootId of roots) {
+      const y = assignTreeY(rootId);
+      arrangedPositions.set(rootId, {
+        x: (depthByNode.get(rootId) ?? 0) * horizontalGap,
+        y,
       });
-    });
+    }
+
+    for (const node of nodes) {
+      if (arrangedPositions.has(node.id)) continue;
+      const parentId = treeParent.get(node.id);
+      const parentPos = parentId ? arrangedPositions.get(parentId) : null;
+      const depth = depthByNode.get(node.id) ?? levelByNode.get(node.id) ?? 0;
+      const y = parentPos ? parentPos.y + verticalGap * 0.65 : cursorY;
+      arrangedPositions.set(node.id, { x: depth * horizontalGap, y });
+      cursorY = Math.max(cursorY, y + verticalGap);
+    }
+    return arrangedPositions;
+  }
+
+  const nodesByLevel = new Map<number, string[]>();
+  for (const node of nodes) {
+    const level = levelByNode.get(node.id) ?? 0;
+    nodesByLevel.set(level, [...(nodesByLevel.get(level) ?? []), node.id]);
+  }
+  const sortedLevels = Array.from(nodesByLevel.keys()).sort((a, b) => a - b);
+  const orderIndex = new Map<string, number>();
+  sortedLevels.forEach((level) => {
+    (nodesByLevel.get(level) ?? [])
+      .sort((aId, bId) => (nodeById.get(aId)?.position.y ?? 0) - (nodeById.get(bId)?.position.y ?? 0))
+      .forEach((id, idx) => orderIndex.set(id, idx));
   });
 
+  for (let pass = 0; pass < 2; pass += 1) {
+    for (const level of sortedLevels) {
+      const ids = nodesByLevel.get(level) ?? [];
+      ids.sort((aId, bId) => {
+        const aParents = incomingDAG.get(aId) ?? [];
+        const bParents = incomingDAG.get(bId) ?? [];
+        const aBarycenter =
+          aParents.length > 0
+            ? aParents.reduce((acc, parentId) => acc + (orderIndex.get(parentId) ?? 0), 0) / aParents.length
+            : orderIndex.get(aId) ?? 0;
+        const bBarycenter =
+          bParents.length > 0
+            ? bParents.reduce((acc, parentId) => acc + (orderIndex.get(parentId) ?? 0), 0) / bParents.length
+            : orderIndex.get(bId) ?? 0;
+        return aBarycenter - bBarycenter;
+      });
+      ids.forEach((id, idx) => orderIndex.set(id, idx));
+    }
+  }
+
+  if (mode === "straight_lines") {
+    const occupied = new Set<string>();
+    const rowByNode = new Map<string, number>();
+    for (const level of sortedLevels) {
+      const ids = [...(nodesByLevel.get(level) ?? [])].sort(
+        (aId, bId) => (orderIndex.get(aId) ?? 0) - (orderIndex.get(bId) ?? 0),
+      );
+      for (const id of ids) {
+        const parentRows = (incomingDAG.get(id) ?? [])
+          .map((parentId) => rowByNode.get(parentId))
+          .filter((row): row is number => typeof row === "number");
+        let preferred = parentRows.length > 0 ? Math.round(parentRows.reduce((a, b) => a + b, 0) / parentRows.length) : 0;
+        let row = preferred;
+        let radius = 0;
+        while (occupied.has(`${level}:${row}`)) {
+          radius += 1;
+          const up = preferred - radius;
+          const down = preferred + radius;
+          row = occupied.has(`${level}:${up}`) ? down : up;
+        }
+        occupied.add(`${level}:${row}`);
+        rowByNode.set(id, row);
+      }
+    }
+    for (const node of nodes) {
+      const col = levelByNode.get(node.id) ?? 0;
+      const row = rowByNode.get(node.id) ?? 0;
+      arrangedPositions.set(node.id, {
+        x: col * (ORTHOGONAL_GRID_SIZE * 5),
+        y: row * (ORTHOGONAL_GRID_SIZE * 3),
+      });
+    }
+    return arrangedPositions;
+  }
+
+  const horizontalGap = HORIZONTAL_SPACING;
+  const verticalGap = VERTICAL_SPACING;
+  for (const level of sortedLevels) {
+    const ids = [...(nodesByLevel.get(level) ?? [])].sort(
+      (aId, bId) => (orderIndex.get(aId) ?? 0) - (orderIndex.get(bId) ?? 0),
+    );
+    let cursorY = 0;
+    for (const id of ids) {
+      const node = nodeById.get(id);
+      if (!node) continue;
+      arrangedPositions.set(id, { x: level * horizontalGap, y: cursorY });
+      cursorY += getNodeHeight(node) + verticalGap;
+    }
+  }
   return arrangedPositions;
 }
 
