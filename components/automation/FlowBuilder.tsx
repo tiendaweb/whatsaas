@@ -550,6 +550,40 @@ function getArrangementPositions({
     node.height ??
     DEFAULT_NODE_HEIGHT;
 
+  const getHandleRank = (node: AutomationCanvasNode | undefined, handle: string | null | undefined) => {
+    if (!node || !handle) return 0;
+
+    if (node.type === "options") {
+      const match = /^option-(\d+)$/.exec(handle);
+      return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+    }
+
+    if (node.type === "button_message") {
+      const buttonId = handle.replace(/^btn-/, "");
+      const buttons = ((node.data as { buttons?: Array<{ id: string }> }).buttons ?? []);
+      const index = buttons.findIndex((button) => button.id === buttonId);
+      return index >= 0 ? index : Number.MAX_SAFE_INTEGER;
+    }
+
+    if (node.type === "list_message") {
+      const itemId = handle.replace(/^list-/, "");
+      const items = ((node.data as { items?: Array<{ id: string }> }).items ?? []);
+      const index = items.findIndex((item) => item.id === itemId);
+      return index >= 0 ? index : Number.MAX_SAFE_INTEGER;
+    }
+
+    if (node.type === "condition") {
+      const conditionData = node.data as { conditions?: Array<{ id: string }> };
+      if (handle === "fallback") {
+        return (conditionData.conditions?.length ?? 0) + 1;
+      }
+      const index = (conditionData.conditions ?? []).findIndex((condition) => condition.id === handle);
+      return index >= 0 ? index : Number.MAX_SAFE_INTEGER;
+    }
+
+    return 0;
+  };
+
   for (const node of nodes) {
     incomingAll.set(node.id, []);
     outgoingAll.set(node.id, []);
@@ -557,7 +591,25 @@ function getArrangementPositions({
     outgoingDAG.set(node.id, []);
   }
 
-  for (const edge of edges) {
+  const allEdgesSorted = [...edges].sort((a, b) => {
+    const sourceDiff = a.source.localeCompare(b.source);
+    if (sourceDiff !== 0) return sourceDiff;
+
+    const sourceNode = nodeById.get(a.source);
+    const rankDiff =
+      getHandleRank(sourceNode, a.sourceHandle) - getHandleRank(sourceNode, b.sourceHandle);
+    if (rankDiff !== 0) return rankDiff;
+
+    const targetA = nodeById.get(a.target);
+    const targetB = nodeById.get(b.target);
+    const yDiff = (targetA?.position.y ?? 0) - (targetB?.position.y ?? 0);
+    if (yDiff !== 0) return yDiff;
+    const xDiff = (targetA?.position.x ?? 0) - (targetB?.position.x ?? 0);
+    if (xDiff !== 0) return xDiff;
+    return a.id.localeCompare(b.id);
+  });
+
+  for (const edge of allEdgesSorted) {
     if (!nodeById.has(edge.source) || !nodeById.has(edge.target)) {
       continue;
     }
@@ -585,7 +637,7 @@ function getArrangementPositions({
     }
   }
 
-  for (const edge of edges) {
+  for (const edge of allEdgesSorted) {
     if (!nodeById.has(edge.source) || !nodeById.has(edge.target)) {
       continue;
     }
