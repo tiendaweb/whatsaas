@@ -488,12 +488,14 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
       { key: 'mode', labelKey: 'go_to_mode_label', input: 'select', required: true },
       { key: 'targetNodeId', labelKey: 'go_to_target_node_label', input: 'select' },
       { key: 'targetAutomationId', labelKey: 'go_to_target_automation_label', input: 'select' },
+      { key: 'fallbackAction', labelKey: 'go_to_fallback_action_label', input: 'select' },
       { key: 'fallbackNodeId', labelKey: 'go_to_fallback_node_label', input: 'select' },
     ],
     defaults: {
       mode: 'previous_node',
       targetNodeId: '',
       targetAutomationId: '',
+      fallbackAction: 'stop',
       fallbackNodeId: '',
     },
     connectionRules: {

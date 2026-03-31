@@ -182,6 +182,7 @@ export const goToNodeDataSchema = z
     mode: z.enum(["previous_node", "specific_node", "other_flow"]),
     targetNodeId: z.string().min(1).optional(),
     targetAutomationId: z.union([z.number().int().positive(), z.string().min(1)]).optional(),
+    fallbackAction: z.enum(["stop", "node"]).optional(),
     fallbackNodeId: z.string().min(1).optional(),
   })
   .superRefine((data, ctx) => {
@@ -201,6 +202,14 @@ export const goToNodeDataSchema = z
           path: ["targetAutomationId"],
         });
       }
+    }
+
+    if (data.fallbackAction === "node" && !data.fallbackNodeId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "fallbackNodeId is required when fallbackAction is node.",
+        path: ["fallbackNodeId"],
+      });
     }
   });
 
@@ -328,6 +337,7 @@ export type AutomationCanvasNodeData = {
   mode?: GoToNodeData["mode"];
   targetNodeId?: GoToNodeData["targetNodeId"];
   targetAutomationId?: GoToNodeData["targetAutomationId"];
+  fallbackAction?: GoToNodeData["fallbackAction"];
   fallbackNodeId?: GoToNodeData["fallbackNodeId"];
 };
 

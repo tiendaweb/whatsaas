@@ -377,6 +377,34 @@ function normalizeNodeData(
         conditions,
       };
     }
+    case "go_to_node": {
+      const mode =
+        merged.mode === "specific_node" ||
+        merged.mode === "other_flow" ||
+        merged.mode === "previous_node"
+          ? merged.mode
+          : ((defaults.mode as "previous_node") ?? "previous_node");
+      const fallbackNodeId = trimString(merged.fallbackNodeId);
+      const fallbackAction =
+        merged.fallbackAction === "node" || merged.fallbackAction === "stop"
+          ? merged.fallbackAction
+          : fallbackNodeId
+            ? "node"
+            : "stop";
+
+      return {
+        mode,
+        targetNodeId: trimString(merged.targetNodeId),
+        targetAutomationId:
+          typeof merged.targetAutomationId === "number" &&
+          Number.isInteger(merged.targetAutomationId) &&
+          merged.targetAutomationId > 0
+            ? merged.targetAutomationId
+            : trimString(merged.targetAutomationId),
+        fallbackAction,
+        fallbackNodeId: fallbackAction === "node" ? fallbackNodeId : undefined,
+      };
+    }
     default: {
       return merged;
     }

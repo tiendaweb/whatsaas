@@ -507,6 +507,11 @@ async function executeStep(
         const fallbackNodeId = data.fallbackNodeId && flow.nodes.some((node) => node.id === data.fallbackNodeId)
             ? data.fallbackNodeId
             : undefined;
+        const fallbackAction = data.fallbackAction
+            ? data.fallbackAction
+            : fallbackNodeId
+                ? 'node'
+                : 'stop';
 
         if (data.mode === 'other_flow') {
             const parsedAutomationId = Number(data.targetAutomationId);
@@ -551,10 +556,13 @@ async function executeStep(
                 }
             }
 
-            if (fallbackNodeId) {
+            if (fallbackAction === 'node' && fallbackNodeId) {
                 await executeStep(updatedSession, flow, fallbackNodeId, input, instance, remoteJid, teamId, chatId);
             } else {
                 await db.update(automationSessions).set({ status: 'completed' }).where(eq(automationSessions.id, session.id));
+                await pusherServer.trigger(`team-${teamId}`, 'chat-status-update', {
+                    chatId, type: 'automation', status: 'completed'
+                });
             }
             return;
         }
@@ -570,10 +578,13 @@ async function executeStep(
 
         if (redirectTargetId && flow.nodes.some((node) => node.id === redirectTargetId)) {
             await executeStep(updatedSession, flow, redirectTargetId, input, instance, remoteJid, teamId, chatId);
-        } else if (fallbackNodeId) {
+        } else if (fallbackAction === 'node' && fallbackNodeId) {
             await executeStep(updatedSession, flow, fallbackNodeId, input, instance, remoteJid, teamId, chatId);
         } else {
             await db.update(automationSessions).set({ status: 'completed' }).where(eq(automationSessions.id, session.id));
+            await pusherServer.trigger(`team-${teamId}`, 'chat-status-update', {
+                chatId, type: 'automation', status: 'completed'
+            });
         }
         return;
     }
