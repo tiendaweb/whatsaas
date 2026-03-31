@@ -230,6 +230,139 @@ const DEFAULT_GENERATOR_TOKENS = 1200;
 const GENERATOR_TOKEN_RANGE_HINT = "Rango permitido: 128–4096";
 const GENERATOR_TOKEN_PRESETS = [512, 1024, 2048, 4096] as const;
 
+type InfiniteLoopDiagnostics = {
+  hasNonTerminatingLoop: boolean;
+  problematicEdgeKeys: Set<string>;
+};
+
+function getEdgeKey(edge: Pick<AutomationCanvasEdge, "source" | "target" | "sourceHandle">) {
+  return `${edge.source}->${edge.target}::${edge.sourceHandle ?? "__default__"}`;
+}
+
+function detectNonTerminatingLoops(
+  nodes: AutomationCanvasNode[],
+  edges: AutomationCanvasEdge[],
+): InfiniteLoopDiagnostics {
+  const nodeById = new Map(nodes.map((node) => [node.id, node] as const));
+  const adjacency = new Map<string, string[]>();
+  const outgoingEdgesBySource = new Map<string, AutomationCanvasEdge[]>();
+
+  for (const node of nodes) {
+    adjacency.set(node.id, []);
+    outgoingEdgesBySource.set(node.id, []);
+  }
+
+  for (const edge of edges) {
+    if (!nodeById.has(edge.source) || !nodeById.has(edge.target)) continue;
+    adjacency.get(edge.source)?.push(edge.target);
+    outgoingEdgesBySource.set(edge.source, [
+      ...(outgoingEdgesBySource.get(edge.source) ?? []),
+      edge,
+    ]);
+  }
+
+  const startNode = nodes.find((node) => node.type === "start");
+  if (!startNode) {
+    return { hasNonTerminatingLoop: false, problematicEdgeKeys: new Set() };
+  }
+
+  const reachable = new Set<string>();
+  const stack = [startNode.id];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current || reachable.has(current)) continue;
+    reachable.add(current);
+    for (const next of adjacency.get(current) ?? []) {
+      stack.push(next);
+    }
+  }
+
+  const indexByNode = new Map<string, number>();
+  const lowLink = new Map<string, number>();
+  const onStack = new Set<string>();
+  const tarjanStack: string[] = [];
+  const problematicEdgeKeys = new Set<string>();
+  let currentIndex = 0;
+
+  const visit = (nodeId: string) => {
+    indexByNode.set(nodeId, currentIndex);
+    lowLink.set(nodeId, currentIndex);
+    currentIndex += 1;
+    tarjanStack.push(nodeId);
+    onStack.add(nodeId);
+
+    for (const next of adjacency.get(nodeId) ?? []) {
+      if (!reachable.has(next)) continue;
+      if (!indexByNode.has(next)) {
+        visit(next);
+        lowLink.set(
+          nodeId,
+          Math.min(lowLink.get(nodeId) ?? 0, lowLink.get(next) ?? 0),
+        );
+      } else if (onStack.has(next)) {
+        lowLink.set(
+          nodeId,
+          Math.min(lowLink.get(nodeId) ?? 0, indexByNode.get(next) ?? 0),
+        );
+      }
+    }
+
+    if (lowLink.get(nodeId) !== indexByNode.get(nodeId)) return;
+
+    const component: string[] = [];
+    while (tarjanStack.length > 0) {
+      const member = tarjanStack.pop();
+      if (!member) break;
+      onStack.delete(member);
+      component.push(member);
+      if (member === nodeId) break;
+    }
+
+    const componentSet = new Set(component);
+    let hasCycle = component.length > 1;
+    if (!hasCycle && component.length === 1) {
+      const onlyNode = component[0];
+      hasCycle = (adjacency.get(onlyNode) ?? []).includes(onlyNode);
+    }
+    if (!hasCycle) return;
+
+    let closedComponent = true;
+    for (const member of component) {
+      const outgoing = outgoingEdgesBySource.get(member) ?? [];
+      if (outgoing.length === 0) {
+        closedComponent = false;
+        break;
+      }
+      const hasEscape = outgoing.some((edge) => !componentSet.has(edge.target));
+      if (hasEscape) {
+        closedComponent = false;
+        break;
+      }
+    }
+
+    if (!closedComponent) return;
+
+    for (const member of component) {
+      for (const edge of outgoingEdgesBySource.get(member) ?? []) {
+        if (componentSet.has(edge.target)) {
+          problematicEdgeKeys.add(getEdgeKey(edge));
+        }
+      }
+    }
+  };
+
+  for (const nodeId of reachable) {
+    if (!indexByNode.has(nodeId)) {
+      visit(nodeId);
+    }
+  }
+
+  return {
+    hasNonTerminatingLoop: problematicEdgeKeys.size > 0,
+    problematicEdgeKeys,
+  };
+}
+
 function clampGeneratorMaxTokens(value: number) {
   if (!Number.isFinite(value)) {
     return DEFAULT_GENERATOR_TOKENS;
@@ -768,34 +901,45 @@ function FlowBuilderContent({
     selectedNodeIds.length === 0;
   const selectedNodeId = selectedNodeIds[0] ?? null;
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) || null;
-  const hasInfiniteLoopRisk = useMemo(() => {
-    const adjacency = new Map<string, string[]>();
-    for (const node of nodes) {
-      adjacency.set(node.id, []);
-    }
-    for (const edge of edges) {
-      if (adjacency.has(edge.source) && adjacency.has(edge.target)) {
-        adjacency.get(edge.source)?.push(edge.target);
-      }
-    }
+  const infiniteLoopDiagnostics = useMemo(
+    () => detectNonTerminatingLoops(nodes, edges),
+    [edges, nodes],
+  );
+  const problematicEdgeSummaries = useMemo(() => {
+    const nodeLabelById = new Map(
+      nodes.map((node) => {
+        const label =
+          typeof node.data?.label === "string" && node.data.label.trim().length > 0
+            ? node.data.label.trim()
+            : node.type;
+        return [node.id, label] as const;
+      }),
+    );
 
-    const startNode = nodes.find((node) => node.type === "start");
-    if (!startNode) return false;
-
-    const state = new Map<string, 0 | 1 | 2>();
-    const dfs = (nodeId: string): boolean => {
-      state.set(nodeId, 1);
-      for (const next of adjacency.get(nodeId) ?? []) {
-        const nextState = state.get(next) ?? 0;
-        if (nextState === 1) return true;
-        if (nextState === 0 && dfs(next)) return true;
-      }
-      state.set(nodeId, 2);
-      return false;
-    };
-
-    return dfs(startNode.id);
-  }, [edges, nodes]);
+    return edges
+      .filter((edge) =>
+        infiniteLoopDiagnostics.problematicEdgeKeys.has(getEdgeKey(edge)),
+      )
+      .map((edge) => `${nodeLabelById.get(edge.source)} → ${nodeLabelById.get(edge.target)}`);
+  }, [edges, infiniteLoopDiagnostics.problematicEdgeKeys, nodes]);
+  const displayEdges = useMemo(
+    () =>
+      edges.map((edge) => {
+        if (!infiniteLoopDiagnostics.problematicEdgeKeys.has(getEdgeKey(edge))) {
+          return edge;
+        }
+        return {
+          ...edge,
+          style: {
+            ...(edge.style ?? {}),
+            stroke: "#dc2626",
+            strokeWidth: 2.5,
+          },
+          animated: true,
+        };
+      }),
+    [edges, infiniteLoopDiagnostics.problematicEdgeKeys],
+  );
   const aiDraftMetadata = useMemo(
     () => getAutomationAIDraftMetadata(nodes as AutomationFlowNode[]),
     [nodes],
@@ -1627,11 +1771,15 @@ function FlowBuilderContent({
               )}
               {isActive ? t("pause") : t("activate")}
             </Button>
-            {hasInfiniteLoopRisk ? (
+            {infiniteLoopDiagnostics.hasNonTerminatingLoop ? (
               <Button
                 variant="destructive"
                 size="sm"
-                onClick={() => toast.error(t("loop_alert_toast"))}
+                onClick={() =>
+                  toast.error(
+                    `${t("loop_alert_toast")} (${problematicEdgeSummaries.join(", ")})`,
+                  )
+                }
               >
                 <Siren className="h-4 w-4 mr-2" />
                 {t("loop_alert_btn")}
@@ -1689,13 +1837,22 @@ function FlowBuilderContent({
           </div>
         )}
 
+        {infiniteLoopDiagnostics.hasNonTerminatingLoop && (
+          <div className="border-b border-red-200 bg-red-50 px-6 py-3 text-sm text-red-900 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-100">
+            <p className="font-medium">{t("loop_alert_toast")}</p>
+            <p className="mt-1 text-xs opacity-90">
+              {problematicEdgeSummaries.join(" · ")}
+            </p>
+          </div>
+        )}
+
         <div className="flex min-h-0 min-w-0 w-full flex-1">
           <Sidebar />
 
           <div className="relative flex-1 min-h-0 min-w-0 overflow-hidden bg-slate-50 dark:bg-slate-950">
             <ReactFlow
               nodes={nodes}
-              edges={edges}
+              edges={displayEdges}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
