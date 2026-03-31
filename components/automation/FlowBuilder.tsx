@@ -76,6 +76,7 @@ import { ListMessageNode } from "./nodes/ListMessageNode";
 import { CallToActionNode } from "./nodes/CallToActionNode";
 import { AiControlNode } from "./nodes/AiControlNode";
 import { ConditionNode } from "./nodes/ConditionNode";
+import { GoToNode } from "./nodes/GoToNode";
 import { Sidebar } from "./Sidebar";
 import { PropertiesPanel } from "./PropertiesPanel";
 import {
@@ -133,6 +134,7 @@ const nodeTypes = {
   call_to_action: CallToActionNode,
   ai_control: AiControlNode,
   condition: ConditionNode,
+  go_to_node: GoToNode,
 };
 
 interface FlowBuilderProps {
