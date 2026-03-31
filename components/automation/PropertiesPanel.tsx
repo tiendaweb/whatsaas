@@ -28,6 +28,13 @@ import {
   validateAutomationNodeData,
 } from '@/lib/automation/node-catalog';
 
+const MAX_SELECT_LABEL_CHARS = 60;
+
+function truncateSelectLabel(label: string, maxChars = MAX_SELECT_LABEL_CHARS) {
+  if (label.length <= maxChars) return label;
+  return `${label.slice(0, maxChars - 1)}…`;
+}
+
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 interface PropertiesPanelProps {
@@ -126,14 +133,14 @@ export function PropertiesPanel({
       ),
     [nodes],
   );
-  const previousNodeOptions = useMemo(() => {
+  const currentFlowNodeOptions = useMemo(() => {
     if (!selectedNode) return [];
-    const selectedNodeIndex = nodeOrder.findIndex((node) => node.id === selectedNode.id);
-    if (selectedNodeIndex <= 0) return [];
     return nodeOrder
-      .slice(0, selectedNodeIndex)
-      .filter((node) => node.type !== 'start')
-      .map((node) => ({ value: node.id, label: `${node.data.label || node.type} (${node.id})` }));
+      .filter((node) => node.id !== selectedNode.id && node.type !== 'start' && node.type !== 'delay')
+      .map((node) => ({
+        value: node.id,
+        label: truncateSelectLabel(`${node.data.label || node.type} (${node.id})`),
+      }));
   }, [nodeOrder, selectedNode]);
   const flowAutomationOptions = useMemo(
     () =>
@@ -141,7 +148,7 @@ export function PropertiesPanel({
         .filter((automation) => automation.id !== currentAutomationId)
         .map((automation) => ({
           value: String(automation.id),
-          label: automation.name,
+          label: truncateSelectLabel(automation.name),
         })),
     [availableAutomations, currentAutomationId],
   );
@@ -152,7 +159,7 @@ export function PropertiesPanel({
       .filter((node) => node.type !== 'start')
       .map((node) => ({
         value: node.id,
-        label: `${node.data.label || node.type} (${node.id})`,
+        label: truncateSelectLabel(`${node.data.label || node.type} (${node.id})`),
       }));
   }, [targetAutomationData]);
   const optionsFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'options') : null;
@@ -615,12 +622,12 @@ export function PropertiesPanel({
                     <SelectValue placeholder={t('go_to_target_node_placeholder')} />
                   </SelectTrigger>
                   <SelectContent>
-                    {previousNodeOptions.length === 0 ? (
+                    {currentFlowNodeOptions.length === 0 ? (
                       <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                        {t('go_to_no_previous_nodes')}
+                        {t('go_to_no_available_nodes')}
                       </div>
                     ) : (
-                      previousNodeOptions.map((node) => (
+                      currentFlowNodeOptions.map((node) => (
                         <SelectItem key={node.value} value={node.value}>
                           {node.label}
                         </SelectItem>
