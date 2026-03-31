@@ -667,7 +667,11 @@
         "ignore_back_edges": "Flujo limpio (ignorar retornos)",
         "straight_lines": "Líneas más rectas",
         "spaced_tree": "Árbol más separado",
-        "vertical_list": "Lista vertical"
+        "vertical_list": "Lista vertical",
+        "genealogical_tree": "Árbol genealógico",
+        "constellation": "Constelación (sorpresa)",
+        "auto_focus": "Organización automática (foco activo)",
+        "auto_focus_enabled": "Organización automática activada"
       },
       "title": "Generador IA de flujos",
       "description": "Describe la automatización, revisa el resultado y luego insértalo en el canvas.",
