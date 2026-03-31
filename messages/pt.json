@@ -737,6 +737,36 @@
       "confirm_btn": "Salvar fluxo",
       "validation_failed_title": "Revise os erros fatais antes de salvar."
     },
+    "template_save": {
+      "open_btn": "Salvar template",
+      "title": "Salvar template de automação",
+      "description": "Crie um template reutilizável a partir do fluxo atual ou dos nós selecionados.",
+      "name_label": "Nome do template",
+      "name_placeholder": "ex. Fluxo de qualificação de leads",
+      "description_label": "Descrição",
+      "description_placeholder": "Descrição opcional para sua equipe",
+      "visibility_label": "Visibilidade",
+      "visibility_team": "Somente minha equipe",
+      "visibility_public": "Galeria pública",
+      "confirm_btn": "Salvar template",
+      "name_required": "Informe um nome para o template.",
+      "success": "Template salvo com sucesso.",
+      "error": "Não foi possível salvar o template."
+    },
+    "template_insert": {
+      "open_btn": "Inserir template",
+      "title": "Inserir template",
+      "description": "Selecione um template para adicionar seus nós e conexões ao fluxo atual.",
+      "confirm_btn": "Inserir template",
+      "empty": "Ainda não há templates disponíveis para esta equipe.",
+      "select_template": "Selecione um template antes de inserir.",
+      "empty_error": "Este template não possui nós para inserir.",
+      "success": "Template inserido no fluxo atual.",
+      "load_error": "Não foi possível carregar os templates.",
+      "badge_public": "Público",
+      "badge_team": "Equipe",
+      "no_description": "Sem descrição."
+    },
     "go_to_fallback_action_label": "Comportamento de fallback",
     "go_to_fallback_action_stop": "Parar automação",
     "go_to_fallback_action_node": "Ir para nó fallback"

@@ -737,6 +737,36 @@
       "confirm_btn": "Save flow",
       "validation_failed_title": "Review the fatal errors before saving."
     },
+    "template_save": {
+      "open_btn": "Save template",
+      "title": "Save automation template",
+      "description": "Create a reusable template from the current flow or selected nodes.",
+      "name_label": "Template name",
+      "name_placeholder": "e.g. Lead qualification flow",
+      "description_label": "Description",
+      "description_placeholder": "Optional description for your team",
+      "visibility_label": "Visibility",
+      "visibility_team": "Only my team",
+      "visibility_public": "Public gallery",
+      "confirm_btn": "Save template",
+      "name_required": "Template name is required.",
+      "success": "Template saved successfully.",
+      "error": "Failed to save template."
+    },
+    "template_insert": {
+      "open_btn": "Insert template",
+      "title": "Insert template",
+      "description": "Select a template to append its nodes and edges to your current flow.",
+      "confirm_btn": "Insert template",
+      "empty": "No templates available for this team yet.",
+      "select_template": "Select a template before inserting.",
+      "empty_error": "This template has no nodes to insert.",
+      "success": "Template inserted into the current flow.",
+      "load_error": "Failed to load templates.",
+      "badge_public": "Public",
+      "badge_team": "Team",
+      "no_description": "No description."
+    },
     "go_to_fallback_action_label": "Fallback behavior",
     "go_to_fallback_action_stop": "Stop automation",
     "go_to_fallback_action_node": "Go to fallback node"

@@ -613,6 +613,41 @@ export const automationSessions = pgTable("automation_sessions", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+export const automationTemplates = pgTable(
+  "automation_templates",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").references(() => teams.id, {
+      onDelete: "cascade",
+    }),
+    instanceId: integer("instance_id").references(() => evolutionInstances.id, {
+      onDelete: "set null",
+    }),
+    name: varchar("name", { length: 255 }).notNull(),
+    description: text("description"),
+    isPublic: boolean("is_public").notNull().default(false),
+    nodes: jsonb("nodes").notNull().default([]),
+    edges: jsonb("edges").notNull().default([]),
+    createdBy: integer("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamPublicIdx: index("automation_templates_team_public_idx").on(
+      table.teamId,
+      table.isPublic,
+    ),
+    instanceIdIdx: index("automation_templates_instance_id_idx").on(
+      table.instanceId,
+    ),
+    createdByIdx: index("automation_templates_created_by_idx").on(
+      table.createdBy,
+    ),
+  }),
+);
+
 export const aiConfigs = pgTable(
   "ai_configs",
   {
@@ -781,6 +816,24 @@ export const automationSessionsRelations = relations(
     contact: one(contacts, {
       fields: [automationSessions.contactId],
       references: [contacts.id],
+    }),
+  }),
+);
+
+export const automationTemplatesRelations = relations(
+  automationTemplates,
+  ({ one }) => ({
+    team: one(teams, {
+      fields: [automationTemplates.teamId],
+      references: [teams.id],
+    }),
+    instance: one(evolutionInstances, {
+      fields: [automationTemplates.instanceId],
+      references: [evolutionInstances.id],
+    }),
+    author: one(users, {
+      fields: [automationTemplates.createdBy],
+      references: [users.id],
     }),
   }),
 );
@@ -1741,6 +1794,8 @@ export type NewWabaTemplate = typeof wabaTemplates.$inferInsert;
 export type Automation = typeof automations.$inferSelect;
 export type NewAutomation = typeof automations.$inferInsert;
 export type AutomationSession = typeof automationSessions.$inferSelect;
+export type AutomationTemplate = typeof automationTemplates.$inferSelect;
+export type NewAutomationTemplate = typeof automationTemplates.$inferInsert;
 
 export type AiTool = typeof aiTools.$inferSelect;
 export type NewAiTool = typeof aiTools.$inferInsert;

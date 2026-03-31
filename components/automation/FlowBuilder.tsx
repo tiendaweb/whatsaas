@@ -50,16 +50,28 @@ import {
 } from "@/components/ui/card";
 import {
   ArrowLeft,
+  Bot,
   ChevronDown,
+  Clock,
+  ExternalLink,
+  Image,
+  List,
+  ListChecks,
   Save,
   Loader2,
+  MessageSquare,
+  MousePointerClick,
   PlayCircle,
   PauseCircle,
+  PenLine,
   LayoutGrid,
   Sparkles,
+  Split,
   AlertTriangle,
   CheckCircle2,
   Siren,
+  Plus,
+  XCircle,
   GitBranchPlus,
   RotateCcw,
   Settings2,
@@ -106,7 +118,11 @@ import {
   prepareAutomationFlowForSave,
   type PrepareAutomationFlowResult,
 } from "@/lib/automation/flow-normalizer";
-import { createAutomationCanvasNode } from "@/lib/automation/node-catalog";
+import {
+  AUTOMATION_NODE_CATALOG,
+  type AutomationSidebarIconKey,
+  createAutomationCanvasNode,
+} from "@/lib/automation/node-catalog";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -178,6 +194,35 @@ type GeneratedFlowSummary = {
   links: PreviewItem[];
 };
 
+type AutomationTemplateItem = {
+  id: number;
+  teamId: number | null;
+  instanceId: number | null;
+  name: string;
+  description: string | null;
+  isPublic: boolean;
+  nodes: AutomationFlowNode[];
+  edges: AutomationFlowEdge[];
+};
+
+const ICONS_BY_KEY: Record<AutomationSidebarIconKey, React.ElementType> = {
+  "message-square": MessageSquare,
+  image: Image,
+  "mouse-pointer-click": MousePointerClick,
+  "list-checks": ListChecks,
+  "external-link": ExternalLink,
+  list: List,
+  split: Split,
+  clock: Clock,
+  "x-circle": XCircle,
+  "pen-line": PenLine,
+  save: Save,
+  bot: Bot,
+  "git-branch-plus": GitBranchPlus,
+};
+
+const TEMPLATE_INSERT_OFFSET = 48;
+
 const MIN_GENERATOR_TOKENS = 128;
 const MAX_GENERATOR_TOKENS = 4096;
 const DEFAULT_GENERATOR_TOKENS = 1200;
@@ -204,6 +249,31 @@ function normalizeGeneratorMaxTokens(value: number | string) {
   return clampGeneratorMaxTokens(
     typeof value === "number" ? value : Number(value),
   );
+}
+
+function generateCanvasId(prefix: "node" | "edge") {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function buildTemplatePreviewItems(template: AutomationTemplateItem) {
+  return template.nodes.slice(0, 6).map((node) => {
+    const catalogEntry = AUTOMATION_NODE_CATALOG.find((item) => item.type === node.type);
+    return {
+      id: node.id,
+      labelKey: catalogEntry?.labelKey ?? "nodes.message",
+      icon: catalogEntry?.sidebar?.icon,
+      colorClass: catalogEntry?.sidebar?.colorClass ?? "bg-muted",
+      iconColorClass: catalogEntry?.sidebar?.iconColorClass ?? "text-foreground",
+      fallbackName:
+        typeof node.data === "object" && node.data !== null && "label" in node.data
+          ? String((node.data as { label?: string }).label ?? node.type)
+          : node.type,
+    };
+  });
 }
 
 function buildGeneratedFlowSummary(
@@ -645,6 +715,15 @@ function FlowBuilderContent({
     { success: true }
   > | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isSaveTemplateOpen, setIsSaveTemplateOpen] = useState(false);
+  const [isInsertTemplateOpen, setIsInsertTemplateOpen] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+  const [templateDescription, setTemplateDescription] = useState("");
+  const [templateVisibility, setTemplateVisibility] = useState<"team" | "public">("team");
+  const [templates, setTemplates] = useState<AutomationTemplateItem[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+  const [isInsertingTemplate, setIsInsertingTemplate] = useState(false);
 
   const { screenToFlowPosition, toObject, fitView } = useReactFlow();
 
@@ -1054,14 +1133,6 @@ function FlowBuilderContent({
     [hasUnsavedChanges, router, t],
   );
 
-  const generateDuplicatedId = useCallback((prefix: "node" | "edge") => {
-    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-      return `${prefix}-${crypto.randomUUID()}`;
-    }
-
-    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  }, []);
-
   const hasStartNodeInSelection = useMemo(() => {
     if (selectedNodeIds.length === 0) {
       return false;
@@ -1086,7 +1157,7 @@ function FlowBuilderContent({
     const idMap = new Map<string, string>();
 
     selectedNodes.forEach((node) => {
-      idMap.set(node.id, generateDuplicatedId("node"));
+      idMap.set(node.id, generateCanvasId("node"));
     });
 
     const duplicatedNodes = selectedNodes.map((node) => {
@@ -1107,7 +1178,7 @@ function FlowBuilderContent({
       .filter((edge) => selectedSet.has(edge.source) && selectedSet.has(edge.target))
       .map((edge) => ({
         ...edge,
-        id: generateDuplicatedId("edge"),
+        id: generateCanvasId("edge"),
         source: idMap.get(edge.source) ?? edge.source,
         target: idMap.get(edge.target) ?? edge.target,
         selected: false,
@@ -1126,30 +1197,138 @@ function FlowBuilderContent({
     );
   }, [
     edges,
-    generateDuplicatedId,
     hasStartNodeInSelection,
     nodes,
     selectedNodeIds,
     t,
   ]);
 
+  const loadTemplates = useCallback(async () => {
+    const response = await fetch("/api/automation/templates", {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to load templates");
+    }
+
+    const payload = (await response.json()) as { templates?: AutomationTemplateItem[] };
+    setTemplates(payload.templates ?? []);
+  }, []);
+
   const handleSaveTemplateSelection = useCallback(() => {
     if (hasStartNodeInSelection) {
       toast.error(t("bulk_actions.start_node_blocked"));
       return;
     }
-
-    toast.message(t("bulk_actions.template_pending"));
+    setTemplateName("");
+    setTemplateDescription("");
+    setTemplateVisibility("team");
+    setIsSaveTemplateOpen(true);
   }, [hasStartNodeInSelection, t]);
 
   const handleSaveAutomationSelection = useCallback(() => {
-    if (hasStartNodeInSelection) {
-      toast.error(t("bulk_actions.start_node_blocked"));
+    setSelectedTemplateId(null);
+    setIsInsertTemplateOpen(true);
+    loadTemplates().catch(() => {
+      toast.error(t("template_insert.load_error"));
+    });
+  }, [loadTemplates, t]);
+
+  const handleConfirmSaveTemplate = useCallback(async () => {
+    const selectedSet = new Set(selectedNodeIds);
+    const endpoint =
+      selectedSet.size > 1
+        ? "/api/automation/templates/from-selection"
+        : "/api/automation/templates/from-flow";
+
+    const payload = {
+      name: templateName.trim(),
+      description: templateDescription.trim(),
+      isPublic: templateVisibility === "public",
+      nodes: nodes as AutomationFlowNode[],
+      edges: edges as AutomationFlowEdge[],
+      selectedNodeIds: selectedNodeIds,
+    };
+
+    if (!payload.name) {
+      toast.error(t("template_save.name_required"));
       return;
     }
 
-    toast.message(t("bulk_actions.automation_pending"));
-  }, [hasStartNodeInSelection, t]);
+    setIsSavingTemplate(true);
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error("Could not save template");
+      }
+
+      setIsSaveTemplateOpen(false);
+      toast.success(t("template_save.success"));
+    } catch (error) {
+      toast.error(t("template_save.error"));
+    } finally {
+      setIsSavingTemplate(false);
+    }
+  }, [edges, nodes, selectedNodeIds, t, templateDescription, templateName, templateVisibility]);
+
+  const handleInsertTemplate = useCallback(() => {
+    const selectedTemplate = templates.find((item) => item.id === selectedTemplateId);
+    if (!selectedTemplate) {
+      toast.error(t("template_insert.select_template"));
+      return;
+    }
+
+    if (selectedTemplate.nodes.length === 0) {
+      toast.error(t("template_insert.empty_error"));
+      return;
+    }
+
+    setIsInsertingTemplate(true);
+    try {
+      const idMap = new Map<string, string>();
+      const remappedNodes = selectedTemplate.nodes.map((node) => {
+        const nextId = generateCanvasId("node");
+        idMap.set(node.id, nextId);
+        return {
+          ...node,
+          id: nextId,
+          position: {
+            x: node.position.x + TEMPLATE_INSERT_OFFSET,
+            y: node.position.y + TEMPLATE_INSERT_OFFSET,
+          },
+          selected: false,
+          dragging: false,
+        } as AutomationCanvasNode;
+      });
+
+      const remappedEdges = selectedTemplate.edges
+        .filter((edge) => idMap.has(edge.source) && idMap.has(edge.target))
+        .map((edge) => ({
+          ...edge,
+          id: generateCanvasId("edge"),
+          source: idMap.get(edge.source) ?? edge.source,
+          target: idMap.get(edge.target) ?? edge.target,
+          selected: false,
+        })) as AutomationCanvasEdge[];
+
+      setNodes((currentNodes) => [...currentNodes, ...remappedNodes]);
+      setEdges((currentEdges) => [...currentEdges, ...remappedEdges]);
+      setSelectedNodeIds(remappedNodes.map((node) => node.id));
+      setHasUnsavedChanges(true);
+      setIsInsertTemplateOpen(false);
+      toast.success(t("template_insert.success"));
+      requestAnimationFrame(() => fitView({ padding: 0.2, duration: 250 }));
+    } finally {
+      setIsInsertingTemplate(false);
+    }
+  }, [fitView, selectedTemplateId, t, templates]);
 
   const bgColor = isDarkMode ? "#020617" : "#f8fafc";
   const dotColor = isDarkMode ? "#334155" : "#cbd5e1";
@@ -1278,6 +1457,33 @@ function FlowBuilderContent({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSelectedTemplateId(null);
+                setIsInsertTemplateOpen(true);
+                loadTemplates().catch(() => {
+                  toast.error(t("template_insert.load_error"));
+                });
+              }}
+            >
+              <Plus className="h-4 w-4 mr-1.5" />
+              {t("template_insert.open_btn")}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setTemplateName("");
+                setTemplateDescription("");
+                setTemplateVisibility("team");
+                setIsSaveTemplateOpen(true);
+              }}
+            >
+              <Save className="h-4 w-4 mr-1.5" />
+              {t("template_save.open_btn")}
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -1544,6 +1750,136 @@ function FlowBuilderContent({
                 <Save className="mr-2 h-4 w-4" />
               )}
               {isSaving ? t("saving") : t("save_preview.confirm_btn")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isSaveTemplateOpen} onOpenChange={setIsSaveTemplateOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t("template_save.title")}</DialogTitle>
+            <DialogDescription>{t("template_save.description")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="template-name">{t("template_save.name_label")}</Label>
+              <Input
+                id="template-name"
+                value={templateName}
+                onChange={(event) => setTemplateName(event.target.value)}
+                placeholder={t("template_save.name_placeholder")}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="template-description">{t("template_save.description_label")}</Label>
+              <Textarea
+                id="template-description"
+                rows={3}
+                value={templateDescription}
+                onChange={(event) => setTemplateDescription(event.target.value)}
+                placeholder={t("template_save.description_placeholder")}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t("template_save.visibility_label")}</Label>
+              <Select
+                value={templateVisibility}
+                onValueChange={(value) => setTemplateVisibility(value as "team" | "public")}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="team">{t("template_save.visibility_team")}</SelectItem>
+                  <SelectItem value="public">{t("template_save.visibility_public")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsSaveTemplateOpen(false)}>
+              {t("cancel_btn")}
+            </Button>
+            <Button onClick={handleConfirmSaveTemplate} disabled={isSavingTemplate}>
+              {isSavingTemplate ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {t("template_save.confirm_btn")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isInsertTemplateOpen} onOpenChange={setIsInsertTemplateOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{t("template_insert.title")}</DialogTitle>
+            <DialogDescription>{t("template_insert.description")}</DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+            {templates.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                {t("template_insert.empty")}
+              </div>
+            ) : (
+              templates.map((template) => {
+                const previewItems = buildTemplatePreviewItems(template);
+                return (
+                  <button
+                    key={template.id}
+                    type="button"
+                    onClick={() => setSelectedTemplateId(template.id)}
+                    className={cn(
+                      "w-full rounded-lg border p-4 text-left transition",
+                      selectedTemplateId === template.id
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/40",
+                    )}
+                  >
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold">{template.name}</div>
+                        <p className="text-xs text-muted-foreground">
+                          {template.description || t("template_insert.no_description")}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-muted px-2 py-1 text-[10px] font-medium uppercase text-muted-foreground">
+                        {template.isPublic ? t("template_insert.badge_public") : t("template_insert.badge_team")}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {previewItems.map((item) => {
+                        const Icon = item.icon ? ICONS_BY_KEY[item.icon] : null;
+                        return (
+                          <div
+                            key={item.id}
+                            className={cn(
+                              "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs",
+                              item.colorClass,
+                            )}
+                          >
+                            {Icon ? <Icon className={cn("h-3 w-3", item.iconColorClass)} /> : null}
+                            <span>{t(item.labelKey)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsInsertTemplateOpen(false)}>
+              {t("cancel_btn")}
+            </Button>
+            <Button
+              onClick={handleInsertTemplate}
+              disabled={selectedTemplateId === null || isInsertingTemplate}
+            >
+              {isInsertingTemplate ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+              {t("template_insert.confirm_btn")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -748,6 +748,36 @@
       "confirm_btn": "Guardar flujo",
       "validation_failed_title": "Revisa los errores fatales antes de guardar."
     },
+    "template_save": {
+      "open_btn": "Guardar plantilla",
+      "title": "Guardar plantilla de automatización",
+      "description": "Crea una plantilla reutilizable desde el flujo actual o desde los nodos seleccionados.",
+      "name_label": "Nombre de plantilla",
+      "name_placeholder": "ej. Flujo de calificación de leads",
+      "description_label": "Descripción",
+      "description_placeholder": "Descripción opcional para tu equipo",
+      "visibility_label": "Visibilidad",
+      "visibility_team": "Solo mi equipo",
+      "visibility_public": "Galería pública",
+      "confirm_btn": "Guardar plantilla",
+      "name_required": "Debes indicar un nombre para la plantilla.",
+      "success": "Plantilla guardada con éxito.",
+      "error": "No se pudo guardar la plantilla."
+    },
+    "template_insert": {
+      "open_btn": "Insertar plantilla",
+      "title": "Insertar plantilla",
+      "description": "Selecciona una plantilla para anexar sus nodos y conexiones al flujo actual.",
+      "confirm_btn": "Insertar plantilla",
+      "empty": "Todavía no hay plantillas disponibles para este equipo.",
+      "select_template": "Selecciona una plantilla antes de insertar.",
+      "empty_error": "La plantilla no tiene nodos para insertar.",
+      "success": "Plantilla insertada en el flujo actual.",
+      "load_error": "No se pudieron cargar las plantillas.",
+      "badge_public": "Pública",
+      "badge_team": "Equipo",
+      "no_description": "Sin descripción."
+    },
     "go_to_fallback_action_label": "Comportamiento de fallback",
     "go_to_fallback_action_stop": "Detener automatización",
     "go_to_fallback_action_node": "Ir a nodo fallback"
