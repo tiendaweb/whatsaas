@@ -1,6 +1,12 @@
 import { db } from '@/lib/db/drizzle';
-import { marketplaceItems, marketplaceOrders, teams, users } from '@/lib/db/schema';
-import { eq, and, desc, asc, like, sql } from 'drizzle-orm';
+import {
+  marketplaceItems,
+  marketplaceItemPrices,
+  marketplaceOrders,
+  teams,
+  users,
+} from '@/lib/db/schema';
+import { eq, and, desc, asc, sql } from 'drizzle-orm';
 
 export async function getMarketplaceItems(filters?: {
   category?: string;
@@ -10,7 +16,7 @@ export async function getMarketplaceItems(filters?: {
   const conditions = [];
 
   if (filters?.activeOnly !== false) {
-    conditions.push(eq(marketplaceItems.isActive, true));
+    conditions.push(eq(marketplaceItems.status, 'active'));
   }
   if (filters?.category) {
     conditions.push(eq(marketplaceItems.category, filters.category));
@@ -25,20 +31,33 @@ export async function getMarketplaceItems(filters?: {
     .select()
     .from(marketplaceItems)
     .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(asc(marketplaceItems.order), asc(marketplaceItems.title));
+    .orderBy(asc(marketplaceItems.title));
 }
 
 export async function getMarketplaceItemById(id: number) {
-  return db.query.marketplaceItems.findFirst({
+  const item = await db.query.marketplaceItems.findFirst({
     where: eq(marketplaceItems.id, id),
   });
+  if (!item) return null;
+
+  const prices = await db
+    .select()
+    .from(marketplaceItemPrices)
+    .where(
+      and(
+        eq(marketplaceItemPrices.itemId, id),
+        eq(marketplaceItemPrices.enabled, true),
+      ),
+    );
+
+  return { ...item, prices };
 }
 
 export async function getMarketplaceCategories() {
   const rows = await db
     .selectDistinct({ category: marketplaceItems.category })
     .from(marketplaceItems)
-    .where(eq(marketplaceItems.isActive, true))
+    .where(eq(marketplaceItems.status, 'active'))
     .orderBy(asc(marketplaceItems.category));
 
   return rows.map((r: { category: string }) => r.category);
@@ -88,7 +107,7 @@ export async function getMarketplaceOrders(filters?: { status?: string; teamId?:
       requestedByUser: { id: users.id, name: users.name, email: users.email },
     })
     .from(marketplaceOrders)
-    .innerJoin(marketplaceItems, eq(marketplaceOrders.marketplaceItemId, marketplaceItems.id))
+    .innerJoin(marketplaceItems, eq(marketplaceOrders.itemId, marketplaceItems.id))
     .innerJoin(teams, eq(marketplaceOrders.teamId, teams.id))
     .innerJoin(users, eq(marketplaceOrders.requestedBy, users.id))
     .where(conditions.length > 0 ? and(...conditions) : undefined)
@@ -104,24 +123,23 @@ export async function getMarketplaceOrdersByTeam(teamId: number) {
       item: { id: marketplaceItems.id, title: marketplaceItems.title, iconUrl: marketplaceItems.iconUrl },
     })
     .from(marketplaceOrders)
-    .innerJoin(marketplaceItems, eq(marketplaceOrders.marketplaceItemId, marketplaceItems.id))
+    .innerJoin(marketplaceItems, eq(marketplaceOrders.itemId, marketplaceItems.id))
     .where(eq(marketplaceOrders.teamId, teamId))
     .orderBy(desc(marketplaceOrders.createdAt));
 }
 
 export async function createMarketplaceOrder(data: {
   teamId: number;
-  marketplaceItemId: number;
+  itemId: number;
   requestedBy: number;
-  pricingType: string;
-  amount?: string | null;
-  notes?: string | null;
+  total?: number;
 }) {
   const [order] = await db
     .insert(marketplaceOrders)
     .values({
       ...data,
-      status: 'pending',
+      total: data.total ?? 0,
+      status: 'pending_review',
       createdAt: new Date(),
       updatedAt: new Date(),
     })
@@ -133,14 +151,12 @@ export async function updateMarketplaceOrderStatus(
   id: number,
   status: string,
   reviewedBy: number,
-  adminNotes?: string | null,
 ) {
   const [order] = await db
     .update(marketplaceOrders)
     .set({
       status,
       reviewedBy,
-      adminNotes,
       reviewedAt: new Date(),
       updatedAt: new Date(),
     })

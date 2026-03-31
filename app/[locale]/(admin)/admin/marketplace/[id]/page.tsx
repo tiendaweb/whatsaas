@@ -96,14 +96,25 @@ export default async function AdminMarketplaceItemPage({ params }: PageProps) {
                   />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="iconUrl">URL de Icono/Imagen</Label>
-                <Input
-                  id="iconUrl"
-                  name="iconUrl"
-                  placeholder="https://..."
-                  defaultValue={item?.iconUrl ?? ''}
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="iconUrl">URL de Icono</Label>
+                  <Input
+                    id="iconUrl"
+                    name="iconUrl"
+                    placeholder="https://..."
+                    defaultValue={item?.iconUrl ?? ''}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="imageUrl">URL de Imagen</Label>
+                  <Input
+                    id="imageUrl"
+                    name="imageUrl"
+                    placeholder="https://..."
+                    defaultValue={item?.imageUrl ?? ''}
+                  />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="description">Descripción</Label>
@@ -114,7 +125,7 @@ export default async function AdminMarketplaceItemPage({ params }: PageProps) {
                   defaultValue={item?.description ?? ''}
                 />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="category">Categoría</Label>
                   <Input
@@ -124,83 +135,14 @@ export default async function AdminMarketplaceItemPage({ params }: PageProps) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="tag">Etiqueta</Label>
+                  <Label htmlFor="tags">Etiquetas (separadas por coma)</Label>
                   <Input
-                    id="tag"
-                    name="tag"
-                    defaultValue={item?.tag ?? ''}
+                    id="tags"
+                    name="tags"
+                    placeholder="popular, premium, gratis"
+                    defaultValue={item?.tags?.join(', ') ?? ''}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="order">Orden</Label>
-                  <Input
-                    id="order"
-                    name="order"
-                    type="number"
-                    defaultValue={item?.order ?? 0}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Pricing */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Precios</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center gap-3">
-                <Switch
-                  id="isFree"
-                  name="isFree"
-                  defaultChecked={item?.isFree ?? false}
-                />
-                <Label htmlFor="isFree">Gratis</Label>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="monthlyPrice">Precio Mensual</Label>
-                  <Input
-                    id="monthlyPrice"
-                    name="monthlyPrice"
-                    type="number"
-                    step="0.01"
-                    placeholder="0.00"
-                    defaultValue={item?.monthlyPrice ?? ''}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="annualPrice">Precio Anual</Label>
-                  <Input
-                    id="annualPrice"
-                    name="annualPrice"
-                    type="number"
-                    step="0.01"
-                    placeholder="0.00"
-                    defaultValue={item?.annualPrice ?? ''}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="installationPrice">Precio Instalación</Label>
-                  <Input
-                    id="installationPrice"
-                    name="installationPrice"
-                    type="number"
-                    step="0.01"
-                    placeholder="0.00"
-                    defaultValue={item?.installationPrice ?? ''}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2 max-w-[120px]">
-                <Label htmlFor="currency">Moneda</Label>
-                <Input
-                  id="currency"
-                  name="currency"
-                  maxLength={3}
-                  defaultValue={item?.currency ?? 'usd'}
-                />
               </div>
             </CardContent>
           </Card>
@@ -246,12 +188,14 @@ export default async function AdminMarketplaceItemPage({ params }: PageProps) {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <Switch
-                    id="isActive"
-                    name="isActive"
-                    defaultChecked={item?.isActive ?? true}
-                  />
-                  <Label htmlFor="isActive">Activo (visible en marketplace)</Label>
+                  <select
+                    name="status"
+                    defaultValue={item?.status ?? 'active'}
+                    className="rounded-md border px-3 py-2 text-sm"
+                  >
+                    <option value="active">Activo (visible)</option>
+                    <option value="draft">Borrador</option>
+                  </select>
                 </div>
                 <Button type="submit" size="lg">
                   {isNew ? 'Crear Mejora' : 'Guardar cambios'}

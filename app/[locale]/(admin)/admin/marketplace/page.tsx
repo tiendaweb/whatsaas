@@ -12,7 +12,7 @@ import {
   adminBatchGenerateAction,
 } from './actions';
 import Link from 'next/link';
-import { Plus, Sparkles, Trash2, Pencil, Eye, EyeOff, Database } from 'lucide-react';
+import { Plus, Sparkles, Trash2, Pencil, Eye, EyeOff } from 'lucide-react';
 import { SeedMarketplaceButton } from './SeedMarketplaceButton';
 
 export default async function AdminMarketplacePage() {
@@ -99,82 +99,80 @@ export default async function AdminMarketplacePage() {
                 No hay artículos en el marketplace
               </p>
             )}
-            {items.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center gap-4 py-3"
-              >
-                {item.iconUrl ? (
-                  <img
-                    src={item.iconUrl}
-                    alt={item.title}
-                    className="h-10 w-10 rounded-lg object-cover"
-                  />
-                ) : (
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary font-bold">
-                    {item.title.charAt(0)}
-                  </div>
-                )}
-
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm truncate">{item.title}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <Badge variant="outline" className="text-xs">
-                      {item.category}
-                    </Badge>
-                    {item.isFree && (
-                      <Badge variant="secondary" className="text-xs">
-                        Gratis
-                      </Badge>
-                    )}
-                    {item.monthlyPrice && (
-                      <span className="text-xs text-muted-foreground">
-                        ${item.monthlyPrice}/mes
-                      </span>
-                    )}
-                    {!item.isActive && (
-                      <Badge variant="destructive" className="text-xs">
-                        Inactivo
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <form action={adminToggleItemAction}>
-                    <input type="hidden" name="id" value={item.id} />
-                    <input
-                      type="hidden"
-                      name="isActive"
-                      value={String(!item.isActive)}
+            {items.map((item) => {
+              const isActive = item.status === 'active';
+              return (
+                <div
+                  key={item.id}
+                  className="flex items-center gap-4 py-3"
+                >
+                  {item.iconUrl ? (
+                    <img
+                      src={item.iconUrl}
+                      alt={item.title}
+                      className="h-10 w-10 rounded-lg object-cover"
                     />
-                    <Button variant="ghost" size="icon" type="submit" title={item.isActive ? 'Desactivar' : 'Activar'}>
-                      {item.isActive ? (
-                        <Eye className="h-4 w-4" />
-                      ) : (
-                        <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary font-bold">
+                      {item.title.charAt(0)}
+                    </div>
+                  )}
+
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">{item.title}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <Badge variant="outline" className="text-xs">
+                        {item.category}
+                      </Badge>
+                      {item.tags?.map((tag) => (
+                        <Badge key={tag} variant="secondary" className="text-xs">
+                          {tag}
+                        </Badge>
+                      ))}
+                      {!isActive && (
+                        <Badge variant="destructive" className="text-xs">
+                          Borrador
+                        </Badge>
                       )}
-                    </Button>
-                  </form>
-                  <Link href={`/admin/marketplace/${item.id}`}>
-                    <Button variant="ghost" size="icon">
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                  </Link>
-                  <form action={adminDeleteItemAction}>
-                    <input type="hidden" name="id" value={item.id} />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      type="submit"
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </form>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <form action={adminToggleItemAction}>
+                      <input type="hidden" name="id" value={item.id} />
+                      <input
+                        type="hidden"
+                        name="newStatus"
+                        value={isActive ? 'draft' : 'active'}
+                      />
+                      <Button variant="ghost" size="icon" type="submit" title={isActive ? 'Desactivar' : 'Activar'}>
+                        {isActive ? (
+                          <Eye className="h-4 w-4" />
+                        ) : (
+                          <EyeOff className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </form>
+                    <Link href={`/admin/marketplace/${item.id}`}>
+                      <Button variant="ghost" size="icon">
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </Link>
+                    <form action={adminDeleteItemAction}>
+                      <input type="hidden" name="id" value={item.id} />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        type="submit"
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </form>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </CardContent>
       </Card>

@@ -1,13 +1,15 @@
 import { Badge } from '@/components/ui/badge';
-import type { MarketplaceItem } from '@/lib/db/schema';
+import type { MarketplaceItemPrice } from '@/lib/db/schema';
 
 type Props = {
-  item: MarketplaceItem;
+  prices?: MarketplaceItemPrice[];
   size?: 'sm' | 'default';
 };
 
-export function PricingBadge({ item, size = 'default' }: Props) {
-  if (item.isFree && !item.installationPrice) {
+export function PricingBadge({ prices = [], size = 'default' }: Props) {
+  const enabledPrices = prices.filter((p) => p.enabled);
+
+  if (enabledPrices.length === 0) {
     return (
       <Badge variant="secondary" className={size === 'sm' ? 'text-xs' : ''}>
         Gratis
@@ -17,25 +19,24 @@ export function PricingBadge({ item, size = 'default' }: Props) {
 
   const parts: string[] = [];
 
-  if (item.isFree) {
-    parts.push('Gratis');
-  }
-  if (item.monthlyPrice) {
-    parts.push(`$${item.monthlyPrice}/mes`);
-  }
-  if (item.annualPrice) {
-    parts.push(`$${item.annualPrice}/año`);
-  }
-  if (item.installationPrice) {
-    parts.push(`Instalación: $${item.installationPrice}`);
-  }
-
-  if (parts.length === 0) {
-    return (
-      <Badge variant="outline" className={size === 'sm' ? 'text-xs' : ''}>
-        Consultar
-      </Badge>
-    );
+  for (const price of enabledPrices) {
+    const formatted = `$${(price.amount / 100).toFixed(2)}`;
+    switch (price.billingType) {
+      case 'free':
+        parts.push('Gratis');
+        break;
+      case 'monthly':
+        parts.push(`${formatted}/mes`);
+        break;
+      case 'annual':
+        parts.push(`${formatted}/año`);
+        break;
+      case 'installation':
+        parts.push(`Instalación: ${formatted}`);
+        break;
+      default:
+        parts.push(`${formatted} (${price.billingType})`);
+    }
   }
 
   return (

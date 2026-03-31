@@ -3,12 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { PricingBadge } from './PricingBadge';
 import { RequestDialog } from './RequestDialog';
-import type { MarketplaceItem } from '@/lib/db/schema';
+import type { MarketplaceItem, MarketplaceItemPrice } from '@/lib/db/schema';
 import { ArrowLeft } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 
 type Props = {
-  item: MarketplaceItem;
+  item: MarketplaceItem & { prices: MarketplaceItemPrice[] };
 };
 
 export function MarketplaceItemDetail({ item }: Props) {
@@ -44,8 +44,10 @@ export function MarketplaceItemDetail({ item }: Props) {
             <Badge variant="outline" className="capitalize">
               {item.category}
             </Badge>
-            {item.tag && <Badge variant="secondary">{item.tag}</Badge>}
-            <PricingBadge item={item} />
+            {item.tags?.map((tag) => (
+              <Badge key={tag} variant="secondary">{tag}</Badge>
+            ))}
+            <PricingBadge prices={item.prices} />
           </div>
         </div>
         <RequestDialog item={item} />
@@ -66,35 +68,25 @@ export function MarketplaceItemDetail({ item }: Props) {
       </Card>
 
       {/* Pricing Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Precios</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <PriceBox
-              label="Gratis"
-              value={item.isFree ? 'Sí' : 'No'}
-              highlight={item.isFree}
-            />
-            <PriceBox
-              label="Mensual"
-              value={item.monthlyPrice ? `$${item.monthlyPrice}` : '-'}
-              highlight={!!item.monthlyPrice}
-            />
-            <PriceBox
-              label="Anual"
-              value={item.annualPrice ? `$${item.annualPrice}` : '-'}
-              highlight={!!item.annualPrice}
-            />
-            <PriceBox
-              label="Instalación"
-              value={item.installationPrice ? `$${item.installationPrice}` : '-'}
-              highlight={!!item.installationPrice}
-            />
-          </div>
-        </CardContent>
-      </Card>
+      {item.prices && item.prices.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Precios</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {item.prices.filter((p) => p.enabled).map((price) => (
+                <PriceBox
+                  key={price.id}
+                  label={billingTypeLabel(price.billingType)}
+                  value={price.billingType === 'free' ? 'Gratis' : `$${(price.amount / 100).toFixed(2)}`}
+                  highlight
+                />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Interface Blocks */}
       {item.interfaceBlocks && (item.interfaceBlocks as Array<{ html: string }>).length > 0 && (
@@ -134,6 +126,16 @@ export function MarketplaceItemDetail({ item }: Props) {
       )}
     </div>
   );
+}
+
+function billingTypeLabel(type: string): string {
+  switch (type) {
+    case 'free': return 'Gratis';
+    case 'monthly': return 'Mensual';
+    case 'annual': return 'Anual';
+    case 'installation': return 'Instalación';
+    default: return type;
+  }
 }
 
 function PriceBox({

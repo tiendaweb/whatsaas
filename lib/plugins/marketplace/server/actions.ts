@@ -27,22 +27,22 @@ async function assertAdmin() {
 export async function createItemAction(formData: FormData) {
   await assertAdmin();
 
+  const tagsRaw = String(formData.get('tags') ?? '');
+  const tags = tagsRaw
+    ? tagsRaw.split(',').map((t) => t.trim()).filter(Boolean)
+    : [];
+
   const item = await createMarketplaceItem({
     title: String(formData.get('title') ?? ''),
     subtitle: String(formData.get('subtitle') ?? '') || null,
     iconUrl: String(formData.get('iconUrl') ?? '') || null,
+    imageUrl: String(formData.get('imageUrl') ?? '') || null,
     description: String(formData.get('description') ?? ''),
     category: String(formData.get('category') ?? 'general'),
-    tag: String(formData.get('tag') ?? '') || null,
-    isFree: formData.get('isFree') === 'on',
-    monthlyPrice: formData.get('monthlyPrice') ? String(formData.get('monthlyPrice')) : null,
-    annualPrice: formData.get('annualPrice') ? String(formData.get('annualPrice')) : null,
-    installationPrice: formData.get('installationPrice') ? String(formData.get('installationPrice')) : null,
-    currency: String(formData.get('currency') ?? 'usd'),
+    tags,
     interfaceBlocks: parseJsonField(formData.get('interfaceBlocks'), []),
     customFields: parseJsonField(formData.get('customFields'), []),
-    isActive: formData.get('isActive') !== 'off',
-    order: Number(formData.get('order') ?? 0),
+    status: formData.get('status') === 'draft' ? 'draft' : 'active',
   });
 
   revalidatePath('/admin/marketplace');
@@ -53,24 +53,24 @@ export async function updateItemAction(formData: FormData) {
   await assertAdmin();
 
   const id = Number(formData.get('id'));
-  if (!id || Number.isNaN(id)) throw new Error('ID inválido');
+  if (!id || Number.isNaN(id)) throw new Error('ID invalido');
+
+  const tagsRaw = String(formData.get('tags') ?? '');
+  const tags = tagsRaw
+    ? tagsRaw.split(',').map((t) => t.trim()).filter(Boolean)
+    : [];
 
   const item = await updateMarketplaceItem(id, {
     title: String(formData.get('title') ?? ''),
     subtitle: String(formData.get('subtitle') ?? '') || null,
     iconUrl: String(formData.get('iconUrl') ?? '') || null,
+    imageUrl: String(formData.get('imageUrl') ?? '') || null,
     description: String(formData.get('description') ?? ''),
     category: String(formData.get('category') ?? 'general'),
-    tag: String(formData.get('tag') ?? '') || null,
-    isFree: formData.get('isFree') === 'on',
-    monthlyPrice: formData.get('monthlyPrice') ? String(formData.get('monthlyPrice')) : null,
-    annualPrice: formData.get('annualPrice') ? String(formData.get('annualPrice')) : null,
-    installationPrice: formData.get('installationPrice') ? String(formData.get('installationPrice')) : null,
-    currency: String(formData.get('currency') ?? 'usd'),
+    tags,
     interfaceBlocks: parseJsonField(formData.get('interfaceBlocks'), []),
     customFields: parseJsonField(formData.get('customFields'), []),
-    isActive: formData.get('isActive') !== 'off',
-    order: Number(formData.get('order') ?? 0),
+    status: formData.get('status') === 'draft' ? 'draft' : 'active',
   });
 
   revalidatePath('/admin/marketplace');
@@ -86,7 +86,7 @@ export async function deleteItemAction(id: number) {
 
 export async function toggleItemActiveAction(id: number, isActive: boolean) {
   await assertAdmin();
-  await updateMarketplaceItem(id, { isActive });
+  await updateMarketplaceItem(id, { status: isActive ? 'active' : 'draft' });
   revalidatePath('/admin/marketplace');
 }
 
@@ -99,13 +99,12 @@ export async function updateOrderStatusAction(formData: FormData) {
 
   const id = Number(formData.get('orderId'));
   const status = String(formData.get('status') ?? '');
-  const adminNotes = String(formData.get('adminNotes') ?? '') || null;
 
   if (!id || !['approved', 'rejected', 'cancelled'].includes(status)) {
-    throw new Error('Datos inválidos');
+    throw new Error('Datos invalidos');
   }
 
-  await updateMarketplaceOrderStatus(id, status, user.id, adminNotes);
+  await updateMarketplaceOrderStatus(id, status, user.id);
   revalidatePath('/admin/marketplace/orders');
 }
 
@@ -119,20 +118,14 @@ export async function requestImprovementAction(formData: FormData) {
   if (!user || !team) throw new Error('Unauthorized');
 
   const itemId = Number(formData.get('itemId'));
-  const pricingType = String(formData.get('pricingType') ?? 'free');
-  const amount = formData.get('amount') ? String(formData.get('amount')) : null;
-  const notes = String(formData.get('notes') ?? '') || null;
 
   const item = await getMarketplaceItemById(itemId);
   if (!item) throw new Error('Mejora no encontrada');
 
   await createMarketplaceOrder({
     teamId: team.id,
-    marketplaceItemId: itemId,
+    itemId,
     requestedBy: user.id,
-    pricingType,
-    amount,
-    notes,
   });
 
   revalidatePath('/plugins/marketplace');

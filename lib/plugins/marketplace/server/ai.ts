@@ -5,13 +5,13 @@ type GeneratedItemContent = {
   subtitle: string;
   description: string;
   category: string;
-  tag: string;
+  tags: string[];
 };
 
 async function callAI(prompt: string): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    throw new Error('OPENAI_API_KEY no configurada. Configúrala en las variables de entorno.');
+    throw new Error('OPENAI_API_KEY no configurada. Configurala en las variables de entorno.');
   }
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -26,7 +26,7 @@ async function callAI(prompt: string): Promise<string> {
         {
           role: 'system',
           content:
-            'Eres un experto en marketing digital y SaaS. Generas contenido en español para artículos de un marketplace de mejoras/servicios digitales. Responde SIEMPRE en formato JSON válido sin markdown.',
+            'Eres un experto en marketing digital y SaaS. Generas contenido en espanol para articulos de un marketplace de mejoras/servicios digitales. Responde SIEMPRE en formato JSON valido sin markdown.',
         },
         { role: 'user', content: prompt },
       ],
@@ -45,15 +45,15 @@ async function callAI(prompt: string): Promise<string> {
 }
 
 export async function generateItemContent(topic: string): Promise<GeneratedItemContent> {
-  const prompt = `Genera contenido para un artículo de marketplace sobre: "${topic}".
+  const prompt = `Genera contenido para un articulo de marketplace sobre: "${topic}".
 
 Responde con este JSON exacto:
 {
-  "title": "título corto y atractivo",
-  "subtitle": "subtítulo descriptivo de una línea",
-  "description": "descripción detallada de 2-3 párrafos explicando beneficios y características",
-  "category": "una categoría como: web, ecommerce, automatizacion, formularios, herramientas",
-  "tag": "etiqueta corta como: nuevo, popular, premium, esencial"
+  "title": "titulo corto y atractivo",
+  "subtitle": "subtitulo descriptivo de una linea",
+  "description": "descripcion detallada de 2-3 parrafos explicando beneficios y caracteristicas",
+  "category": "una categoria como: web, ecommerce, automatizacion, formularios, herramientas",
+  "tags": ["etiqueta1", "etiqueta2"]
 }`;
 
   const raw = await callAI(prompt);
@@ -76,17 +76,17 @@ export async function improveItemContent(
   field?: string,
 ): Promise<Partial<GeneratedItemContent>> {
   const fieldHint = field
-    ? `Mejora SOLO el campo "${field}" del siguiente artículo.`
-    : 'Mejora TODOS los campos de texto del siguiente artículo.';
+    ? `Mejora SOLO el campo "${field}" del siguiente articulo.`
+    : 'Mejora TODOS los campos de texto del siguiente articulo.';
 
   const prompt = `${fieldHint}
 
-Artículo actual:
-- Título: ${item.title}
-- Subtítulo: ${item.subtitle ?? '(vacío)'}
-- Descripción: ${item.description}
-- Categoría: ${item.category}
-- Etiqueta: ${item.tag ?? '(vacío)'}
+Articulo actual:
+- Titulo: ${item.title}
+- Subtitulo: ${item.subtitle ?? '(vacio)'}
+- Descripcion: ${item.description}
+- Categoria: ${item.category}
+- Etiquetas: ${(item.tags ?? []).join(', ') || '(vacio)'}
 
 Responde con un JSON que contenga SOLO los campos mejorados:
 {
@@ -94,7 +94,7 @@ Responde con un JSON que contenga SOLO los campos mejorados:
   "subtitle": "...",
   "description": "...",
   "category": "...",
-  "tag": "..."
+  "tags": ["..."]
 }
 
 Si solo mejoras un campo, incluye solo ese campo en el JSON.`;

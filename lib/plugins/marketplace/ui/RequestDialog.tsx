@@ -11,18 +11,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { requestImprovementAction } from '../server/actions';
-import type { MarketplaceItem } from '@/lib/db/schema';
+import type { MarketplaceItem, MarketplaceItemPrice } from '@/lib/db/schema';
 
 type Props = {
-  item: MarketplaceItem;
+  item: MarketplaceItem & { prices?: MarketplaceItemPrice[] };
 };
 
 export function RequestDialog({ item }: Props) {
@@ -30,27 +23,12 @@ export function RequestDialog({ item }: Props) {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  const pricingOptions: { value: string; label: string }[] = [];
-  if (item.isFree) pricingOptions.push({ value: 'free', label: 'Gratis' });
-  if (item.monthlyPrice) pricingOptions.push({ value: 'monthly', label: `Mensual - $${item.monthlyPrice}` });
-  if (item.annualPrice) pricingOptions.push({ value: 'annual', label: `Anual - $${item.annualPrice}` });
-  if (item.installationPrice) pricingOptions.push({ value: 'installation', label: `Instalación - $${item.installationPrice}` });
-  if (pricingOptions.length === 0) pricingOptions.push({ value: 'custom', label: 'Consultar precio' });
-
-  const getAmount = (type: string) => {
-    switch (type) {
-      case 'monthly': return item.monthlyPrice;
-      case 'annual': return item.annualPrice;
-      case 'installation': return item.installationPrice;
-      default: return null;
-    }
-  };
+  const enabledPrices = (item.prices ?? []).filter((p) => p.enabled);
+  const total = enabledPrices.reduce((sum, p) => sum + p.amount, 0);
 
   async function handleSubmit(formData: FormData) {
     setLoading(true);
     try {
-      const pricingType = formData.get('pricingType') as string;
-      formData.set('amount', getAmount(pricingType) ?? '');
       await requestImprovementAction(formData);
       setSuccess(true);
       setTimeout(() => {
@@ -85,21 +63,27 @@ export function RequestDialog({ item }: Props) {
           <form action={handleSubmit} className="space-y-4">
             <input type="hidden" name="itemId" value={item.id} />
 
-            <div className="space-y-2">
-              <Label>Plan de precio</Label>
-              <Select name="pricingType" defaultValue={pricingOptions[0]?.value}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {pricingOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
+            {enabledPrices.length > 0 && (
+              <div className="space-y-2">
+                <Label>Precios incluidos</Label>
+                <div className="text-sm space-y-1">
+                  {enabledPrices.map((price) => (
+                    <div key={price.id} className="flex justify-between">
+                      <span className="text-muted-foreground capitalize">{price.billingType}</span>
+                      <span className="font-medium">
+                        {price.billingType === 'free' ? 'Gratis' : `$${(price.amount / 100).toFixed(2)}`}
+                      </span>
+                    </div>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
+                  {total > 0 && (
+                    <div className="flex justify-between pt-1 border-t font-medium">
+                      <span>Total estimado</span>
+                      <span>${(total / 100).toFixed(2)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="notes">Notas (opcional)</Label>

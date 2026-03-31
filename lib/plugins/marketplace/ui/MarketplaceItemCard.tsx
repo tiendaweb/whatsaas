@@ -3,11 +3,11 @@
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PricingBadge } from './PricingBadge';
-import type { MarketplaceItem } from '@/lib/db/schema';
+import type { MarketplaceItem, MarketplaceItemPrice } from '@/lib/db/schema';
 import { useRouter } from '@/i18n/routing';
 
 type Props = {
-  item: MarketplaceItem;
+  item: MarketplaceItem & { prices?: MarketplaceItemPrice[] };
 };
 
 export function MarketplaceItemCard({ item }: Props) {
@@ -46,12 +46,16 @@ export function MarketplaceItemCard({ item }: Props) {
           <Badge variant="outline" className="text-xs">
             {item.category}
           </Badge>
-          <PricingBadge item={item} size="sm" />
+          <PricingBadge prices={item.prices} size="sm" />
         </div>
-        {item.tag && (
-          <Badge variant="secondary" className="mt-2 text-xs">
-            {item.tag}
-          </Badge>
+        {item.tags && item.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {item.tags.map((tag) => (
+              <Badge key={tag} variant="secondary" className="text-xs">
+                {tag}
+              </Badge>
+            ))}
+          </div>
         )}
       </CardContent>
     </Card>

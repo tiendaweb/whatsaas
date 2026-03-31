@@ -30,7 +30,7 @@ export default async function PluginPage({ params }: PluginPageProps) {
 
     if (itemId && !Number.isNaN(itemId)) {
       const item = await getMarketplaceItemById(itemId);
-      if (!item || !item.isActive) notFound();
+      if (!item || item.status !== 'active') notFound();
       return <MarketplaceItemDetail item={item} />;
     }
 
