@@ -172,6 +172,7 @@ const OVERLAY_GAP = 16;
 const HORIZONTAL_SPACING = 380;
 const VERTICAL_SPACING = 170;
 const LIST_VERTICAL_SPACING = 50;
+const UNIFORM_VERTICAL_NODE_GAP = 96;
 const DEFAULT_NODE_HEIGHT = 120;
 const ORTHOGONAL_GRID_SIZE = 80;
 
@@ -634,6 +635,39 @@ function getArrangementPositions({
 
   const levelByNode = computeLevels();
 
+  const enforceUniformVerticalSpacing = (
+    positions: Map<string, { x: number; y: number }>,
+    gap: number,
+  ) => {
+    const nodesByColumn = new Map<number, string[]>();
+
+    for (const node of nodes) {
+      const position = positions.get(node.id);
+      if (!position) continue;
+      const column = Math.round(position.x);
+      nodesByColumn.set(column, [...(nodesByColumn.get(column) ?? []), node.id]);
+    }
+
+    for (const ids of nodesByColumn.values()) {
+      const orderedIds = [...ids].sort(
+        (aId, bId) => (positions.get(aId)?.y ?? 0) - (positions.get(bId)?.y ?? 0),
+      );
+
+      let nextY = 0;
+      for (const nodeId of orderedIds) {
+        const node = nodeById.get(nodeId);
+        if (!node) continue;
+        const currentPosition = positions.get(nodeId);
+        if (!currentPosition) continue;
+        const y = Math.max(currentPosition.y, nextY);
+        positions.set(nodeId, { x: currentPosition.x, y });
+        nextY = y + getNodeHeight(node) + gap;
+      }
+    }
+
+    return positions;
+  };
+
   if (mode === "vertical_list") {
     const ordered = [...nodes].sort((a, b) => {
       const levelDiff = (levelByNode.get(a.id) ?? 0) - (levelByNode.get(b.id) ?? 0);
@@ -646,7 +680,7 @@ function getArrangementPositions({
       arrangedPositions.set(node.id, { x: fixedX, y: currentY });
       currentY += getNodeHeight(node) + LIST_VERTICAL_SPACING;
     }
-    return arrangedPositions;
+    return enforceUniformVerticalSpacing(arrangedPositions, LIST_VERTICAL_SPACING);
   }
 
   if (mode === "spaced_tree") {
@@ -705,7 +739,7 @@ function getArrangementPositions({
       arrangedPositions.set(node.id, { x: depth * horizontalGap, y });
       cursorY = Math.max(cursorY, y + verticalGap);
     }
-    return arrangedPositions;
+    return enforceUniformVerticalSpacing(arrangedPositions, UNIFORM_VERTICAL_NODE_GAP);
   }
 
   const nodesByLevel = new Map<number, string[]>();
@@ -773,7 +807,7 @@ function getArrangementPositions({
         y: row * (ORTHOGONAL_GRID_SIZE * 3),
       });
     }
-    return arrangedPositions;
+    return enforceUniformVerticalSpacing(arrangedPositions, UNIFORM_VERTICAL_NODE_GAP);
   }
 
   const horizontalGap = HORIZONTAL_SPACING;
@@ -790,7 +824,7 @@ function getArrangementPositions({
       cursorY += getNodeHeight(node) + verticalGap;
     }
   }
-  return arrangedPositions;
+  return enforceUniformVerticalSpacing(arrangedPositions, UNIFORM_VERTICAL_NODE_GAP);
 }
 
 function FlowBuilderContent({
