@@ -1,8 +1,9 @@
 import React from 'react';
-import { Handle, Position } from '@xyflow/react';
+import { Position } from '@xyflow/react';
 import { cn } from '@/lib/utils';
 import { LucideIcon } from 'lucide-react';
 import { DisconnectableTargetHandle } from './DisconnectableTargetHandle';
+import { DisconnectableSourceHandle } from './DisconnectableSourceHandle';
 
 interface BaseNodeProps {
   nodeId: string;
@@ -48,8 +49,8 @@ export function BaseNode({
       )}
       
       {!disableSource && (
-        <Handle
-          type="source"
+        <DisconnectableSourceHandle
+          nodeId={nodeId}
           position={Position.Right}
           className="!bg-primary !w-3 !h-3 !-mr-1.5"
         />

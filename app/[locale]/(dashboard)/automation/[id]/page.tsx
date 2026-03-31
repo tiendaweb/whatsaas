@@ -1,7 +1,7 @@
 import React from 'react';
 import { notFound, redirect } from 'next/navigation';
 import FlowBuilder from '@/components/automation/FlowBuilder';
-import { getAutomation } from '../actions';
+import { getAutomation, getAutomations } from '../actions';
 import { getAutomationAdminSettings } from '@/lib/automation/admin-settings';
 import { enforceFeature } from '@/lib/limits';
 import { getTeamForUser } from '@/lib/db/queries';
@@ -22,9 +22,10 @@ export default async function AutomationEditorPage({ params }: { params: { id: s
   
   if (isNaN(automationId)) return notFound();
 
-  const [automation, automationSettings] = await Promise.all([
+  const [automation, automationSettings, teamAutomations] = await Promise.all([
     getAutomation(automationId),
     getAutomationAdminSettings(),
+    getAutomations(),
   ]);
 
   if (!automation) return notFound();
@@ -35,6 +36,13 @@ export default async function AutomationEditorPage({ params }: { params: { id: s
     : [createAutomationCanvasNode({ id: 'start-1', type: 'start', position: { x: 250, y: 100 } })];
 
   const initialEdges = (automation.edges as AutomationCanvasEdge[]) || [];
+  const availableAutomations = teamAutomations
+    .filter((item) => item.instanceId === automation.instanceId)
+    .map((item) => ({
+      id: item.id,
+      name: item.name,
+      instanceId: item.instanceId,
+    }));
 
   return (
     <FlowBuilder 
@@ -43,6 +51,7 @@ export default async function AutomationEditorPage({ params }: { params: { id: s
       initialEdges={initialEdges}
       initialActive={automation.isActive}
       isAIFlowGeneratorEnabled={Boolean(automationSettings?.aiFlowGeneratorEnabled ?? true)}
+      availableAutomations={availableAutomations}
     />
   );
 }
