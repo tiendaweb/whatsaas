@@ -63,6 +63,18 @@ import {
   GitBranchPlus,
   RotateCcw,
   Settings2,
+  MessageSquare,
+  ImageIcon,
+  MousePointerClick,
+  ListChecks,
+  ExternalLink,
+  List,
+  Split,
+  Clock3,
+  CircleX,
+  PenLine,
+  BookmarkCheck,
+  Bot,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocale, useTranslations } from "next-intl";
@@ -107,6 +119,7 @@ import {
   type PrepareAutomationFlowResult,
 } from "@/lib/automation/flow-normalizer";
 import { createAutomationCanvasNode } from "@/lib/automation/node-catalog";
+import { getAutomationNodeCatalogEntry } from "@/lib/automation/node-catalog";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -178,11 +191,41 @@ type GeneratedFlowSummary = {
   links: PreviewItem[];
 };
 
+type AutomationTemplateRecord = {
+  id: number;
+  teamId: number;
+  instanceId: number | null;
+  name: string;
+  description: string | null;
+  isPublic: boolean;
+  nodes: AutomationCanvasNode[];
+  edges: AutomationCanvasEdge[];
+  createdBy: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 const MIN_GENERATOR_TOKENS = 128;
 const MAX_GENERATOR_TOKENS = 4096;
 const DEFAULT_GENERATOR_TOKENS = 1200;
 const GENERATOR_TOKEN_RANGE_HINT = "Rango permitido: 128–4096";
 const GENERATOR_TOKEN_PRESETS = [512, 1024, 2048, 4096] as const;
+
+const nodeIconMap = {
+  "message-square": MessageSquare,
+  image: ImageIcon,
+  "mouse-pointer-click": MousePointerClick,
+  "list-checks": ListChecks,
+  "external-link": ExternalLink,
+  list: List,
+  split: Split,
+  clock: Clock3,
+  "x-circle": CircleX,
+  "pen-line": PenLine,
+  save: BookmarkCheck,
+  bot: Bot,
+  "git-branch-plus": GitBranchPlus,
+} as const;
 
 function clampGeneratorMaxTokens(value: number) {
   if (!Number.isFinite(value)) {
@@ -645,6 +688,21 @@ function FlowBuilderContent({
     { success: true }
   > | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isTemplateLibraryOpen, setIsTemplateLibraryOpen] = useState(false);
+  const [templates, setTemplates] = useState<AutomationTemplateRecord[]>([]);
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(
+    null,
+  );
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+  const [templateDescription, setTemplateDescription] = useState("");
+  const [templateIsPublic, setTemplateIsPublic] = useState(false);
+  const [isSaveTemplateDialogOpen, setIsSaveTemplateDialogOpen] =
+    useState(false);
+  const [templateSaveMode, setTemplateSaveMode] = useState<"flow" | "selection">(
+    "flow",
+  );
 
   const { screenToFlowPosition, toObject, fitView } = useReactFlow();
 
@@ -686,6 +744,8 @@ function FlowBuilderContent({
     selectedNodeIds.length === 0;
   const selectedNodeId = selectedNodeIds[0] ?? null;
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) || null;
+  const selectedTemplate =
+    templates.find((template) => template.id === selectedTemplateId) ?? null;
   const hasInfiniteLoopRisk = useMemo(() => {
     const adjacency = new Map<string, string[]>();
     for (const node of nodes) {
@@ -809,6 +869,31 @@ function FlowBuilderContent({
   const onPaneClick = useCallback(() => {
     setSelectedNodeIds([]);
   }, []);
+
+  const loadTemplates = useCallback(async () => {
+    setIsLoadingTemplates(true);
+    try {
+      const response = await fetch("/api/automation/templates", {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to load templates");
+      }
+
+      const data = (await response.json()) as AutomationTemplateRecord[];
+      setTemplates(data);
+    } catch (error) {
+      toast.error("No se pudieron cargar las plantillas.");
+    } finally {
+      setIsLoadingTemplates(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isTemplateLibraryOpen) {
+      loadTemplates();
+    }
+  }, [isTemplateLibraryOpen, loadTemplates]);
 
   const updateNodeData = (
     id: string,
@@ -1062,6 +1147,75 @@ function FlowBuilderContent({
     return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   }, []);
 
+  const getNodePreviewTitle = useCallback((node: AutomationCanvasNode) => {
+    const nodeData = node.data as Record<string, unknown>;
+    const labels = [
+      nodeData?.label,
+      nodeData?.title,
+      nodeData?.bodyText,
+      nodeData?.buttonText,
+      nodeData?.variable,
+    ];
+    const firstLabel = labels.find(
+      (value) => typeof value === "string" && value.trim().length > 0,
+    );
+
+    return (
+      (typeof firstLabel === "string" ? firstLabel : null) ??
+      node.type.replaceAll("_", " ")
+    );
+  }, []);
+
+  const handleInsertTemplate = useCallback(() => {
+    if (!selectedTemplate) {
+      toast.error("Selecciona una plantilla.");
+      return;
+    }
+
+    const templateNodes = selectedTemplate.nodes ?? [];
+    const templateEdges = selectedTemplate.edges ?? [];
+
+    if (templateNodes.length === 0) {
+      toast.error("La plantilla no tiene nodos.");
+      return;
+    }
+
+    const idMap = new Map<string, string>();
+    const newNodes = templateNodes.map((node) => {
+      const newId = generateDuplicatedId("node");
+      idMap.set(node.id, newId);
+      return {
+        ...node,
+        id: newId,
+        position: {
+          x: node.position.x + 60,
+          y: node.position.y + 60,
+        },
+        selected: false,
+        dragging: false,
+      } as AutomationCanvasNode;
+    });
+
+    const newEdges = templateEdges
+      .filter((edge) => idMap.has(edge.source) && idMap.has(edge.target))
+      .map((edge) => ({
+        ...edge,
+        id: generateDuplicatedId("edge"),
+        source: idMap.get(edge.source) ?? edge.source,
+        target: idMap.get(edge.target) ?? edge.target,
+        selected: false,
+      })) as AutomationCanvasEdge[];
+
+    setNodes((current) => [...current, ...newNodes]);
+    setEdges((current) => [...current, ...newEdges]);
+    setHasUnsavedChanges(true);
+    setIsTemplateLibraryOpen(false);
+    setSelectedTemplateId(null);
+    toast.success(
+      `Plantilla insertada: ${newNodes.length} nodos y ${newEdges.length} conexiones.`,
+    );
+  }, [generateDuplicatedId, selectedTemplate, setEdges, setNodes]);
+
   const hasStartNodeInSelection = useMemo(() => {
     if (selectedNodeIds.length === 0) {
       return false;
@@ -1133,14 +1287,91 @@ function FlowBuilderContent({
     t,
   ]);
 
+  const handleSubmitTemplate = useCallback(async () => {
+    const trimmedName = templateName.trim();
+    if (!trimmedName) {
+      toast.error("Escribe un nombre para la plantilla.");
+      return;
+    }
+
+    const selectedSet = new Set(selectedNodeIds);
+    const payloadNodes =
+      templateSaveMode === "selection"
+        ? nodes.filter((node) => selectedSet.has(node.id))
+        : nodes;
+    const payloadEdges =
+      templateSaveMode === "selection"
+        ? edges.filter(
+            (edge) => selectedSet.has(edge.source) && selectedSet.has(edge.target),
+          )
+        : edges;
+
+    if (payloadNodes.length === 0) {
+      toast.error("No hay nodos para guardar en la plantilla.");
+      return;
+    }
+
+    setIsSavingTemplate(true);
+    try {
+      const endpoint =
+        templateSaveMode === "selection"
+          ? "/api/automation/templates/from-selection"
+          : "/api/automation/templates/from-flow";
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: trimmedName,
+          description: templateDescription.trim() || null,
+          isPublic: templateIsPublic,
+          nodes: payloadNodes,
+          edges: payloadEdges,
+          selectedNodeIds: templateSaveMode === "selection" ? selectedNodeIds : undefined,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to save template");
+      }
+
+      setIsSaveTemplateDialogOpen(false);
+      setTemplateName("");
+      setTemplateDescription("");
+      setTemplateIsPublic(false);
+      toast.success("Plantilla guardada correctamente.");
+    } catch (error) {
+      toast.error("No se pudo guardar la plantilla.");
+    } finally {
+      setIsSavingTemplate(false);
+    }
+  }, [
+    edges,
+    nodes,
+    selectedNodeIds,
+    templateDescription,
+    templateIsPublic,
+    templateName,
+    templateSaveMode,
+  ]);
+
   const handleSaveTemplateSelection = useCallback(() => {
+    if (selectedNodeIds.length === 0) {
+      toast.error("Selecciona al menos un nodo.");
+      return;
+    }
+
     if (hasStartNodeInSelection) {
       toast.error(t("bulk_actions.start_node_blocked"));
       return;
     }
 
-    toast.message(t("bulk_actions.template_pending"));
-  }, [hasStartNodeInSelection, t]);
+    setTemplateSaveMode("selection");
+    setTemplateName("");
+    setTemplateDescription("");
+    setTemplateIsPublic(false);
+    setIsSaveTemplateDialogOpen(true);
+  }, [hasStartNodeInSelection, selectedNodeIds.length, t]);
 
   const handleSaveAutomationSelection = useCallback(() => {
     if (hasStartNodeInSelection) {
@@ -1221,6 +1452,29 @@ function FlowBuilderContent({
             </div>
           </div>
           <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsTemplateLibraryOpen(true);
+                setSelectedTemplateId(null);
+              }}
+            >
+              Insertar plantilla
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setTemplateSaveMode("flow");
+                setTemplateName("");
+                setTemplateDescription("");
+                setTemplateIsPublic(false);
+                setIsSaveTemplateDialogOpen(true);
+              }}
+            >
+              Guardar plantilla
+            </Button>
             {aiDraftMetadata && (
               <Button
                 variant={requiresManualReview ? "default" : "outline"}
@@ -1464,6 +1718,193 @@ function FlowBuilderContent({
           />
         </div>
       </div>
+
+      <Dialog
+        open={isSaveTemplateDialogOpen}
+        onOpenChange={setIsSaveTemplateDialogOpen}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {templateSaveMode === "selection"
+                ? "Guardar plantilla desde selección"
+                : "Guardar plantilla desde flujo completo"}
+            </DialogTitle>
+            <DialogDescription>
+              {templateSaveMode === "selection"
+                ? "Se guardarán solo los nodos seleccionados y sus conexiones internas."
+                : "Se guardará todo el flujo actual como plantilla reutilizable."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label>Nombre</Label>
+              <Input
+                value={templateName}
+                onChange={(event) => setTemplateName(event.target.value)}
+                placeholder="Ej: Onboarding ventas"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Descripción</Label>
+              <Textarea
+                value={templateDescription}
+                onChange={(event) => setTemplateDescription(event.target.value)}
+                placeholder="Qué resuelve esta plantilla y cuándo usarla."
+                rows={3}
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={templateIsPublic}
+                onChange={(event) => setTemplateIsPublic(event.target.checked)}
+              />
+              Hacer plantilla pública para otros equipos
+            </label>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsSaveTemplateDialogOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleSubmitTemplate} disabled={isSavingTemplate}>
+              {isSavingTemplate ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isTemplateLibraryOpen} onOpenChange={setIsTemplateLibraryOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Insertar plantilla</DialogTitle>
+            <DialogDescription>
+              Inserta nodos y conexiones de forma aditiva, sin reemplazar el flujo actual.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 md:grid-cols-[300px_1fr]">
+            <div className="max-h-[420px] overflow-y-auto rounded-lg border p-2">
+              {isLoadingTemplates ? (
+                <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Cargando plantillas...
+                </div>
+              ) : templates.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  No hay plantillas disponibles.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {templates.map((template) => (
+                    <button
+                      key={template.id}
+                      type="button"
+                      onClick={() => setSelectedTemplateId(template.id)}
+                      className={cn(
+                        "w-full rounded-md border p-2 text-left",
+                        selectedTemplateId === template.id
+                          ? "border-primary bg-primary/5"
+                          : "hover:bg-muted/50",
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium">{template.name}</p>
+                        {template.isPublic && (
+                          <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-700">
+                            Pública
+                          </span>
+                        )}
+                      </div>
+                      {template.description && (
+                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                          {template.description}
+                        </p>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="rounded-lg border p-3">
+              {!selectedTemplate ? (
+                <p className="text-sm text-muted-foreground">
+                  Selecciona una plantilla para ver su preview visual.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <h3 className="font-medium">{selectedTemplate.name}</h3>
+                    {selectedTemplate.description ? (
+                      <p className="text-sm text-muted-foreground">
+                        {selectedTemplate.description}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {selectedTemplate.nodes.slice(0, 8).map((node) => {
+                      const entry = getAutomationNodeCatalogEntry(node.type);
+                      const sidebar = entry?.sidebar;
+                      const Icon = sidebar ? nodeIconMap[sidebar.icon] : null;
+
+                      return (
+                        <div
+                          key={node.id}
+                          className="flex items-center gap-2 rounded-md border bg-muted/20 p-2"
+                        >
+                          <div
+                            className={cn(
+                              "flex h-8 w-8 items-center justify-center rounded-md",
+                              sidebar?.colorClass ?? "bg-slate-100",
+                            )}
+                          >
+                            {Icon ? (
+                              <Icon
+                                className={cn(
+                                  "h-4 w-4",
+                                  sidebar?.iconColorClass ?? "text-slate-500",
+                                )}
+                              />
+                            ) : (
+                              <GitBranchPlus className="h-4 w-4 text-slate-500" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-medium">
+                              {getNodePreviewTitle(node)}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {node.type}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsTemplateLibraryOpen(false)}
+            >
+              Cerrar
+            </Button>
+            <Button onClick={handleInsertTemplate} disabled={!selectedTemplate}>
+              Insertar plantilla
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isSavePreviewOpen} onOpenChange={setIsSavePreviewOpen}>
         <DialogContent className="max-w-2xl">
