@@ -479,6 +479,38 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
       iconColorClass: 'text-yellow-600',
     },
   },
+  {
+    type: 'go_to_node',
+    labelKey: 'nodes.go_to_node',
+    category: 'logic',
+    channels: ['qr', 'api'],
+    editableFields: [
+      { key: 'mode', labelKey: 'go_to_mode_label', input: 'select', required: true },
+      { key: 'targetNodeId', labelKey: 'go_to_target_node_label', input: 'select' },
+      { key: 'targetAutomationId', labelKey: 'go_to_target_automation_label', input: 'select' },
+      { key: 'fallbackNodeId', labelKey: 'go_to_fallback_node_label', input: 'select' },
+    ],
+    defaults: {
+      mode: 'previous_node',
+      targetNodeId: '',
+      targetAutomationId: '',
+      fallbackNodeId: '',
+    },
+    connectionRules: {
+      maxIncoming: 'many',
+      maxOutgoing: 0,
+      sourceHandles: 'single',
+      targetHandles: 'single',
+      notes: ['Redirect execution to a previous node, a specific node, or another automation flow.'],
+    },
+    aiDescription: 'Redirect flow execution to another point in this flow or to another automation.',
+    aiExamples: ['Return to the previous question when validation fails.', 'Jump to payment flow after user confirms intent.'],
+    sidebar: {
+      icon: 'split',
+      colorClass: 'bg-amber-500/10',
+      iconColorClass: 'text-amber-600',
+    },
+  },
 ] satisfies AutomationNodeCatalogEntry[];
 
 export const AUTOMATION_SIDEBAR_CATEGORIES: AutomationNodeCategory[] = ['messages', 'logic', 'integrations'];

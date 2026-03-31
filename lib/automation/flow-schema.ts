@@ -21,6 +21,7 @@ export const AUTOMATION_FLOW_NODE_TYPES = [
   "call_to_action",
   "ai_control",
   "condition",
+  "go_to_node",
 ] as const;
 
 export type AutomationFlowNodeType =
@@ -176,6 +177,33 @@ export const conditionNodeDataSchema = z.object({
   label: z.string().optional(),
 });
 
+export const goToNodeDataSchema = z
+  .object({
+    mode: z.enum(["previous_node", "specific_node", "other_flow"]),
+    targetNodeId: z.string().min(1).optional(),
+    targetAutomationId: z.union([z.number().int().positive(), z.string().min(1)]).optional(),
+    fallbackNodeId: z.string().min(1).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.mode === "specific_node" && !data.targetNodeId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "targetNodeId is required when mode is specific_node.",
+        path: ["targetNodeId"],
+      });
+    }
+
+    if (data.mode === "other_flow") {
+      if (!data.targetAutomationId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "targetAutomationId is required when mode is other_flow.",
+          path: ["targetAutomationId"],
+        });
+      }
+    }
+  });
+
 export const automationNodeDataSchemaByType = {
   start: startNodeDataSchema,
   message: messageNodeDataSchema,
@@ -190,6 +218,7 @@ export const automationNodeDataSchemaByType = {
   call_to_action: callToActionNodeDataSchema,
   ai_control: aiControlNodeDataSchema,
   condition: conditionNodeDataSchema,
+  go_to_node: goToNodeDataSchema,
 } as const;
 
 const createNodeSchema = <TType extends AutomationFlowNodeType>(
@@ -217,6 +246,7 @@ export const automationFlowNodeSchema = z.discriminatedUnion("type", [
   createNodeSchema("call_to_action", callToActionNodeDataSchema),
   createNodeSchema("ai_control", aiControlNodeDataSchema),
   createNodeSchema("condition", conditionNodeDataSchema),
+  createNodeSchema("go_to_node", goToNodeDataSchema),
 ]);
 
 export const automationFlowEdgeSchema = z.object({
@@ -247,6 +277,7 @@ export type SaveContactNodeData = z.infer<typeof saveContactNodeDataSchema>;
 export type CallToActionNodeData = z.infer<typeof callToActionNodeDataSchema>;
 export type AIControlNodeData = z.infer<typeof aiControlNodeDataSchema>;
 export type ConditionNodeData = z.infer<typeof conditionNodeDataSchema>;
+export type GoToNodeData = z.infer<typeof goToNodeDataSchema>;
 
 export type AutomationCanvasNodeData = {
   label?:
@@ -294,6 +325,10 @@ export type AutomationCanvasNodeData = {
   items?: ListMessageItem[];
   url?: CallToActionNodeData["url"];
   action?: AIControlNodeData["action"];
+  mode?: GoToNodeData["mode"];
+  targetNodeId?: GoToNodeData["targetNodeId"];
+  targetAutomationId?: GoToNodeData["targetAutomationId"];
+  fallbackNodeId?: GoToNodeData["fallbackNodeId"];
 };
 
 export type AutomationCanvasNode = ReactFlowNode<

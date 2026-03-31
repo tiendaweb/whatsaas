@@ -79,6 +79,10 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
   const [aiAction, setAiAction] = useState<AIControlNodeData['action']>('active');
 
   const [conditions, setConditions] = useState<ConditionEntry[]>([]);
+  const [goToMode, setGoToMode] = useState<'previous_node' | 'specific_node' | 'other_flow'>('previous_node');
+  const [goToTargetNodeId, setGoToTargetNodeId] = useState('');
+  const [goToTargetAutomationId, setGoToTargetAutomationId] = useState('');
+  const [goToFallbackNodeId, setGoToFallbackNodeId] = useState('');
 
   const shouldFetchCRM = selectedNode?.type === 'start' || selectedNode?.type === 'save_contact';
   const { data: funnelStages } = useSWR<any[]>(shouldFetchCRM ? '/api/funnel-stages' : null, fetcher);
@@ -161,6 +165,13 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
       if (selectedNode.type === 'condition') {
         setConditions((mergedData.conditions as ConditionEntry[]) || []);
       }
+
+      if (selectedNode.type === 'go_to_node') {
+        setGoToMode((mergedData.mode as 'previous_node' | 'specific_node' | 'other_flow') || 'previous_node');
+        setGoToTargetNodeId((mergedData.targetNodeId as string) || '');
+        setGoToTargetAutomationId(String(mergedData.targetAutomationId || ''));
+        setGoToFallbackNodeId((mergedData.fallbackNodeId as string) || '');
+      }
     }
   }, [selectedNode]);
 
@@ -240,6 +251,13 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
 
     if (selectedNode.type === 'condition') {
       dataToSave.conditions = conditions;
+    }
+
+    if (selectedNode.type === 'go_to_node') {
+      dataToSave.mode = goToMode;
+      dataToSave.targetNodeId = goToTargetNodeId.trim() || undefined;
+      dataToSave.targetAutomationId = goToTargetAutomationId.trim() || undefined;
+      dataToSave.fallbackNodeId = goToFallbackNodeId.trim() || undefined;
     }
 
     const mergedData = mergeAutomationNodeDataWithDefaults(selectedNode.type, dataToSave);
@@ -481,6 +499,53 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
                       {t('ConditionProperties.else_label')}
                   </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {selectedNode.type === 'go_to_node' && (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>{t('go_to_mode_label')}</Label>
+              <Select value={goToMode} onValueChange={(value) => setGoToMode(value as 'previous_node' | 'specific_node' | 'other_flow')}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="previous_node">{t('go_to_mode_previous')}</SelectItem>
+                  <SelectItem value="specific_node">{t('go_to_mode_specific')}</SelectItem>
+                  <SelectItem value="other_flow">{t('go_to_mode_other_flow')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {(goToMode === 'specific_node' || goToMode === 'other_flow') && (
+              <div className="space-y-2">
+                <Label>{t('go_to_target_node_label')}</Label>
+                <Input
+                  value={goToTargetNodeId}
+                  onChange={(e) => setGoToTargetNodeId(e.target.value)}
+                  placeholder={t('go_to_target_node_placeholder')}
+                />
+              </div>
+            )}
+
+            {goToMode === 'other_flow' && (
+              <div className="space-y-2">
+                <Label>{t('go_to_target_automation_label')}</Label>
+                <Input
+                  value={goToTargetAutomationId}
+                  onChange={(e) => setGoToTargetAutomationId(e.target.value)}
+                  placeholder={t('go_to_target_automation_placeholder')}
+                />
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>{t('go_to_fallback_node_label')}</Label>
+              <Input
+                value={goToFallbackNodeId}
+                onChange={(e) => setGoToFallbackNodeId(e.target.value)}
+                placeholder={t('go_to_fallback_node_placeholder')}
+              />
             </div>
           </div>
         )}

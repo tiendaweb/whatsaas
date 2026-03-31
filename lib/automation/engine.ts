@@ -20,6 +20,7 @@ import type {
   AutomationCanvasNode,
   ButtonMessageButton,
   ConditionEntry,
+  GoToNodeData,
   ListMessageItem,
   SaveContactNodeData,
   StartNodeData,
@@ -28,6 +29,7 @@ import type {
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "http://localhost:8080";
 const GRAPH_API_URL = "https://graph.facebook.com";
 const GRAPH_API_VERSION = "v21.0";
+const NODE_HISTORY_KEY = "__nodeHistory";
 
 type FlowData = {
   nodes: AutomationCanvasNode[];
@@ -40,6 +42,40 @@ type InstanceConfig = {
     metaToken?: string | null;
     metaPhoneNumberId?: string | null;
 };
+
+type AutomationSessionVariables = Record<string, unknown> & {
+  [NODE_HISTORY_KEY]?: string[];
+};
+
+function normalizeSessionVariables(raw: unknown): AutomationSessionVariables {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return {};
+  }
+
+  return raw as AutomationSessionVariables;
+}
+
+function getNodeHistory(variables: AutomationSessionVariables): string[] {
+  const history = variables[NODE_HISTORY_KEY];
+  if (!Array.isArray(history)) return [];
+  return history.filter((item): item is string => typeof item === "string");
+}
+
+function appendNodeToHistory(variables: AutomationSessionVariables, nodeId: string): AutomationSessionVariables {
+  return {
+    ...variables,
+    [NODE_HISTORY_KEY]: [...getNodeHistory(variables), nodeId],
+  };
+}
+
+function extractStringVariables(variables: AutomationSessionVariables): Record<string, string> {
+  return Object.entries(variables).reduce<Record<string, string>>((acc, [key, value]) => {
+    if (key !== NODE_HISTORY_KEY && typeof value === "string") {
+      acc[key] = value;
+    }
+    return acc;
+  }, {});
+}
 
 function replaceVariables(text: string, variables: Record<string, string> | null): string {
     if (!text || !variables) return text;
@@ -239,7 +275,7 @@ export async function processAutomation(
   if (currentNode.type === 'collect') {
       const variableName = currentNode.data.variable as string;
       if (variableName) {
-          const currentVars = (session.variables as Record<string, string>) || {};
+          const currentVars = normalizeSessionVariables(session.variables);
           const newVars = { ...currentVars, [variableName]: text };
           
           await db.update(automationSessions)
@@ -406,13 +442,15 @@ async function executeStep(
     chatId: number
 ) {
     const nextNode = flow.nodes.find(n => n.id === nodeId);
-    const variables = (session.variables as Record<string, string>) || {};
+    const sessionVariables = normalizeSessionVariables(session.variables);
+    const variablesWithHistory = appendNodeToHistory(sessionVariables, nodeId);
+    const variables = extractStringVariables(variablesWithHistory);
 
     await db.update(automationSessions)
-        .set({ currentNodeId: nodeId, updatedAt: new Date() })
+        .set({ currentNodeId: nodeId, variables: variablesWithHistory, updatedAt: new Date() })
         .where(eq(automationSessions.id, session.id));
     
-    const updatedSession = { ...session, currentNodeId: nodeId };
+    const updatedSession = { ...session, currentNodeId: nodeId, variables: variablesWithHistory };
 
     if (!nextNode) {
         await db.update(automationSessions).set({ status: 'completed' }).where(eq(automationSessions.id, session.id));
@@ -460,6 +498,82 @@ async function executeStep(
              await pusherServer.trigger(`team-${teamId}`, 'chat-status-update', {
                  chatId, type: 'automation', status: 'completed'
              });
+        }
+        return;
+    }
+
+    if (nextNode.type === 'go_to_node') {
+        const data = nextNode.data as GoToNodeData;
+        const fallbackNodeId = data.fallbackNodeId && flow.nodes.some((node) => node.id === data.fallbackNodeId)
+            ? data.fallbackNodeId
+            : undefined;
+
+        if (data.mode === 'other_flow') {
+            const parsedAutomationId = Number(data.targetAutomationId);
+            if (Number.isFinite(parsedAutomationId) && parsedAutomationId > 0) {
+                const targetAutomation = await db.query.automations.findFirst({
+                    where: and(eq(automations.id, parsedAutomationId), eq(automations.teamId, teamId)),
+                });
+
+                if (targetAutomation) {
+                    const targetFlow: FlowData = {
+                        nodes: targetAutomation.nodes as AutomationCanvasNode[],
+                        edges: targetAutomation.edges as AutomationCanvasEdge[],
+                    };
+
+                    const targetNode = data.targetNodeId
+                        ? targetFlow.nodes.find((node) => node.id === data.targetNodeId)
+                        : targetFlow.nodes.find((node) => node.type === 'start');
+
+                    if (targetNode) {
+                        await db.update(automationSessions)
+                            .set({ status: 'completed', updatedAt: new Date() })
+                            .where(eq(automationSessions.id, session.id));
+
+                        const carriedVariables = {
+                            ...variablesWithHistory,
+                            [NODE_HISTORY_KEY]: [],
+                        };
+
+                        const [newSession] = await db.insert(automationSessions).values({
+                            teamId,
+                            automationId: targetAutomation.id,
+                            chatId,
+                            contactId: session.contactId,
+                            currentNodeId: targetNode.id,
+                            variables: carriedVariables,
+                            status: 'active',
+                        }).returning();
+
+                        await executeStep(newSession, targetFlow, targetNode.id, input, instance, remoteJid, teamId, chatId);
+                        return;
+                    }
+                }
+            }
+
+            if (fallbackNodeId) {
+                await executeStep(updatedSession, flow, fallbackNodeId, input, instance, remoteJid, teamId, chatId);
+            } else {
+                await db.update(automationSessions).set({ status: 'completed' }).where(eq(automationSessions.id, session.id));
+            }
+            return;
+        }
+
+        let redirectTargetId: string | undefined;
+        if (data.mode === 'specific_node') {
+            redirectTargetId = data.targetNodeId;
+        } else {
+            const history = getNodeHistory(variablesWithHistory);
+            const previousNodeId = history.length >= 2 ? history[history.length - 2] : undefined;
+            redirectTargetId = previousNodeId && previousNodeId !== nextNode.id ? previousNodeId : undefined;
+        }
+
+        if (redirectTargetId && flow.nodes.some((node) => node.id === redirectTargetId)) {
+            await executeStep(updatedSession, flow, redirectTargetId, input, instance, remoteJid, teamId, chatId);
+        } else if (fallbackNodeId) {
+            await executeStep(updatedSession, flow, fallbackNodeId, input, instance, remoteJid, teamId, chatId);
+        } else {
+            await db.update(automationSessions).set({ status: 'completed' }).where(eq(automationSessions.id, session.id));
         }
         return;
     }
