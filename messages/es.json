@@ -568,8 +568,8 @@
     "start_node_delete_blocked": "El nodo Start no se puede eliminar.",
     "loop_alert_btn": "⚠️ Loop detectado",
     "loop_alert_toast": "Se detectó un loop potencialmente infinito. Corrige conexiones antes de guardar.",
-    "go_to_fallback_node_label": "ID de nodo fallback (opcional)",
-    "go_to_fallback_node_placeholder": "ID de nodo fallback opcional",
+    "go_to_fallback_node_label": "ID de nodo fallback",
+    "go_to_fallback_node_placeholder": "ID del nodo fallback",
     "header_text_optional_label": "Texto de Encabezado (Opcional)",
     "header_text_placeholder": "Texto del encabezado...",
     "body_text_label": "Texto del Cuerpo",
@@ -735,7 +735,10 @@
       "back_btn": "Volver",
       "confirm_btn": "Guardar flujo",
       "validation_failed_title": "Revisa los errores fatales antes de guardar."
-    }
+    },
+    "go_to_fallback_action_label": "Comportamiento de fallback",
+    "go_to_fallback_action_stop": "Detener automatización",
+    "go_to_fallback_action_node": "Ir a nodo fallback"
   },
   "Templates": {
     "no_waba_instance_connected": "Sin Instancia WABA Conectada",

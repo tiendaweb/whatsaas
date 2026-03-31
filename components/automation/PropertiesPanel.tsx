@@ -94,6 +94,7 @@ export function PropertiesPanel({
 
   const [conditions, setConditions] = useState<ConditionEntry[]>([]);
   const [goToMode, setGoToMode] = useState<'previous_node' | 'specific_node' | 'other_flow'>('previous_node');
+  const [goToFallbackAction, setGoToFallbackAction] = useState<'stop' | 'node'>('stop');
   const [goToTargetNodeId, setGoToTargetNodeId] = useState('');
   const [goToTargetAutomationId, setGoToTargetAutomationId] = useState('');
   const [goToFallbackNodeId, setGoToFallbackNodeId] = useState('');
@@ -230,7 +231,12 @@ export function PropertiesPanel({
         setGoToMode((mergedData.mode as 'previous_node' | 'specific_node' | 'other_flow') || 'previous_node');
         setGoToTargetNodeId((mergedData.targetNodeId as string) || '');
         setGoToTargetAutomationId(String(mergedData.targetAutomationId || ''));
-        setGoToFallbackNodeId((mergedData.fallbackNodeId as string) || '');
+        const fallbackNodeId = (mergedData.fallbackNodeId as string) || '';
+        const fallbackAction = mergedData.fallbackAction === 'node' || mergedData.fallbackAction === 'stop'
+          ? mergedData.fallbackAction
+          : (fallbackNodeId ? 'node' : 'stop');
+        setGoToFallbackAction(fallbackAction);
+        setGoToFallbackNodeId(fallbackNodeId);
       }
     }
   }, [selectedNode]);
@@ -340,7 +346,8 @@ export function PropertiesPanel({
       dataToSave.mode = goToMode;
       dataToSave.targetNodeId = trimmedTargetNodeId || undefined;
       dataToSave.targetAutomationId = trimmedTargetAutomationId || undefined;
-      dataToSave.fallbackNodeId = goToFallbackNodeId.trim() || undefined;
+      dataToSave.fallbackAction = goToFallbackAction;
+      dataToSave.fallbackNodeId = goToFallbackAction === 'node' ? (goToFallbackNodeId.trim() || undefined) : undefined;
     }
 
     const mergedData = mergeAutomationNodeDataWithDefaults(selectedNode.type, dataToSave);
@@ -704,13 +711,26 @@ export function PropertiesPanel({
             )}
 
             <div className="space-y-2">
-              <Label>{t('go_to_fallback_node_label')}</Label>
-              <Input
-                value={goToFallbackNodeId}
-                onChange={(e) => setGoToFallbackNodeId(e.target.value)}
-                placeholder={t('go_to_fallback_node_placeholder')}
-              />
+              <Label>{t('go_to_fallback_action_label')}</Label>
+              <Select value={goToFallbackAction} onValueChange={(value) => setGoToFallbackAction(value as 'stop' | 'node')}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="stop">{t('go_to_fallback_action_stop')}</SelectItem>
+                  <SelectItem value="node">{t('go_to_fallback_action_node')}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+
+            {goToFallbackAction === 'node' && (
+              <div className="space-y-2">
+                <Label>{t('go_to_fallback_node_label')}</Label>
+                <Input
+                  value={goToFallbackNodeId}
+                  onChange={(e) => setGoToFallbackNodeId(e.target.value)}
+                  placeholder={t('go_to_fallback_node_placeholder')}
+                />
+              </div>
+            )}
           </div>
         )}
 

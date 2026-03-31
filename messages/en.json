@@ -569,8 +569,8 @@
     "start_node_delete_blocked": "Start node cannot be deleted.",
     "loop_alert_btn": "⚠️ Loop detected",
     "loop_alert_toast": "A potentially infinite loop was detected. Fix connections before saving.",
-    "go_to_fallback_node_label": "Fallback node ID (optional)",
-    "go_to_fallback_node_placeholder": "Optional fallback node id",
+    "go_to_fallback_node_label": "Fallback node ID",
+    "go_to_fallback_node_placeholder": "Fallback node id",
     "header_text_optional_label": "Header Text (Optional)",
     "header_text_placeholder": "Header text...",
     "body_text_label": "Body Text",
@@ -736,7 +736,10 @@
       "back_btn": "Back",
       "confirm_btn": "Save flow",
       "validation_failed_title": "Review the fatal errors before saving."
-    }
+    },
+    "go_to_fallback_action_label": "Fallback behavior",
+    "go_to_fallback_action_stop": "Stop automation",
+    "go_to_fallback_action_node": "Go to fallback node"
   },
   "Templates": {
     "no_waba_instance_connected": "No WABA Instance Connected",
