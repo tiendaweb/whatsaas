@@ -3,13 +3,13 @@
 import { usePathname, useRouter } from '@/i18n/routing';
 import { Link } from '@/i18n/routing';
 import { useState } from 'react';
-import { 
-  MessageCircle, 
-  Settings, 
-  Users, 
-  Zap, 
-  LayoutTemplate, 
-  LogOut, 
+import {
+  MessageCircle,
+  Settings,
+  Users,
+  Zap,
+  LayoutTemplate,
+  LogOut,
   ChevronLeft,
   ChevronRight,
   Megaphone,
@@ -116,7 +116,7 @@ export function Sidebar() {
   const toggleSidebar = () => setIsExpanded(!isExpanded);
 
   return (
-    <aside 
+    <aside
       className={cn(
         "flex flex-col h-screen bg-background border-r border-border transition-all duration-300 ease-in-out z-50",
         isExpanded ? "w-56" : "w-[70px]"
@@ -126,7 +126,7 @@ export function Sidebar() {
         <div className="flex items-center gap-2 overflow-hidden">
             <Logo showName={isExpanded} />
         </div>
-        
+
         <Button
             variant="ghost"
             size="icon"
@@ -146,8 +146,8 @@ export function Sidebar() {
               href={item.href}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors group",
-                isActive 
-                  ? "bg-primary/10 text-primary" 
+                isActive
+                  ? "bg-primary/10 text-primary"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
                 !isExpanded && "justify-center px-0"
               )}
@@ -173,12 +173,12 @@ export function Sidebar() {
                     !isExpanded && "justify-center"
                 )}>
                 <Avatar className="h-9 w-9 border border-border">
-                    <AvatarImage src="" /> 
+                    <AvatarImage src="" />
                     <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
                     {user?.name?.substring(0, 2).toUpperCase() || 'U'}
                     </AvatarFallback>
                 </Avatar>
-                
+
                 {isExpanded && (
                     <div className="flex flex-col items-start text-left overflow-hidden animate-in fade-in duration-200">
                         <span className="text-sm font-medium text-foreground truncate w-full">{user?.name || 'User'}</span>
