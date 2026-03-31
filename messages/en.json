@@ -622,6 +622,12 @@
     "ai_generator": {
       "open_btn": "Generate with AI",
       "organize_btn": "Organize nodes",
+      "organize_modes": {
+        "ignore_back_edges": "Clean flow (ignore loops)",
+        "straight_lines": "Keep lines straighter",
+        "spaced_tree": "Spread tree",
+        "vertical_list": "Vertical list"
+      },
       "title": "AI flow generator",
       "description": "Describe the automation, review the result, and then insert it into the canvas.",
       "prompt_label": "Prompt",
