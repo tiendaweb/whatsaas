@@ -1383,6 +1383,101 @@ export const passwordResetTokensRelations = relations(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// Marketplace
+// ---------------------------------------------------------------------------
+
+export const marketplaceItems = pgTable(
+  "marketplace_items",
+  {
+    id: serial("id").primaryKey(),
+    title: varchar("title", { length: 255 }).notNull(),
+    subtitle: varchar("subtitle", { length: 255 }),
+    iconUrl: text("icon_url"),
+    description: text("description").notNull().default(""),
+    category: varchar("category", { length: 100 }).notNull().default("general"),
+    tag: varchar("tag", { length: 100 }),
+    isFree: boolean("is_free").notNull().default(false),
+    monthlyPrice: decimal("monthly_price", { precision: 10, scale: 2 }),
+    annualPrice: decimal("annual_price", { precision: 10, scale: 2 }),
+    installationPrice: decimal("installation_price", { precision: 10, scale: 2 }),
+    currency: varchar("currency", { length: 3 }).notNull().default("usd"),
+    interfaceBlocks: jsonb("interface_blocks")
+      .$type<Array<{ html: string }>>()
+      .notNull()
+      .default([]),
+    customFields: jsonb("custom_fields")
+      .$type<Array<{ label: string; key: string; value: string }>>()
+      .notNull()
+      .default([]),
+    isActive: boolean("is_active").notNull().default(true),
+    order: integer("order").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    categoryIdx: index("marketplace_items_category_idx").on(table.category),
+    activeIdx: index("marketplace_items_active_idx").on(table.isActive),
+  }),
+);
+
+export const marketplaceOrders = pgTable(
+  "marketplace_orders",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    marketplaceItemId: integer("marketplace_item_id")
+      .notNull()
+      .references(() => marketplaceItems.id, { onDelete: "cascade" }),
+    requestedBy: integer("requested_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: varchar("status", { length: 30 }).notNull().default("pending"),
+    pricingType: varchar("pricing_type", { length: 20 }).notNull().default("free"),
+    amount: decimal("amount", { precision: 10, scale: 2 }),
+    notes: text("notes"),
+    adminNotes: text("admin_notes"),
+    reviewedBy: integer("reviewed_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    reviewedAt: timestamp("reviewed_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamIdx: index("marketplace_orders_team_idx").on(table.teamId),
+    statusIdx: index("marketplace_orders_status_idx").on(table.status),
+    itemIdx: index("marketplace_orders_item_idx").on(table.marketplaceItemId),
+  }),
+);
+
+export const marketplaceItemsRelations = relations(marketplaceItems, ({ many }) => ({
+  orders: many(marketplaceOrders),
+}));
+
+export const marketplaceOrdersRelations = relations(marketplaceOrders, ({ one }) => ({
+  team: one(teams, {
+    fields: [marketplaceOrders.teamId],
+    references: [teams.id],
+  }),
+  item: one(marketplaceItems, {
+    fields: [marketplaceOrders.marketplaceItemId],
+    references: [marketplaceItems.id],
+  }),
+  requestedByUser: one(users, {
+    fields: [marketplaceOrders.requestedBy],
+    references: [users.id],
+    relationName: "marketplace_order_requested_by",
+  }),
+  reviewedByUser: one(users, {
+    fields: [marketplaceOrders.reviewedBy],
+    references: [users.id],
+    relationName: "marketplace_order_reviewed_by",
+  }),
+}));
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Team = typeof teams.$inferSelect;
@@ -1474,6 +1569,11 @@ export type NewMessageDraftTagLink = typeof messageDraftTagLinks.$inferInsert;
 
 export type MessageReaction = typeof messageReactions.$inferSelect;
 export type NewMessageReaction = typeof messageReactions.$inferInsert;
+
+export type MarketplaceItem = typeof marketplaceItems.$inferSelect;
+export type NewMarketplaceItem = typeof marketplaceItems.$inferInsert;
+export type MarketplaceOrder = typeof marketplaceOrders.$inferSelect;
+export type NewMarketplaceOrder = typeof marketplaceOrders.$inferInsert;
 
 export enum ActivityType {
   SIGN_UP = "SIGN_UP",

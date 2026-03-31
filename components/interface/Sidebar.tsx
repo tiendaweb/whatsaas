@@ -1,15 +1,15 @@
 'use client';
 
+import React, { useState } from 'react';
 import { usePathname, useRouter } from '@/i18n/routing';
 import { Link } from '@/i18n/routing';
-import { useState } from 'react';
-import { 
-  MessageCircle, 
-  Settings, 
-  Users, 
-  Zap, 
-  LayoutTemplate, 
-  LogOut, 
+import {
+  MessageCircle,
+  Settings,
+  Users,
+  Zap,
+  LayoutTemplate,
+  LogOut,
   ChevronLeft,
   ChevronRight,
   Megaphone,
@@ -17,7 +17,19 @@ import {
   LayoutDashboard,
   FileText,
   Plug,
+  Rocket,
+  NotebookText,
+  Calendar,
 } from 'lucide-react';
+
+type IconComponent = React.ElementType;
+
+const PLUGIN_ICON_MAP: Record<string, IconComponent> = {
+  Rocket: Rocket as IconComponent,
+  NotebookText: NotebookText as IconComponent,
+  Calendar: Calendar as IconComponent,
+  Plug: Plug as IconComponent,
+};
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -60,15 +72,15 @@ export function Sidebar() {
   const { data: pluginNavItems } = useSWR<PluginNavItem[]>('/api/plugins/nav', fetcher);
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const allNavItems = [
-    { href: '/dashboard', icon: MessageCircle, label: t('chats'), feature: null },
-    { href: '/automation', icon: Zap, label: t('automation'), feature: 'isFlowBuilderEnabled' },
-    { href: '/settings/ai', icon: Bot, label: t('ai_agent'), feature: 'isAiEnabled' },
-    { href: '/contacts', icon: Users, label: t('contacts'), feature: null },
-    { href: '/drafts', icon: FileText, label: t('drafts'), feature: null },
-    { href: '/analytics', icon: LayoutDashboard, label: t('dashboard'), feature: null },
-    { href: '/templates', icon: LayoutTemplate, label: t('templates'), feature: 'isTemplatesEnabled' },
-    { href: '/campaigns', icon: Megaphone, label: t('campaigns'), feature: 'isCampaignsEnabled' },
+  const allNavItems: Array<{ href: string; icon: IconComponent; label: string; feature: string | null }> = [
+    { href: '/dashboard', icon: MessageCircle as IconComponent, label: t('chats'), feature: null },
+    { href: '/automation', icon: Zap as IconComponent, label: t('automation'), feature: 'isFlowBuilderEnabled' },
+    { href: '/settings/ai', icon: Bot as IconComponent, label: t('ai_agent'), feature: 'isAiEnabled' },
+    { href: '/contacts', icon: Users as IconComponent, label: t('contacts'), feature: null },
+    { href: '/drafts', icon: FileText as IconComponent, label: t('drafts'), feature: null },
+    { href: '/analytics', icon: LayoutDashboard as IconComponent, label: t('dashboard'), feature: null },
+    { href: '/templates', icon: LayoutTemplate as IconComponent, label: t('templates'), feature: 'isTemplatesEnabled' },
+    { href: '/campaigns', icon: Megaphone as IconComponent, label: t('campaigns'), feature: 'isCampaignsEnabled' },
   ];
 
   const navItems = allNavItems.filter(item => {
@@ -84,7 +96,7 @@ export function Sidebar() {
   const dynamicPluginNavItems =
     pluginNavItems?.map((item) => ({
       href: item.href,
-      icon: Plug,
+      icon: (item.icon && PLUGIN_ICON_MAP[item.icon]) ?? Plug,
       label: item.label,
       feature: null,
     })) ?? [];
@@ -130,14 +142,16 @@ export function Sidebar() {
               href={item.href}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors group",
-                isActive 
-                  ? "bg-primary/10 text-primary" 
+                isActive
+                  ? "bg-primary/10 text-primary"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
                 !isExpanded && "justify-center px-0"
               )}
               title={!isExpanded ? item.label : undefined}
             >
-              <item.icon className={cn("h-5 w-5 shrink-0", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
+              {React.createElement(item.icon as React.ElementType, {
+                className: cn("h-5 w-5 shrink-0", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"),
+              })}
               {isExpanded && (
                   <span className="font-medium text-sm whitespace-nowrap overflow-hidden animate-in fade-in duration-200">
                       {item.label}

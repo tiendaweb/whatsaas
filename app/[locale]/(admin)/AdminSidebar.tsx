@@ -17,6 +17,8 @@ import {
   LayoutTemplate,
   FileCode2,
   Puzzle,
+  Rocket,
+  ShoppingCart,
 } from "lucide-react";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
@@ -32,6 +34,8 @@ const navItems = [
   { href: "/admin/chat-theme", label: "Chat Theme", icon: MessageSquare },
   { href: "/admin/payments", label: "Payments", icon: Wallet },
   { href: "/admin/plugins", label: "Plugins", icon: Puzzle },
+  { href: "/admin/marketplace", label: "Mejoras", icon: Rocket },
+  { href: "/admin/marketplace/orders", label: "Pedidos Mejoras", icon: ShoppingCart },
   { href: "/admin/settings", label: "Ajustes", icon: Settings },
 ];
 
