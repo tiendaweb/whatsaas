@@ -318,6 +318,7 @@ function getArrangementPositions({
   edges: AutomationCanvasEdge[];
   mode: ArrangeMode;
 }) {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const incomingCount = new Map<string, number>();
   const outgoing = new Map<string, string[]>();
 
@@ -327,8 +328,8 @@ function getArrangementPositions({
   }
 
   for (const edge of edges) {
-    const sourceNode = nodes.find((node) => node.id === edge.source);
-    const targetNode = nodes.find((node) => node.id === edge.target);
+    const sourceNode = nodeById.get(edge.source);
+    const targetNode = nodeById.get(edge.target);
     if (!sourceNode || !targetNode) {
       continue;
     }
@@ -345,31 +346,112 @@ function getArrangementPositions({
     incomingCount.set(edge.target, (incomingCount.get(edge.target) ?? 0) + 1);
   }
 
+  const startNode =
+    nodes.find((node) => node.type === "start") ??
+    null;
+  const startNodeId = startNode?.id ?? null;
+
+  const reachableFromStart = new Set<string>();
+  if (startNodeId) {
+    const queue = [startNodeId];
+    while (queue.length > 0) {
+      const currentId = queue.shift();
+      if (!currentId || reachableFromStart.has(currentId)) {
+        continue;
+      }
+      reachableFromStart.add(currentId);
+      for (const target of outgoing.get(currentId) ?? []) {
+        if (!reachableFromStart.has(target)) {
+          queue.push(target);
+        }
+      }
+    }
+  }
+
   const roots = nodes
-    .filter((node) => (incomingCount.get(node.id) ?? 0) === 0)
+    .filter((node) => {
+      if ((incomingCount.get(node.id) ?? 0) !== 0) {
+        return false;
+      }
+      if (startNodeId && node.id !== startNodeId && reachableFromStart.has(node.id)) {
+        return false;
+      }
+      return true;
+    })
     .sort((a, b) => {
       if (a.type === "start" && b.type !== "start") return -1;
       if (a.type !== "start" && b.type === "start") return 1;
       return a.position.y - b.position.y;
     });
 
-  const workingIncomingCount = new Map(incomingCount);
   const levelByNode = new Map<string, number>();
-  const queue = roots.map((node) => node.id);
+  if (startNodeId) {
+    const queue = [startNodeId];
+    levelByNode.set(startNodeId, 0);
 
-  roots.forEach((node) => levelByNode.set(node.id, 0));
+    while (queue.length > 0) {
+      const currentId = queue.shift();
+      if (!currentId) continue;
 
-  while (queue.length > 0) {
-    const currentId = queue.shift();
-    if (!currentId) continue;
+      const currentLevel = levelByNode.get(currentId) ?? 0;
 
-    const currentLevel = levelByNode.get(currentId) ?? 0;
+      for (const target of outgoing.get(currentId) ?? []) {
+        if (target === startNodeId) {
+          continue;
+        }
+        const nextLevel = currentLevel + 1;
+        const previous = levelByNode.get(target);
+        if (previous === undefined || nextLevel > previous) {
+          levelByNode.set(target, nextLevel);
+        }
+        if (previous === undefined) {
+          queue.push(target);
+        }
+      }
+    }
 
-    for (const target of outgoing.get(currentId) ?? []) {
-      levelByNode.set(target, Math.max(levelByNode.get(target) ?? 0, currentLevel + 1));
-      workingIncomingCount.set(target, (workingIncomingCount.get(target) ?? 0) - 1);
-      if ((workingIncomingCount.get(target) ?? 0) <= 0) {
-        queue.push(target);
+    let looseColumn = -1;
+    const looseRoots = roots.filter((node) => node.id !== startNodeId);
+
+    for (const looseRoot of looseRoots) {
+      if (levelByNode.has(looseRoot.id)) {
+        continue;
+      }
+      const rootLevel = looseColumn;
+      looseColumn -= 1;
+      levelByNode.set(looseRoot.id, rootLevel);
+      const looseQueue = [looseRoot.id];
+
+      while (looseQueue.length > 0) {
+        const currentId = looseQueue.shift();
+        if (!currentId) continue;
+        const currentLevel = levelByNode.get(currentId) ?? rootLevel;
+
+        for (const target of outgoing.get(currentId) ?? []) {
+          if (target === startNodeId || levelByNode.has(target) || reachableFromStart.has(target)) {
+            continue;
+          }
+          levelByNode.set(target, currentLevel + 1);
+          looseQueue.push(target);
+        }
+      }
+    }
+  } else {
+    const workingIncomingCount = new Map(incomingCount);
+    const queue = roots.map((node) => node.id);
+    roots.forEach((node) => levelByNode.set(node.id, 0));
+
+    while (queue.length > 0) {
+      const currentId = queue.shift();
+      if (!currentId) continue;
+      const currentLevel = levelByNode.get(currentId) ?? 0;
+
+      for (const target of outgoing.get(currentId) ?? []) {
+        levelByNode.set(target, Math.max(levelByNode.get(target) ?? 0, currentLevel + 1));
+        workingIncomingCount.set(target, (workingIncomingCount.get(target) ?? 0) - 1);
+        if ((workingIncomingCount.get(target) ?? 0) <= 0) {
+          queue.push(target);
+        }
       }
     }
   }
@@ -377,7 +459,7 @@ function getArrangementPositions({
   let fallbackLevel = Math.max(...Array.from(levelByNode.values()), 0);
   for (const node of nodes) {
     if (!levelByNode.has(node.id)) {
-      fallbackLevel += 1;
+      fallbackLevel = startNodeId ? fallbackLevel - 1 : fallbackLevel + 1;
       levelByNode.set(node.id, fallbackLevel);
     }
   }
