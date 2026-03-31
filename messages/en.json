@@ -535,6 +535,22 @@
       "delay": "Delay",
       "end": "End Chat"
     },
+    "bulk_actions": {
+      "title": "{count} selected nodes",
+      "clear_selection": "Clear",
+      "duplicate": "Duplicate selection",
+      "save_template": "Save Template",
+      "save_automation": "Save Automation",
+      "start_node_blocked": "The Start node cannot be included in bulk actions.",
+      "invalid_selection": "The current selection is not valid.",
+      "duplicated_toast": "{nodes} nodes and {edges} internal connections were duplicated.",
+      "save_automation_confirm_title": "Create linked automation?",
+      "save_automation_confirm_description": "A new automation will be created from {count} selected nodes. The selected block will be replaced by a bridge node that routes to the new flow.",
+      "save_automation_cancel": "Cancel",
+      "save_automation_confirm": "Create automation",
+      "save_automation_success": "Automation #{automationId} created and linked.",
+      "save_automation_error": "Could not create the linked automation. Changes were rolled back."
+    },
     "automation_activated_toast": "Automation activated",
     "automation_paused_toast": "Automation paused",
     "failed_to_update_status_toast": "Failed to update status",
