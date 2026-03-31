@@ -861,7 +861,65 @@ function FlowBuilderContent({
   const [isSaveAutomationConfirmOpen, setIsSaveAutomationConfirmOpen] = useState(false);
   const [isSavingAutomationSelection, setIsSavingAutomationSelection] = useState(false);
 
-  const { screenToFlowPosition, toObject, fitView } = useReactFlow();
+  const { screenToFlowPosition, toObject, fitView, setCenter } = useReactFlow();
+
+  const getNodeIdFromIssueMessage = useCallback(
+    (issue: string) => {
+      const matchedNode = nodes.find((node) => issue.includes(node.id));
+      return matchedNode?.id ?? null;
+    },
+    [nodes],
+  );
+
+  const getFriendlySaveErrorMessage = useCallback(
+    (issue: string) => {
+      const nodeId = getNodeIdFromIssueMessage(issue);
+
+      if (issue.includes("must use a valid sourceHandle")) {
+        return nodeId
+          ? `La conexión del nodo ${nodeId} está incompleta. Haz clic para ir al nodo y corregirla.`
+          : "Hay una conexión incompleta. Haz clic para revisar el nodo relacionado.";
+      }
+
+      if (issue.includes("must use a valid targetHandle")) {
+        return nodeId
+          ? `El nodo ${nodeId} recibe una conexión inválida. Haz clic para ir al nodo y corregirla.`
+          : "Hay una conexión de entrada inválida. Haz clic para revisar el nodo relacionado.";
+      }
+
+      return issue;
+    },
+    [getNodeIdFromIssueMessage],
+  );
+
+  const handleSaveIssueClick = useCallback(
+    (issue: string) => {
+      const nodeId = getNodeIdFromIssueMessage(issue);
+      if (!nodeId) {
+        toast.error("No pudimos identificar el nodo de este error.");
+        return;
+      }
+
+      const targetNode = nodes.find((node) => node.id === nodeId);
+      if (!targetNode) {
+        toast.error("No encontramos el nodo relacionado en el flujo actual.");
+        return;
+      }
+
+      setSelectedNodeIds([nodeId]);
+      setIsSavePreviewOpen(false);
+
+      const nodeWidth = targetNode.width ?? targetNode.measured?.width ?? 260;
+      const nodeHeight = targetNode.height ?? targetNode.measured?.height ?? 140;
+      const centerX = targetNode.position.x + nodeWidth / 2;
+      const centerY = targetNode.position.y + nodeHeight / 2;
+
+      requestAnimationFrame(() => {
+        setCenter(centerX, centerY, { zoom: 1.05, duration: 300 });
+      });
+    },
+    [getNodeIdFromIssueMessage, nodes, setCenter],
+  );
 
   useEffect(() => {
     setIsDarkMode(resolvedTheme === "dark");
@@ -1996,9 +2054,20 @@ function FlowBuilderContent({
                   <AlertTriangle className="h-4 w-4" />
                   {t("save_preview.errors_title")}
                 </div>
+                <p className="mt-2 text-xs text-destructive/80">
+                  Haz clic en un error para ir directo al nodo relacionado.
+                </p>
                 <ul className="mt-2 list-disc space-y-1 pl-5 text-destructive/90">
                   {savePreviewErrors.map((error, index) => (
-                    <li key={`${error}-${index}`}>{error}</li>
+                    <li key={`${error}-${index}`}>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveIssueClick(error)}
+                        className="cursor-pointer text-left underline-offset-2 hover:underline"
+                      >
+                        {getFriendlySaveErrorMessage(error)}
+                      </button>
+                    </li>
                   ))}
                 </ul>
               </div>

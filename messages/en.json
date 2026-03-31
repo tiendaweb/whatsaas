@@ -572,6 +572,7 @@
     "go_to_target_node_label": "Target node",
     "go_to_target_node_placeholder": "Select a target node",
     "go_to_no_previous_nodes": "No previous nodes available",
+    "go_to_no_available_nodes": "No nodes available to select",
     "go_to_target_automation_label": "Target automation",
     "go_to_target_automation_placeholder": "Select an automation",
     "go_to_no_automations": "No automations available",

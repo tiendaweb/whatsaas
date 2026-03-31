@@ -572,6 +572,7 @@
     "go_to_target_node_label": "Nodo destino",
     "go_to_target_node_placeholder": "Selecciona un nodo destino",
     "go_to_no_previous_nodes": "No hay nodos previos disponibles",
+    "go_to_no_available_nodes": "No hay nodos disponibles para seleccionar",
     "go_to_target_automation_label": "Automatización destino",
     "go_to_target_automation_placeholder": "Selecciona una automatización",
     "go_to_no_automations": "No hay automatizaciones disponibles",
