@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigation } from 'lucide-react';
+import { GitBranchPlus } from 'lucide-react';
 import { BaseNode } from './BaseNode';
 
 type GoToNodeData = {
@@ -19,7 +19,7 @@ export function GoToNode({ id, data, selected }: { id: string; data: GoToNodeDat
   const mode = data.mode || 'previous_node';
 
   return (
-    <BaseNode nodeId={id} title="Go To Node" icon={Navigation} selected={selected} disableSource>
+    <BaseNode nodeId={id} title="Go To Node" icon={GitBranchPlus} selected={selected} disableSource>
       <div className="space-y-2 text-xs text-muted-foreground">
         <div>
           <span className="font-semibold text-foreground">Mode:</span> {modeLabels[mode]}

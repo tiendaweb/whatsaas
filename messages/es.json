@@ -530,9 +530,21 @@
       "collect": "Recolectar Entrada",
       "save_contact": "Guardar Contacto",
       "ai_control": "Control de IA",
+      "condition": "Dividir por condición",
       "go_to_node": "Ir a nodo",
       "delay": "Retraso",
       "end": "Terminar Chat"
+    },
+    "bulk_actions": {
+      "title": "{count} nodos seleccionados",
+      "clear_selection": "Limpiar",
+      "duplicate": "Duplicar selección",
+      "save_template": "Guardar Plantilla",
+      "save_automation": "Guardar Automatización",
+      "start_node_blocked": "El nodo Start no puede incluirse en acciones masivas.",
+      "duplicated_toast": "Se duplicaron {nodes} nodos y {edges} conexiones internas.",
+      "template_pending": "Guardar plantilla para selección múltiple estará disponible pronto.",
+      "automation_pending": "Guardar automatización para selección múltiple estará disponible pronto."
     },
     "automation_activated_toast": "Automatización activada",
     "automation_paused_toast": "Automatización pausada",

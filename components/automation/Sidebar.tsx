@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Clock,
   ExternalLink,
+  GitBranchPlus,
   Image,
   List,
   ListChecks,
@@ -43,6 +44,7 @@ const ICONS_BY_KEY: Record<AutomationSidebarIconKey, React.ElementType> = {
   'pen-line': PenLine,
   save: Save,
   bot: Bot,
+  'git-branch-plus': GitBranchPlus,
 };
 
 function SidebarSection({ title, children, defaultOpen = true, compact = false }: SidebarSectionProps) {
