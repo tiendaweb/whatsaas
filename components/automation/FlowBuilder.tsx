@@ -168,6 +168,7 @@ interface FlowBuilderProps {
 
 const proOptions: ProOptions = { hideAttribution: true };
 const CONTROL_STACK_HEIGHT = 116;
+const CONTROL_STACK_WIDTH = 44;
 const OVERLAY_GAP = 16;
 const HORIZONTAL_SPACING = 380;
 const VERTICAL_SPACING = 170;
@@ -535,7 +536,7 @@ function getArrangementPositions({
   mode: ArrangeMode;
 }): Map<string, { x: number; y: number }> {
   const nodeById = new Map(nodes.map((node) => [node.id, node] as const));
-  const connectorTypes = new Set<AutomationCanvasNode["type"]>(["delay", "end"]);
+  const connectorTypes = new Set<AutomationCanvasNode["type"]>(["end"]);
   const isConnectorNode = (nodeId: string) =>
     connectorTypes.has(nodeById.get(nodeId)?.type ?? "start");
   const incomingAll = new Map<string, string[]>();
@@ -698,6 +699,7 @@ function getArrangementPositions({
     options?: { shortSegment?: number; alignToParent?: boolean },
   ) => {
     const shortSegment = options?.shortSegment ?? 84;
+    const endNodeVerticalGap = 64;
     for (const node of nodes) {
       if (!isConnectorNode(node.id)) continue;
 
@@ -746,6 +748,16 @@ function getArrangementPositions({
       }
 
       if (prevPos) {
+        if (node.type === "end") {
+          const parentNode =
+            previousStructuralNodeId ? nodeById.get(previousStructuralNodeId) : undefined;
+          const parentHeight = parentNode ? getNodeHeight(parentNode) : DEFAULT_NODE_HEIGHT;
+          positions.set(node.id, {
+            x: prevPos.x,
+            y: prevPos.y + parentHeight + endNodeVerticalGap,
+          });
+          continue;
+        }
         positions.set(node.id, { x: prevPos.x + shortSegment, y: prevPos.y });
         continue;
       }
@@ -2011,7 +2023,7 @@ function FlowBuilderContent({
   const isCompactViewport = viewportSize.width > 0 && viewportSize.width < 1440;
   const miniMapHeight = isShortViewport ? 96 : 136;
   const miniMapWidth = isShortViewport ? 150 : isCompactViewport ? 180 : 220;
-  const miniMapBottomOffset = CONTROL_STACK_HEIGHT + OVERLAY_GAP + 16;
+  const miniMapLeftOffset = 16 + CONTROL_STACK_WIDTH + OVERLAY_GAP;
 
   const controlsStyle = {
     backgroundColor: isDarkMode ? "#0f172a" : "#ffffff",
@@ -2027,8 +2039,8 @@ function FlowBuilderContent({
     backgroundColor: isDarkMode ? "#0f172a" : "#ffffff",
     height: miniMapHeight,
     width: miniMapWidth,
-    left: 16,
-    bottom: miniMapBottomOffset,
+    left: miniMapLeftOffset,
+    bottom: 16,
     borderRadius: 16,
     zIndex: 5,
   };
