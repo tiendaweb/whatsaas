@@ -667,7 +667,11 @@
         "ignore_back_edges": "Clean flow (ignore loops)",
         "straight_lines": "Keep lines straighter",
         "spaced_tree": "Spread tree",
-        "vertical_list": "Vertical list"
+        "vertical_list": "Vertical list",
+        "genealogical_tree": "Genealogical tree",
+        "constellation": "Constellation (surprise)",
+        "auto_focus": "Automatic organization (active focus)",
+        "auto_focus_enabled": "Automatic organization enabled"
       },
       "title": "AI flow generator",
       "description": "Describe the automation, review the result, and then insert it into the canvas.",

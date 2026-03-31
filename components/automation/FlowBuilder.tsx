@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
@@ -181,7 +181,10 @@ type ArrangeMode =
   | "hierarchy_ignore_back_edges"
   | "straight_lines"
   | "spaced_tree"
-  | "vertical_list";
+  | "vertical_list"
+  | "genealogical_tree"
+  | "constellation"
+  | "auto_focus";
 
 type PreviewItem = {
   id: string;
@@ -530,8 +533,11 @@ function getArrangementPositions({
   nodes: AutomationCanvasNode[];
   edges: AutomationCanvasEdge[];
   mode: ArrangeMode;
-}) {
+}): Map<string, { x: number; y: number }> {
   const nodeById = new Map(nodes.map((node) => [node.id, node] as const));
+  const connectorTypes = new Set<AutomationCanvasNode["type"]>(["delay", "end"]);
+  const isConnectorNode = (nodeId: string) =>
+    connectorTypes.has(nodeById.get(nodeId)?.type ?? "start");
   const incomingAll = new Map<string, string[]>();
   const outgoingAll = new Map<string, string[]>();
   const incomingDAG = new Map<string, string[]>();
@@ -634,6 +640,69 @@ function getArrangementPositions({
   };
 
   const levelByNode = computeLevels();
+
+  const placeConnectorNodes = (
+    positions: Map<string, { x: number; y: number }>,
+    options?: { shortSegment?: number; alignToParent?: boolean },
+  ) => {
+    const shortSegment = options?.shortSegment ?? 84;
+    for (const node of nodes) {
+      if (!isConnectorNode(node.id)) continue;
+
+      const previousStructuralNodeId = (() => {
+        const queue = [...(incomingAll.get(node.id) ?? [])];
+        const visited = new Set<string>();
+        while (queue.length > 0) {
+          const currentId = queue.shift();
+          if (!currentId || visited.has(currentId)) continue;
+          visited.add(currentId);
+          if (!isConnectorNode(currentId)) {
+            return currentId;
+          }
+          queue.push(...(incomingAll.get(currentId) ?? []));
+        }
+        return null;
+      })();
+
+      const nextStructuralNodeId = (() => {
+        const queue = [...(outgoingAll.get(node.id) ?? [])];
+        const visited = new Set<string>();
+        while (queue.length > 0) {
+          const currentId = queue.shift();
+          if (!currentId || visited.has(currentId)) continue;
+          visited.add(currentId);
+          if (!isConnectorNode(currentId)) {
+            return currentId;
+          }
+          queue.push(...(outgoingAll.get(currentId) ?? []));
+        }
+        return null;
+      })();
+
+      const prevPos = previousStructuralNodeId
+        ? positions.get(previousStructuralNodeId)
+        : null;
+      const nextPos = nextStructuralNodeId ? positions.get(nextStructuralNodeId) : null;
+
+      if (prevPos && nextPos) {
+        const x = (prevPos.x + nextPos.x) / 2;
+        const y = options?.alignToParent
+          ? prevPos.y
+          : prevPos.y + (nextPos.y - prevPos.y) * 0.5;
+        positions.set(node.id, { x, y });
+        continue;
+      }
+
+      if (prevPos) {
+        positions.set(node.id, { x: prevPos.x + shortSegment, y: prevPos.y });
+        continue;
+      }
+
+      if (nextPos) {
+        positions.set(node.id, { x: nextPos.x - shortSegment, y: nextPos.y });
+      }
+    }
+  };
 
   const enforceUniformVerticalSpacing = (
     positions: Map<string, { x: number; y: number }>,
@@ -740,6 +809,143 @@ function getArrangementPositions({
       cursorY = Math.max(cursorY, y + verticalGap);
     }
     return enforceUniformVerticalSpacing(arrangedPositions, UNIFORM_VERTICAL_NODE_GAP);
+  }
+
+  if (mode === "genealogical_tree") {
+    const structuralNodes = nodes.filter((node) => !isConnectorNode(node.id));
+    const structuralIds = new Set(structuralNodes.map((node) => node.id));
+    const descendantsByStructuralParent = new Map<string, string[]>();
+    const ancestorsByStructuralNode = new Map<string, string[]>();
+
+    for (const node of structuralNodes) {
+      descendantsByStructuralParent.set(node.id, []);
+      ancestorsByStructuralNode.set(node.id, []);
+    }
+
+    const resolveStructuralTargets = (sourceId: string) => {
+      const queue = [...(outgoingAll.get(sourceId) ?? [])];
+      const visited = new Set<string>();
+      const targets: string[] = [];
+      while (queue.length > 0) {
+        const currentId = queue.shift();
+        if (!currentId || visited.has(currentId)) continue;
+        visited.add(currentId);
+        if (structuralIds.has(currentId)) {
+          targets.push(currentId);
+          continue;
+        }
+        queue.push(...(outgoingAll.get(currentId) ?? []));
+      }
+      return targets;
+    };
+
+    for (const structuralNode of structuralNodes) {
+      const children = resolveStructuralTargets(structuralNode.id)
+        .filter((childId) => childId !== structuralNode.id)
+        .sort((aId, bId) => {
+          const a = nodeById.get(aId);
+          const b = nodeById.get(bId);
+          if (!a || !b) return 0;
+          return a.position.y - b.position.y || a.position.x - b.position.x;
+        });
+      descendantsByStructuralParent.set(structuralNode.id, children);
+      for (const childId of children) {
+        ancestorsByStructuralNode.set(childId, [
+          ...(ancestorsByStructuralNode.get(childId) ?? []),
+          structuralNode.id,
+        ]);
+      }
+    }
+
+    const roots = structuralNodes
+      .filter((node) => (ancestorsByStructuralNode.get(node.id)?.length ?? 0) === 0)
+      .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
+
+    const generationByNode = new Map<string, number>();
+    const queue = roots.map((node) => node.id);
+    for (const rootId of queue) generationByNode.set(rootId, 0);
+
+    while (queue.length > 0) {
+      const currentId = queue.shift();
+      if (!currentId) continue;
+      const currentGeneration = generationByNode.get(currentId) ?? 0;
+      for (const childId of descendantsByStructuralParent.get(currentId) ?? []) {
+        const nextGeneration = currentGeneration + 1;
+        if ((generationByNode.get(childId) ?? -1) < nextGeneration) {
+          generationByNode.set(childId, nextGeneration);
+        }
+        queue.push(childId);
+      }
+    }
+
+    let nextY = 0;
+    const generationGap = HORIZONTAL_SPACING * 1.1;
+    const siblingGap = VERTICAL_SPACING * 1.1;
+    const familyAnchorY = new Map<string, number>();
+    const visitFamily = (nodeId: string, preferredY?: number): number => {
+      if (familyAnchorY.has(nodeId)) return familyAnchorY.get(nodeId) ?? 0;
+
+      const children = descendantsByStructuralParent.get(nodeId) ?? [];
+      if (children.length === 0) {
+        const assigned = Math.max(preferredY ?? 0, nextY);
+        nextY = assigned + siblingGap;
+        familyAnchorY.set(nodeId, assigned);
+        return assigned;
+      }
+
+      const childYs: number[] = children.map((childId, index) =>
+        visitFamily(childId, (preferredY ?? nextY) + index * siblingGap),
+      );
+      const centeredY = (Math.min(...childYs) + Math.max(...childYs)) / 2;
+      familyAnchorY.set(nodeId, centeredY);
+      return centeredY;
+    };
+
+    const effectiveRoots = roots.length > 0 ? roots.map((node) => node.id) : structuralNodes.map((node) => node.id);
+    for (const rootId of effectiveRoots) {
+      visitFamily(rootId);
+      nextY += siblingGap * 0.25;
+    }
+
+    for (const node of structuralNodes) {
+      arrangedPositions.set(node.id, {
+        x: (generationByNode.get(node.id) ?? 0) * generationGap,
+        y: familyAnchorY.get(node.id) ?? nextY,
+      });
+    }
+
+    placeConnectorNodes(arrangedPositions, { shortSegment: 72, alignToParent: true });
+    return enforceUniformVerticalSpacing(arrangedPositions, UNIFORM_VERTICAL_NODE_GAP);
+  }
+
+  if (mode === "constellation") {
+    const centerX = 0;
+    const centerY = 0;
+    const ordered = [...nodes].sort(
+      (a, b) => (levelByNode.get(a.id) ?? 0) - (levelByNode.get(b.id) ?? 0),
+    );
+    const angleStep = (Math.PI * 2) / Math.max(1, ordered.length);
+    for (let index = 0; index < ordered.length; index += 1) {
+      const node = ordered[index];
+      const depth = Math.max(1, (levelByNode.get(node.id) ?? 0) + 1);
+      const radius = depth * (ORTHOGONAL_GRID_SIZE * 2.2);
+      const angle = angleStep * index;
+      arrangedPositions.set(node.id, {
+        x: centerX + Math.cos(angle) * radius,
+        y: centerY + Math.sin(angle) * radius,
+      });
+    }
+    return arrangedPositions;
+  }
+
+  if (mode === "auto_focus") {
+    const autoFocusPositions: Map<string, { x: number; y: number }> = getArrangementPositions({
+      nodes,
+      edges,
+      mode: "hierarchy_ignore_back_edges",
+    });
+    placeConnectorNodes(autoFocusPositions, { shortSegment: 70, alignToParent: true });
+    return autoFocusPositions;
   }
 
   const nodesByLevel = new Map<number, string[]>();
@@ -894,6 +1100,8 @@ function FlowBuilderContent({
   const [isInsertingTemplate, setIsInsertingTemplate] = useState(false);
   const [isSaveAutomationConfirmOpen, setIsSaveAutomationConfirmOpen] = useState(false);
   const [isSavingAutomationSelection, setIsSavingAutomationSelection] = useState(false);
+  const [isAutoArrangeEnabled, setIsAutoArrangeEnabled] = useState(false);
+  const autoArrangeSignatureRef = useRef<string | null>(null);
 
   const { screenToFlowPosition, toObject, fitView, setCenter } = useReactFlow();
 
@@ -1258,6 +1466,8 @@ function FlowBuilderContent({
       return;
     }
 
+    setIsAutoArrangeEnabled(mode === "auto_focus");
+
     const arrangedPositions = getArrangementPositions({ nodes, edges, mode });
 
     setNodes((currentNodes) =>
@@ -1268,12 +1478,64 @@ function FlowBuilderContent({
     );
 
     requestAnimationFrame(() => {
-      fitView({
-        padding: 0.2,
-        duration: 350,
+      if (mode === "auto_focus") {
+        const focusNodeId = selectedNodeId ?? nodes.find((node) => node.type === "start")?.id;
+        const focusNode = nodes.find((node) => node.id === focusNodeId);
+        if (focusNode) {
+          setCenter(focusNode.position.x, focusNode.position.y, {
+            zoom: 1.05,
+            duration: 260,
+          });
+          return;
+        }
+      }
+
+      fitView({ padding: 0.2, duration: 350 });
+    });
+  }, [edges, fitView, nodes, selectedNodeId, setCenter, setNodes]);
+
+  useEffect(() => {
+    if (!isAutoArrangeEnabled || nodes.length <= 1) {
+      return;
+    }
+
+    const graphSignature = JSON.stringify({
+      nodeIds: nodes.map((node) => node.id),
+      edgeIds: edges.map((edge) => `${edge.id}:${edge.source}->${edge.target}`),
+      selectedNodeId: selectedNodeId ?? null,
+    });
+
+    if (autoArrangeSignatureRef.current === graphSignature) {
+      return;
+    }
+
+    autoArrangeSignatureRef.current = graphSignature;
+    const arrangedPositions = getArrangementPositions({
+      nodes,
+      edges,
+      mode: "auto_focus",
+    });
+
+    setNodes((currentNodes) =>
+      currentNodes.map((node) => ({
+        ...node,
+        position: arrangedPositions.get(node.id) ?? node.position,
+      })),
+    );
+
+    const focusNode = nodes.find((node) => node.id === selectedNodeId)
+      ?? nodes.find((node) => node.type === "start")
+      ?? nodes[0];
+    if (!focusNode) return;
+
+    const nextPosition = arrangedPositions.get(focusNode.id) ?? focusNode.position;
+    requestAnimationFrame(() => {
+      setCenter(nextPosition.x, nextPosition.y, {
+        zoom: 1.08,
+        duration: 220,
       });
     });
-  }, [edges, fitView, nodes, setNodes]);
+  }, [edges, isAutoArrangeEnabled, nodes, selectedNodeId, setCenter, setNodes]);
 
   const handleGenerateFlow = async () => {
     const clampedMaxTokens = normalizeGeneratorMaxTokens(generatorMaxTokens);
@@ -1815,6 +2077,19 @@ function FlowBuilderContent({
                   onClick={() => handleAutoArrange("vertical_list")}
                 >
                   {t("ai_generator.organize_modes.vertical_list")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => handleAutoArrange("genealogical_tree")}
+                >
+                  {t("ai_generator.organize_modes.genealogical_tree")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleAutoArrange("constellation")}>
+                  {t("ai_generator.organize_modes.constellation")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleAutoArrange("auto_focus")}>
+                  {isAutoArrangeEnabled
+                    ? t("ai_generator.organize_modes.auto_focus_enabled")
+                    : t("ai_generator.organize_modes.auto_focus")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

@@ -667,7 +667,11 @@
         "ignore_back_edges": "Fluxo limpo (ignorar retornos)",
         "straight_lines": "Manter linhas mais retas",
         "spaced_tree": "Árvore mais espaçada",
-        "vertical_list": "Lista vertical"
+        "vertical_list": "Lista vertical",
+        "genealogical_tree": "Árvore genealógica",
+        "constellation": "Constelação (surpresa)",
+        "auto_focus": "Organização automática (foco ativo)",
+        "auto_focus_enabled": "Organização automática ativada"
       },
       "title": "Gerador de fluxos com IA",
       "description": "Descreva a automação, revise o resultado e depois insira no canvas.",
