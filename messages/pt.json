@@ -622,6 +622,12 @@
     "ai_generator": {
       "open_btn": "Gerar com IA",
       "organize_btn": "Organizar nós",
+      "organize_modes": {
+        "ignore_back_edges": "Fluxo limpo (ignorar retornos)",
+        "straight_lines": "Manter linhas mais retas",
+        "spaced_tree": "Árvore mais espaçada",
+        "vertical_list": "Lista vertical"
+      },
       "title": "Gerador de fluxos com IA",
       "description": "Descreva a automação, revise o resultado e depois insira no canvas.",
       "prompt_label": "Prompt",

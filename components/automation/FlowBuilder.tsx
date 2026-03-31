@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/card";
 import {
   ArrowLeft,
+  ChevronDown,
   Save,
   Loader2,
   PlayCircle,
@@ -103,6 +104,12 @@ import {
 } from "@/lib/automation/flow-normalizer";
 import { createAutomationCanvasNode } from "@/lib/automation/node-catalog";
 import { cn } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type {
   AutomationAIDraftMetadata,
   AutomationCanvasEdge,
@@ -141,8 +148,14 @@ const CONTROL_STACK_HEIGHT = 116;
 const OVERLAY_GAP = 16;
 const HORIZONTAL_SPACING = 380;
 const VERTICAL_SPACING = 170;
+const LIST_VERTICAL_SPACING = 210;
 
 type InsertMode = "replace" | "insert";
+type ArrangeMode =
+  | "hierarchy_ignore_back_edges"
+  | "straight_lines"
+  | "spaced_tree"
+  | "vertical_list";
 
 type PreviewItem = {
   id: string;
@@ -294,6 +307,141 @@ function buildGeneratedFlowSummary(
       links: [],
     },
   );
+}
+
+function getArrangementPositions({
+  nodes,
+  edges,
+  mode,
+}: {
+  nodes: AutomationCanvasNode[];
+  edges: AutomationCanvasEdge[];
+  mode: ArrangeMode;
+}) {
+  const incomingCount = new Map<string, number>();
+  const outgoing = new Map<string, string[]>();
+
+  for (const node of nodes) {
+    incomingCount.set(node.id, 0);
+    outgoing.set(node.id, []);
+  }
+
+  for (const edge of edges) {
+    const sourceNode = nodes.find((node) => node.id === edge.source);
+    const targetNode = nodes.find((node) => node.id === edge.target);
+    if (!sourceNode || !targetNode) {
+      continue;
+    }
+
+    const isBackEdge =
+      targetNode.position.x < sourceNode.position.x ||
+      targetNode.position.y < sourceNode.position.y;
+
+    if (mode === "hierarchy_ignore_back_edges" && isBackEdge) {
+      continue;
+    }
+
+    outgoing.set(edge.source, [...(outgoing.get(edge.source) ?? []), edge.target]);
+    incomingCount.set(edge.target, (incomingCount.get(edge.target) ?? 0) + 1);
+  }
+
+  const roots = nodes
+    .filter((node) => (incomingCount.get(node.id) ?? 0) === 0)
+    .sort((a, b) => {
+      if (a.type === "start" && b.type !== "start") return -1;
+      if (a.type !== "start" && b.type === "start") return 1;
+      return a.position.y - b.position.y;
+    });
+
+  const workingIncomingCount = new Map(incomingCount);
+  const levelByNode = new Map<string, number>();
+  const queue = roots.map((node) => node.id);
+
+  roots.forEach((node) => levelByNode.set(node.id, 0));
+
+  while (queue.length > 0) {
+    const currentId = queue.shift();
+    if (!currentId) continue;
+
+    const currentLevel = levelByNode.get(currentId) ?? 0;
+
+    for (const target of outgoing.get(currentId) ?? []) {
+      levelByNode.set(target, Math.max(levelByNode.get(target) ?? 0, currentLevel + 1));
+      workingIncomingCount.set(target, (workingIncomingCount.get(target) ?? 0) - 1);
+      if ((workingIncomingCount.get(target) ?? 0) <= 0) {
+        queue.push(target);
+      }
+    }
+  }
+
+  let fallbackLevel = Math.max(...Array.from(levelByNode.values()), 0);
+  for (const node of nodes) {
+    if (!levelByNode.has(node.id)) {
+      fallbackLevel += 1;
+      levelByNode.set(node.id, fallbackLevel);
+    }
+  }
+
+  const nodesByLevel = new Map<number, AutomationCanvasNode[]>();
+  for (const node of nodes) {
+    const level = levelByNode.get(node.id) ?? 0;
+    nodesByLevel.set(level, [...(nodesByLevel.get(level) ?? []), node]);
+  }
+
+  const sortedLevels = Array.from(nodesByLevel.keys()).sort((a, b) => a - b);
+  const arrangedPositions = new Map<string, { x: number; y: number }>();
+
+  if (mode === "vertical_list") {
+    const ordered = [...nodes].sort((a, b) => {
+      const levelDiff = (levelByNode.get(a.id) ?? 0) - (levelByNode.get(b.id) ?? 0);
+      if (levelDiff !== 0) return levelDiff;
+      return a.position.y - b.position.y;
+    });
+
+    ordered.forEach((node, index) => {
+      arrangedPositions.set(node.id, { x: 0, y: index * LIST_VERTICAL_SPACING });
+    });
+
+    return arrangedPositions;
+  }
+
+  const largestColumn = Math.max(
+    ...sortedLevels.map((level) => nodesByLevel.get(level)?.length ?? 0),
+    1,
+  );
+
+  sortedLevels.forEach((level) => {
+    const levelNodes = [...(nodesByLevel.get(level) ?? [])].sort((a, b) => {
+      if (mode === "straight_lines") {
+        const outgoingA = outgoing.get(a.id)?.length ?? 0;
+        const outgoingB = outgoing.get(b.id)?.length ?? 0;
+        if (outgoingA !== outgoingB) {
+          return outgoingB - outgoingA;
+        }
+      }
+      return a.position.y - b.position.y;
+    });
+
+    const horizontalSpacing =
+      mode === "spaced_tree" ? HORIZONTAL_SPACING * 1.35 : HORIZONTAL_SPACING;
+    const verticalSpacing =
+      mode === "straight_lines"
+        ? VERTICAL_SPACING * 0.82
+        : mode === "spaced_tree"
+          ? VERTICAL_SPACING * 1.45
+          : VERTICAL_SPACING;
+    const columnHeight = (levelNodes.length - 1) * verticalSpacing;
+    const verticalOffset = ((largestColumn - 1) * verticalSpacing - columnHeight) / 2;
+
+    levelNodes.forEach((node, index) => {
+      arrangedPositions.set(node.id, {
+        x: level * horizontalSpacing,
+        y: verticalOffset + index * verticalSpacing,
+      });
+    });
+  });
+
+  return arrangedPositions;
 }
 
 function FlowBuilderContent({
@@ -566,105 +714,12 @@ function FlowBuilderContent({
     toast.success(t("ai_review.confirmed_toast"));
   }, [setNodes, t]);
 
-  const handleAutoArrange = useCallback(() => {
+  const handleAutoArrange = useCallback((mode: ArrangeMode) => {
     if (nodes.length <= 1) {
       return;
     }
 
-    const outgoing = new Map<string, string[]>();
-    const incomingCount = new Map<string, number>();
-
-    for (const node of nodes) {
-      outgoing.set(node.id, []);
-      incomingCount.set(node.id, 0);
-    }
-
-    for (const edge of edges) {
-      outgoing.set(edge.source, [
-        ...(outgoing.get(edge.source) ?? []),
-        edge.target,
-      ]);
-      incomingCount.set(edge.target, (incomingCount.get(edge.target) ?? 0) + 1);
-    }
-
-    const roots = nodes
-      .filter((node) => (incomingCount.get(node.id) ?? 0) === 0)
-      .sort((a, b) => {
-        if (a.type === "start" && b.type !== "start") return -1;
-        if (a.type !== "start" && b.type === "start") return 1;
-        return a.position.y - b.position.y;
-      });
-
-    const workingIncomingCount = new Map(incomingCount);
-    const levelByNode = new Map<string, number>();
-    const queue = roots.map((node) => node.id);
-
-    roots.forEach((node) => {
-      levelByNode.set(node.id, 0);
-    });
-
-    while (queue.length > 0) {
-      const currentId = queue.shift();
-
-      if (!currentId) {
-        continue;
-      }
-
-      const currentLevel = levelByNode.get(currentId) ?? 0;
-
-      for (const target of outgoing.get(currentId) ?? []) {
-        levelByNode.set(
-          target,
-          Math.max(levelByNode.get(target) ?? 0, currentLevel + 1),
-        );
-        workingIncomingCount.set(
-          target,
-          (workingIncomingCount.get(target) ?? 0) - 1,
-        );
-
-        if ((workingIncomingCount.get(target) ?? 0) <= 0) {
-          queue.push(target);
-        }
-      }
-    }
-
-    let fallbackLevel = Math.max(...Array.from(levelByNode.values()), 0);
-    for (const node of nodes) {
-      if (!levelByNode.has(node.id)) {
-        fallbackLevel += 1;
-        levelByNode.set(node.id, fallbackLevel);
-      }
-    }
-
-    const nodesByLevel = new Map<number, AutomationCanvasNode[]>();
-    for (const node of nodes) {
-      const level = levelByNode.get(node.id) ?? 0;
-      nodesByLevel.set(level, [...(nodesByLevel.get(level) ?? []), node]);
-    }
-
-    const sortedLevels = Array.from(nodesByLevel.keys()).sort((a, b) => a - b);
-    const largestColumn = Math.max(
-      ...sortedLevels.map((level) => nodesByLevel.get(level)?.length ?? 0),
-      1,
-    );
-
-    const arrangedPositions = new Map<string, { x: number; y: number }>();
-
-    sortedLevels.forEach((level) => {
-      const levelNodes = [...(nodesByLevel.get(level) ?? [])].sort(
-        (a, b) => a.position.y - b.position.y,
-      );
-      const columnHeight = (levelNodes.length - 1) * VERTICAL_SPACING;
-      const verticalOffset =
-        ((largestColumn - 1) * VERTICAL_SPACING - columnHeight) / 2;
-
-      levelNodes.forEach((node, index) => {
-        arrangedPositions.set(node.id, {
-          x: level * HORIZONTAL_SPACING,
-          y: verticalOffset + index * VERTICAL_SPACING,
-        });
-      });
-    });
+    const arrangedPositions = getArrangementPositions({ nodes, edges, mode });
 
     setNodes((currentNodes) =>
       currentNodes.map((node) => ({
@@ -773,7 +828,7 @@ function FlowBuilderContent({
   const isCompactViewport = viewportSize.width > 0 && viewportSize.width < 1440;
   const miniMapHeight = isShortViewport ? 96 : 136;
   const miniMapWidth = isShortViewport ? 150 : isCompactViewport ? 180 : 220;
-  const miniMapBottomOffset = CONTROL_STACK_HEIGHT + OVERLAY_GAP * 2;
+  const miniMapBottomOffset = CONTROL_STACK_HEIGHT + OVERLAY_GAP + 16;
 
   const controlsStyle = {
     backgroundColor: isDarkMode ? "#0f172a" : "#ffffff",
@@ -863,10 +918,37 @@ function FlowBuilderContent({
                 {t("ai_generator.open_btn")}
               </Button>
             )}
-            <Button variant="outline" size="sm" onClick={handleAutoArrange}>
-              <LayoutGrid className="h-4 w-4 mr-1.5" />
-              {t("ai_generator.organize_btn")}
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <LayoutGrid className="h-4 w-4 mr-1.5" />
+                  {t("ai_generator.organize_btn")}
+                  <ChevronDown className="h-4 w-4 ml-1.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() =>
+                    handleAutoArrange("hierarchy_ignore_back_edges")
+                  }
+                >
+                  {t("ai_generator.organize_modes.ignore_back_edges")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => handleAutoArrange("straight_lines")}
+                >
+                  {t("ai_generator.organize_modes.straight_lines")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleAutoArrange("spaced_tree")}>
+                  {t("ai_generator.organize_modes.spaced_tree")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => handleAutoArrange("vertical_list")}
+                >
+                  {t("ai_generator.organize_modes.vertical_list")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               variant="outline"
               size="sm"

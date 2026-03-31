@@ -621,6 +621,12 @@
     "ai_generator": {
       "open_btn": "Generar con IA",
       "organize_btn": "Organizar nodos",
+      "organize_modes": {
+        "ignore_back_edges": "Flujo limpio (ignorar retornos)",
+        "straight_lines": "Líneas más rectas",
+        "spaced_tree": "Árbol más separado",
+        "vertical_list": "Lista vertical"
+      },
       "title": "Generador IA de flujos",
       "description": "Describe la automatización, revisa el resultado y luego insértalo en el canvas.",
       "prompt_label": "Prompt",
