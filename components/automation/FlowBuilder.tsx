@@ -12,6 +12,7 @@ import {
   useEdgesState,
   addEdge,
   Connection,
+  NodeChange,
   BackgroundVariant,
   ReactFlowProvider,
   useReactFlow,
@@ -57,6 +58,7 @@ import {
   Sparkles,
   AlertTriangle,
   CheckCircle2,
+  Siren,
   GitBranchPlus,
   RotateCcw,
   Settings2,
@@ -143,6 +145,7 @@ interface FlowBuilderProps {
   initialEdges: AutomationCanvasEdge[];
   initialActive: boolean;
   isAIFlowGeneratorEnabled: boolean;
+  availableAutomations: Array<{ id: number; name: string; instanceId: number | null }>;
 }
 
 const proOptions: ProOptions = { hideAttribution: true };
@@ -591,15 +594,16 @@ function FlowBuilderContent({
   initialEdges,
   initialActive,
   isAIFlowGeneratorEnabled,
+  availableAutomations,
 }: FlowBuilderProps) {
   const t = useTranslations("Automation");
   const locale = useLocale();
   const router = useRouter();
   const { resolvedTheme } = useTheme();
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [nodes, setNodes, onNodesChange] =
+  const [nodes, setNodes, onNodesChangeBase] =
     useNodesState<AutomationCanvasNode>(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [edges, setEdges, onEdgesChangeBase] = useEdgesState(initialEdges);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -639,6 +643,7 @@ function FlowBuilderContent({
     PrepareAutomationFlowResult,
     { success: true }
   > | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const { screenToFlowPosition, toObject, fitView } = useReactFlow();
 
@@ -679,6 +684,34 @@ function FlowBuilderContent({
     insertMode === "insert" &&
     !selectedNodeId;
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) || null;
+  const hasInfiniteLoopRisk = useMemo(() => {
+    const adjacency = new Map<string, string[]>();
+    for (const node of nodes) {
+      adjacency.set(node.id, []);
+    }
+    for (const edge of edges) {
+      if (adjacency.has(edge.source) && adjacency.has(edge.target)) {
+        adjacency.get(edge.source)?.push(edge.target);
+      }
+    }
+
+    const startNode = nodes.find((node) => node.type === "start");
+    if (!startNode) return false;
+
+    const state = new Map<string, 0 | 1 | 2>();
+    const dfs = (nodeId: string): boolean => {
+      state.set(nodeId, 1);
+      for (const next of adjacency.get(nodeId) ?? []) {
+        const nextState = state.get(next) ?? 0;
+        if (nextState === 1) return true;
+        if (nextState === 0 && dfs(next)) return true;
+      }
+      state.set(nodeId, 2);
+      return false;
+    };
+
+    return dfs(startNode.id);
+  }, [edges, nodes]);
   const aiDraftMetadata = useMemo(
     () => getAutomationAIDraftMetadata(nodes as AutomationFlowNode[]),
     [nodes],
@@ -700,8 +733,30 @@ function FlowBuilderContent({
   }, []);
 
   const onConnect = useCallback(
-    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
+    (params: Connection) => {
+      setEdges((eds) => addEdge(params, eds));
+      setHasUnsavedChanges(true);
+    },
     [setEdges],
+  );
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange<AutomationCanvasNode>[]) => {
+      const filteredChanges = changes.filter((change) => {
+        if (change.type !== "remove") return true;
+        const node = nodes.find((item) => item.id === change.id);
+        if (node?.type === "start") {
+          toast.error(t("start_node_delete_blocked"));
+          return false;
+        }
+        return true;
+      });
+      if (filteredChanges.length > 0) {
+        setHasUnsavedChanges(true);
+      }
+      onNodesChangeBase(filteredChanges);
+    },
+    [nodes, onNodesChangeBase, t],
   );
 
   const onDragOver = useCallback((event: React.DragEvent) => {
@@ -727,6 +782,7 @@ function FlowBuilderContent({
       });
 
       setNodes((nds) => [...nds, newNode]);
+      setHasUnsavedChanges(true);
     },
     [screenToFlowPosition, setNodes],
   );
@@ -757,7 +813,18 @@ function FlowBuilderContent({
         return node;
       }),
     );
+    setHasUnsavedChanges(true);
   };
+
+  const onEdgesChange = useCallback(
+    (changes: any[]) => {
+      if (changes.length > 0) {
+        setHasUnsavedChanges(true);
+      }
+      onEdgesChangeBase(changes);
+    },
+    [onEdgesChangeBase],
+  );
 
   const handleSave = () => {
     const flow = toObject();
@@ -801,6 +868,7 @@ function FlowBuilderContent({
         setIsActive(false);
       }
       setIsSavePreviewOpen(false);
+      setHasUnsavedChanges(false);
       toast.success(t("toast_saved"));
     } catch (error) {
       toast.error(t("ai_generator.save_failed"));
@@ -963,6 +1031,17 @@ function FlowBuilderContent({
     requestAnimationFrame(() => fitView({ padding: 0.2, duration: 350 }));
   };
 
+  const handleNavigateToAutomation = useCallback(
+    (targetAutomationId: number) => {
+      if (hasUnsavedChanges) {
+        toast.warning(t("save_before_redirect_warning"));
+        return;
+      }
+      router.push(`/automation/${targetAutomationId}`);
+    },
+    [hasUnsavedChanges, router, t],
+  );
+
   const bgColor = isDarkMode ? "#020617" : "#f8fafc";
   const dotColor = isDarkMode ? "#334155" : "#cbd5e1";
   const isShortViewport = viewportSize.height > 0 && viewportSize.height < 820;
@@ -1108,19 +1187,30 @@ function FlowBuilderContent({
               )}
               {isActive ? t("pause") : t("activate")}
             </Button>
-            <Button
-              className="bg-primary hover:bg-primary/90 text-primary-foreground"
-              onClick={handleSave}
-              disabled={isSaving}
-              size="sm"
-            >
-              {isSaving ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4 mr-2" />
-              )}
-              {isSaving ? t("saving") : t("save_btn")}
-            </Button>
+            {hasInfiniteLoopRisk ? (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => toast.error(t("loop_alert_toast"))}
+              >
+                <Siren className="h-4 w-4 mr-2" />
+                {t("loop_alert_btn")}
+              </Button>
+            ) : (
+              <Button
+                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                onClick={handleSave}
+                disabled={isSaving}
+                size="sm"
+              >
+                {isSaving ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4 mr-2" />
+                )}
+                {isSaving ? t("saving") : t("save_btn")}
+              </Button>
+            )}
           </div>
         </header>
 
@@ -1207,6 +1297,11 @@ function FlowBuilderContent({
 
           <PropertiesPanel
             selectedNode={selectedNode}
+            nodes={nodes}
+            currentAutomationId={automationId}
+            availableAutomations={availableAutomations}
+            hasUnsavedChanges={hasUnsavedChanges}
+            onNavigateToAutomation={handleNavigateToAutomation}
             onUpdateNode={updateNodeData}
             onClose={() => setSelectedNodeId(null)}
           />

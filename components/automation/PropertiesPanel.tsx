@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -32,11 +32,25 @@ const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 interface PropertiesPanelProps {
   selectedNode: AutomationCanvasNode | null;
+  nodes: AutomationCanvasNode[];
+  currentAutomationId: number;
+  availableAutomations: Array<{ id: number; name: string; instanceId: number | null }>;
+  hasUnsavedChanges: boolean;
+  onNavigateToAutomation: (automationId: number) => void;
   onUpdateNode: (id: string, data: Partial<AutomationCanvasNodeData>) => void;
   onClose: () => void;
 }
 
-export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: PropertiesPanelProps) {
+export function PropertiesPanel({
+  selectedNode,
+  nodes,
+  currentAutomationId,
+  availableAutomations,
+  hasUnsavedChanges,
+  onNavigateToAutomation,
+  onUpdateNode,
+  onClose,
+}: PropertiesPanelProps) {
   const t = useTranslations('Automation');
   const [label, setLabel] = useState('');
   const [options, setOptions] = useState<string[]>([]);
@@ -94,6 +108,32 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
   
   const agents = teamData?.teamMembers?.map((tm: any) => tm.user) || [];
   const selectedNodeMeta = selectedNode ? getAutomationNodeCatalogEntry(selectedNode.type) : null;
+  const nodeOrder = useMemo(
+    () =>
+      [...nodes].sort(
+        (a, b) => a.position.x - b.position.x || a.position.y - b.position.y,
+      ),
+    [nodes],
+  );
+  const previousNodeOptions = useMemo(() => {
+    if (!selectedNode) return [];
+    const selectedNodeIndex = nodeOrder.findIndex((node) => node.id === selectedNode.id);
+    if (selectedNodeIndex <= 0) return [];
+    return nodeOrder
+      .slice(0, selectedNodeIndex)
+      .filter((node) => node.type !== 'start')
+      .map((node) => ({ value: node.id, label: `${node.data.label || node.type} (${node.id})` }));
+  }, [nodeOrder, selectedNode]);
+  const flowAutomationOptions = useMemo(
+    () =>
+      availableAutomations
+        .filter((automation) => automation.id !== currentAutomationId)
+        .map((automation) => ({
+          value: String(automation.id),
+          label: automation.name,
+        })),
+    [availableAutomations, currentAutomationId],
+  );
   const optionsFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'options') : null;
   const buttonsFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'buttons') : null;
   const listItemsFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'items') : null;
@@ -512,7 +552,7 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
                 <SelectContent>
                   <SelectItem value="previous_node">{t('go_to_mode_previous')}</SelectItem>
                   <SelectItem value="specific_node">{t('go_to_mode_specific')}</SelectItem>
-                  <SelectItem value="other_flow">{t('go_to_mode_other_flow')}</SelectItem>
+                  <SelectItem value="other_flow">{t('go_to_mode_other_automation')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -520,22 +560,73 @@ export function PropertiesPanel({ selectedNode, onUpdateNode, onClose }: Propert
             {(goToMode === 'specific_node' || goToMode === 'other_flow') && (
               <div className="space-y-2">
                 <Label>{t('go_to_target_node_label')}</Label>
-                <Input
-                  value={goToTargetNodeId}
-                  onChange={(e) => setGoToTargetNodeId(e.target.value)}
-                  placeholder={t('go_to_target_node_placeholder')}
-                />
+                <Select value={goToTargetNodeId || undefined} onValueChange={setGoToTargetNodeId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('go_to_target_node_placeholder')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {previousNodeOptions.length === 0 ? (
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                        {t('go_to_no_previous_nodes')}
+                      </div>
+                    ) : (
+                      previousNodeOptions.map((node) => (
+                        <SelectItem key={node.value} value={node.value}>
+                          {node.label}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
             )}
 
             {goToMode === 'other_flow' && (
               <div className="space-y-2">
                 <Label>{t('go_to_target_automation_label')}</Label>
-                <Input
-                  value={goToTargetAutomationId}
-                  onChange={(e) => setGoToTargetAutomationId(e.target.value)}
-                  placeholder={t('go_to_target_automation_placeholder')}
-                />
+                <Select value={goToTargetAutomationId || undefined} onValueChange={setGoToTargetAutomationId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('go_to_target_automation_placeholder')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {flowAutomationOptions.length === 0 ? (
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                        {t('go_to_no_automations')}
+                      </div>
+                    ) : (
+                      flowAutomationOptions.map((automation) => (
+                        <SelectItem key={automation.value} value={automation.value}>
+                          {automation.label}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1"
+                    disabled={!goToTargetAutomationId}
+                    onClick={() => onNavigateToAutomation(Number(goToTargetAutomationId))}
+                  >
+                    {t('go_to_open_automation_btn')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="flex-1"
+                    disabled={!goToTargetAutomationId}
+                    onClick={() => toast.info(t('go_to_trigger_automation_toast'))}
+                  >
+                    {t('go_to_trigger_automation_btn')}
+                  </Button>
+                </div>
+                {hasUnsavedChanges && (
+                  <p className="text-xs text-amber-500">
+                    {t('save_before_redirect_warning')}
+                  </p>
+                )}
               </div>
             )}
 

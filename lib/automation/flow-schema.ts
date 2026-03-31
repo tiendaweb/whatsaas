@@ -404,6 +404,7 @@ export const automationFlowCanvasSchema = z
     }
 
     const nodeMap = new Map(flow.nodes.map((node) => [node.id, node] as const));
+    const startNodeId = startNodes[0]?.id;
 
     for (const edge of flow.edges) {
       if (edgeIds.has(edge.id)) {
@@ -446,6 +447,17 @@ export const automationFlowCanvasSchema = z
           });
         }
       }
+    }
+
+    if (
+      startNodeId &&
+      !flow.edges.some((edge) => edge.source === startNodeId)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "The start node must have at least one outgoing connection.",
+        path: ["edges"],
+      });
     }
   });
 

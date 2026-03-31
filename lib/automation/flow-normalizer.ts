@@ -637,25 +637,6 @@ export function normalizeAutomationFlow(input: {
     normalizedEdges.push(nextEdge);
   };
 
-  const startNode = normalizedNodes.find((node) => node.type === "start");
-  if (
-    startNode &&
-    !normalizedEdges.some((edge) => edge.source === startNode.id)
-  ) {
-    const endNode = createAutoEndNode(startNode, "start");
-    createAutoEdge({
-      source: startNode.id,
-      target: endNode.id,
-      sourceHandle: null,
-      targetHandle: null,
-    });
-    warnings.push({
-      code: "start_edge_created",
-      nodeId: startNode.id,
-      message: "Se agregó una salida automática desde start.",
-    });
-  }
-
   for (const conditionNode of normalizedNodes.filter(
     (node) => node.type === "condition",
   )) {
