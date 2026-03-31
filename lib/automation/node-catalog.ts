@@ -19,7 +19,8 @@ export type AutomationSidebarIconKey =
   | 'x-circle'
   | 'pen-line'
   | 'save'
-  | 'bot';
+  | 'bot'
+  | 'git-branch-plus';
 
 export type AutomationEditableFieldDefinition = {
   key: string;
@@ -508,7 +509,7 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     aiDescription: 'Redirect flow execution to another point in this flow or to another automation.',
     aiExamples: ['Return to the previous question when validation fails.', 'Jump to payment flow after user confirms intent.'],
     sidebar: {
-      icon: 'split',
+      icon: 'git-branch-plus',
       colorClass: 'bg-amber-500/10',
       iconColorClass: 'text-amber-600',
     },

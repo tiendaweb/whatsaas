@@ -13,6 +13,7 @@ import {
   addEdge,
   Connection,
   NodeChange,
+  OnSelectionChangeFunc,
   BackgroundVariant,
   ReactFlowProvider,
   useReactFlow,
@@ -606,7 +607,7 @@ function FlowBuilderContent({
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState(initialEdges);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
 
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isActive, setIsActive] = useState(initialActive);
 
@@ -682,7 +683,8 @@ function FlowBuilderContent({
     hasValidGeneration &&
     currentFlowHasEditableNodes &&
     insertMode === "insert" &&
-    !selectedNodeId;
+    selectedNodeIds.length === 0;
+  const selectedNodeId = selectedNodeIds[0] ?? null;
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) || null;
   const hasInfiniteLoopRisk = useMemo(() => {
     const adjacency = new Map<string, string[]>();
@@ -787,15 +789,25 @@ function FlowBuilderContent({
     [screenToFlowPosition, setNodes],
   );
 
-  const onNodeClick = useCallback(
-    (_: React.MouseEvent, node: AutomationCanvasNode) => {
-      setSelectedNodeId(node.id);
+  const onNodeClick = useCallback((_: React.MouseEvent, node: AutomationCanvasNode) => {
+    setSelectedNodeIds((current) => {
+      if (current.length === 1 && current[0] === node.id) {
+        return current;
+      }
+
+      return [node.id];
+    });
+  }, []);
+
+  const onSelectionChange = useCallback<OnSelectionChangeFunc<AutomationCanvasNode, AutomationCanvasEdge>>(
+    ({ nodes: selectedNodes }) => {
+      setSelectedNodeIds(selectedNodes.map((node) => node.id));
     },
     [],
   );
 
   const onPaneClick = useCallback(() => {
-    setSelectedNodeId(null);
+    setSelectedNodeIds([]);
   }, []);
 
   const updateNodeData = (
@@ -1002,7 +1014,7 @@ function FlowBuilderContent({
     if (insertMode === "replace") {
       setNodes(markDraftAsGenerated(generationResult.nodes));
       setEdges(generationResult.edges as AutomationCanvasEdge[]);
-      setSelectedNodeId(null);
+      setSelectedNodeIds([]);
       setIsActive(false);
       setIsGeneratorOpen(false);
       toast.success(t("ai_generator.inserted_replace_toast"));
@@ -1041,6 +1053,103 @@ function FlowBuilderContent({
     },
     [hasUnsavedChanges, router, t],
   );
+
+  const generateDuplicatedId = useCallback((prefix: "node" | "edge") => {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return `${prefix}-${crypto.randomUUID()}`;
+    }
+
+    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }, []);
+
+  const hasStartNodeInSelection = useMemo(() => {
+    if (selectedNodeIds.length === 0) {
+      return false;
+    }
+
+    const selectedSet = new Set(selectedNodeIds);
+    return nodes.some((node) => selectedSet.has(node.id) && node.type === "start");
+  }, [nodes, selectedNodeIds]);
+
+  const handleDuplicateSelection = useCallback(() => {
+    if (selectedNodeIds.length <= 1) {
+      return;
+    }
+
+    if (hasStartNodeInSelection) {
+      toast.error(t("bulk_actions.start_node_blocked"));
+      return;
+    }
+
+    const selectedSet = new Set(selectedNodeIds);
+    const selectedNodes = nodes.filter((node) => selectedSet.has(node.id));
+    const idMap = new Map<string, string>();
+
+    selectedNodes.forEach((node) => {
+      idMap.set(node.id, generateDuplicatedId("node"));
+    });
+
+    const duplicatedNodes = selectedNodes.map((node) => {
+      const duplicatedNodeId = idMap.get(node.id)!;
+      return {
+        ...node,
+        id: duplicatedNodeId,
+        position: {
+          x: node.position.x + 48,
+          y: node.position.y + 48,
+        },
+        selected: false,
+        dragging: false,
+      };
+    });
+
+    const duplicatedEdges = edges
+      .filter((edge) => selectedSet.has(edge.source) && selectedSet.has(edge.target))
+      .map((edge) => ({
+        ...edge,
+        id: generateDuplicatedId("edge"),
+        source: idMap.get(edge.source) ?? edge.source,
+        target: idMap.get(edge.target) ?? edge.target,
+        selected: false,
+      }));
+
+    const duplicatedNodeIds = duplicatedNodes.map((node) => node.id);
+    setNodes((currentNodes) => [...currentNodes, ...duplicatedNodes]);
+    setEdges((currentEdges) => [...currentEdges, ...duplicatedEdges]);
+    setSelectedNodeIds(duplicatedNodeIds);
+    setHasUnsavedChanges(true);
+    toast.success(
+      t("bulk_actions.duplicated_toast", {
+        nodes: duplicatedNodes.length,
+        edges: duplicatedEdges.length,
+      }),
+    );
+  }, [
+    edges,
+    generateDuplicatedId,
+    hasStartNodeInSelection,
+    nodes,
+    selectedNodeIds,
+    t,
+  ]);
+
+  const handleSaveTemplateSelection = useCallback(() => {
+    if (hasStartNodeInSelection) {
+      toast.error(t("bulk_actions.start_node_blocked"));
+      return;
+    }
+
+    toast.message(t("bulk_actions.template_pending"));
+  }, [hasStartNodeInSelection, t]);
+
+  const handleSaveAutomationSelection = useCallback(() => {
+    if (hasStartNodeInSelection) {
+      toast.error(t("bulk_actions.start_node_blocked"));
+      return;
+    }
+
+    toast.message(t("bulk_actions.automation_pending"));
+  }, [hasStartNodeInSelection, t]);
 
   const bgColor = isDarkMode ? "#020617" : "#f8fafc";
   const dotColor = isDarkMode ? "#334155" : "#cbd5e1";
@@ -1259,11 +1368,15 @@ function FlowBuilderContent({
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
+              onSelectionChange={onSelectionChange}
               nodeTypes={nodeTypes}
               onDrop={onDrop}
               onDragOver={onDragOver}
               onNodeClick={onNodeClick}
               onPaneClick={onPaneClick}
+              selectionKeyCode="Shift"
+              multiSelectionKeyCode="Shift"
+              selectionOnDrag
               proOptions={proOptions}
               fitView
             >
@@ -1293,6 +1406,50 @@ function FlowBuilderContent({
                 bgColor={bgColor}
               />
             </ReactFlow>
+
+            {selectedNodeIds.length > 1 && (
+              <div className="absolute right-4 top-4 z-20 w-72 rounded-lg border bg-background/95 p-3 shadow-lg backdrop-blur-sm">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-foreground">
+                    {t("bulk_actions.title", { count: selectedNodeIds.length })}
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setSelectedNodeIds([])}
+                  >
+                    {t("bulk_actions.clear_selection")}
+                  </Button>
+                </div>
+                <div className="space-y-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={handleDuplicateSelection}
+                  >
+                    {t("bulk_actions.duplicate")}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={handleSaveTemplateSelection}
+                  >
+                    {t("bulk_actions.save_template")}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={handleSaveAutomationSelection}
+                  >
+                    {t("bulk_actions.save_automation")}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
 
           <PropertiesPanel
@@ -1303,7 +1460,7 @@ function FlowBuilderContent({
             hasUnsavedChanges={hasUnsavedChanges}
             onNavigateToAutomation={handleNavigateToAutomation}
             onUpdateNode={updateNodeData}
-            onClose={() => setSelectedNodeId(null)}
+            onClose={() => setSelectedNodeIds([])}
           />
         </div>
       </div>
