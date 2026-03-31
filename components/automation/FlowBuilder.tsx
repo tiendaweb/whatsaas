@@ -96,6 +96,7 @@ import { Sidebar } from "./Sidebar";
 import { PropertiesPanel } from "./PropertiesPanel";
 import {
   generateAutomationFlow,
+  saveSelectionAsAutomation,
   saveAutomation,
   toggleAutomationStatus,
   type GenerateAutomationFlowResult,
@@ -724,6 +725,8 @@ function FlowBuilderContent({
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   const [isInsertingTemplate, setIsInsertingTemplate] = useState(false);
+  const [isSaveAutomationConfirmOpen, setIsSaveAutomationConfirmOpen] = useState(false);
+  const [isSavingAutomationSelection, setIsSavingAutomationSelection] = useState(false);
 
   const { screenToFlowPosition, toObject, fitView } = useReactFlow();
 
@@ -1229,12 +1232,134 @@ function FlowBuilderContent({
   }, [hasStartNodeInSelection, t]);
 
   const handleSaveAutomationSelection = useCallback(() => {
-    setSelectedTemplateId(null);
-    setIsInsertTemplateOpen(true);
-    loadTemplates().catch(() => {
-      toast.error(t("template_insert.load_error"));
-    });
-  }, [loadTemplates, t]);
+    if (hasStartNodeInSelection) {
+      toast.error(t("bulk_actions.start_node_blocked"));
+      return;
+    }
+
+    if (selectedNodeIds.length === 0) {
+      return;
+    }
+
+    setIsSaveAutomationConfirmOpen(true);
+  }, [hasStartNodeInSelection, selectedNodeIds.length, t]);
+
+  const handleConfirmSaveAutomationSelection = useCallback(async () => {
+    const selectedSet = new Set(selectedNodeIds);
+    if (selectedSet.size === 0) {
+      return;
+    }
+
+    const selectedNodes = nodes.filter((node) => selectedSet.has(node.id));
+    const selectedEdges = edges.filter(
+      (edge) => selectedSet.has(edge.source) && selectedSet.has(edge.target),
+    );
+
+    if (selectedNodes.length === 0) {
+      toast.error(t("bulk_actions.invalid_selection"));
+      return;
+    }
+
+    const bridgeNodeId = generateCanvasId("node");
+    const bridgeNode: AutomationCanvasNode = {
+      id: bridgeNodeId,
+      type: "go_to_node",
+      position: {
+        x:
+          selectedNodes.reduce((sum, node) => sum + node.position.x, 0) /
+          selectedNodes.length,
+        y:
+          selectedNodes.reduce((sum, node) => sum + node.position.y, 0) /
+          selectedNodes.length,
+      },
+      data: {
+        mode: "other_flow",
+        targetAutomationId: "",
+        targetNodeId: "",
+        fallbackAction: "stop",
+        fallbackNodeId: "",
+      },
+      selected: false,
+      dragging: false,
+    };
+
+    const incomingEdges = edges.filter(
+      (edge) => !selectedSet.has(edge.source) && selectedSet.has(edge.target),
+    );
+    const outgoingEdges = edges.filter(
+      (edge) => selectedSet.has(edge.source) && !selectedSet.has(edge.target),
+    );
+
+    const optimisticNodes = [
+      ...nodes.filter((node) => !selectedSet.has(node.id)),
+      bridgeNode,
+    ];
+    const optimisticEdges = [
+      ...edges.filter(
+        (edge) => !selectedSet.has(edge.source) && !selectedSet.has(edge.target),
+      ),
+      ...incomingEdges.map((edge) => ({
+        ...edge,
+        id: generateCanvasId("edge"),
+        target: bridgeNodeId,
+        targetHandle: null,
+      })),
+      ...outgoingEdges.map((edge) => ({
+        ...edge,
+        id: generateCanvasId("edge"),
+        source: bridgeNodeId,
+        sourceHandle: null,
+      })),
+    ];
+
+    const previousNodes = nodes;
+    const previousEdges = edges;
+    const previousSelection = selectedNodeIds;
+
+    setIsSavingAutomationSelection(true);
+    setIsSaveAutomationConfirmOpen(false);
+    setNodes(optimisticNodes);
+    setEdges(optimisticEdges);
+    setSelectedNodeIds([bridgeNodeId]);
+    setHasUnsavedChanges(true);
+
+    try {
+      const result = await saveSelectionAsAutomation({
+        sourceAutomationId: automationId,
+        selectedNodes: selectedNodes as AutomationFlowNode[],
+        selectedEdges: selectedEdges as AutomationFlowEdge[],
+      });
+
+      setNodes((currentNodes) =>
+        currentNodes.map((node) =>
+          node.id === bridgeNodeId
+            ? ({
+                ...node,
+                data: {
+                  ...(node.data ?? {}),
+                  mode: "other_flow",
+                  targetAutomationId: result.newAutomationId,
+                  targetNodeId: result.startNodeId,
+                },
+              } as AutomationCanvasNode)
+            : node,
+        ),
+      );
+
+      toast.success(
+        t("bulk_actions.save_automation_success", {
+          automationId: result.newAutomationId,
+        }),
+      );
+    } catch (error) {
+      setNodes(previousNodes);
+      setEdges(previousEdges);
+      setSelectedNodeIds(previousSelection);
+      toast.error(t("bulk_actions.save_automation_error"));
+    } finally {
+      setIsSavingAutomationSelection(false);
+    }
+  }, [automationId, edges, nodes, selectedNodeIds, setEdges, setNodes, t]);
 
   const handleConfirmSaveTemplate = useCallback(async () => {
     const selectedSet = new Set(selectedNodeIds);
@@ -1650,6 +1775,7 @@ function FlowBuilderContent({
                     size="sm"
                     className="w-full justify-start"
                     onClick={handleSaveAutomationSelection}
+                    disabled={isSavingAutomationSelection}
                   >
                     {t("bulk_actions.save_automation")}
                   </Button>
@@ -1804,6 +1930,43 @@ function FlowBuilderContent({
             <Button onClick={handleConfirmSaveTemplate} disabled={isSavingTemplate}>
               {isSavingTemplate ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               {t("template_save.confirm_btn")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isSaveAutomationConfirmOpen}
+        onOpenChange={setIsSaveAutomationConfirmOpen}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t("bulk_actions.save_automation_confirm_title")}</DialogTitle>
+            <DialogDescription>
+              {t("bulk_actions.save_automation_confirm_description", {
+                count: selectedNodeIds.length,
+              })}
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsSaveAutomationConfirmOpen(false)}
+              disabled={isSavingAutomationSelection}
+            >
+              {t("bulk_actions.save_automation_cancel")}
+            </Button>
+            <Button
+              onClick={handleConfirmSaveAutomationSelection}
+              disabled={isSavingAutomationSelection}
+            >
+              {isSavingAutomationSelection ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <GitBranchPlus className="mr-2 h-4 w-4" />
+              )}
+              {t("bulk_actions.save_automation_confirm")}
             </Button>
           </DialogFooter>
         </DialogContent>

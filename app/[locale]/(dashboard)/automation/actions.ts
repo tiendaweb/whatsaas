@@ -17,6 +17,8 @@ import {
 import {
   type AutomationFlowEdge,
   type AutomationFlowNode,
+  automationFlowEdgeSchema,
+  automationFlowNodeSchema,
 } from "@/lib/automation/flow-schema";
 import { prepareAutomationFlowForSave } from "@/lib/automation/flow-normalizer";
 
@@ -156,6 +158,126 @@ export async function deleteAutomation(id: number) {
   }
 
   revalidatePath("/automation");
+}
+
+type SaveSelectionAsAutomationInput = {
+  sourceAutomationId: number;
+  selectedNodes: unknown[];
+  selectedEdges: unknown[];
+};
+
+type SaveSelectionAsAutomationResult = {
+  success: true;
+  newAutomationId: number;
+  startNodeId: string;
+};
+
+function generateFlowId(prefix: "node" | "edge") {
+  return `${prefix}-${crypto.randomUUID()}`;
+}
+
+export async function saveSelectionAsAutomation(
+  input: SaveSelectionAsAutomationInput,
+): Promise<SaveSelectionAsAutomationResult> {
+  const { team, automation } = await getOwnedAutomationOrThrow(
+    input.sourceAutomationId,
+  );
+
+  const parsedNodes: AutomationFlowNode[] = [];
+  for (const node of input.selectedNodes) {
+    const parsed = automationFlowNodeSchema.safeParse(node);
+    if (!parsed.success) {
+      throw new Error(
+        parsed.error.issues[0]?.message ?? "Invalid selected node payload.",
+      );
+    }
+    parsedNodes.push(parsed.data);
+  }
+
+  const parsedEdges: AutomationFlowEdge[] = [];
+  for (const edge of input.selectedEdges) {
+    const parsed = automationFlowEdgeSchema.safeParse(edge);
+    if (!parsed.success) {
+      throw new Error(
+        parsed.error.issues[0]?.message ?? "Invalid selected edge payload.",
+      );
+    }
+    parsedEdges.push(parsed.data);
+  }
+
+  if (parsedNodes.length === 0) {
+    throw new Error("No nodes selected.");
+  }
+
+  if (parsedNodes.some((node) => node.type === "start")) {
+    throw new Error("Start node cannot be moved into a new automation.");
+  }
+
+  const selectedNodeIds = new Set(parsedNodes.map((node) => node.id));
+  const internalEdges = parsedEdges.filter(
+    (edge) =>
+      selectedNodeIds.has(edge.source) && selectedNodeIds.has(edge.target),
+  );
+  const nodesWithIncoming = new Set(
+    internalEdges.map((edge) => edge.target).filter(Boolean),
+  );
+  const entryNodes = parsedNodes.filter((node) => !nodesWithIncoming.has(node.id));
+
+  const startNodeId = generateFlowId("node");
+  const startNode: AutomationFlowNode = {
+    id: startNodeId,
+    type: "start",
+    position: { x: 0, y: 0 },
+    data: {
+      label: "Start",
+      triggerType: "fallback",
+      keywords: [],
+      conditions: {},
+    },
+  };
+
+  const startEdges: AutomationFlowEdge[] = (entryNodes.length > 0
+    ? entryNodes
+    : [parsedNodes[0]]
+  ).map((entryNode) => ({
+    id: generateFlowId("edge"),
+    source: startNodeId,
+    target: entryNode.id,
+    sourceHandle: null,
+    targetHandle: null,
+  }));
+
+  const preparedFlow = prepareAutomationFlowForSave({
+    nodes: [startNode, ...parsedNodes],
+    edges: [...internalEdges, ...startEdges],
+  });
+
+  if (!preparedFlow.success) {
+    throw new Error(preparedFlow.errors[0] ?? "Invalid selected subflow.");
+  }
+
+  const [newAutomation] = await db
+    .insert(automations)
+    .values({
+      teamId: team.id,
+      instanceId: automation.instanceId,
+      name: `${automation.name} · Subflow`,
+      nodes: preparedFlow.nodes,
+      edges: preparedFlow.edges,
+      isActive: false,
+      updatedAt: new Date(),
+    })
+    .returning({ id: automations.id });
+
+  revalidatePath(`/automation/${input.sourceAutomationId}`);
+  revalidatePath(`/automation/${newAutomation.id}`);
+  revalidatePath("/automation");
+
+  return {
+    success: true,
+    newAutomationId: newAutomation.id,
+    startNodeId,
+  };
 }
 
 export type GenerateAutomationFlowResult = {

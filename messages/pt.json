@@ -535,6 +535,22 @@
       "delay": "Atraso (Delay)",
       "end": "Encerrar Chat"
     },
+    "bulk_actions": {
+      "title": "{count} nós selecionados",
+      "clear_selection": "Limpar",
+      "duplicate": "Duplicar seleção",
+      "save_template": "Salvar Template",
+      "save_automation": "Salvar Automação",
+      "start_node_blocked": "O nó Start não pode ser incluído em ações em massa.",
+      "invalid_selection": "A seleção atual não é válida.",
+      "duplicated_toast": "{nodes} nós e {edges} conexões internas foram duplicados.",
+      "save_automation_confirm_title": "Criar automação vinculada?",
+      "save_automation_confirm_description": "Uma nova automação será criada com os {count} nós selecionados. O bloco selecionado será substituído por um nó ponte que redireciona para o novo fluxo.",
+      "save_automation_cancel": "Cancelar",
+      "save_automation_confirm": "Criar automação",
+      "save_automation_success": "Automação #{automationId} criada e vinculada.",
+      "save_automation_error": "Não foi possível criar a automação vinculada. As mudanças foram revertidas."
+    },
     "automation_activated_toast": "Automação ativada",
     "automation_paused_toast": "Automação pausada",
     "failed_to_update_status_toast": "Falha ao atualizar status",

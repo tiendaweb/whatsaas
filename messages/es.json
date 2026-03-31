@@ -542,9 +542,14 @@
       "save_template": "Guardar Plantilla",
       "save_automation": "Guardar Automatización",
       "start_node_blocked": "El nodo Start no puede incluirse en acciones masivas.",
+      "invalid_selection": "La selección actual no es válida.",
       "duplicated_toast": "Se duplicaron {nodes} nodos y {edges} conexiones internas.",
-      "template_pending": "Guardar plantilla para selección múltiple estará disponible pronto.",
-      "automation_pending": "Guardar automatización para selección múltiple estará disponible pronto."
+      "save_automation_confirm_title": "¿Crear automatización vinculada?",
+      "save_automation_confirm_description": "Se creará una nueva automatización con los {count} nodos seleccionados. El bloque seleccionado se reemplazará por un nodo puente que redirige al nuevo flujo.",
+      "save_automation_cancel": "Cancelar",
+      "save_automation_confirm": "Crear automatización",
+      "save_automation_success": "Automatización #{automationId} creada y enlazada.",
+      "save_automation_error": "No se pudo crear la automatización vinculada. Se revirtieron los cambios."
     },
     "automation_activated_toast": "Automatización activada",
     "automation_paused_toast": "Automatización pausada",
