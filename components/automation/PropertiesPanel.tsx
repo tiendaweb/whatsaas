@@ -105,6 +105,16 @@ export function PropertiesPanel({
   const { data: customFields } = useSWR<any[]>(shouldFetchCRM ? '/api/custom-fields' : null, fetcher);
   const { data: departmentsList } = useSWR<any[]>(shouldFetchCRM ? '/api/departments' : null, fetcher);
   const { data: drafts } = useSWR<DraftItem[]>('/api/drafts', fetcher);
+  const shouldFetchTargetAutomationNodes =
+    selectedNode?.type === 'go_to_node' &&
+    goToMode === 'other_flow' &&
+    Boolean(goToTargetAutomationId);
+  const { data: targetAutomationData } = useSWR<{ nodes?: AutomationCanvasNode[] }>(
+    shouldFetchTargetAutomationNodes
+      ? `/api/automation/${goToTargetAutomationId}/nodes`
+      : null,
+    fetcher,
+  );
   
   const agents = teamData?.teamMembers?.map((tm: any) => tm.user) || [];
   const selectedNodeMeta = selectedNode ? getAutomationNodeCatalogEntry(selectedNode.type) : null;
@@ -134,6 +144,16 @@ export function PropertiesPanel({
         })),
     [availableAutomations, currentAutomationId],
   );
+  const targetAutomationNodeOptions = useMemo(() => {
+    const nodesInAutomation = targetAutomationData?.nodes ?? [];
+    return [...nodesInAutomation]
+      .sort((a, b) => a.position.x - b.position.x || a.position.y - b.position.y)
+      .filter((node) => node.type !== 'start')
+      .map((node) => ({
+        value: node.id,
+        label: `${node.data.label || node.type} (${node.id})`,
+      }));
+  }, [targetAutomationData]);
   const optionsFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'options') : null;
   const buttonsFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'buttons') : null;
   const listItemsFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'items') : null;
@@ -294,9 +314,32 @@ export function PropertiesPanel({
     }
 
     if (selectedNode.type === 'go_to_node') {
+      const trimmedTargetNodeId = goToTargetNodeId.trim();
+      const trimmedTargetAutomationId = goToTargetAutomationId.trim();
+      const isTargetNodeInSelectedAutomation = targetAutomationNodeOptions.some(
+        (node) => node.value === trimmedTargetNodeId,
+      );
+
+      if (goToMode === 'specific_node' && !trimmedTargetNodeId) {
+        toast.error(t('go_to_validation_target_node_required'));
+        return;
+      }
+
+      if (goToMode === 'other_flow') {
+        if (!trimmedTargetAutomationId) {
+          toast.error(t('go_to_validation_target_automation_required'));
+          return;
+        }
+
+        if (!trimmedTargetNodeId || !isTargetNodeInSelectedAutomation) {
+          toast.error(t('go_to_validation_target_node_invalid_other_flow'));
+          return;
+        }
+      }
+
       dataToSave.mode = goToMode;
-      dataToSave.targetNodeId = goToTargetNodeId.trim() || undefined;
-      dataToSave.targetAutomationId = goToTargetAutomationId.trim() || undefined;
+      dataToSave.targetNodeId = trimmedTargetNodeId || undefined;
+      dataToSave.targetAutomationId = trimmedTargetAutomationId || undefined;
       dataToSave.fallbackNodeId = goToFallbackNodeId.trim() || undefined;
     }
 
@@ -557,7 +600,7 @@ export function PropertiesPanel({
               </Select>
             </div>
 
-            {(goToMode === 'specific_node' || goToMode === 'other_flow') && (
+            {goToMode === 'specific_node' && (
               <div className="space-y-2">
                 <Label>{t('go_to_target_node_label')}</Label>
                 <Select value={goToTargetNodeId || undefined} onValueChange={setGoToTargetNodeId}>
@@ -582,26 +625,65 @@ export function PropertiesPanel({
             )}
 
             {goToMode === 'other_flow' && (
-              <div className="space-y-2">
-                <Label>{t('go_to_target_automation_label')}</Label>
-                <Select value={goToTargetAutomationId || undefined} onValueChange={setGoToTargetAutomationId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder={t('go_to_target_automation_placeholder')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {flowAutomationOptions.length === 0 ? (
-                      <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                        {t('go_to_no_automations')}
-                      </div>
-                    ) : (
-                      flowAutomationOptions.map((automation) => (
-                        <SelectItem key={automation.value} value={automation.value}>
-                          {automation.label}
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
+              <>
+                <div className="space-y-2">
+                  <Label>{t('go_to_target_automation_label')}</Label>
+                  <Select
+                    value={goToTargetAutomationId || undefined}
+                    onValueChange={(value) => {
+                      setGoToTargetAutomationId(value);
+                      setGoToTargetNodeId('');
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={t('go_to_target_automation_placeholder')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {flowAutomationOptions.length === 0 ? (
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                          {t('go_to_no_automations')}
+                        </div>
+                      ) : (
+                        flowAutomationOptions.map((automation) => (
+                          <SelectItem key={automation.value} value={automation.value}>
+                            {automation.label}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>{t('go_to_target_node_label')}</Label>
+                  <Select
+                    value={goToTargetNodeId || undefined}
+                    onValueChange={setGoToTargetNodeId}
+                    disabled={!goToTargetAutomationId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={t('go_to_target_node_placeholder')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {!goToTargetAutomationId ? (
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                          {t('go_to_select_automation_first')}
+                        </div>
+                      ) : targetAutomationNodeOptions.length === 0 ? (
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                          {t('go_to_no_nodes_in_target_automation')}
+                        </div>
+                      ) : (
+                        targetAutomationNodeOptions.map((node) => (
+                          <SelectItem key={node.value} value={node.value}>
+                            {node.label}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div className="flex gap-2">
                   <Button
                     type="button"
@@ -612,22 +694,13 @@ export function PropertiesPanel({
                   >
                     {t('go_to_open_automation_btn')}
                   </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="flex-1"
-                    disabled={!goToTargetAutomationId}
-                    onClick={() => toast.info(t('go_to_trigger_automation_toast'))}
-                  >
-                    {t('go_to_trigger_automation_btn')}
-                  </Button>
                 </div>
                 {hasUnsavedChanges && (
                   <p className="text-xs text-amber-500">
                     {t('save_before_redirect_warning')}
                   </p>
                 )}
-              </div>
+              </>
             )}
 
             <div className="space-y-2">
