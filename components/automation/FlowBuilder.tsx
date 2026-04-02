@@ -211,6 +211,13 @@ type AutomationTemplateItem = {
   edges: AutomationFlowEdge[];
 };
 
+type TemplateNodeVisualData = {
+  name?: string;
+  icon?: AutomationSidebarIconKey;
+  colorClass?: string;
+  iconColorClass?: string;
+};
+
 const ICONS_BY_KEY: Record<AutomationSidebarIconKey, React.ElementType> = {
   "message-square": MessageSquare,
   image: Image,
@@ -401,12 +408,35 @@ function generateCanvasId(prefix: "node" | "edge") {
 function buildTemplatePreviewItems(template: AutomationTemplateItem) {
   return template.nodes.slice(0, 6).map((node) => {
     const catalogEntry = AUTOMATION_NODE_CATALOG.find((item) => item.type === node.type);
+    const visualData =
+      typeof node.data === "object" &&
+      node.data !== null &&
+      "templateVisual" in node.data &&
+      typeof node.data.templateVisual === "object" &&
+      node.data.templateVisual !== null
+        ? (node.data.templateVisual as TemplateNodeVisualData)
+        : undefined;
+
+    const customIcon =
+      visualData?.icon && visualData.icon in ICONS_BY_KEY
+        ? visualData.icon
+        : undefined;
+
+    const customName =
+      typeof visualData?.name === "string" && visualData.name.trim().length > 0
+        ? visualData.name.trim()
+        : undefined;
+
     return {
       id: node.id,
       labelKey: catalogEntry?.labelKey ?? "nodes.message",
-      icon: catalogEntry?.sidebar?.icon,
-      colorClass: catalogEntry?.sidebar?.colorClass ?? "bg-muted",
-      iconColorClass: catalogEntry?.sidebar?.iconColorClass ?? "text-foreground",
+      customName,
+      icon: customIcon ?? catalogEntry?.sidebar?.icon,
+      colorClass: visualData?.colorClass ?? catalogEntry?.sidebar?.colorClass ?? "bg-muted",
+      iconColorClass:
+        visualData?.iconColorClass ??
+        catalogEntry?.sidebar?.iconColorClass ??
+        "text-foreground",
       fallbackName:
         typeof node.data === "object" && node.data !== null && "label" in node.data
           ? String((node.data as { label?: string }).label ?? node.type)
@@ -1926,7 +1956,7 @@ function FlowBuilderContent({
   const handleConfirmSaveTemplate = useCallback(async () => {
     const selectedSet = new Set(selectedNodeIds);
     const endpoint =
-      selectedSet.size > 1
+      selectedSet.size > 0
         ? "/api/automation/templates/from-selection"
         : "/api/automation/templates/from-flow";
 
@@ -2621,7 +2651,7 @@ function FlowBuilderContent({
                             )}
                           >
                             {Icon ? <Icon className={cn("h-3 w-3", item.iconColorClass)} /> : null}
-                            <span>{t(item.labelKey)}</span>
+                            <span>{item.customName ?? t(item.labelKey)}</span>
                           </div>
                         );
                       })}
