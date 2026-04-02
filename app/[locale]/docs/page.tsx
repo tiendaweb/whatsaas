@@ -1,4 +1,5 @@
 import { getBranding } from '@/lib/db/queries/branding';
+import { getDocsHomeData } from '@/lib/db/queries/docs';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -21,175 +22,212 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 
+const iconMap = {
+  Zap,
+  Code,
+  Users,
+  Book,
+  Shield,
+  MessageSquare,
+} as const;
+
+const defaultCategories = [
+  {
+    title: 'Primeros pasos',
+    description: 'Todo lo necesario para dejar tu cuenta lista y funcionando.',
+    icon: Zap,
+    links: ['Configuración de cuenta', 'Conectar WhatsApp', 'Invitar miembros del equipo']
+  },
+  {
+    title: 'Automatización y flujos',
+    description: 'Aprende a crear automatizaciones potentes para tu operación.',
+    icon: Code,
+    links: ['Constructor visual de flujos', 'Tipos de mensaje', 'Variables y lógica']
+  },
+  {
+    title: 'CRM y contactos',
+    description: 'Gestiona leads y clientes de forma ordenada y eficiente.',
+    icon: Users,
+    links: ['Importar contactos', 'Etiquetas y embudos', 'Filtrado de leads']
+  },
+  {
+    title: 'API y desarrollo',
+    description: 'Documentación técnica de endpoints e integraciones.',
+    icon: Book,
+    links: ['Autenticación', 'Envío de mensajes', 'Webhooks']
+  },
+  {
+    title: 'Resolución de problemas',
+    description: 'Errores comunes y cómo solucionarlos rápidamente.',
+    icon: Shield,
+    links: ['Problemas de conexión', 'Fallos de envío', 'Preguntas frecuentes de facturación']
+  },
+  {
+    title: 'Buenas prácticas',
+    description: 'Recomendaciones para mejorar resultados y evitar bloqueos.',
+    icon: MessageSquare,
+    links: ['Reglas anti-spam', 'Guía de plantillas', 'Estrategia de difusiones']
+  }
+];
+
+const defaultModules = [
+  {
+    title: 'Inbox y conversaciones',
+    icon: MessageSquare,
+    description: 'Centro operativo para responder, organizar y dar seguimiento a conversaciones.',
+    items: [
+      'Vista principal de conversaciones para operación diaria.',
+      'Gestión de chats, sesiones activas y estado de atención.',
+      'Envío de texto, imágenes, video, documentos y audio.',
+      'Marcado de lectura, reacciones y cierre de chats.'
+    ]
+  },
+  {
+    title: 'CRM y contactos',
+    icon: Users,
+    description: 'Base comercial para ordenar leads, clientes y ownership del equipo.',
+    items: [
+      'Búsqueda, filtros y segmentación de contactos.',
+      'Etiquetas, notas, etapas de funnel y campos personalizados.',
+      'Asignación de agente y departamento.',
+      'Importación, exportación y movimiento entre instancias.'
+    ]
+  },
+  {
+    title: 'Campañas',
+    icon: Megaphone,
+    description: 'Difusión saliente con control de estado y seguimiento operativo.',
+    items: [
+      'Creación y ejecución de campañas desde dashboard.',
+      'Estados DRAFT, SCHEDULED, PROCESSING y COMPLETED.',
+      'Seguimiento de enviados, fallidos y total de leads.',
+      'Habilitación por plan mediante feature flags.'
+    ]
+  },
+  {
+    title: 'Automatización',
+    icon: Workflow,
+    description: 'Flujos automatizados conectados a eventos y comportamiento del usuario.',
+    items: [
+      'Listado y edición de automatizaciones por equipo.',
+      'Activación o desactivación por flujo.',
+      'Asociación con instancias de WhatsApp.',
+      'Procesamiento de eventos entrantes para disparar lógica.'
+    ]
+  },
+  {
+    title: 'Analítica y control',
+    icon: LayoutDashboard,
+    description: 'Visibilidad del rendimiento comercial y operativo.',
+    items: [
+      'Métricas de funnel.',
+      'Visión por agente.',
+      'Heatmaps y tráfico operativo.',
+      'Panel para entender performance del equipo.'
+    ]
+  },
+  {
+    title: 'Integraciones y API',
+    icon: Cable,
+    description: 'Base técnica para conectar canales, servicios externos y automatizaciones.',
+    items: [
+      'API autenticada para envío programático.',
+      'Webhooks para eventos externos.',
+      'Integración con Evolution API.',
+      'Base preparada para más integraciones y plugins.'
+    ]
+  }
+];
+
+const defaultApiGroups = [
+  {
+    title: 'Operación del inbox',
+    endpoints: ['app/api/chats/*', 'app/api/messages/*', 'app/api/media/*']
+  },
+  {
+    title: 'CRM y organización',
+    endpoints: [
+      'app/api/contacts/*',
+      'app/api/tags/*',
+      'app/api/funnel-stages/*',
+      'app/api/departments/*',
+      'app/api/custom-fields/*'
+    ]
+  },
+  {
+    title: 'Crecimiento y automatización',
+    endpoints: ['app/api/campaigns/*', 'app/api/automation/*', 'app/api/templates/*']
+  },
+  {
+    title: 'Infraestructura e integraciones',
+    endpoints: [
+      'app/api/instance/*',
+      'app/api/webhook/evolution',
+      'app/api/v1/send',
+      'app/api/stripe/*'
+    ]
+  }
+];
+
+const defaultKeyFlows = [
+  {
+    title: 'Onboarding inicial',
+    description:
+      'Crear cuenta, conectar una instancia, invitar miembros y dejar el workspace listo para operar.'
+  },
+  {
+    title: 'Operación comercial',
+    description:
+      'Capturar contactos, clasificarlos por etapa y departamento, y dar seguimiento desde conversaciones o campañas.'
+  },
+  {
+    title: 'Automatización y escala',
+    description:
+      'Activar flujos, sincronizar templates y combinar operación humana con automatización para ganar velocidad.'
+  },
+  {
+    title: 'Facturación y planes',
+    description:
+      'Administrar suscripción, checkout y configuración de proveedores de pago con una arquitectura en transición a plugins.'
+  }
+];
+
 export const metadata = {
   title: 'Documentación',
   description: 'Aprende a usar nuestra plataforma.',
 };
 
 export default async function DocsPage() {
-  const branding = await getBranding();
+  const [branding, docsHomeData] = await Promise.all([getBranding(), getDocsHomeData()]);
   const siteName = branding?.name || 'WhatsPro';
-
-  const categories = [
-    {
-      title: 'Primeros pasos',
-      description: 'Todo lo necesario para dejar tu cuenta lista y funcionando.',
-      icon: Zap,
-      links: ['Configuración de cuenta', 'Conectar WhatsApp', 'Invitar miembros del equipo']
-    },
-    {
-      title: 'Automatización y flujos',
-      description: 'Aprende a crear automatizaciones potentes para tu operación.',
-      icon: Code,
-      links: ['Constructor visual de flujos', 'Tipos de mensaje', 'Variables y lógica']
-    },
-    {
-      title: 'CRM y contactos',
-      description: 'Gestiona leads y clientes de forma ordenada y eficiente.',
-      icon: Users,
-      links: ['Importar contactos', 'Etiquetas y embudos', 'Filtrado de leads']
-    },
-    {
-      title: 'API y desarrollo',
-      description: 'Documentación técnica de endpoints e integraciones.',
-      icon: Book,
-      links: ['Autenticación', 'Envío de mensajes', 'Webhooks']
-    },
-    {
-      title: 'Resolución de problemas',
-      description: 'Errores comunes y cómo solucionarlos rápidamente.',
-      icon: Shield,
-      links: ['Problemas de conexión', 'Fallos de envío', 'Preguntas frecuentes de facturación']
-    },
-    {
-      title: 'Buenas prácticas',
-      description: 'Recomendaciones para mejorar resultados y evitar bloqueos.',
-      icon: MessageSquare,
-      links: ['Reglas anti-spam', 'Guía de plantillas', 'Estrategia de difusiones']
+  const categoryLinksBySlug = docsHomeData.featuredArticles.reduce<Record<string, string[]>>((acc, article) => {
+    const categorySlug = article.category?.slug;
+    if (!categorySlug || acc[categorySlug]?.length >= 3) {
+      return acc;
     }
-  ];
+    acc[categorySlug] = [...(acc[categorySlug] ?? []), article.title];
+    return acc;
+  }, {});
 
-  const modules = [
-    {
-      title: 'Inbox y conversaciones',
-      icon: MessageSquare,
-      description: 'Centro operativo para responder, organizar y dar seguimiento a conversaciones.',
-      items: [
-        'Vista principal de conversaciones para operación diaria.',
-        'Gestión de chats, sesiones activas y estado de atención.',
-        'Envío de texto, imágenes, video, documentos y audio.',
-        'Marcado de lectura, reacciones y cierre de chats.'
-      ]
-    },
-    {
-      title: 'CRM y contactos',
-      icon: Users,
-      description: 'Base comercial para ordenar leads, clientes y ownership del equipo.',
-      items: [
-        'Búsqueda, filtros y segmentación de contactos.',
-        'Etiquetas, notas, etapas de funnel y campos personalizados.',
-        'Asignación de agente y departamento.',
-        'Importación, exportación y movimiento entre instancias.'
-      ]
-    },
-    {
-      title: 'Campañas',
-      icon: Megaphone,
-      description: 'Difusión saliente con control de estado y seguimiento operativo.',
-      items: [
-        'Creación y ejecución de campañas desde dashboard.',
-        'Estados DRAFT, SCHEDULED, PROCESSING y COMPLETED.',
-        'Seguimiento de enviados, fallidos y total de leads.',
-        'Habilitación por plan mediante feature flags.'
-      ]
-    },
-    {
-      title: 'Automatización',
-      icon: Workflow,
-      description: 'Flujos automatizados conectados a eventos y comportamiento del usuario.',
-      items: [
-        'Listado y edición de automatizaciones por equipo.',
-        'Activación o desactivación por flujo.',
-        'Asociación con instancias de WhatsApp.',
-        'Procesamiento de eventos entrantes para disparar lógica.'
-      ]
-    },
-    {
-      title: 'Analítica y control',
-      icon: LayoutDashboard,
-      description: 'Visibilidad del rendimiento comercial y operativo.',
-      items: [
-        'Métricas de funnel.',
-        'Visión por agente.',
-        'Heatmaps y tráfico operativo.',
-        'Panel para entender performance del equipo.'
-      ]
-    },
-    {
-      title: 'Integraciones y API',
-      icon: Cable,
-      description: 'Base técnica para conectar canales, servicios externos y automatizaciones.',
-      items: [
-        'API autenticada para envío programático.',
-        'Webhooks para eventos externos.',
-        'Integración con Evolution API.',
-        'Base preparada para más integraciones y plugins.'
-      ]
-    }
-  ];
+  const categories =
+    docsHomeData.categories.length > 0
+      ? docsHomeData.categories.map((category) => {
+          const fallbackCategory = defaultCategories.find((item) => item.title === category.name);
+          const icon = iconMap[category.icon as keyof typeof iconMap] ?? fallbackCategory?.icon ?? Book;
+          const links = categoryLinksBySlug[category.slug] ?? fallbackCategory?.links ?? [];
 
-  const apiGroups = [
-    {
-      title: 'Operación del inbox',
-      endpoints: ['app/api/chats/*', 'app/api/messages/*', 'app/api/media/*']
-    },
-    {
-      title: 'CRM y organización',
-      endpoints: [
-        'app/api/contacts/*',
-        'app/api/tags/*',
-        'app/api/funnel-stages/*',
-        'app/api/departments/*',
-        'app/api/custom-fields/*'
-      ]
-    },
-    {
-      title: 'Crecimiento y automatización',
-      endpoints: ['app/api/campaigns/*', 'app/api/automation/*', 'app/api/templates/*']
-    },
-    {
-      title: 'Infraestructura e integraciones',
-      endpoints: [
-        'app/api/instance/*',
-        'app/api/webhook/evolution',
-        'app/api/v1/send',
-        'app/api/stripe/*'
-      ]
-    }
-  ];
+          return {
+            title: category.name,
+            description: category.description || fallbackCategory?.description || '',
+            icon,
+            links
+          };
+        })
+      : defaultCategories;
 
-  const keyFlows = [
-    {
-      title: 'Onboarding inicial',
-      description:
-        'Crear cuenta, conectar una instancia, invitar miembros y dejar el workspace listo para operar.'
-    },
-    {
-      title: 'Operación comercial',
-      description:
-        'Capturar contactos, clasificarlos por etapa y departamento, y dar seguimiento desde conversaciones o campañas.'
-    },
-    {
-      title: 'Automatización y escala',
-      description:
-        'Activar flujos, sincronizar templates y combinar operación humana con automatización para ganar velocidad.'
-    },
-    {
-      title: 'Facturación y planes',
-      description:
-        'Administrar suscripción, checkout y configuración de proveedores de pago con una arquitectura en transición a plugins.'
-    }
-  ];
+  const modules = defaultModules;
+  const apiGroups = defaultApiGroups;
+  const keyFlows = defaultKeyFlows;
 
   return (
     <main className="min-h-screen bg-background">
