@@ -1,5 +1,6 @@
 import {
   pgTable,
+  pgEnum,
   serial,
   varchar,
   text,
@@ -13,6 +14,7 @@ import {
   PgColumn,
   PgTableWithColumns,
   jsonb,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -1190,6 +1192,83 @@ export const landingPages = pgTable("landing_pages", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+export const docsArticleAudienceEnum = pgEnum("docs_article_audience", [
+  "technical",
+  "non_technical",
+  "mixed",
+]);
+
+export const docsCategories = pgTable("docs_categories", {
+  id: serial("id").primaryKey(),
+  slug: varchar("slug", { length: 140 }).notNull().unique(),
+  name: varchar("name", { length: 120 }).notNull(),
+  description: text("description"),
+  icon: varchar("icon", { length: 80 }),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isPublished: boolean("is_published").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const docsTags = pgTable("docs_tags", {
+  id: serial("id").primaryKey(),
+  slug: varchar("slug", { length: 140 }).notNull().unique(),
+  name: varchar("name", { length: 120 }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const docsArticles = pgTable(
+  "docs_articles",
+  {
+    id: serial("id").primaryKey(),
+    slug: varchar("slug", { length: 180 }).notNull().unique(),
+    title: varchar("title", { length: 255 }).notNull(),
+    excerpt: text("excerpt"),
+    contentMd: text("content_md"),
+    contentJson: jsonb("content_json"),
+    categoryId: integer("category_id").references(() => docsCategories.id, {
+      onDelete: "set null",
+    }),
+    audience: docsArticleAudienceEnum("audience").notNull().default("mixed"),
+    isPublished: boolean("is_published").notNull().default(false),
+    isFeatured: boolean("is_featured").notNull().default(false),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    docsArticlesSlugIdx: index("docs_articles_slug_idx").on(table.slug),
+    docsArticlesCategoryIdx: index("docs_articles_category_idx").on(
+      table.categoryId,
+    ),
+    docsArticlesPublishedIdx: index("docs_articles_published_idx").on(
+      table.isPublished,
+    ),
+  }),
+);
+
+export const docsArticleTags = pgTable(
+  "docs_article_tags",
+  {
+    articleId: integer("article_id")
+      .notNull()
+      .references(() => docsArticles.id, { onDelete: "cascade" }),
+    tagId: integer("tag_id")
+      .notNull()
+      .references(() => docsTags.id, { onDelete: "cascade" }),
+  },
+  (table) => ({
+    pk: primaryKey({
+      name: "docs_article_tags_pk",
+      columns: [table.articleId, table.tagId],
+    }),
+    docsArticleTagsArticleIdx: index("docs_article_tags_article_idx").on(
+      table.articleId,
+    ),
+    docsArticleTagsTagIdx: index("docs_article_tags_tag_idx").on(table.tagId),
+  }),
+);
+
 export const chatTheme = pgTable("chat_theme", {
   id: serial("id").primaryKey(),
   backgroundType: varchar("background_type", { length: 20 })
@@ -1805,6 +1884,14 @@ export type LandingContent = typeof landingContent.$inferSelect;
 export type NewLandingContent = typeof landingContent.$inferInsert;
 export type LandingPage = typeof landingPages.$inferSelect;
 export type NewLandingPage = typeof landingPages.$inferInsert;
+export type DocsCategory = typeof docsCategories.$inferSelect;
+export type NewDocsCategory = typeof docsCategories.$inferInsert;
+export type DocsTag = typeof docsTags.$inferSelect;
+export type NewDocsTag = typeof docsTags.$inferInsert;
+export type DocsArticle = typeof docsArticles.$inferSelect;
+export type NewDocsArticle = typeof docsArticles.$inferInsert;
+export type DocsArticleTag = typeof docsArticleTags.$inferSelect;
+export type NewDocsArticleTag = typeof docsArticleTags.$inferInsert;
 
 export type ChatTheme = typeof chatTheme.$inferSelect;
 export type NewChatTheme = typeof chatTheme.$inferInsert;
