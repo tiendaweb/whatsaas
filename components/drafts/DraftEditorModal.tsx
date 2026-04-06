@@ -222,32 +222,32 @@ export function DraftEditorModal({
 
         <div className="flex-1 overflow-y-auto bg-secondary/5">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-0">
-            
+
             {/* COLUMNA IZQUIERDA: CONTENIDO Y EDITOR */}
-            <div className="lg:col-span-7 p-6 space-y-6 border-r border-border/50">
+            <div className="lg:col-span-7 p-4 space-y-4 border-r border-border/50">
               
-              <section className="space-y-4">
-                <div className="flex items-center gap-2 text-sm font-bold text-muted-foreground uppercase tracking-wider">
-                  <Layout className="h-4 w-4" /> Cuerpo del Mensaje
+              <section className="space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  <Layout className="h-3 w-3" /> Cuerpo del Mensaje
                 </div>
-                
-                <div className="space-y-4 bg-background p-4 rounded-xl border shadow-sm">
-                  <div className="space-y-2">
-                    <Label className="text-xs uppercase font-bold text-muted-foreground">Título del Borrador</Label>
-                    <Input 
-                      value={title} 
-                      onChange={(e) => setTitle(e.target.value)} 
-                      placeholder="Ej: Bienvenida Cliente Nuevo"
-                      className="text-lg font-semibold bg-secondary/20 border-none focus-visible:ring-primary"
+
+                <div className="space-y-3 bg-background p-3 rounded-lg border shadow-sm">
+                  <div className="space-y-1">
+                    <Label className="text-xs uppercase font-bold text-muted-foreground">Título</Label>
+                    <Input
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="Ej: Bienvenida Cliente"
+                      className="h-8 text-sm bg-secondary/20 border-none focus-visible:ring-primary"
                     />
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-1">
                     <Label className="text-xs uppercase font-bold text-muted-foreground">Contenido</Label>
                     <Textarea
                       value={content}
                       onChange={(e) => setContent(e.target.value)}
-                      className="min-h-[250px] font-mono text-sm leading-relaxed bg-secondary/10 border-none focus-visible:ring-primary"
+                      className="min-h-[180px] font-mono text-xs leading-relaxed bg-secondary/10 border-none focus-visible:ring-primary resize-none"
                       placeholder="Escribe tu mensaje aquí..."
                     />
                   </div>
@@ -255,16 +255,16 @@ export function DraftEditorModal({
               </section>
 
               {/* GENERADOR IA INTEGRADO */}
-              <section className="bg-primary/5 rounded-xl border border-primary/20 p-4 space-y-4">
-                <div className="flex items-center gap-2 text-sm font-bold text-primary uppercase">
-                  <Sparkles className="h-4 w-4" /> Asistente de IA
+              <section className="bg-primary/5 rounded-lg border border-primary/20 p-3 space-y-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-primary uppercase">
+                  <Sparkles className="h-3 w-3" /> IA
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
                   <Select value={aiMode} onValueChange={(v: any) => setAiMode(v)}>
-                    <SelectTrigger className="w-[130px] bg-background">
+                    <SelectTrigger className="w-[100px] h-8 bg-background text-xs">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="max-h-[200px]">
                       <SelectItem value="create">Crear</SelectItem>
                       <SelectItem value="rewrite">Reescribir</SelectItem>
                       <SelectItem value="variables">Variables</SelectItem>
@@ -273,45 +273,45 @@ export function DraftEditorModal({
                   <Input
                     value={aiPrompt}
                     onChange={(e) => setAiPrompt(e.target.value)}
-                    placeholder="Describe el tono o cambio..."
-                    className="flex-1 bg-background"
+                    placeholder="Instrucción..."
+                    className="h-8 flex-1 text-xs bg-background"
                   />
-                  <Button onClick={handleGenerateWithAi} disabled={isGenerating} size="icon">
-                    {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  <Button onClick={handleGenerateWithAi} disabled={isGenerating} size="sm" className="h-8 px-2">
+                    {isGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
                   </Button>
                 </div>
               </section>
             </div>
 
             {/* COLUMNA DERECHA: CONFIGURACIÓN Y VARIABLES */}
-            <div className="lg:col-span-5 p-6 space-y-6 bg-background">
-              
+            <div className="lg:col-span-5 p-4 space-y-4 bg-background">
+
               {/* TIPO Y CATEGORÍA */}
-              <section className="space-y-4">
-                <div className="flex items-center gap-2 text-sm font-bold text-muted-foreground uppercase tracking-wider">
-                  <Settings2 className="h-4 w-4" /> Configuración
+              <section className="space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  <Settings2 className="h-3 w-3" /> Config
                 </div>
-                
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
                     <Label className="text-[10px] uppercase font-bold">Tipo</Label>
                     <Select value={draftType} onValueChange={(v: any) => setDraftType(v)}>
-                      <SelectTrigger className="h-9">
+                      <SelectTrigger className="h-8 text-xs">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="max-h-[200px]">
                         <SelectItem value="static">Estática</SelectItem>
                         <SelectItem value="dynamic">Dinámica</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-1">
                     <Label className="text-[10px] uppercase font-bold">Categoría</Label>
                     <Select value={categoryId} onValueChange={setCategoryId}>
-                      <SelectTrigger className="h-9">
+                      <SelectTrigger className="h-8 text-xs">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="max-h-[200px]">
                         <SelectItem value="none">Sin Categoría</SelectItem>
                         {categories.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
                       </SelectContent>
@@ -374,10 +374,10 @@ export function DraftEditorModal({
     <div className="space-y-1">
       <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Contacto Vinculado</Label>
       <Select value={contactId} onValueChange={setContactId}>
-        <SelectTrigger className="h-9 bg-background">
+        <SelectTrigger className="h-8 text-xs bg-background">
           <SelectValue placeholder="Seleccionar contacto" />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent className="max-h-[200px]">
           <SelectItem value="none">Sin contacto</SelectItem>
           {contacts.map((c) => (
             <SelectItem key={c.id} value={String(c.id)}>
@@ -392,10 +392,10 @@ export function DraftEditorModal({
     <div className="space-y-1">
       <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Agente Asignado</Label>
       <Select value={assignedUserId} onValueChange={setAssignedUserId}>
-        <SelectTrigger className="h-9 bg-background">
+        <SelectTrigger className="h-8 text-xs bg-background">
           <SelectValue placeholder="Seleccionar agente" />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent className="max-h-[200px]">
           <SelectItem value="none">Sin agente</SelectItem>
           {agents.map((a) => (
             <SelectItem key={a.id} value={String(a.id)}>
@@ -410,10 +410,10 @@ export function DraftEditorModal({
     <div className="space-y-1">
       <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Departamento</Label>
       <Select value={departmentId} onValueChange={setDepartmentId}>
-        <SelectTrigger className="h-9 bg-background">
+        <SelectTrigger className="h-8 text-xs bg-background">
           <SelectValue placeholder="Seleccionar departamento" />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent className="max-h-[200px]">
           <SelectItem value="none">Sin departamento</SelectItem>
           {departments.map((d) => (
             <SelectItem key={d.id} value={String(d.id)}>

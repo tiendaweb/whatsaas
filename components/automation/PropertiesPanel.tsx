@@ -530,7 +530,7 @@ export function PropertiesPanel({
                     <Label className="text-[10px]">{t('ConditionProperties.type_label')}</Label>
                     <Select value={cond.type} onValueChange={(v) => updateCondition(idx, 'type', v)}>
                       <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="max-h-[200px]">
                         <SelectItem value="text">{t('ConditionProperties.types.text')}</SelectItem>
                         <SelectItem value="number">{t('ConditionProperties.types.number')}</SelectItem>
                         <SelectItem value="time">{t('ConditionProperties.types.time')}</SelectItem>
@@ -543,7 +543,7 @@ export function PropertiesPanel({
                     <Label className="text-[10px]">{t('ConditionProperties.operator_label')}</Label>
                     <Select value={cond.operator} onValueChange={(v) => updateCondition(idx, 'operator', v)}>
                       <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="max-h-[200px]">
                         {cond.type === 'text' || cond.type === 'variable' ? (
                           <>
                             <SelectItem value="equals">{t('ConditionProperties.operators.equals')}</SelectItem>
@@ -621,7 +621,7 @@ export function PropertiesPanel({
                   <SelectTrigger>
                     <SelectValue placeholder={t('go_to_target_node_placeholder')} />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-h-[200px]">
                     {currentFlowNodeOptions.length === 0 ? (
                       <div className="px-2 py-1.5 text-xs text-muted-foreground">
                         {t('go_to_no_available_nodes')}
@@ -652,7 +652,7 @@ export function PropertiesPanel({
                     <SelectTrigger>
                       <SelectValue placeholder={t('go_to_target_automation_placeholder')} />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="max-h-[200px]">
                       {flowAutomationOptions.length === 0 ? (
                         <div className="px-2 py-1.5 text-xs text-muted-foreground">
                           {t('go_to_no_automations')}
@@ -678,7 +678,7 @@ export function PropertiesPanel({
                     <SelectTrigger>
                       <SelectValue placeholder={t('go_to_target_node_placeholder')} />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="max-h-[200px]">
                       {!goToTargetAutomationId ? (
                         <div className="px-2 py-1.5 text-xs text-muted-foreground">
                           {t('go_to_select_automation_first')}
@@ -1001,28 +1001,28 @@ export function PropertiesPanel({
                 <Label>{t('assign_to_agent_label')}</Label>
                 <Select value={saveAgentId} onValueChange={setSaveAgentId}>
                   <SelectTrigger><SelectValue placeholder={t('no_change_select')} /></SelectTrigger>
-                  <SelectContent><SelectItem value="null">{t('no_change_select')}</SelectItem>{agents?.map((a: any) => <SelectItem key={a.id} value={a.id.toString()}>{a.name || a.email}</SelectItem>)}</SelectContent>
+                  <SelectContent className="max-h-[200px]"><SelectItem value="null">{t('no_change_select')}</SelectItem>{agents?.map((a: any) => <SelectItem key={a.id} value={a.id.toString()}>{a.name || a.email}</SelectItem>)}</SelectContent>
                 </Select>
             </div>
             <div className="space-y-2">
                 <Label>{t('assign_to_department_label')}</Label>
                 <Select value={saveDepartmentId} onValueChange={setSaveDepartmentId}>
                   <SelectTrigger><SelectValue placeholder={t('no_change_select')} /></SelectTrigger>
-                  <SelectContent><SelectItem value="null">{t('no_change_select')}</SelectItem>{departmentsList?.map((d: any) => <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>)}</SelectContent>
+                  <SelectContent className="max-h-[200px]"><SelectItem value="null">{t('no_change_select')}</SelectItem>{departmentsList?.map((d: any) => <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>)}</SelectContent>
                 </Select>
             </div>
             <div className="space-y-2">
                 <Label>{t('set_funnel_stage_label')}</Label>
                 <Select value={saveFunnelId} onValueChange={setSaveFunnelId}>
                   <SelectTrigger><SelectValue placeholder={t('no_change_select')} /></SelectTrigger>
-                  <SelectContent><SelectItem value="null">{t('no_change_select')}</SelectItem>{funnelStages?.map(s => <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>)}</SelectContent>
+                  <SelectContent className="max-h-[200px]"><SelectItem value="null">{t('no_change_select')}</SelectItem>{funnelStages?.map(s => <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>)}</SelectContent>
                 </Select>
             </div>
             <div className="space-y-2">
                 <Label>{t('add_tag_label')}</Label>
                 <Select value={saveTagId} onValueChange={setSaveTagId}>
                   <SelectTrigger><SelectValue placeholder={t('no_change_select')} /></SelectTrigger>
-                  <SelectContent><SelectItem value="null">{t('no_change_select')}</SelectItem>{tags?.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
+                  <SelectContent className="max-h-[200px]"><SelectItem value="null">{t('no_change_select')}</SelectItem>{tags?.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
                 </Select>
             </div>
 
@@ -1066,9 +1066,66 @@ export function PropertiesPanel({
 
         {selectedNode.type === 'start' && (
           <div className="space-y-6">
-            <div className="space-y-3"><Label>{t('trigger_type_label')}</Label><Select value={triggerType} onValueChange={(value) => setTriggerType(value as NonNullable<StartNodeData['triggerType']>)}><SelectTrigger><SelectValue placeholder={t('any_select')} /></SelectTrigger><SelectContent><SelectItem value="exact_match">{t('exact_match_select')}</SelectItem><SelectItem value="contains">{t('message_contains_select')}</SelectItem><SelectItem value="first_message">{t('first_message_select')}</SelectItem><SelectItem value="fallback">{t('fallback_select')}</SelectItem></SelectContent></Select></div>
+            <div className="space-y-3">
+              <Label>{t('trigger_type_label')}</Label>
+              <Select value={triggerType} onValueChange={(value) => setTriggerType(value as NonNullable<StartNodeData['triggerType']>)}>
+                <SelectTrigger><SelectValue placeholder={t('any_select')} /></SelectTrigger>
+                <SelectContent className="max-h-[200px]">
+                  <SelectItem value="exact_match">{t('exact_match_select')}</SelectItem>
+                  <SelectItem value="contains">{t('message_contains_select')}</SelectItem>
+                  <SelectItem value="first_message">{t('first_message_select')}</SelectItem>
+                  <SelectItem value="fallback">{t('fallback_select')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             {['exact_match', 'contains'].includes(triggerType) && (<div className="space-y-3"><Label>{t('keywords_label')}</Label><div className="flex gap-2"><Input value={keywordInput} onChange={(e) => setKeywordInput(e.target.value)} placeholder={t('add_keyword_placeholder')} onKeyDown={(e) => e.key === 'Enter' && addKeyword()} /><Button size="icon" onClick={addKeyword} variant="secondary"><Plus className="h-4 w-4" /></Button></div><div className="flex flex-wrap gap-2 mt-2">{keywords.map(k => (<Badge key={k} variant="outline" className="gap-1 pr-1">{k}<X className="h-3 w-3 cursor-pointer text-muted-foreground hover:text-destructive" onClick={() => removeKeyword(k)}/></Badge>))}</div></div>)}
-            <div className="space-y-4 pt-4 border-t border-border"><h3 className="text-sm font-medium text-foreground">{t('conditions_title')}</h3><div className="space-y-2"><Label className="text-xs text-muted-foreground">{t('stage_label')}</Label><Select value={conditionStage} onValueChange={setConditionStage}><SelectTrigger><SelectValue placeholder={t('any_select')} /></SelectTrigger><SelectContent><SelectItem value="null">{t('any_select')}</SelectItem>{funnelStages?.map(s => <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label className="text-xs text-muted-foreground">{t('tag_label')}</Label><Select value={conditionTag} onValueChange={setConditionTag}><SelectTrigger><SelectValue placeholder={t('any_select')} /></SelectTrigger><SelectContent><SelectItem value="null">{t('any_select')}</SelectItem>{tags?.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label className="text-xs text-muted-foreground">{t('agent_label')}</Label><Select value={conditionAgent} onValueChange={setConditionAgent}><SelectTrigger><SelectValue placeholder={t('any_select')} /></SelectTrigger><SelectContent><SelectItem value="null">{t('any_select')}</SelectItem>{agents?.map((a: any) => <SelectItem key={a.id} value={a.id.toString()}>{a.name || a.email}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label className="text-xs text-muted-foreground">{t('department_label')}</Label><Select value={conditionDepartment} onValueChange={setConditionDepartment}><SelectTrigger><SelectValue placeholder={t('any_select')} /></SelectTrigger><SelectContent><SelectItem value="null">{t('any_select')}</SelectItem>{departmentsList?.map((d: any) => <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>)}</SelectContent></Select></div></div>
+            <div className="space-y-4 pt-4 border-t border-border">
+              <h3 className="text-sm font-medium text-foreground">{t('conditions_title')}</h3>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">{t('stage_label')}</Label>
+                <Select value={conditionStage} onValueChange={setConditionStage}>
+                  <SelectTrigger><SelectValue placeholder={t('any_select')} /></SelectTrigger>
+                  <SelectContent className="max-h-[200px]">
+                    <SelectItem value="null">{t('any_select')}</SelectItem>
+                    {funnelStages?.map(s => <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">{t('tag_label')}</Label>
+                <Select value={conditionTag} onValueChange={setConditionTag}>
+                  <SelectTrigger><SelectValue placeholder={t('any_select')} /></SelectTrigger>
+                  <SelectContent className="max-h-[200px]">
+                    <SelectItem value="null">{t('any_select')}</SelectItem>
+                    {tags?.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">{t('agent_label')}</Label>
+                <Select value={conditionAgent} onValueChange={setConditionAgent}>
+                  <SelectTrigger><SelectValue placeholder={t('any_select')} /></SelectTrigger>
+                  <SelectContent className="max-h-[200px]">
+                    <SelectItem value="null">{t('any_select')}</SelectItem>
+                    {agents?.map((a: any) => <SelectItem key={a.id} value={a.id.toString()}>{a.name || a.email}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">{t('department_label')}</Label>
+                <Select value={conditionDepartment} onValueChange={setConditionDepartment}>
+                  <SelectTrigger><SelectValue placeholder={t('any_select')} /></SelectTrigger>
+                  <SelectContent className="max-h-[200px]">
+                    <SelectItem value="null">{t('any_select')}</SelectItem>
+                    {departmentsList?.map((d: any) => <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </div>
         )}
 
