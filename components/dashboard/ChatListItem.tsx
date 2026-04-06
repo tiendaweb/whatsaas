@@ -259,7 +259,7 @@ export function ChatListItem({
 
   const formatPreviewText = (text: string) => {
     if (!text) return '';
-    const singleLineText = text.replace(/\n/g, ' ');
+    const singleLineText = text.replace(/\n/g, ' ').substring(0, 120);
     return <span className="text-muted-foreground">{singleLineText}</span>;
   };
 
@@ -326,7 +326,7 @@ export function ChatListItem({
 
             <div className="flex-1 min-w-0 flex flex-col gap-1.5">
               <div className="flex justify-between items-start">
-                <span className="font-semibold truncate text-base text-foreground leading-tight" title={displayName}>
+                <span className="font-semibold truncate text-base text-foreground leading-tight max-w-[180px] md:max-w-none" title={displayName}>
                   {displayName}
                 </span>
                 <div className="flex items-center gap-1 ml-2 shrink-0">
@@ -361,7 +361,7 @@ export function ChatListItem({
                 <div className="flex items-center gap-2 pt-1 animate-in fade-in slide-in-from-top-1 duration-300">
                   <Badge
                     variant="secondary"
-                    className="text-[10px] h-5 px-2 font-semibold rounded-sm bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors border-0"
+                    className="text-[10px] h-5 px-2 font-semibold rounded-sm max-w-[140px] truncate bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors border-0"
                   >
                     {funnelEmoji && <span className="mr-1.1 text-[11px]">{funnelEmoji}</span>}
                     {funnelName}
@@ -373,7 +373,7 @@ export function ChatListItem({
         </div>
       </ContextMenuTrigger>
 
-      <ContextMenuContent className="w-56">
+      <ContextMenuContent className="w-56 max-w-[90vw]">
         {isGroupChat ? (
           <ContextMenuLabel className="text-muted-foreground text-xs">
             <Users className="h-4 w-4 mr-2 inline" />
