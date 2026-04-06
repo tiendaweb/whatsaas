@@ -111,7 +111,7 @@ importers:
         specifier: ^4.16.1
         version: 4.16.1(react@19.2.3)
       esbuild:
-        specifier: ^0.25.12
+        specifier: '>=0.25.0'
         version: 0.25.12
       fluent-ffmpeg:
         specifier: ^2.1.3
