@@ -33,6 +33,14 @@ export type LandingPageSectionHighlightItem = {
   description: string;
 };
 
+export type LandingPageSectionComponentItem = {
+  id: string;
+  label: string;
+  description: string;
+  icon: string;
+  category: "trigger" | "action" | "condition" | "utility";
+};
+
 type LandingPageSectionBase = {
   id: string;
   eyebrow: string;
@@ -67,8 +75,14 @@ export type LandingPageCtaSection = LandingPageSectionBase & {
   primaryCtaHref: string;
 };
 
+export type LandingPageComponentsSection = LandingPageSectionBase & {
+  type: "components";
+  items: LandingPageSectionComponentItem[];
+};
+
 export type LandingPageSection =
   | LandingPageHeroSection
   | LandingPageStatsSection
   | LandingPageHighlightsSection
-  | LandingPageCtaSection;
+  | LandingPageCtaSection
+  | LandingPageComponentsSection;

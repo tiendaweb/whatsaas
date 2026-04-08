@@ -1,5 +1,6 @@
 import type {
   LandingPageCtaSection,
+  LandingPageComponentsSection,
   LandingPageHeroSection,
   LandingPageHighlightsSection,
   LandingPageSection,
@@ -47,6 +48,18 @@ function getDefaultCustomCode(type: LandingPageSection['type']) {
     <div key={item.id} className="rounded-3xl border border-border/60 bg-background p-5 shadow-sm">
       <p className="font-semibold">{item.title}</p>
       <p className="mt-2 text-sm text-muted-foreground">{item.description}</p>
+    </div>
+  ))}
+</div>`;
+  }
+
+  if (type === 'components') {
+    return `<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+  {section.items.map((item) => (
+    <div key={item.id} className="rounded-2xl border border-border/50 bg-card p-6 hover:border-primary/50 transition-all">
+      <Badge className="mb-4">{item.category}</Badge>
+      <p className="font-semibold mb-2">{item.label}</p>
+      <p className="text-sm text-muted-foreground">{item.description}</p>
     </div>
   ))}
 </div>`;
@@ -174,6 +187,63 @@ function createCtaSection(): LandingPageCtaSection {
   );
 }
 
+function createComponentsSection(): LandingPageComponentsSection {
+  return ensureSectionShell(
+    {
+      id: createId('components'),
+      type: 'components',
+      eyebrow: 'Componentes disponibles',
+      title: 'Elementos versátiles para construir tu flujo',
+      description: 'Accede a una librería completa de nodos y bloques para automatizar cualquier proceso.',
+      items: [
+        {
+          id: createId('component'),
+          label: 'Inicio del flujo',
+          description: 'Disparador que activa el automatismo cuando ocurre un evento específico.',
+          icon: 'Sparkles',
+          category: 'trigger',
+        },
+        {
+          id: createId('component'),
+          label: 'Enviar mensaje',
+          description: 'Comunica con el contacto de forma automática con texto, imágenes o multimedia.',
+          icon: 'MessageSquareMore',
+          category: 'action',
+        },
+        {
+          id: createId('component'),
+          label: 'Mensaje con botones',
+          description: 'Presenta opciones interactivas para que el contacto elija su camino en el flujo.',
+          icon: 'MousePointerClick',
+          category: 'action',
+        },
+        {
+          id: createId('component'),
+          label: 'Pedir dato clave',
+          description: 'Recolecta información importante como nombre, email, teléfono o preferencias.',
+          icon: 'ListChecks',
+          category: 'action',
+        },
+        {
+          id: createId('component'),
+          label: 'Condición lógica',
+          description: 'Ramifica el flujo basado en respuestas, datos o variables dinámicas.',
+          icon: 'Split',
+          category: 'condition',
+        },
+        {
+          id: createId('component'),
+          label: 'Esperar tiempo',
+          description: 'Introduce pausas estratégicas antes de continuar a la siguiente acción.',
+          icon: 'Clock3',
+          category: 'utility',
+        },
+      ],
+    },
+    'bottom',
+  );
+}
+
 export function createLandingPageSectionTemplate(
   type: LandingPageSection['type'],
   pageName = 'Nueva sección',
@@ -194,6 +264,10 @@ export function createLandingPageSectionTemplate(
 
   if (type === 'highlights') {
     return createHighlightsSection();
+  }
+
+  if (type === 'components') {
+    return createComponentsSection();
   }
 
   return createCtaSection();
@@ -233,6 +307,10 @@ export function normalizeLandingPageSections(
 
     if (section.type === 'highlights') {
       return ensureSectionShell(section, 'left');
+    }
+
+    if (section.type === 'components') {
+      return ensureSectionShell(section, 'bottom');
     }
 
     return ensureSectionShell(section, 'right');
