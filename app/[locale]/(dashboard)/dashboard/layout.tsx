@@ -118,6 +118,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
   const [mutedChats, setMutedChats] = useState<Set<string>>(new Set());
   const [systemAlert, setSystemAlert] = useState<SystemAlertData | null>(null);
+  const [displayLimit, setDisplayLimit] = useState(20);
 
   const { data: teamData } = useSWR<TeamData>('/api/team', fetcher);
   const teamId = teamData?.id;
@@ -305,11 +306,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     });
   }, [chats, searchQuery, activeTab, detailedFilters]);
 
+  const displayedChatsForVirtualizer = validChats.slice(0, displayLimit);
+  const hasMore = validChats.length > displayLimit;
+
   const rowVirtualizer = useVirtualizer({
-    count: validChats.length,
+    count: displayedChatsForVirtualizer.length + (hasMore ? 1 : 0),
     getScrollElement: () => parentRef.current,
     estimateSize: (index) => {
-      const chat = validChats[index];
+      if (index === displayedChatsForVirtualizer.length) return 45;
+      const chat = displayedChatsForVirtualizer[index];
       return chat?.contact?.funnelStage ? 105 : 82;
     },
     measureElement: (element) => (element as HTMLElement).offsetHeight,
@@ -318,7 +323,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     rowVirtualizer.measure();
-  }, [validChats]);
+  }, [validChats, displayLimit]);
 
   const handleSelectChat = (chatId: number) => {
     const newSelected = new Set(selectedChats);
@@ -419,7 +424,33 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return (
       <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
         {rowVirtualizer.getVirtualItems().map((virtualItem) => {
-          const chat = validChats[virtualItem.index];
+          if (virtualItem.index === displayedChatsForVirtualizer.length) {
+            return (
+              <div
+                key="load-more"
+                ref={rowVirtualizer.measureElement}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${virtualItem.start}px)`,
+                }}
+              >
+                <div style={{ padding: '12px 8px' }}>
+                  <Button
+                    variant="outline"
+                    className="w-full h-9 text-sm"
+                    onClick={() => setDisplayLimit(prev => prev + 5)}
+                  >
+                    Load More ({validChats.length - displayLimit} remaining)
+                  </Button>
+                </div>
+              </div>
+            );
+          }
+
+          const chat = displayedChatsForVirtualizer[virtualItem.index];
           if (!chat) return null;
           const isGroupChat = chat.remoteJid.endsWith('@g.us');
           const chatIdentifier = isGroupChat ? chat.remoteJid : chat.remoteJid.split('@')[0];

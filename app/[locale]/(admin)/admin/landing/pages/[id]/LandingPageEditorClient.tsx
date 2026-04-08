@@ -171,13 +171,27 @@ function getSectionFallback(section: LandingPageSection) {
     );
   }
 
+  if (section.type === "cta") {
+    return (
+      <div className="rounded-[28px] border border-primary/20 bg-primary/10 p-6 text-center shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-primary">
+          {section.eyebrow}
+        </p>
+        <p className="mt-4 text-lg font-semibold">{section.primaryCtaLabel}</p>
+        <div className="mx-auto mt-4 h-24 w-24 rounded-full bg-primary/15" />
+      </div>
+    );
+  }
+
+  // components section
   return (
-    <div className="rounded-[28px] border border-primary/20 bg-primary/10 p-6 text-center shadow-sm">
-      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-primary">
-        {section.eyebrow}
-      </p>
-      <p className="mt-4 text-lg font-semibold">{section.primaryCtaLabel}</p>
-      <div className="mx-auto mt-4 h-24 w-24 rounded-full bg-primary/15" />
+    <div className="grid gap-3">
+      {section.items.map((item) => (
+        <div key={item.id} className="rounded-3xl border border-border/60 bg-background p-4">
+          <p className="font-medium">{item.label}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{item.description}</p>
+        </div>
+      ))}
     </div>
   );
 }

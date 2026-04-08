@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Mic, Send, Paperclip, Trash2, Play, Pause, Square, Smile, Image as ImageIcon, FileText, Zap, X } from 'lucide-react';
+import { Mic, Send, Paperclip, Trash2, Play, Pause, Square, Smile, Image as ImageIcon, FileText, Zap, X, Save } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import { RecordingStatus, QuickReply } from './types';
 import { formatTimer } from './utils';
 import { useTranslations } from 'next-intl';
+import { SaveDraftModal } from './SaveDraftModal';
 import type { DraftItem } from '@/components/drafts/types';
 
 interface ChatInputProps {
@@ -60,6 +61,7 @@ export function ChatInput({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [selectedQuickReplyIndex, setSelectedQuickReplyIndex] = useState(0);
   const [selectedDraftSuggestionIndex, setSelectedDraftSuggestionIndex] = useState(0);
+  const [saveDraftModalOpen, setSaveDraftModalOpen] = useState(false);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -174,6 +176,11 @@ export function ChatInput({
               {!isGroup && (
                 <Button variant="ghost" size="icon" className="rounded-full text-muted-foreground h-9 w-9 mb-1" onClick={() => setDraftsShortcutsOpen(!draftsShortcutsOpen)}>
                   <FileText className="h-4 w-4" />
+                </Button>
+              )}
+              {newMessage.trim() && !isGroup && (
+                <Button variant="ghost" size="icon" className="rounded-full text-muted-foreground h-9 w-9 mb-1 hover:text-primary" onClick={() => setSaveDraftModalOpen(true)} title={t('save_draft_button') || 'Guardar como borrador'}>
+                  <Save className="h-4 w-4" />
                 </Button>
               )}
 
@@ -376,6 +383,12 @@ export function ChatInput({
           </div>
         </div>
       )}
+
+      <SaveDraftModal
+        open={saveDraftModalOpen}
+        onOpenChange={setSaveDraftModalOpen}
+        messageContent={newMessage}
+      />
     </div>
   );
 }

@@ -364,7 +364,7 @@ function StatCard({
 }: {
   label: string;
   value: number;
-  icon: React.ReactNode;
+  icon: React.ComponentType<{ className?: string }>;
   color: string;
   highlight?: boolean;
 }) {
@@ -375,7 +375,7 @@ function StatCard({
       }`}
     >
       <div className={`flex items-center gap-2 text-sm ${color}`}>
-        {typeof Icon === 'function' ? <Icon className="h-4 w-4" /> : Icon}
+        <Icon className="h-4 w-4" />
         <span className="text-muted-foreground">{label}</span>
       </div>
       <p className="text-3xl font-bold">{value}</p>

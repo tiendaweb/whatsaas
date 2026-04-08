@@ -45,6 +45,14 @@ const highlightItemSchema = z.object({
   description: z.string().trim().min(1).max(220),
 });
 
+const componentItemSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().trim().min(1).max(120),
+  description: z.string().trim().min(1).max(220),
+  icon: z.string().max(100),
+  category: z.enum(["trigger", "action", "condition", "utility"]),
+});
+
 const sectionUiSchema = z.enum(["left", "right", "bottom"]);
 
 const sharedPageSectionSchema = {
@@ -81,6 +89,11 @@ const pageSectionSchema = z.discriminatedUnion("type", [
     type: z.literal("cta"),
     primaryCtaLabel: z.string().trim().min(1).max(80),
     primaryCtaHref: z.string().trim().min(1).max(200),
+  }),
+  z.object({
+    ...sharedPageSectionSchema,
+    type: z.literal("components"),
+    items: z.array(componentItemSchema).min(1).max(12),
   }),
 ]);
 
