@@ -73,7 +73,7 @@ export function TemplateDialog({ open, onOpenChange, onSendTemplate }: TemplateD
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[480px] max-h-[90dvh] overflow-hidden p-0 flex flex-col">
+      <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-[480px] lg:max-w-[600px] max-h-[90dvh] overflow-hidden p-0 flex flex-col">
         <DialogHeader className="sticky top-0 z-10 border-b bg-background px-6 py-4">
           <DialogTitle>{t('select_template_label')}</DialogTitle>
         </DialogHeader>

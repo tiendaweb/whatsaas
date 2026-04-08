@@ -52,7 +52,7 @@ export function NewAutomationDialog({ open, onOpenChange }: NewAutomationDialogP
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent>
+            <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-md lg:max-w-lg">
                 <DialogHeader>
                     <DialogTitle>{t('new_automation_dialog_title')}</DialogTitle>
                     <DialogDescription>{t('new_automation_dialog_desc')}</DialogDescription>
