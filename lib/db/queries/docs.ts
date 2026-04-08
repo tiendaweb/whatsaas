@@ -18,25 +18,9 @@ export async function getDocsHomeData() {
         description: docsCategories.description,
         icon: docsCategories.icon,
         sortOrder: docsCategories.sortOrder,
-        articleCount: count(docsArticles.id),
       })
       .from(docsCategories)
-      .leftJoin(
-        docsArticles,
-        and(
-          eq(docsArticles.categoryId, docsCategories.id),
-          eq(docsArticles.isPublished, true),
-        ),
-      )
       .where(eq(docsCategories.isPublished, true))
-      .groupBy(
-        docsCategories.id,
-        docsCategories.slug,
-        docsCategories.name,
-        docsCategories.description,
-        docsCategories.icon,
-        docsCategories.sortOrder,
-      )
       .orderBy(asc(docsCategories.sortOrder), asc(docsCategories.name)),
     db
       .select({
