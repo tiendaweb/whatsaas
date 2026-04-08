@@ -163,53 +163,53 @@ function AutomationShowcaseCard() {
 
         </div>
 
-        <div className=”bg-black/20 p-4 border-t border-white/10”>
-          <div className=”grid gap-4 md:grid-cols-2”>
+        <div className="bg-black/20 p-4 border-t border-white/10">
+          <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <p className=”text-sm font-semibold”>Flujo de ejemplo</p>
-              <p className=”mt-1 text-xs text-white/45”>
+              <p className="text-sm font-semibold">Flujo de ejemplo</p>
+              <p className="mt-1 text-xs text-white/45">
                 Automatización de captura y seguimiento de leads
               </p>
-              <div className=”mt-4 space-y-2 text-xs text-white/70”>
-                <div className=”flex items-start gap-2”>
-                  <CheckCircle2 className=”h-4 w-4 text-emerald-400 shrink-0 mt-0.5” />
+              <div className="mt-4 space-y-2 text-xs text-white/70">
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
                   <span>Recibe contacto automáticamente</span>
                 </div>
-                <div className=”flex items-start gap-2”>
-                  <CheckCircle2 className=”h-4 w-4 text-emerald-400 shrink-0 mt-0.5” />
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
                   <span>Espera 2 minutos antes de responder</span>
                 </div>
-                <div className=”flex items-start gap-2”>
-                  <CheckCircle2 className=”h-4 w-4 text-emerald-400 shrink-0 mt-0.5” />
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
                   <span>Envía mensaje personalizado</span>
                 </div>
-                <div className=”flex items-start gap-2”>
-                  <CheckCircle2 className=”h-4 w-4 text-emerald-400 shrink-0 mt-0.5” />
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
                   <span>Recolecta información clave</span>
                 </div>
               </div>
             </div>
 
             <div>
-              <p className=”text-sm font-semibold”>Características</p>
-              <p className=”mt-1 text-xs text-white/45”>
+              <p className="text-sm font-semibold">Características</p>
+              <p className="mt-1 text-xs text-white/45">
                 Herramientas que potencian tu automatización
               </p>
-              <div className=”mt-4 space-y-2 text-xs text-white/70”>
-                <div className=”flex items-start gap-2”>
-                  <Sparkles className=”h-4 w-4 text-primary shrink-0 mt-0.5” />
-                  <span>Variables dinámicas con {{nombre}}</span>
+              <div className="mt-4 space-y-2 text-xs text-white/70">
+                <div className="flex items-start gap-2">
+                  <Sparkles className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                  <span>Variables dinámicas con &#123;&#123;nombre&#125;&#125;</span>
                 </div>
-                <div className=”flex items-start gap-2”>
-                  <Sparkles className=”h-4 w-4 text-primary shrink-0 mt-0.5” />
+                <div className="flex items-start gap-2">
+                  <Sparkles className="h-4 w-4 text-primary shrink-0 mt-0.5" />
                   <span>Ramificaciones lógicas por condición</span>
                 </div>
-                <div className=”flex items-start gap-2”>
-                  <Sparkles className=”h-4 w-4 text-primary shrink-0 mt-0.5” />
+                <div className="flex items-start gap-2">
+                  <Sparkles className="h-4 w-4 text-primary shrink-0 mt-0.5" />
                   <span>Retrasos inteligentes y sin spam</span>
                 </div>
-                <div className=”flex items-start gap-2”>
-                  <Sparkles className=”h-4 w-4 text-primary shrink-0 mt-0.5” />
+                <div className="flex items-start gap-2">
+                  <Sparkles className="h-4 w-4 text-primary shrink-0 mt-0.5" />
                   <span>Captura de datos en conversación</span>
                 </div>
               </div>
