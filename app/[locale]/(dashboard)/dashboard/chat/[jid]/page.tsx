@@ -25,6 +25,7 @@ import { TemplateDialog } from '@/components/chat/TemplateDialog';
 import { QuickRepliesModal } from '@/components/chat/QuickRepliesModal';
 import { DraftShortcutsModal } from '@/components/chat/DraftShortcutsModal';
 import { DateSeparator } from '@/components/chat/DateSeparator';
+import { SaveDraftModal } from '@/components/chat/SaveDraftModal';
 import { useTheme } from 'next-themes';
 import { useTranslations } from 'next-intl';
 import type { DraftItem } from '@/components/drafts/types';
@@ -82,6 +83,8 @@ export default function ChatPage() {
   const [isImprovingReply, setIsImprovingReply] = useState(false);
   const [showQuickReplySuggestions, setShowQuickReplySuggestions] = useState(false);
   const [draftShortcutQuery, setDraftShortcutQuery] = useState('');
+  const [saveDraftModalOpen, setSaveDraftModalOpen] = useState(false);
+  const [draftContentToSave, setDraftContentToSave] = useState('');
   const lastImproveContextChatIdRef = useRef<number | null>(null);
   const [chatSidebarCollapsed, setChatSidebarCollapsed] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -827,6 +830,10 @@ export default function ChatPage() {
                     onReply={setQuotedMessage}
                     onRetry={handleRetryMessage}
                     onReact={handleReact}
+                    onSaveDraft={(content) => {
+                      setDraftContentToSave(content);
+                      setSaveDraftModalOpen(true);
+                    }}
                     searchQuery={searchQuery}
                     userBubbleColor={activeUserBubble}
                     contactBubbleColor={activeContactBubble}
@@ -959,6 +966,7 @@ export default function ChatPage() {
         onInsertDraft={handleInsertDraft}
       />
       <TemplateDialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen} onSendTemplate={handleSendTemplate} />
+      <SaveDraftModal open={saveDraftModalOpen} onOpenChange={setSaveDraftModalOpen} messageContent={draftContentToSave} />
       <Dialog open={improveDialogOpen} onOpenChange={setImproveDialogOpen}>
         <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col overflow-hidden sm:max-w-2xl">
           <DialogHeader>

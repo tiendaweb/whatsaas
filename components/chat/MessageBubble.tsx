@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Mic, CheckCheck, Check, Loader2, FileText, User, MapPin, CornerUpLeft, Download, FilePenLine, MousePointerClick, Info, Bot, Zap, Megaphone, AlertCircle, RefreshCw, SmilePlus, Plus } from 'lucide-react';
+import { Mic, CheckCheck, Check, Loader2, FileText, User, MapPin, CornerUpLeft, Download, FilePenLine, MousePointerClick, Info, Bot, Zap, Megaphone, AlertCircle, RefreshCw, SmilePlus, Plus, Save } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import { CustomAudioPlayer } from '@/components/ui/custom-audio-player';
@@ -189,13 +189,14 @@ interface MessageBubbleProps {
   onReply: (message: Message) => void;
   onRetry?: (message: Message) => void;
   onReact?: (messageId: string, emoji: string) => void;
+  onSaveDraft?: (content: string) => void;
   searchQuery: string;
   userBubbleColor?: string;
   contactBubbleColor?: string;
   isGroup?: boolean;
 }
 
-export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, searchQuery, userBubbleColor, contactBubbleColor, isGroup }: MessageBubbleProps) {
+export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, onSaveDraft, searchQuery, userBubbleColor, contactBubbleColor, isGroup }: MessageBubbleProps) {
   const t = useTranslations('Chat');
   if (msg.messageType === 'system') {
       let displayText = msg.text || '';
@@ -236,6 +237,7 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, se
   const [isHovered, setIsHovered] = useState(false);
   const [reactionPickerOpen, setReactionPickerOpen] = useState(false);
   const showActions = isHovered || reactionPickerOpen;
+  const isTextOnlyMessage = ['text', 'conversation', 'extendedTextMessage'].includes(msg.messageType || '') && !!msg.text?.trim();
 
   const hasCustomTheme = !!(userBubbleColor || contactBubbleColor);
   let bubbleColor = isMe ? 'bg-primary/10' : 'bg-card';
@@ -491,6 +493,17 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, se
 
         {showActions && !msg.id.startsWith('temp_') && !isInternal && (
           <div className={`absolute top-0 flex items-center gap-0.5 ${isMe ? '-left-[68px]' : '-right-[68px]'}`}>
+            {onSaveDraft && isTextOnlyMessage && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-full bg-muted/50 hover:bg-muted/70"
+                onClick={() => onSaveDraft(msg.text!)}
+                title="Guardar en borradores"
+              >
+                <Save className="h-4 w-4 text-foreground" />
+              </Button>
+            )}
             <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-muted/50 hover:bg-muted/70" onClick={() => onReply(msg)}>
               <CornerUpLeft className="h-4 w-4 text-foreground" />
             </Button>

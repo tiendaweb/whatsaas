@@ -52,7 +52,10 @@ function markdownToHtml(markdown: string) {
 export default async function DocArticlePage({ params }: Props) {
   const { slug, locale } = await params;
 
-  const article = await getDocsArticleBySlug(slug);
+  const article = await getDocsArticleBySlug(slug).catch((error) => {
+    console.error('Failed to load docs article:', error);
+    return null;
+  });
 
   if (!article) {
     notFound();

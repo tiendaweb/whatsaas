@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   ChevronLeft,
   ChevronRight,
@@ -32,6 +33,14 @@ type TeamEvent = {
 };
 
 type TeamNotification = { id: number; title: string; body: string; readAt: string | null };
+type TeamMember = {
+  id: number;
+  user: {
+    id: number;
+    name: string | null;
+    email: string;
+  };
+};
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -47,6 +56,7 @@ const EVENT_COLORS = {
 export function CalendarDashboard() {
   const { data: eventsData, mutate } = useSWR<TeamEvent[]>('/api/plugins/calendar/events', fetcher);
   const { data: notificationsData, mutate: mutateNotifications } = useSWR<TeamNotification[]>('/api/plugins/calendar/notifications', fetcher);
+  const { data: teamMembersData } = useSWR<TeamMember[]>('/api/team/members', fetcher);
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<'month' | 'week'>('month');
@@ -55,8 +65,9 @@ export function CalendarDashboard() {
   const [title, setTitle] = useState('');
   const [startsAt, setStartsAt] = useState('');
   const [endsAt, setEndsAt] = useState('');
-  const [attendees, setAttendees] = useState('');
+  const [selectedAttendees, setSelectedAttendees] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
+  const teamMembers = teamMembersData ?? [];
 
   const events = eventsData ?? [];
   const notifications = notificationsData ?? [];
@@ -85,14 +96,14 @@ export function CalendarDashboard() {
         title,
         startsAt,
         endsAt: endsAt || startsAt,
-        attendees: attendees.split(',').map((item) => item.trim()).filter(Boolean),
+        attendees: selectedAttendees,
         notes,
       }),
     });
     setTitle('');
     setStartsAt('');
     setEndsAt('');
-    setAttendees('');
+    setSelectedAttendees([]);
     setNotes('');
     setShowForm(false);
     mutate();
@@ -136,22 +147,17 @@ export function CalendarDashboard() {
           <h1 className="text-3xl font-bold tracking-tight">Calendario del equipo</h1>
           <p className="text-muted-foreground">Administra eventos y reuniones</p>
         </div>
-        <Button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2">
+        <Button onClick={() => setShowForm(true)} className="flex items-center gap-2">
           <Plus className="h-4 w-4" />
           Nuevo evento
         </Button>
       </div>
 
-      {/* Create Form */}
-      {showForm && (
-        <div className="rounded-xl border border-border/50 bg-card p-6 space-y-4 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Crear evento</h2>
-            <button onClick={() => setShowForm(false)} className="text-muted-foreground hover:text-foreground">
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent className="sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Crear evento</DialogTitle>
+          </DialogHeader>
           <div className="grid gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Título</label>
@@ -182,12 +188,37 @@ export function CalendarDashboard() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Asistentes (separados por coma)</label>
-              <Input
-                placeholder="juan@example.com, maria@example.com"
-                value={attendees}
-                onChange={(e) => setAttendees(e.target.value)}
-              />
+              <label className="text-sm font-medium">Asistentes del equipo</label>
+              <div className="rounded-lg border border-border/50 p-3 space-y-2 max-h-40 overflow-auto">
+                {teamMembers.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No hay usuarios vinculados al equipo.</p>
+                ) : (
+                  teamMembers.map((member) => {
+                    const attendeeValue = member.user.email;
+                    const label = member.user.name?.trim() || member.user.email;
+                    const checked = selectedAttendees.includes(attendeeValue);
+                    return (
+                      <label key={member.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(event) => {
+                            if (event.target.checked) {
+                              setSelectedAttendees((prev) => [...prev, attendeeValue]);
+                              return;
+                            }
+                            setSelectedAttendees((prev) => prev.filter((item) => item !== attendeeValue));
+                          }}
+                        />
+                        <span>{label}</span>
+                        {label !== member.user.email ? (
+                          <span className="text-muted-foreground">({member.user.email})</span>
+                        ) : null}
+                      </label>
+                    );
+                  })
+                )}
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -196,7 +227,8 @@ export function CalendarDashboard() {
                 placeholder="Notas adicionales..."
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                rows={4}
+                rows={6}
+                className="min-h-[170px]"
               />
             </div>
           </div>
@@ -207,8 +239,8 @@ export function CalendarDashboard() {
             </Button>
             <Button onClick={createEvent}>Crear evento</Button>
           </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
 
       {/* Main Grid */}
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">

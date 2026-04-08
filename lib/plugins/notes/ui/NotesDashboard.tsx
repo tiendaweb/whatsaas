@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   Trash2,
   Plus,
@@ -150,7 +151,7 @@ export function NotesDashboard() {
   const statuses: NoteStatus[] = ['todo', 'in_progress', 'done'];
 
   return (
-    <div className="space-y-6 p-6 max-w-7xl mx-auto">
+    <div className="space-y-6 p-6 max-w-[1400px] mx-auto">
       {/* Header */}
       <div className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight">Notas del equipo</h1>
@@ -177,10 +178,13 @@ export function NotesDashboard() {
         </Button>
       </div>
 
-      {/* Create Form */}
-      {showForm && (
-        <div className="rounded-xl border border-border/50 bg-card p-6 space-y-4 shadow-sm">
-          <div className="space-y-2">
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Nueva nota</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
             <label className="text-sm font-medium">Título</label>
             <Input
               placeholder="Título de la nota"
@@ -188,9 +192,9 @@ export function NotesDashboard() {
               onChange={(e) => setTitle(e.target.value)}
               className="text-base"
             />
-          </div>
+            </div>
 
-          <div className="space-y-2">
+            <div className="space-y-2">
             <label className="text-sm font-medium">Contenido</label>
             <div className="space-y-2">
               <div className="flex gap-2 flex-wrap">
@@ -226,33 +230,33 @@ export function NotesDashboard() {
                 placeholder="Escribe tu nota aquí... Soporta **negrita** e *itálica*"
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                rows={6}
-                className="font-mono text-sm resize-none"
+                rows={10}
+                className="font-mono text-sm resize-y min-h-[240px]"
               />
             </div>
-          </div>
+            </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-2">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
               <label className="text-sm font-medium">Tags (separadas por coma)</label>
               <Input
                 placeholder="trabajo, urgente, cliente"
                 value={tagsText}
                 onChange={(e) => setTagsText(e.target.value)}
               />
-            </div>
-            <div className="space-y-2">
+              </div>
+              <div className="space-y-2">
               <label className="text-sm font-medium">Fecha de vencimiento</label>
               <Input
                 type="date"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
               />
+              </div>
             </div>
-          </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-2">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
               <label className="text-sm font-medium">Estado inicial</label>
               <select
                 value={status}
@@ -266,25 +270,26 @@ export function NotesDashboard() {
                 ))}
               </select>
             </div>
-          </div>
+            </div>
 
-          <div className="flex gap-2 justify-end">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowForm(false);
-                setTitle('');
-                setContent('');
-                setTagsText('');
-                setDueDate('');
-              }}
-            >
-              Cancelar
-            </Button>
-            <Button onClick={createNote}>Crear nota</Button>
+            <div className="flex gap-2 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowForm(false);
+                  setTitle('');
+                  setContent('');
+                  setTagsText('');
+                  setDueDate('');
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button onClick={createNote}>Crear nota</Button>
+            </div>
           </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
 
       {/* Stats */}
       {filtered.length > 0 && (
