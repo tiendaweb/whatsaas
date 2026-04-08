@@ -211,12 +211,21 @@ export default async function DocsPage({ params, searchParams }: Props) {
   const { locale } = await params;
   const { q, category } = await searchParams;
 
-  const [branding, docsHomeData] = await Promise.all([getBranding(), getDocsHomeData()]);
+  const [branding, docsHomeData] = await Promise.all([
+    getBranding(),
+    getDocsHomeData().catch((error) => {
+      console.error('Failed to load docs home data:', error);
+      return { categories: [], featuredArticles: [] };
+    }),
+  ]);
   const siteName = branding?.name || 'WhatsPro';
 
   let articles = docsHomeData.featuredArticles;
   if (q || category) {
-    articles = await searchDocsArticles({ q, category });
+    articles = await searchDocsArticles({ q, category }).catch((error) => {
+      console.error('Failed to search docs articles:', error);
+      return docsHomeData.featuredArticles;
+    });
   }
   const categoryLinksAndSlugsBySlug = articles.reduce<Record<string, Array<{ title: string; slug: string }>>>((acc, article) => {
     const categorySlug = article.category?.slug;
