@@ -10,6 +10,8 @@ import {
   Save,
   Sparkles,
   Users2,
+  ListChecks,
+  Split,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,10 +19,12 @@ import type { LandingHomeSection } from "@/lib/landing/types";
 
 function AutomationShowcaseCard() {
   const nodePalette = [
-    { label: "Enviar mensaje", tone: "bg-emerald-500/10 text-emerald-600" },
-    { label: "Pedir dato clave", tone: "bg-violet-500/10 text-violet-600" },
-    { label: "Condición de compra", tone: "bg-amber-500/10 text-amber-600" },
-    { label: "Asignar asesor", tone: "bg-sky-500/10 text-sky-600" },
+    { label: "Inicio del flujo", tone: "bg-blue-500/10 text-blue-400", icon: "▶" },
+    { label: "Enviar mensaje", tone: "bg-emerald-500/10 text-emerald-400", icon: "💬" },
+    { label: "Mensaje con botones", tone: "bg-purple-500/10 text-purple-400", icon: "🔘" },
+    { label: "Pedir dato clave", tone: "bg-violet-500/10 text-violet-400", icon: "❓" },
+    { label: "Condición lógica", tone: "bg-amber-500/10 text-amber-400", icon: "⚡" },
+    { label: "Esperar tiempo", tone: "bg-cyan-500/10 text-cyan-400", icon: "⏱" },
   ];
 
   return (
@@ -49,152 +53,168 @@ function AutomationShowcaseCard() {
 
       <div className="grid gap-px bg-white/10 lg:grid-cols-1">
         <div className="bg-black/20 p-4">
-          <p className="text-sm font-semibold">Componentes</p>
+          <p className="text-sm font-semibold">Componentes disponibles</p>
           <p className="mt-1 text-xs text-white/45">
-            Arrastra y activa ventas, soporte y seguimiento sin depender de
-            nadie.
+            Arrastra componentes y conecta tu flujo sin código.
           </p>
-          <div className="mt-5 space-y-3">
+          <div className="mt-5 grid gap-2 grid-cols-2">
             {nodePalette.map((node) => (
               <div
                 key={node.label}
-                className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3"
+                className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-2 cursor-move hover:bg-white/10 transition-colors"
               >
                 <div
-                  className={`flex h-9 w-9 items-center justify-center rounded-xl ${node.tone}`}
+                  className={`flex h-8 w-8 items-center justify-center rounded-lg text-sm ${node.tone}`}
                 >
-                  <MousePointerClick className="h-4 w-4" />
+                  {node.icon}
                 </div>
-                <div>
-                  <p className="text-sm font-medium">{node.label}</p>
-                  <p className="text-xs text-white/45">Listo para soltar</p>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium truncate">{node.label}</p>
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="relative min-h-[430px] overflow-hidden bg-[radial-gradient(circle_at_center,rgba(78,88,255,0.12),transparent_45%),linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:auto,22px_22px,22px_22px] p-6">
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="rounded-3xl border border-white/10 bg-[#1c2033] p-4 shadow-lg shadow-black/20">
-              <div className="flex items-center gap-2 text-sm text-white/70">
-                <Sparkles className="h-4 w-4 text-primary" /> Trigger de entrada
-              </div>
-              <p className="mt-4 text-sm font-semibold">
-                Nuevo lead desde anuncio o QR
-              </p>
-              <div className="mt-4 space-y-2">
-                <div className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">
-                  Nombre del contacto
+        <div className="relative min-h-[500px] overflow-hidden bg-[radial-gradient(circle_at_center,rgba(78,88,255,0.12),transparent_45%),linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:auto,22px_22px,22px_22px] p-6">
+          {/* Start Node */}
+          <div className="flex flex-col gap-6">
+            {/* Row 1: Start */}
+            <div className="flex justify-center">
+              <div className="rounded-2xl border-2 border-blue-400/60 bg-[#1c2033] p-4 shadow-lg shadow-blue-500/20 w-32">
+                <div className="flex items-center justify-center gap-2 text-xs text-blue-300">
+                  <Sparkles className="h-4 w-4" /> Inicio
                 </div>
-                <div className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">
-                  Producto de interés
+                <p className="mt-2 text-xs font-semibold text-center">
+                  Nuevo contacto
+                </p>
+              </div>
+            </div>
+
+            {/* Connector */}
+            <div className="flex justify-center">
+              <div className="w-0.5 h-6 bg-gradient-to-b from-blue-400/40 to-cyan-400/40" />
+            </div>
+
+            {/* Row 2: Delay */}
+            <div className="flex justify-center">
+              <div className="rounded-2xl border-2 border-cyan-400/60 bg-[#1c2033] p-4 shadow-lg shadow-cyan-500/20 w-32">
+                <div className="flex items-center justify-center gap-2 text-xs text-cyan-300">
+                  <Clock3 className="h-4 w-4" /> Esperar
                 </div>
+                <p className="mt-2 text-xs font-semibold text-center">
+                  2 minutos
+                </p>
               </div>
             </div>
 
-            <div className="relative rounded-3xl border border-white/10 bg-[#1c2033] p-4 shadow-lg shadow-black/20 md:mt-10">
-              <div className="flex items-center gap-2 text-sm text-white/70">
-                <Clock3 className="h-4 w-4 text-amber-400" /> Delay inteligente
-              </div>
-              <p className="mt-4 text-sm font-semibold">
-                Espera 2 minutos y evita sonar como robot
-              </p>
-              <p className="mt-3 text-xs leading-6 text-white/55">
-                Perfecto para dar seguimiento sin perseguir al cliente ni
-                dejarlo enfriarse.
-              </p>
+            {/* Connector */}
+            <div className="flex justify-center">
+              <div className="w-0.5 h-6 bg-gradient-to-b from-cyan-400/40 to-emerald-400/40" />
             </div>
 
-            <div className="rounded-3xl border border-emerald-400/40 bg-[#1c2033] p-4 shadow-lg shadow-emerald-500/10 md:mt-3">
-              <div className="flex items-center gap-2 text-sm text-white/70">
-                <MessageSquareMore className="h-4 w-4 text-emerald-400" />{" "}
-                Enviar mensaje
-              </div>
-              <p className="mt-4 text-sm font-semibold">
-                Mensaje de cierre con CTA directo
-              </p>
-              <p className="mt-3 text-sm leading-6 text-white/80">
-                {
-                  "Hola {{nombre}}, vi que te interesa automatizar tus ventas. ¿Quieres que te muestre el plan que más rápido te recupera clientes?"
-                }
-              </p>
-            </div>
-          </div>
-
-          <div className="pointer-events-none absolute left-[29%] top-[44%] hidden h-px w-[18%] bg-gradient-to-r from-primary/70 to-white/20 md:block" />
-          <div className="pointer-events-none absolute left-[61%] top-[39%] hidden h-px w-[14%] bg-gradient-to-r from-white/30 to-emerald-400/60 md:block" />
-
-          <div className="mt-10 grid gap-4 md:grid-cols-[1.05fr_0.95fr]">
-            <div className="rounded-3xl border border-white/10 bg-black/20 p-4">
-              <p className="text-xs uppercase tracking-[0.3em] text-white/45">
-                Objetivo del flujo
-              </p>
-              <h5 className="mt-2 text-base font-semibold">
-                Responder, filtrar y empujar a compra en automático
-              </h5>
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                {[
-                  ["+41%", "Leads atendidos"],
-                  ["-67%", "Tiempo perdido"],
-                  ["24/7", "Seguimiento activo"],
-                ].map(([value, label]) => (
-                  <div
-                    key={label}
-                    className="rounded-2xl border border-white/10 bg-white/5 p-3"
-                  >
-                    <p className="text-lg font-semibold">{value}</p>
-                    <p className="mt-1 text-xs text-white/50">{label}</p>
+            {/* Row 3: Message & Condition */}
+            <div className="grid grid-cols-2 gap-4 max-w-md mx-auto w-full">
+              {/* Message */}
+              <div className="col-span-1">
+                <div className="rounded-2xl border-2 border-emerald-400/60 bg-[#1c2033] p-3 shadow-lg shadow-emerald-500/20">
+                  <div className="flex items-center gap-2 text-xs text-emerald-300 mb-2">
+                    <MessageSquareMore className="h-3.5 w-3.5" /> Mensaje
                   </div>
-                ))}
+                  <p className="text-xs leading-4">
+                    "¿Interesado en automatizar?"
+                  </p>
+                </div>
+              </div>
+
+              {/* Condition */}
+              <div className="col-span-1">
+                <div className="rounded-2xl border-2 border-amber-400/60 bg-[#1c2033] p-3 shadow-lg shadow-amber-500/20">
+                  <div className="flex items-center gap-2 text-xs text-amber-300 mb-2">
+                    <Split className="h-3.5 w-3.5" /> Condición
+                  </div>
+                  <p className="text-xs text-center font-semibold">
+                    ¿Respondió?
+                  </p>
+                </div>
               </div>
             </div>
 
-            <div className="rounded-3xl border border-white/10 bg-black/20 p-4">
-              <p className="text-xs uppercase tracking-[0.3em] text-white/45">
-                Acción final
-              </p>
-              <div className="mt-3 space-y-3">
-                <div className="rounded-2xl border border-emerald-400/25 bg-emerald-500/10 p-3">
-                  <p className="text-sm font-semibold text-emerald-300">
-                    Asignar asesor premium
-                  </p>
-                  <p className="mt-1 text-xs text-white/60">
-                    Cuando el lead muestra intención real, el flujo lo pasa al
-                    vendedor correcto.
-                  </p>
+            {/* Connector */}
+            <div className="flex justify-center">
+              <div className="w-0.5 h-6 bg-gradient-to-b from-amber-400/40 to-violet-400/40" />
+            </div>
+
+            {/* Row 4: Collect Data */}
+            <div className="flex justify-center">
+              <div className="rounded-2xl border-2 border-violet-400/60 bg-[#1c2033] p-4 shadow-lg shadow-violet-500/20 w-32">
+                <div className="flex items-center justify-center gap-2 text-xs text-violet-300">
+                  <ListChecks className="h-4 w-4" /> Recolectar
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                  <p className="text-sm font-semibold">
-                    Guardar etiqueta “Listo para demo”
-                  </p>
-                  <p className="mt-1 text-xs text-white/60">
-                    Tu equipo entra sabiendo qué ofrecer y cuándo cerrar.
-                  </p>
-                </div>
+                <p className="mt-2 text-xs font-semibold text-center">
+                  Datos clave
+                </p>
               </div>
             </div>
           </div>
+
+          {/* Decorative connections */}
+          <div className="pointer-events-none absolute right-12 top-1/2 hidden h-px w-32 bg-gradient-to-r from-primary/30 to-transparent lg:block" />
+
         </div>
 
-        <div className="bg-black/20 p-4">
-          <p className="text-sm font-semibold">Propiedades</p>
-          <p className="mt-1 text-xs text-white/45">
-            Edita el mensaje que dispara ventas sin salir del flujo.
-          </p>
-          <div className="mt-5 rounded-3xl border border-white/10 bg-white/5 p-4">
-            <p className="text-xs uppercase tracking-[0.3em] text-white/45">
-              Texto del mensaje
-            </p>
-            <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm leading-7 text-white/80">
-              {
-                "Hola {{nombre}}. Este flujo detectó que quieres vender más rápido, responder sin demora y dejar de perder clientes. Si quieres, te enseño la ruta exacta para activar eso hoy."
-              }
+        <div className=”bg-black/20 p-4 border-t border-white/10”>
+          <div className=”grid gap-4 md:grid-cols-2”>
+            <div>
+              <p className=”text-sm font-semibold”>Flujo de ejemplo</p>
+              <p className=”mt-1 text-xs text-white/45”>
+                Automatización de captura y seguimiento de leads
+              </p>
+              <div className=”mt-4 space-y-2 text-xs text-white/70”>
+                <div className=”flex items-start gap-2”>
+                  <CheckCircle2 className=”h-4 w-4 text-emerald-400 shrink-0 mt-0.5” />
+                  <span>Recibe contacto automáticamente</span>
+                </div>
+                <div className=”flex items-start gap-2”>
+                  <CheckCircle2 className=”h-4 w-4 text-emerald-400 shrink-0 mt-0.5” />
+                  <span>Espera 2 minutos antes de responder</span>
+                </div>
+                <div className=”flex items-start gap-2”>
+                  <CheckCircle2 className=”h-4 w-4 text-emerald-400 shrink-0 mt-0.5” />
+                  <span>Envía mensaje personalizado</span>
+                </div>
+                <div className=”flex items-start gap-2”>
+                  <CheckCircle2 className=”h-4 w-4 text-emerald-400 shrink-0 mt-0.5” />
+                  <span>Recolecta información clave</span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <p className=”text-sm font-semibold”>Características</p>
+              <p className=”mt-1 text-xs text-white/45”>
+                Herramientas que potencian tu automatización
+              </p>
+              <div className=”mt-4 space-y-2 text-xs text-white/70”>
+                <div className=”flex items-start gap-2”>
+                  <Sparkles className=”h-4 w-4 text-primary shrink-0 mt-0.5” />
+                  <span>Variables dinámicas con {{nombre}}</span>
+                </div>
+                <div className=”flex items-start gap-2”>
+                  <Sparkles className=”h-4 w-4 text-primary shrink-0 mt-0.5” />
+                  <span>Ramificaciones lógicas por condición</span>
+                </div>
+                <div className=”flex items-start gap-2”>
+                  <Sparkles className=”h-4 w-4 text-primary shrink-0 mt-0.5” />
+                  <span>Retrasos inteligentes y sin spam</span>
+                </div>
+                <div className=”flex items-start gap-2”>
+                  <Sparkles className=”h-4 w-4 text-primary shrink-0 mt-0.5” />
+                  <span>Captura de datos en conversación</span>
+                </div>
+              </div>
             </div>
           </div>
-          <Button className="mt-5 h-11 w-full rounded-2xl bg-primary text-primary-foreground hover:bg-primary/90">
-            Guardar cambios
-          </Button>
         </div>
       </div>
     </div>
