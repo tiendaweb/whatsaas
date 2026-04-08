@@ -44,6 +44,7 @@ const billingModes: Price['billingType'][] = ['one_time', 'monthly', 'yearly', '
 export function MarketplaceItemsAdminClient() {
   const { data: items, mutate, isLoading } = useSWR<Item[]>('/api/plugins/marketplace/items', fetcher);
   const [creating, setCreating] = useState(false);
+  const [loadingSeedApps, setLoadingSeedApps] = useState(false);
   const [newItemTitle, setNewItemTitle] = useState('');
   const [newItemCategory, setNewItemCategory] = useState('general');
   const [newItemDescription, setNewItemDescription] = useState('');
@@ -83,6 +84,31 @@ export function MarketplaceItemsAdminClient() {
     await mutate();
   }
 
+  async function loadSeedApps() {
+    setLoadingSeedApps(true);
+    setStatusMessage(null);
+
+    try {
+      const response = await fetch('/api/plugins/marketplace/admin/load-seed-apps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        setStatusMessage(`Error: ${error.error || 'No se pudieron cargar las apps de ejemplo'}`);
+      } else {
+        setStatusMessage('✓ Apps de ejemplo cargadas exitosamente (24 apps + 2 por defecto)');
+        await mutate();
+      }
+    } catch (error) {
+      setStatusMessage('Error al cargar las apps de ejemplo');
+      console.error('Error:', error);
+    } finally {
+      setLoadingSeedApps(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -92,6 +118,19 @@ export function MarketplaceItemsAdminClient() {
           <Badge>Activos: {totals.active}</Badge>
         </div>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Cargar Apps de Ejemplo</CardTitle>
+          <CardDescription>Carga automáticamente 24 apps de ejemplo en diferentes categorías (Mejoras, Productividad, Automatización, Nodos, Apps, Marketing) + 2 apps por defecto (Notas y Calendario).</CardDescription>
+        </CardHeader>
+        <CardContent className="flex items-center gap-3">
+          <Button onClick={loadSeedApps} disabled={loadingSeedApps} variant="default">
+            {loadingSeedApps ? 'Cargando...' : 'Cargar Apps de Ejemplo'}
+          </Button>
+          {statusMessage && <p className="text-xs text-muted-foreground">{statusMessage}</p>}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
