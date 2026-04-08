@@ -207,7 +207,7 @@ export function NewChatDialog({ isOpen, onClose, instances }: NewChatDialogProps
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-[500px] lg:max-w-[600px]">
             <DialogHeader>
                 <DialogTitle>{t('new_chat_dialog_title')}</DialogTitle>
                 <DialogDescription>{t('new_chat_dialog_desc')}</DialogDescription>
@@ -252,7 +252,7 @@ export function NewChatDialog({ isOpen, onClose, instances }: NewChatDialogProps
                                 <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                             </Button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-[450px] p-0" align="start">
+                        <PopoverContent className="w-[calc(100vw-2rem)] sm:w-[450px] p-0" align="start">
                             <Command shouldFilter={false}>
                                 <CommandInput 
                                     placeholder={t('name_or_number_placeholder')}

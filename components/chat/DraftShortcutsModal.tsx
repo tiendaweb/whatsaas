@@ -214,7 +214,7 @@ export function DraftShortcutsModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="fixed left-1/2 top-1/2 h-[90vh] w-[90vh] max-h-[90vh] max-w-[90vh] -translate-x-1/2 -translate-y-1/2 rounded-3xl border p-0 flex flex-col bg-[#fafafa] dark:bg-[#09090b] overflow-hidden outline-none"
+        className="fixed left-1/2 top-1/2 h-[90vh] w-[calc(100vw-2rem)] max-h-[90vh] max-w-4xl -translate-x-1/2 -translate-y-1/2 rounded-3xl border p-0 flex flex-col bg-[#fafafa] dark:bg-[#09090b] overflow-hidden outline-none"
         onKeyDown={handleContainerKeyDown}
       >
         <style dangerouslySetInnerHTML={{ __html: `

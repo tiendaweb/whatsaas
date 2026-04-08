@@ -203,7 +203,7 @@ export function DraftEditorModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[95dvh] overflow-hidden p-0 flex flex-col gap-0 border-none shadow-2xl">
+      <DialogContent className="w-[calc(100vw-1rem)] max-w-4xl max-h-[95dvh] overflow-hidden p-0 flex flex-col gap-0 border-none shadow-2xl">
         
         {/* HEADER ESTILO PREMIUM */}
         <DialogHeader className="p-6 bg-primary text-primary-foreground">

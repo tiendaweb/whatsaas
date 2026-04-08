@@ -59,7 +59,7 @@ export function QuickRepliesModal({ open, onOpenChange }: { open: boolean, onOpe
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px] max-h-[90dvh] overflow-hidden p-0 flex flex-col">
+      <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-[500px] lg:max-w-[700px] max-h-[90dvh] overflow-hidden p-0 flex flex-col">
         <DialogHeader className="sticky top-0 z-10 border-b bg-background px-6 py-4">
           <DialogTitle>Quick Replies</DialogTitle>
           <DialogDescription>Manage your shortcuts. Type /shortcut to use them.</DialogDescription>
