@@ -1,25 +1,18 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth/options";
+import { getSession } from "@/lib/auth/session";
 import {
   addVoteToRequest,
   removeVoteFromRequest,
 } from "@/lib/plugins/marketplace/server/feature-requests";
 
-interface RouteParams {
-  params: {
-    id: string;
-  };
-}
-
-export async function POST(request: Request, { params }: RouteParams) {
-  const session = await getServerSession(authOptions);
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getSession();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
     const { action } = body; // "add" or "remove"
 
