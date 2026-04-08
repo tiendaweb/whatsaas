@@ -435,19 +435,20 @@ export default function ChatPage() {
     const timer = setTimeout(() => scrollToBottom(), 100);
     try {
       const audioBase64 = await fileToBase64(audioBlob);
-      const response = await fetch('/api/messages/sendAudio', { 
-          method: 'POST', 
-          headers: { 'Content-Type': 'application/json' }, 
-          body: JSON.stringify({ 
-              recipientJid: remoteJid, 
-              audioBase64, 
-              audioMimeType, 
+      const response = await fetch('/api/messages/sendAudio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+              recipientJid: remoteJid,
+              audioBase64,
+              audioMimeType,
               quotedMessageData: quotedData,
-              instanceId: currentChat?.instanceId 
-          }), 
+              instanceId: currentChat?.instanceId
+          }),
       });
       const sentMessageData: Message = await response.json();
-      if (!response.ok && !sentMessageData.status) throw new Error((sentMessageData as any).error || 'Failed to send audio.');
+      if (!response.ok) throw new Error((sentMessageData as any).error || 'Failed to send audio.');
+      if (sentMessageData.status === 'error') throw new Error(sentMessageData.errorMessage || 'Failed to send audio.');
       mutateMessages((currentMessages = []) => currentMessages.map(msg => msg.id === tempId ? { ...sentMessageData, timestamp: new Date(sentMessageData.timestamp).toISOString() } : msg), false);
       globalMutate('/api/chats');
     } catch (sendError: any) {
@@ -514,7 +515,8 @@ export default function ChatPage() {
         });
         
         const sentMessageData: Message = await response.json();
-        if (!response.ok && !sentMessageData.status) throw new Error((sentMessageData as any).error || 'Failed to send media.');
+        if (!response.ok) throw new Error((sentMessageData as any).error || 'Failed to send media.');
+        if (sentMessageData.status === 'error') throw new Error(sentMessageData.errorMessage || 'Failed to send media.');
 
         mutateMessages((currentMessages = []) => currentMessages.map(msg => msg.id === tempId ? { ...sentMessageData, timestamp: new Date(sentMessageData.timestamp).toISOString() } : msg), false);
         globalMutate('/api/chats');
