@@ -57,8 +57,21 @@ Un proveedor nuevo está completo cuando:
 - Documenta variables de entorno en README.
 
 ## Skills del repositorio
+
+### Creación de features y componentes
 Para tareas guiadas usar:
-- `skills/plugin-architecture/SKILL.md`
-- `skills/manual-payment/SKILL.md`
-- `skills/mercadopago/SKILL.md`
+- `/new-feature` — Crear una nueva pantalla, sección o página completa
+- `/new-modal` — Crear modales y diálogos respetando el estilo visual
+- `/new-component` — Crear componentes UI reutilizables
+- `/add-i18n` — Agregar textos en español, inglés y portugués
+- `/style-check` — Verificar consistencia visual antes de merge
+
+### Integración de datos
+- `/new-api-route` — Crear rutas API con autenticación correcta
+- `/new-db-schema` — Agregar tablas o columnas a la base de datos
+
+### Arquitectura de pagos
+- `skills/plugin-architecture/SKILL.md` — Arquitectura de plugins para pagos
+- `skills/manual-payment/SKILL.md` — Plugin de pagos manual
+- `skills/mercadopago/SKILL.md` — Plugin de Mercado Pago
 

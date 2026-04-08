@@ -71,7 +71,7 @@ export function NewAutomationDialog({ open, onOpenChange }: NewAutomationDialogP
                     <div className="space-y-2">
                         <Label>{t('connected_instance_label')}</Label>
                         <Select value={instanceId} onValueChange={setInstanceId} disabled={isLoading}>
-                            <SelectTrigger>
+                            <SelectTrigger className="w-full">
                                 <SelectValue placeholder={isLoading ? t('loading_instances_placeholder') : t('select_instance_placeholder')} />
                             </SelectTrigger>
                             <SelectContent>

@@ -26,7 +26,7 @@ function markdownToHtml(markdown: string) {
 
   // Italic
   html = html.replace(/\*(.*?)\*/g, '<em class="italic">$1</em>');
-  html = html.replace(/_((.*?)(?:_)?)/g, '<em class="italic">$1</em>');
+  html = html.replace(/_([^_]+)_/g, '<em class="italic">$1</em>');
 
   // Code inline
   html = html.replace(/`([^`]+)`/g, '<code class="bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded text-sm font-mono">$1</code>');
@@ -36,7 +36,7 @@ function markdownToHtml(markdown: string) {
 
   // Lists
   html = html.replace(/^\- (.*?)$/gm, '<li class="ml-4">$1</li>');
-  html = html.replace(/(<li.*?<\/li>)/s, '<ul class="list-disc mb-4">$1</ul>');
+  html = html.replace(/(<li[^>]*>.*?<\/li>)(\s*<li[^>]*>.*?<\/li>)*/gs, '<ul class="list-disc mb-4">$&</ul>');
 
   // Line breaks
   html = html.replace(/\n\n/g, '</p><p class="mb-4">');

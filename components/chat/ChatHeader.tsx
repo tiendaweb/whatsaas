@@ -423,7 +423,7 @@ export function ChatHeader({ chatDetails, showSearch, setShowSearch, searchQuery
                 setSelectedAutomationId(value);
                 setSelectedStartNodeId('start');
               }}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder={t('trigger_automation_select_placeholder')} />
                 </SelectTrigger>
                 <SelectContent>
@@ -443,7 +443,7 @@ export function ChatHeader({ chatDetails, showSearch, setShowSearch, searchQuery
                 onValueChange={setSelectedStartNodeId}
                 disabled={!selectedAutomationId}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder={t('trigger_automation_start_from_placeholder')} />
                 </SelectTrigger>
                 <SelectContent>

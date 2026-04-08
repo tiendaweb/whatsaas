@@ -1,5 +1,5 @@
 import { getBranding } from '@/lib/db/queries/branding';
-import { getDocsHomeData } from '@/lib/db/queries/docs';
+import { getDocsHomeData, searchDocsArticles } from '@/lib/db/queries/docs';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -197,15 +197,33 @@ export const metadata = {
   description: 'Aprende a usar nuestra plataforma.',
 };
 
-export default async function DocsPage() {
+interface Props {
+  params: Promise<{
+    locale: string;
+  }>;
+  searchParams: Promise<{
+    q?: string;
+    category?: string;
+  }>;
+}
+
+export default async function DocsPage({ params, searchParams }: Props) {
+  const { locale } = await params;
+  const { q, category } = await searchParams;
+
   const [branding, docsHomeData] = await Promise.all([getBranding(), getDocsHomeData()]);
   const siteName = branding?.name || 'WhatsPro';
-  const categoryLinksBySlug = docsHomeData.featuredArticles.reduce<Record<string, string[]>>((acc, article) => {
+
+  let articles = docsHomeData.featuredArticles;
+  if (q || category) {
+    articles = await searchDocsArticles({ q, category });
+  }
+  const categoryLinksAndSlugsBySlug = articles.reduce<Record<string, Array<{ title: string; slug: string }>>>((acc, article) => {
     const categorySlug = article.category?.slug;
     if (!categorySlug || acc[categorySlug]?.length >= 3) {
       return acc;
     }
-    acc[categorySlug] = [...(acc[categorySlug] ?? []), article.title];
+    acc[categorySlug] = [...(acc[categorySlug] ?? []), { title: article.title, slug: article.slug }];
     return acc;
   }, {});
 
@@ -214,16 +232,23 @@ export default async function DocsPage() {
       ? docsHomeData.categories.map((category) => {
           const fallbackCategory = defaultCategories.find((item) => item.title === category.name);
           const icon = iconMap[category.icon as keyof typeof iconMap] ?? fallbackCategory?.icon ?? Book;
-          const links = categoryLinksBySlug[category.slug] ?? fallbackCategory?.links ?? [];
+          const linksData = categoryLinksAndSlugsBySlug[category.slug] ?? [];
+          // Use DB articles if available, otherwise use fallback titles (without links)
+          const links = linksData.length > 0 ? linksData : fallbackCategory?.links?.map(title => ({ title, slug: '' })) ?? [];
 
           return {
             title: category.name,
+            slug: category.slug,
             description: category.description || fallbackCategory?.description || '',
             icon,
-            links
+            links: links as Array<{ title: string; slug: string }>
           };
         })
-      : defaultCategories;
+      : defaultCategories.map(cat => ({
+          ...cat,
+          slug: '',
+          links: cat.links.map(title => ({ title, slug: '' }))
+        }));
 
   const modules = defaultModules;
   const apiGroups = defaultApiGroups;
@@ -246,13 +271,15 @@ export default async function DocsPage() {
             Encuentra todo lo que necesitas para automatizar tu soporte y ventas por WhatsApp.
           </p>
 
-          <div className="relative max-w-xl mx-auto">
+          <form className="relative max-w-xl mx-auto" method="get">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
             <Input
+              name="q"
+              defaultValue={q || ''}
               placeholder="Buscar artículos, guías o documentación de API..."
               className="pl-10 h-12 bg-background shadow-sm rounded-xl text-base"
             />
-          </div>
+          </form>
         </div>
       </div>
 
@@ -271,25 +298,37 @@ export default async function DocsPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {categories.map((category, idx) => (
-            <Card key={idx} className="hover:border-primary/50 transition-colors cursor-pointer group">
-              <CardHeader>
-                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center mb-2 group-hover:bg-primary/20 transition-colors">
-                  <category.icon className="h-5 w-5 text-primary" />
-                </div>
-                <CardTitle>{category.title}</CardTitle>
-                <CardDescription className="line-clamp-2">{category.description}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-2">
-                  {category.links.map((link, i) => (
-                    <li key={i} className="text-sm text-muted-foreground hover:text-primary flex items-center">
-                      <ChevronRight className="h-3 w-3 mr-2 opacity-50" />
-                      {link}
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
+            <Link
+              key={idx}
+              href={category.slug ? `/${locale}/docs?category=${category.slug}` : '#'}
+              className={category.slug ? '' : 'pointer-events-none'}
+            >
+              <Card className="hover:border-primary/50 transition-colors cursor-pointer group h-full">
+                <CardHeader>
+                  <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center mb-2 group-hover:bg-primary/20 transition-colors">
+                    <category.icon className="h-5 w-5 text-primary" />
+                  </div>
+                  <CardTitle>{category.title}</CardTitle>
+                  <CardDescription className="line-clamp-2">{category.description}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-2">
+                    {category.links.map((link, i) => (
+                      <li key={i} className="text-sm text-muted-foreground hover:text-primary flex items-center">
+                        <ChevronRight className="h-3 w-3 mr-2 opacity-50" />
+                        {link.slug ? (
+                          <Link href={`/${locale}/docs/${link.slug}`} className="hover:text-primary">
+                            {link.title}
+                          </Link>
+                        ) : (
+                          link.title
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            </Link>
           ))}
         </div>
 

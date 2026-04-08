@@ -296,7 +296,7 @@ export function DraftEditorModal({
                   <div className="space-y-2">
                     <Label className="text-[10px] uppercase font-bold">Tipo</Label>
                     <Select value={draftType} onValueChange={(v: any) => setDraftType(v)}>
-                      <SelectTrigger className="h-9">
+                      <SelectTrigger className="h-9 w-full">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -308,7 +308,7 @@ export function DraftEditorModal({
                   <div className="space-y-2">
                     <Label className="text-[10px] uppercase font-bold">Categoría</Label>
                     <Select value={categoryId} onValueChange={setCategoryId}>
-                      <SelectTrigger className="h-9">
+                      <SelectTrigger className="h-9 w-full">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -374,7 +374,7 @@ export function DraftEditorModal({
     <div className="space-y-1">
       <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Contacto Vinculado</Label>
       <Select value={contactId} onValueChange={setContactId}>
-        <SelectTrigger className="h-9 bg-background">
+        <SelectTrigger className="h-9 w-full bg-background">
           <SelectValue placeholder="Seleccionar contacto" />
         </SelectTrigger>
         <SelectContent>
@@ -392,7 +392,7 @@ export function DraftEditorModal({
     <div className="space-y-1">
       <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Agente Asignado</Label>
       <Select value={assignedUserId} onValueChange={setAssignedUserId}>
-        <SelectTrigger className="h-9 bg-background">
+        <SelectTrigger className="h-9 w-full bg-background">
           <SelectValue placeholder="Seleccionar agente" />
         </SelectTrigger>
         <SelectContent>
@@ -410,7 +410,7 @@ export function DraftEditorModal({
     <div className="space-y-1">
       <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Departamento</Label>
       <Select value={departmentId} onValueChange={setDepartmentId}>
-        <SelectTrigger className="h-9 bg-background">
+        <SelectTrigger className="h-9 w-full bg-background">
           <SelectValue placeholder="Seleccionar departamento" />
         </SelectTrigger>
         <SelectContent>

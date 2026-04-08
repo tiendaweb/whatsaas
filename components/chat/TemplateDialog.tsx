@@ -81,7 +81,7 @@ export function TemplateDialog({ open, onOpenChange, onSendTemplate }: TemplateD
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         <div className="flex flex-col gap-4">
           <Select value={selectedTemplateId} onValueChange={(val) => { setSelectedTemplateId(val); setTemplateVariables({}); }}>
-            <SelectTrigger>
+            <SelectTrigger className="w-full">
               <SelectValue placeholder={t('choose_template_placeholder')} />
             </SelectTrigger>
             <SelectContent>
