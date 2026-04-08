@@ -6,6 +6,7 @@ import { ArrowRight, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { LandingSectionWidgetRenderer } from '@/components/landing/section-widget-renderer';
+import { ComponentsShowcase } from '@/components/landing/components-showcase';
 import type { LandingPageSection } from '@/lib/landing/types';
 import { cn } from '@/lib/utils';
 
@@ -106,6 +107,21 @@ function renderDefaultWidget(section: LandingPageSection) {
     );
   }
 
+  if (section.type === 'components') {
+    return (
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {section.items.slice(0, 3).map((item) => (
+          <Card key={item.id} className="rounded-2xl border-border/50">
+            <CardContent className="space-y-3 p-5">
+              <p className="font-semibold text-sm">{item.label}</p>
+              <p className="text-xs text-muted-foreground leading-relaxed">{item.description}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <Card className="rounded-[28px] border-primary/20 bg-primary/10 shadow-sm">
       <CardContent className="space-y-4 p-6 text-center">
@@ -194,6 +210,12 @@ export function PublicLandingPageBuilder({ sections }: { sections: LandingPageSe
 
           return (
             <SectionFrame key={section.id} section={section} content={content} fallbackWidget={renderDefaultWidget(section)} />
+          );
+        }
+
+        if (section.type === 'components') {
+          return (
+            <ComponentsShowcase key={section.id} section={section} />
           );
         }
 
