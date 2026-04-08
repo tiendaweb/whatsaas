@@ -19,12 +19,12 @@ import type { LandingHomeSection } from "@/lib/landing/types";
 
 function AutomationShowcaseCard() {
   const nodePalette = [
-    { label: "Inicio del flujo", tone: "bg-blue-500/10 text-blue-400", icon: "▶" },
-    { label: "Enviar mensaje", tone: "bg-emerald-500/10 text-emerald-400", icon: "💬" },
-    { label: "Mensaje con botones", tone: "bg-purple-500/10 text-purple-400", icon: "🔘" },
-    { label: "Pedir dato clave", tone: "bg-violet-500/10 text-violet-400", icon: "❓" },
-    { label: "Condición lógica", tone: "bg-amber-500/10 text-amber-400", icon: "⚡" },
-    { label: "Esperar tiempo", tone: "bg-cyan-500/10 text-cyan-400", icon: "⏱" },
+    { label: "Inicio del flujo", tone: "bg-blue-500/10 text-blue-400 border-blue-500/30", icon: Sparkles },
+    { label: "Enviar mensaje", tone: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30", icon: MessageSquareMore },
+    { label: "Mensaje con botones", tone: "bg-purple-500/10 text-purple-400 border-purple-500/30", icon: MousePointerClick },
+    { label: "Pedir dato clave", tone: "bg-violet-500/10 text-violet-400 border-violet-500/30", icon: ListChecks },
+    { label: "Condición lógica", tone: "bg-amber-500/10 text-amber-400 border-amber-500/30", icon: Split },
+    { label: "Esperar tiempo", tone: "bg-cyan-500/10 text-cyan-400 border-cyan-500/30", icon: Clock3 },
   ];
 
   return (
@@ -57,110 +57,149 @@ function AutomationShowcaseCard() {
           <p className="mt-1 text-xs text-white/45">
             Arrastra componentes y conecta tu flujo sin código.
           </p>
-          <div className="mt-5 grid gap-2 grid-cols-2">
-            {nodePalette.map((node) => (
-              <div
-                key={node.label}
-                className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-2 cursor-move hover:bg-white/10 transition-colors"
-              >
+          <div className="mt-5 grid gap-2 grid-cols-2 lg:grid-cols-3">
+            {nodePalette.map((node) => {
+              const Icon = node.icon;
+              return (
                 <div
-                  className={`flex h-8 w-8 items-center justify-center rounded-lg text-sm ${node.tone}`}
+                  key={node.label}
+                  className={`flex items-center gap-2 rounded-xl border ${node.tone} bg-white/5 px-3 py-2.5 cursor-move hover:bg-white/15 transition-all hover:scale-105`}
                 >
-                  {node.icon}
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg">
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <p className="text-xs font-medium truncate">{node.label}</p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-medium truncate">{node.label}</p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
-        <div className="relative min-h-[500px] overflow-hidden bg-[radial-gradient(circle_at_center,rgba(78,88,255,0.12),transparent_45%),linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:auto,22px_22px,22px_22px] p-6">
-          {/* Start Node */}
-          <div className="flex flex-col gap-6">
-            {/* Row 1: Start */}
-            <div className="flex justify-center">
-              <div className="rounded-2xl border-2 border-blue-400/60 bg-[#1c2033] p-4 shadow-lg shadow-blue-500/20 w-32">
-                <div className="flex items-center justify-center gap-2 text-xs text-blue-300">
-                  <Sparkles className="h-4 w-4" /> Inicio
-                </div>
-                <p className="mt-2 text-xs font-semibold text-center">
-                  Nuevo contacto
-                </p>
-              </div>
+        {/* Canvas with Properties Panel */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-px bg-white/10 min-h-[520px]">
+          {/* Main Canvas Area */}
+          <div className="relative overflow-hidden bg-[radial-gradient(circle_at_center,rgba(78,88,255,0.12),transparent_45%),linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:auto,20px_20px,20px_20px] p-4 sm:p-6">
+            {/* Canvas toolbar */}
+            <div className="absolute top-3 right-3 flex items-center gap-1.5 rounded-lg bg-black/40 p-2 backdrop-blur-sm border border-white/10">
+              <button className="p-1.5 hover:bg-white/10 rounded text-xs text-white/70">
+                <BarChart3 className="h-3.5 w-3.5" />
+              </button>
+              <div className="w-px h-4 bg-white/20" />
+              <span className="text-xs text-white/50 px-1.5">100%</span>
             </div>
 
-            {/* Connector */}
-            <div className="flex justify-center">
-              <div className="w-0.5 h-6 bg-gradient-to-b from-blue-400/40 to-cyan-400/40" />
-            </div>
-
-            {/* Row 2: Delay */}
-            <div className="flex justify-center">
-              <div className="rounded-2xl border-2 border-cyan-400/60 bg-[#1c2033] p-4 shadow-lg shadow-cyan-500/20 w-32">
-                <div className="flex items-center justify-center gap-2 text-xs text-cyan-300">
-                  <Clock3 className="h-4 w-4" /> Esperar
-                </div>
-                <p className="mt-2 text-xs font-semibold text-center">
-                  2 minutos
-                </p>
-              </div>
-            </div>
-
-            {/* Connector */}
-            <div className="flex justify-center">
-              <div className="w-0.5 h-6 bg-gradient-to-b from-cyan-400/40 to-emerald-400/40" />
-            </div>
-
-            {/* Row 3: Message & Condition */}
-            <div className="grid grid-cols-2 gap-4 max-w-md mx-auto w-full">
-              {/* Message */}
-              <div className="col-span-1">
-                <div className="rounded-2xl border-2 border-emerald-400/60 bg-[#1c2033] p-3 shadow-lg shadow-emerald-500/20">
-                  <div className="flex items-center gap-2 text-xs text-emerald-300 mb-2">
-                    <MessageSquareMore className="h-3.5 w-3.5" /> Mensaje
+            {/* Flow visualization */}
+            <div className="flex flex-col gap-5 pt-2">
+              {/* Row 1: Start */}
+              <div className="flex justify-center">
+                <div className="rounded-2xl border-2 border-blue-400/70 bg-[#1c2033] p-4 shadow-lg shadow-blue-500/25 w-36 hover:shadow-blue-500/40 transition-all">
+                  <div className="flex items-center justify-center gap-2 text-xs text-blue-300 font-semibold">
+                    <Sparkles className="h-4 w-4" /> Inicio
                   </div>
-                  <p className="text-xs leading-4">
-                    "¿Interesado en automatizar?"
+                  <p className="mt-2 text-xs text-center text-white/80">
+                    Nuevo contacto
                   </p>
                 </div>
               </div>
 
-              {/* Condition */}
-              <div className="col-span-1">
-                <div className="rounded-2xl border-2 border-amber-400/60 bg-[#1c2033] p-3 shadow-lg shadow-amber-500/20">
-                  <div className="flex items-center gap-2 text-xs text-amber-300 mb-2">
+              {/* Connector with arrow */}
+              <div className="flex justify-center">
+                <div className="relative w-0.5 h-7">
+                  <div className="absolute inset-0 bg-gradient-to-b from-blue-400/50 to-cyan-400/50" />
+                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-cyan-400" />
+                </div>
+              </div>
+
+              {/* Row 2: Delay */}
+              <div className="flex justify-center">
+                <div className="rounded-2xl border-2 border-cyan-400/70 bg-[#1c2033] p-4 shadow-lg shadow-cyan-500/25 w-36 hover:shadow-cyan-500/40 transition-all">
+                  <div className="flex items-center justify-center gap-2 text-xs text-cyan-300 font-semibold">
+                    <Clock3 className="h-4 w-4" /> Esperar
+                  </div>
+                  <p className="mt-2 text-xs text-center text-white/80">2 minutos</p>
+                </div>
+              </div>
+
+              {/* Connector */}
+              <div className="flex justify-center">
+                <div className="relative w-0.5 h-7">
+                  <div className="absolute inset-0 bg-gradient-to-b from-cyan-400/50 to-emerald-400/50" />
+                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-emerald-400" />
+                </div>
+              </div>
+
+              {/* Row 3: Message & Condition */}
+              <div className="grid grid-cols-2 gap-3 max-w-xs mx-auto w-full">
+                <div className="rounded-2xl border-2 border-emerald-400/70 bg-[#1c2033] p-3 shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 transition-all">
+                  <div className="flex items-center gap-1.5 text-xs text-emerald-300 mb-2 font-semibold">
+                    <MessageSquareMore className="h-3.5 w-3.5" /> Mensaje
+                  </div>
+                  <p className="text-xs leading-4 text-white/80">
+                    "¿Interesado en automatizar tu atención?"
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border-2 border-amber-400/70 bg-[#1c2033] p-3 shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40 transition-all">
+                  <div className="flex items-center gap-1.5 text-xs text-amber-300 mb-2 font-semibold">
                     <Split className="h-3.5 w-3.5" /> Condición
                   </div>
-                  <p className="text-xs text-center font-semibold">
+                  <p className="text-xs text-center font-semibold text-white/80">
                     ¿Respondió?
                   </p>
                 </div>
               </div>
-            </div>
 
-            {/* Connector */}
-            <div className="flex justify-center">
-              <div className="w-0.5 h-6 bg-gradient-to-b from-amber-400/40 to-violet-400/40" />
-            </div>
-
-            {/* Row 4: Collect Data */}
-            <div className="flex justify-center">
-              <div className="rounded-2xl border-2 border-violet-400/60 bg-[#1c2033] p-4 shadow-lg shadow-violet-500/20 w-32">
-                <div className="flex items-center justify-center gap-2 text-xs text-violet-300">
-                  <ListChecks className="h-4 w-4" /> Recolectar
+              {/* Connector */}
+              <div className="flex justify-center">
+                <div className="relative w-0.5 h-7">
+                  <div className="absolute inset-0 bg-gradient-to-b from-amber-400/50 to-violet-400/50" />
+                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-violet-400" />
                 </div>
-                <p className="mt-2 text-xs font-semibold text-center">
-                  Datos clave
-                </p>
+              </div>
+
+              {/* Row 4: Collect Data */}
+              <div className="flex justify-center">
+                <div className="rounded-2xl border-2 border-violet-400/70 bg-[#1c2033] p-4 shadow-lg shadow-violet-500/25 w-36 hover:shadow-violet-500/40 transition-all">
+                  <div className="flex items-center justify-center gap-2 text-xs text-violet-300 font-semibold">
+                    <ListChecks className="h-4 w-4" /> Recolectar
+                  </div>
+                  <p className="mt-2 text-xs text-center text-white/80">
+                    Datos clave
+                  </p>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Decorative connections */}
-          <div className="pointer-events-none absolute right-12 top-1/2 hidden h-px w-32 bg-gradient-to-r from-primary/30 to-transparent lg:block" />
+          {/* Right Panel - Properties */}
+          <div className="bg-black/30 border-l border-white/10 p-4 flex flex-col gap-4 text-white/70 text-xs">
+            <div>
+              <p className="text-white/50 uppercase text-[10px] tracking-wider font-semibold mb-2">
+                Propiedades
+              </p>
+              <div className="space-y-3">
+                <div className="bg-white/5 rounded-lg p-2.5 border border-white/10">
+                  <p className="text-white/70 text-[11px] mb-1">Nombre</p>
+                  <p className="text-xs text-white font-medium">Esperar</p>
+                </div>
+                <div className="bg-white/5 rounded-lg p-2.5 border border-white/10">
+                  <p className="text-white/70 text-[11px] mb-1">Duración</p>
+                  <p className="text-xs text-white font-medium">2 minutos</p>
+                </div>
+              </div>
+            </div>
 
+            <div className="pt-2 border-t border-white/10">
+              <p className="text-white/50 uppercase text-[10px] tracking-wider font-semibold mb-2">
+                Estado
+              </p>
+              <Badge className="w-full justify-center bg-green-500/20 text-green-400 border-green-500/30">
+                Activo
+              </Badge>
+            </div>
+          </div>
         </div>
 
         <div className="bg-black/20 p-4 border-t border-white/10">
