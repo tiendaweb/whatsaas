@@ -100,7 +100,7 @@ export function Sidebar() {
       return {
         href: item.href,
         icon: item.icon ? (PLUGIN_NAV_ICON_MAP[item.icon] ?? Plug) : Plug,
-        label: isMarketplace ? 'Mejoras' : item.label,
+        label: isMarketplace ? 'APPS' : item.label,
         feature: null,
       };
     }) ?? [];

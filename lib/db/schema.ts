@@ -1395,6 +1395,10 @@ export const marketplaceItems = pgTable(
       .notNull()
       .default([]),
     status: varchar("status", { length: 30 }).notNull().default("draft"),
+    isDefault: boolean("is_default").notNull().default(false),
+    isFunctional: boolean("is_functional").notNull().default(false),
+    appType: varchar("app_type", { length: 30 }).notNull().default("installable"),
+    features: jsonb("features").$type<Array<{ id: string; name: string; description: string; enabled?: boolean }>>().notNull().default([]),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -1552,6 +1556,64 @@ export const teamMarketplaceEntitlements = pgTable(
       table.itemId,
       table.status,
     ),
+  }),
+);
+
+export const featureRequests = pgTable(
+  "feature_requests",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    requestedBy: integer("requested_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    appId: integer("app_id").references(() => marketplaceItems.id, {
+      onDelete: "set null",
+    }),
+    title: varchar("title", { length: 255 }).notNull(),
+    description: text("description").notNull(),
+    category: varchar("category", { length: 80 }).notNull(),
+    status: varchar("status", { length: 40 }).notNull().default("pending"),
+    votes: integer("votes").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamStatusIdx: index("feature_requests_team_status_idx").on(
+      table.teamId,
+      table.status,
+    ),
+    appIdIdx: index("feature_requests_app_id_idx").on(table.appId),
+    requestedByIdx: index("feature_requests_requested_by_idx").on(
+      table.requestedBy,
+    ),
+    categoryIdx: index("feature_requests_category_idx").on(table.category),
+  }),
+);
+
+export const featureRequestVotes = pgTable(
+  "feature_request_votes",
+  {
+    id: serial("id").primaryKey(),
+    requestId: integer("request_id")
+      .notNull()
+      .references(() => featureRequests.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    requestUserUnique: unique("feature_request_votes_request_user_uidx").on(
+      table.requestId,
+      table.userId,
+    ),
+    requestIdIdx: index("feature_request_votes_request_id_idx").on(
+      table.requestId,
+    ),
+    userIdIdx: index("feature_request_votes_user_id_idx").on(table.userId),
   }),
 );
 
@@ -1834,6 +1896,39 @@ export const teamMarketplaceEntitlementsRelations = relations(
   }),
 );
 
+export const featureRequestsRelations = relations(
+  featureRequests,
+  ({ one, many }) => ({
+    team: one(teams, {
+      fields: [featureRequests.teamId],
+      references: [teams.id],
+    }),
+    requestedByUser: one(users, {
+      fields: [featureRequests.requestedBy],
+      references: [users.id],
+    }),
+    app: one(marketplaceItems, {
+      fields: [featureRequests.appId],
+      references: [marketplaceItems.id],
+    }),
+    votes: many(featureRequestVotes),
+  }),
+);
+
+export const featureRequestVotesRelations = relations(
+  featureRequestVotes,
+  ({ one }) => ({
+    request: one(featureRequests, {
+      fields: [featureRequestVotes.requestId],
+      references: [featureRequests.id],
+    }),
+    user: one(users, {
+      fields: [featureRequestVotes.userId],
+      references: [users.id],
+    }),
+  }),
+);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Team = typeof teams.$inferSelect;
@@ -1920,6 +2015,11 @@ export type TeamMarketplaceEntitlement =
   typeof teamMarketplaceEntitlements.$inferSelect;
 export type NewTeamMarketplaceEntitlement =
   typeof teamMarketplaceEntitlements.$inferInsert;
+
+export type FeatureRequest = typeof featureRequests.$inferSelect;
+export type NewFeatureRequest = typeof featureRequests.$inferInsert;
+export type FeatureRequestVote = typeof featureRequestVotes.$inferSelect;
+export type NewFeatureRequestVote = typeof featureRequestVotes.$inferInsert;
 
 export type TeamPlugin = typeof teamPlugins.$inferSelect;
 export type NewTeamPlugin = typeof teamPlugins.$inferInsert;
