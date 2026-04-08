@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { db } from "@/lib/db/drizzle";
 import { marketplaceItems } from "@/lib/db/schema";
 
 export const SEED_APPS = [

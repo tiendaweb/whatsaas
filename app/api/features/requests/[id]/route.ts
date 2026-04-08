@@ -1,25 +1,18 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth/options";
+import { getSession } from "@/lib/auth/session";
 import {
   getFeatureRequestById,
   updateFeatureRequestStatus,
 } from "@/lib/plugins/marketplace/server/feature-requests";
 
-interface RouteParams {
-  params: {
-    id: string;
-  };
-}
-
-export async function GET(request: Request, { params }: RouteParams) {
-  const session = await getServerSession(authOptions);
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const session = await getSession();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const { id } = params;
     const requestId = parseInt(id);
 
     if (isNaN(requestId)) {
@@ -45,17 +38,15 @@ export async function GET(request: Request, { params }: RouteParams) {
   }
 }
 
-export async function PATCH(request: Request, { params }: RouteParams) {
-  const session = await getServerSession(authOptions);
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getSession();
 
-  // Solo admins pueden actualizar el estado
-  const isAdmin = session?.user?.role === "admin";
-  if (!session?.user || !isAdmin) {
+  if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
     const { status } = body;
 
