@@ -58,52 +58,92 @@ export function NotesDashboard() {
 
   async function createNote(noteData: NoteEditorData) {
     const tags = noteData.tags;
-    await fetch('/api/plugins/notes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: noteData.title,
-        content: noteData.content,
-        tags,
-        status: noteData.status,
-        dueDate: noteData.dueDate || null,
-      }),
-    });
-    mutate();
+    try {
+      const response = await fetch('/api/plugins/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: noteData.title,
+          content: noteData.content,
+          tags,
+          status: noteData.status,
+          dueDate: noteData.dueDate || null,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error('Error creating note:', response.status, await response.text());
+        return;
+      }
+
+      await mutate();
+    } catch (error) {
+      console.error('Error creating note:', error);
+    }
   }
 
   async function updateNote(noteId: number, noteData: NoteEditorData) {
-    await fetch(`/api/plugins/notes/${noteId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: noteData.title,
-        content: noteData.content,
-        tags: noteData.tags,
-        status: noteData.status,
-        dueDate: noteData.dueDate || null,
-      }),
-    });
-    mutate();
+    try {
+      const response = await fetch(`/api/plugins/notes/${noteId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: noteData.title,
+          content: noteData.content,
+          tags: noteData.tags,
+          status: noteData.status,
+          dueDate: noteData.dueDate || null,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error('Error updating note:', response.status, await response.text());
+        return;
+      }
+
+      await mutate();
+    } catch (error) {
+      console.error('Error updating note:', error);
+    }
   }
 
   async function moveNote(noteId: number, newStatus: NoteStatus) {
-    await fetch(`/api/plugins/notes/${noteId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newStatus }),
-    });
-    mutate();
+    try {
+      const response = await fetch(`/api/plugins/notes/${noteId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      if (!response.ok) {
+        console.error('Error moving note:', response.status, await response.text());
+        return;
+      }
+
+      await mutate();
+    } catch (error) {
+      console.error('Error moving note:', error);
+    }
   }
 
   async function deleteNote(noteId: number) {
     if (!confirm('¿Estás seguro de que deseas eliminar esta nota?')) return;
-    await fetch(`/api/plugins/notes/${noteId}`, { method: 'DELETE' });
-    mutate();
+    try {
+      const response = await fetch(`/api/plugins/notes/${noteId}`, { method: 'DELETE' });
+
+      if (!response.ok) {
+        console.error('Error deleting note:', response.status, await response.text());
+        return;
+      }
+
+      await mutate();
+    } catch (error) {
+      console.error('Error deleting note:', error);
+    }
   }
 
   return (
-    <div className="space-y-6 p-6 max-w-[1400px] mx-auto">
+    <div className="space-y-6 p-6 w-full">
       {/* Header */}
       <div className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight">Notas del equipo</h1>

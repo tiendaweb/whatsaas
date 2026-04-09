@@ -92,7 +92,7 @@ export function KanbanView({ notes, onDelete, onUpdate, onMove }: KanbanViewProp
       )}
 
       {/* Kanban Columns */}
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         {statuses.map((statusKey) => {
           const StatusIcon = STATUS_CONFIG[statusKey].icon;
           const config = STATUS_CONFIG[statusKey];
