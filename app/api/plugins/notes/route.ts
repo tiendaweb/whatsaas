@@ -5,14 +5,27 @@ import { db } from '@/lib/db/drizzle';
 import { teamNotes } from '@/lib/db/schema';
 import { getPluginRequestContext } from '@/lib/plugins/core/runtime-permissions';
 
+const dueDateSchema = z
+  .union([z.string().date(), z.string().datetime({ offset: true }), z.string().datetime()])
+  .nullable()
+  .optional();
+
 const createNoteSchema = z.object({
   title: z.string().min(1).max(180),
   content: z.string().default(''),
   tags: z.array(z.string()).default([]),
   pinned: z.boolean().default(false),
   status: z.enum(['todo', 'in_progress', 'done']).default('todo'),
-  dueDate: z.string().datetime().nullable().optional(),
+  dueDate: dueDateSchema,
 });
+
+function parseDueDate(value: string | null | undefined) {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(`${value}T00:00:00`);
+  }
+  return new Date(value);
+}
 
 export async function GET() {
   const context = await getPluginRequestContext('notesRead');
@@ -50,7 +63,7 @@ export async function POST(request: Request) {
       tags: parsed.data.tags,
       pinned: parsed.data.pinned,
       status: parsed.data.status,
-      dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : null,
+      dueDate: parseDueDate(parsed.data.dueDate),
       createdBy: context.user.id,
       updatedBy: context.user.id,
       createdAt: new Date(),
