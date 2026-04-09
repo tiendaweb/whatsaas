@@ -5,14 +5,27 @@ import { db } from '@/lib/db/drizzle';
 import { teamNotes } from '@/lib/db/schema';
 import { getPluginRequestContext } from '@/lib/plugins/core/runtime-permissions';
 
+const dueDateSchema = z
+  .union([z.string().date(), z.string().datetime({ offset: true }), z.string().datetime()])
+  .nullable()
+  .optional();
+
 const updateSchema = z.object({
   title: z.string().min(1).max(180).optional(),
   content: z.string().optional(),
   tags: z.array(z.string()).optional(),
   pinned: z.boolean().optional(),
   status: z.enum(['todo', 'in_progress', 'done']).optional(),
-  dueDate: z.string().datetime().nullable().optional(),
+  dueDate: dueDateSchema,
 });
+
+function parseDueDate(value: string | null | undefined) {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(`${value}T00:00:00`);
+  }
+  return new Date(value);
+}
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const context = await getPluginRequestContext('notesWrite');
@@ -33,7 +46,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     .update(teamNotes)
     .set({
       ...payload,
-      dueDate: payload.dueDate === undefined ? undefined : payload.dueDate ? new Date(payload.dueDate) : null,
+      dueDate: payload.dueDate === undefined ? undefined : parseDueDate(payload.dueDate),
       updatedBy: context.user.id,
       updatedAt: new Date(),
     })

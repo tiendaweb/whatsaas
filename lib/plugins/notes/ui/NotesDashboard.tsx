@@ -103,7 +103,7 @@ export function NotesDashboard() {
   }
 
   return (
-    <div className="space-y-6 p-6 max-w-[1400px] mx-auto">
+    <div className="space-y-6 p-6 w-full">
       {/* Header */}
       <div className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight">Notas del equipo</h1>
