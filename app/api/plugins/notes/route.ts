@@ -5,6 +5,9 @@ import { db } from '@/lib/db/drizzle';
 import { teamNotes } from '@/lib/db/schema';
 import { getPluginRequestContext } from '@/lib/plugins/core/runtime-permissions';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 const dueDateSchema = z
   .union([z.string().date(), z.string().datetime({ offset: true }), z.string().datetime()])
   .nullable()
