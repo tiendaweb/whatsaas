@@ -27,7 +27,13 @@ type TeamNote = {
   updatedAt?: string;
 };
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
+const fetcher = async (url: string) => {
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(`Error loading notes (${response.status})`);
+  }
+  return response.json();
+};
 
 const VIEW_CONFIG = {
   kanban: { label: 'Kanban', icon: LayoutGrid },
@@ -58,7 +64,7 @@ export function NotesDashboard() {
 
   async function createNote(noteData: NoteEditorData) {
     const tags = noteData.tags;
-    await fetch('/api/plugins/notes', {
+    const response = await fetch('/api/plugins/notes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -69,11 +75,14 @@ export function NotesDashboard() {
         dueDate: noteData.dueDate || null,
       }),
     });
+    if (!response.ok) {
+      throw new Error(`Error creating note (${response.status})`);
+    }
     mutate();
   }
 
   async function updateNote(noteId: number, noteData: NoteEditorData) {
-    await fetch(`/api/plugins/notes/${noteId}`, {
+    const response = await fetch(`/api/plugins/notes/${noteId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -84,21 +93,30 @@ export function NotesDashboard() {
         dueDate: noteData.dueDate || null,
       }),
     });
+    if (!response.ok) {
+      throw new Error(`Error updating note (${response.status})`);
+    }
     mutate();
   }
 
   async function moveNote(noteId: number, newStatus: NoteStatus) {
-    await fetch(`/api/plugins/notes/${noteId}`, {
+    const response = await fetch(`/api/plugins/notes/${noteId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: newStatus }),
     });
+    if (!response.ok) {
+      throw new Error(`Error moving note (${response.status})`);
+    }
     mutate();
   }
 
   async function deleteNote(noteId: number) {
     if (!confirm('¿Estás seguro de que deseas eliminar esta nota?')) return;
-    await fetch(`/api/plugins/notes/${noteId}`, { method: 'DELETE' });
+    const response = await fetch(`/api/plugins/notes/${noteId}`, { method: 'DELETE' });
+    if (!response.ok) {
+      throw new Error(`Error deleting note (${response.status})`);
+    }
     mutate();
   }
 
