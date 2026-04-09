@@ -2,8 +2,9 @@ import { z } from 'zod';
 import type { AppPluginManifest } from '@/lib/plugins/core/types';
 
 const notesSettingsSchema = z.object({
-  defaultView: z.enum(['kanban', 'list']).default('kanban'),
+  defaultView: z.enum(['kanban', 'grid', 'list', 'chat', 'calendar']).default('kanban'),
   allowPinnedOnly: z.boolean().default(false),
+  autoMarkdown: z.boolean().default(true),
 });
 
 const manifest: AppPluginManifest<typeof notesSettingsSchema> = {
