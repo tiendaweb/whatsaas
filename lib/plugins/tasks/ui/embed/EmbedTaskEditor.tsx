@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Circle, Loader2, Send, Trash2, X } from 'lucide-react';
-import type { TaskComment, TaskItem } from '@/lib/plugins/tasks/client/types';
+import { CheckCircle2, CheckSquare, Circle, Loader2, Plus, Send, Square, Trash2, X } from 'lucide-react';
+import type { ChecklistItemWithSource, TaskComment, TaskItem } from '@/lib/plugins/tasks/client/types';
+import { nanoid } from '@/lib/plugins/tasks/client/utils';
 import {
   taskOsBtn,
   taskOsBtnActive,
@@ -33,6 +34,8 @@ export function EmbedTaskEditor({ task, api, onChanged, onClose }: EmbedTaskEdit
   const [notes, setNotes] = useState(task.notes ?? '');
   const [dueDate, setDueDate] = useState(toDateInput(task.dueDate));
   const [done, setDone] = useState(task.status === 'done');
+  const [checklist, setChecklist] = useState<ChecklistItemWithSource[]>(task.checklist ?? []);
+  const [newChecklistText, setNewChecklistText] = useState('');
   const [saving, setSaving] = useState(false);
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [newComment, setNewComment] = useState('');
@@ -56,6 +59,7 @@ export function EmbedTaskEditor({ task, api, onChanged, onClose }: EmbedTaskEdit
       await api.patchTask(task.id, {
         title: title.trim() || task.title,
         notes,
+        checklist,
         dueDate: dueDate ? new Date(dueDate).toISOString() : null,
         status: done ? 'done' : 'open',
       });
@@ -90,6 +94,20 @@ export function EmbedTaskEditor({ task, api, onChanged, onClose }: EmbedTaskEdit
       /* ignore */
     }
   };
+
+  const addChecklistItem = () => {
+    const text = newChecklistText.trim();
+    if (!text) return;
+    setChecklist((prev) => [...prev, { id: nanoid(), text, completed: false }]);
+    setNewChecklistText('');
+  };
+  const toggleChecklistItem = (id: string) =>
+    setChecklist((prev) => prev.map((c) => (c.id === id ? { ...c, completed: !c.completed } : c)));
+  const updateChecklistText = (id: string, text: string) =>
+    setChecklist((prev) => prev.map((c) => (c.id === id ? { ...c, text } : c)));
+  const removeChecklistItem = (id: string) => setChecklist((prev) => prev.filter((c) => c.id !== id));
+
+  const checklistDone = checklist.filter((c) => c.completed).length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
@@ -135,6 +153,64 @@ export function EmbedTaskEditor({ task, api, onChanged, onClose }: EmbedTaskEdit
               onChange={(e) => setDueDate(e.target.value)}
               className={cn('px-3 py-2 text-sm', taskOsInput)}
             />
+          </div>
+
+          <div className="space-y-2 border-t border-[#2a2a30] pt-3">
+            <span className={cn('text-xs font-medium', taskOsMuted)}>
+              Checklist {checklist.length > 0 && <span className="ml-1">{checklistDone}/{checklist.length}</span>}
+            </span>
+            <div className="space-y-1.5">
+              {checklist.map((c) => (
+                <div key={c.id} className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleChecklistItem(c.id)}
+                    className={cn('shrink-0', c.completed ? 'text-emerald-400' : taskOsMuted)}
+                  >
+                    {c.completed ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+                  </button>
+                  <input
+                    value={c.text}
+                    onChange={(e) => updateChecklistText(c.id, e.target.value)}
+                    className={cn(
+                      'min-w-0 flex-1 bg-transparent text-sm outline-none',
+                      c.completed ? 'text-[#8b8b96] line-through' : taskOsText,
+                    )}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeChecklistItem(c.id)}
+                    className={cn('shrink-0 text-[#5c5c66] hover:text-red-300')}
+                    title="Quitar"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              {checklist.length === 0 && <p className={cn('text-xs', taskOsMuted)}>Sin elementos.</p>}
+            </div>
+            <div className="flex gap-2">
+              <input
+                value={newChecklistText}
+                onChange={(e) => setNewChecklistText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addChecklistItem();
+                  }
+                }}
+                placeholder="Nuevo elemento..."
+                className={cn('min-w-0 flex-1 px-3 py-2 text-sm', taskOsInput)}
+              />
+              <button
+                type="button"
+                onClick={addChecklistItem}
+                className={cn('flex h-9 w-9 shrink-0 items-center justify-center', taskOsBtn)}
+                title="Agregar elemento"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
           <div className="space-y-2 border-t border-[#2a2a30] pt-3">
