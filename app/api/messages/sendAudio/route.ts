@@ -12,6 +12,38 @@ import ffmpeg from 'fluent-ffmpeg';
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "http://localhost:8080";
 
+async function parseEvolutionResponse(response: Response, instanceName: string) {
+  const responseText = await response.text();
+  if (!responseText) return { data: null, parseError: null };
+
+  try {
+    return { data: JSON.parse(responseText), parseError: null };
+  } catch {
+    const parseError = `Evolution API returned non-JSON for ${instanceName} (HTTP ${response.status}): ${responseText.slice(0, 300)}`;
+    console.error(parseError);
+    return { data: null, parseError };
+  }
+}
+
+function getEvolutionErrorMessage({
+  data,
+  parseError,
+  response,
+  instanceName,
+}: {
+  data: any;
+  parseError: string | null;
+  response: Response;
+  instanceName: string;
+}) {
+  if (parseError) return parseError;
+  const rawMessage = data?.message || data?.error || data?.response?.message || data?.data?.message;
+  const message = Array.isArray(rawMessage) ? rawMessage.join(', ') : rawMessage;
+  return message
+    ? `Evolution API error for ${instanceName} (HTTP ${response.status}): ${message}`
+    : `Evolution API error for ${instanceName} (HTTP ${response.status})`;
+}
+
 const convertToMp3 = async (inputBuffer: Buffer, inputMimeType: string): Promise<string> => {
   const tempId = uuidv4();
   const tempDir = os.tmpdir();
@@ -163,17 +195,14 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    const evolutionData = await evolutionResponse.json() as any;
+    const { data: evolutionData, parseError } = await parseEvolutionResponse(evolutionResponse, instanceName);
 
-    const sendFailed = !evolutionResponse.ok || !evolutionData?.key?.id;
+    const sendFailed = Boolean(parseError) || !evolutionResponse.ok || !evolutionData?.key?.id;
     let errorMsg: string | null = null;
 
-    if (!evolutionResponse.ok) {
+    if (sendFailed) {
       console.error(`Evolution API Error (sendAudio) for ${instanceName}:`, evolutionData);
-      errorMsg = evolutionData?.error || 'Failed to send audio via Evolution API.';
-    } else if (!evolutionData?.key?.id) {
-      console.error('Unexpected Evolution response (no key.id):', evolutionData);
-      errorMsg = 'Message sent but ID not returned.';
+      errorMsg = getEvolutionErrorMessage({ data: evolutionData, parseError, response: evolutionResponse, instanceName });
     }
 
     const isGroupChat = recipientJid.endsWith('@g.us');
@@ -253,7 +282,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(formatMessageForFrontend(savedMessage));
 
   } catch (error: any) {
-    console.error('Error in /api/messages/sendAudio:', error.message);
-    return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });
+    const isTimeout = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+    const message = isTimeout
+      ? 'Evolution API request timed out while sending the audio.'
+      : `Audio send failed: ${error?.message || 'Unknown error'}`;
+    console.error('Error in /api/messages/sendAudio:', error);
+    return NextResponse.json({ error: message }, { status: isTimeout ? 504 : 500 });
   }
 }

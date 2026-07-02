@@ -39,7 +39,7 @@ function getMediaType(mimeType: string): { type: 'image' | 'video' | 'document',
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { recipientJid, fileBase64, mimeType, fileName, quotedMessageData, instanceId } = body;
+    const { recipientJid, fileBase64, mimeType, fileName, caption, quotedMessageData, instanceId } = body;
 
     if (!recipientJid || !fileBase64 || !mimeType || !fileName) {
       return NextResponse.json({ error: 'recipientJid, fileBase64, mimeType and fileName are required' }, { status: 400 });
@@ -123,6 +123,10 @@ export async function POST(request: NextRequest) {
       mimetype: mimeType,
     };
 
+    if (caption) {
+        evolutionPayload.caption = caption;
+    }
+
     if (mediaType === 'document') {
         evolutionPayload.fileName = fileName;
     }
@@ -151,7 +155,7 @@ export async function POST(request: NextRequest) {
     } catch {
       console.error(`Evolution API returned non-JSON (status ${evolutionResponse.status}) for ${instanceName}:`, responseText.substring(0, 500));
       return NextResponse.json({
-        error: `Evolution API error (${evolutionResponse.status}). The instance may not support this media type or the API is unreachable.`
+        error: `Evolution API returned non-JSON for ${instanceName} (HTTP ${evolutionResponse.status}). The instance may not support this media type or the API is unreachable.`
       }, { status: 502 });
     }
 
@@ -217,7 +221,7 @@ export async function POST(request: NextRequest) {
         errorMessage: errorMsg,
         mediaUrl: finalMediaUrl,
         mediaMimetype: mimeType,
-        mediaCaption: sendFailed ? null : (mediaMsg?.caption || null),
+        mediaCaption: sendFailed ? null : (caption || mediaMsg?.caption || null),
         mediaFileLength: sendFailed ? null : (mediaMsg?.fileLength?.toString() || null),
         mediaSeconds: sendFailed ? null : (mediaType === 'video' ? mediaMsg?.seconds : null),
         mediaIsPtt: null,
@@ -239,7 +243,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(formatMessageForFrontend(savedMessage));
 
   } catch (error: any) {
+    const isTimeout = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+    const message = isTimeout
+      ? 'Evolution API request timed out while sending the media.'
+      : `Media send failed: ${error?.message || 'Unknown error'}`;
     console.error('Error in API /api/messages/sendMedia:', error);
-    return NextResponse.json({ error: 'Internal Server Error: ' + error.message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: isTimeout ? 504 : 500 });
   }
 }

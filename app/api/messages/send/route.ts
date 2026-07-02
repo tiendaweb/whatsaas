@@ -7,6 +7,38 @@ import { formatMessageForFrontend } from '@/lib/db/messages';
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "http://localhost:8080";
 
+async function parseEvolutionResponse(response: Response, instanceName: string) {
+  const responseText = await response.text();
+  if (!responseText) return { data: null, parseError: null };
+
+  try {
+    return { data: JSON.parse(responseText), parseError: null };
+  } catch {
+    const parseError = `Evolution API returned non-JSON for ${instanceName} (HTTP ${response.status}): ${responseText.slice(0, 300)}`;
+    console.error(parseError);
+    return { data: null, parseError };
+  }
+}
+
+function getEvolutionErrorMessage({
+  data,
+  parseError,
+  response,
+  instanceName,
+}: {
+  data: any;
+  parseError: string | null;
+  response: Response;
+  instanceName: string;
+}) {
+  if (parseError) return parseError;
+  const rawMessage = data?.message || data?.error || data?.response?.message || data?.data?.message;
+  const message = Array.isArray(rawMessage) ? rawMessage.join(', ') : rawMessage;
+  return message
+    ? `Evolution API error for ${instanceName} (HTTP ${response.status}): ${message}`
+    : `Evolution API error for ${instanceName} (HTTP ${response.status})`;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -149,14 +181,14 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    const evolutionData = await evolutionResponse.json() as any;
+    const { data: evolutionData, parseError } = await parseEvolutionResponse(evolutionResponse, instanceName);
 
-    const sendFailed = !evolutionResponse.ok;
+    const sendFailed = Boolean(parseError) || !evolutionResponse.ok || !evolutionData?.key?.id;
     let errorMsg: string | null = null;
 
     if (sendFailed) {
       console.error(`Evolution API Error for ${instanceName}:`, evolutionData);
-      errorMsg = evolutionData?.message || evolutionData?.error || 'Failed to send message via Evolution API.';
+      errorMsg = getEvolutionErrorMessage({ data: evolutionData, parseError, response: evolutionResponse, instanceName });
     }
 
     const isGroupChat = recipientJid.endsWith('@g.us');
@@ -232,7 +264,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(formatMessageForFrontend(savedMessage || {}));
 
   } catch (error: any) {
-    console.error('Error in /api/messages/send API:', error.message);
-    return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });
+    const isTimeout = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+    const message = isTimeout
+      ? 'Evolution API request timed out while sending the message.'
+      : `Message send failed: ${error?.message || 'Unknown error'}`;
+    console.error('Error in /api/messages/send API:', error);
+    return NextResponse.json({ error: message }, { status: isTimeout ? 504 : 500 });
   }
 }
