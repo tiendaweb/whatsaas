@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, CheckSquare, Circle, Loader2, Plus, Send, Square, Trash2, X } from 'lucide-react';
 import type { ChecklistItemWithSource, TaskComment, TaskItem } from '@/lib/plugins/tasks/client/types';
 import { nanoid } from '@/lib/plugins/tasks/client/utils';
@@ -37,6 +37,7 @@ export function EmbedTaskEditor({ task, api, onChanged, onClose }: EmbedTaskEdit
   const [checklist, setChecklist] = useState<ChecklistItemWithSource[]>(task.checklist ?? []);
   const [newChecklistText, setNewChecklistText] = useState('');
   const [saving, setSaving] = useState(false);
+  const checklistInputRef = useRef<HTMLInputElement>(null);
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loadingComments, setLoadingComments] = useState(true);
@@ -95,17 +96,32 @@ export function EmbedTaskEditor({ task, api, onChanged, onClose }: EmbedTaskEdit
     }
   };
 
+  // Persist checklist immediately (like comments); keep the task's done toggle in sync
+  // with the server (which auto-completes when every item is checked).
+  const persistChecklist = async (next: ChecklistItemWithSource[]) => {
+    setChecklist(next);
+    try {
+      const updated = await api.patchTask(task.id, { checklist: next });
+      if (updated?.status) setDone(updated.status === 'done');
+      onChanged();
+    } catch {
+      /* ignore */
+    }
+  };
+
   const addChecklistItem = () => {
     const text = newChecklistText.trim();
     if (!text) return;
-    setChecklist((prev) => [...prev, { id: nanoid(), text, completed: false }]);
+    void persistChecklist([...checklist, { id: nanoid(), text, completed: false }]);
     setNewChecklistText('');
+    window.requestAnimationFrame(() => checklistInputRef.current?.focus());
   };
   const toggleChecklistItem = (id: string) =>
-    setChecklist((prev) => prev.map((c) => (c.id === id ? { ...c, completed: !c.completed } : c)));
+    void persistChecklist(checklist.map((c) => (c.id === id ? { ...c, completed: !c.completed } : c)));
   const updateChecklistText = (id: string, text: string) =>
     setChecklist((prev) => prev.map((c) => (c.id === id ? { ...c, text } : c)));
-  const removeChecklistItem = (id: string) => setChecklist((prev) => prev.filter((c) => c.id !== id));
+  const commitChecklistText = () => void persistChecklist(checklist);
+  const removeChecklistItem = (id: string) => void persistChecklist(checklist.filter((c) => c.id !== id));
 
   const checklistDone = checklist.filter((c) => c.completed).length;
 
@@ -172,6 +188,10 @@ export function EmbedTaskEditor({ task, api, onChanged, onClose }: EmbedTaskEdit
                   <input
                     value={c.text}
                     onChange={(e) => updateChecklistText(c.id, e.target.value)}
+                    onBlur={commitChecklistText}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                    }}
                     className={cn(
                       'min-w-0 flex-1 bg-transparent text-sm outline-none',
                       c.completed ? 'text-[#8b8b96] line-through' : taskOsText,
@@ -191,6 +211,7 @@ export function EmbedTaskEditor({ task, api, onChanged, onClose }: EmbedTaskEdit
             </div>
             <div className="flex gap-2">
               <input
+                ref={checklistInputRef}
                 value={newChecklistText}
                 onChange={(e) => setNewChecklistText(e.target.value)}
                 onKeyDown={(e) => {
