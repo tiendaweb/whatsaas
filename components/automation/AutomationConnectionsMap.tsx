@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "@/i18n/routing";
-import { Bot, GitBranchPlus, Maximize2, Minimize2, Minus, Plus, RotateCcw, StickyNote } from "lucide-react";
+import { ArrowRight, Bot, GitBranchPlus, List, Maximize2, Minimize2, Minus, Network, Plus, Repeat, RotateCcw, StickyNote, Undo2 } from "lucide-react";
 import type { AutomationFlowNode } from "@/lib/automation/flow-schema";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -33,6 +33,13 @@ type AutomationConnectionsMapLabels = {
   noteFallback: string;
   legendForward: string;
   legendBack: string;
+  viewGraph: string;
+  viewList: string;
+  sendsTo: string;
+  receivesFrom: string;
+  returnsBadge: string;
+  selfBadge: string;
+  noConnections: string;
 };
 
 type AutomationConnection = {
@@ -55,6 +62,7 @@ const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 1.5;
 const ZOOM_STEP = 0.15;
 const STORAGE_KEY = "whatsaas-automation-map-positions-v1";
+const VIEW_MODE_STORAGE_KEY = "whatsaas-automation-map-viewmode-v1";
 
 const BACK_EDGE_BASE_DROP = 56;
 const BACK_EDGE_LANE_GAP = 28;
@@ -306,13 +314,40 @@ export function AutomationConnectionsMap({
   } | null>(null);
 
   const connections = useMemo(() => getFlowConnections(automations), [automations]);
-  const classifiedConnections = useMemo(
-    () => classifyConnections(connections, getAutomationLevels(automations, connections)),
+  const levelsMap = useMemo(
+    () => getAutomationLevels(automations, connections),
     [automations, connections],
+  );
+  const classifiedConnections = useMemo(
+    () => classifyConnections(connections, levelsMap),
+    [connections, levelsMap],
   );
   const hasBackConnections = useMemo(
     () => classifiedConnections.some((connection) => connection.kind !== "forward"),
     [classifiedConnections],
+  );
+  const automationById = useMemo(
+    () => new Map(automations.map((automation) => [automation.id, automation] as const)),
+    [automations],
+  );
+  // Índice para la vista lista: conexiones salientes/entrantes por automatización.
+  const connectionsByAutomation = useMemo(() => {
+    const map = new Map<number, { outgoing: ClassifiedConnection[]; incoming: ClassifiedConnection[] }>();
+    automations.forEach((automation) => map.set(automation.id, { outgoing: [], incoming: [] }));
+    classifiedConnections.forEach((connection) => {
+      map.get(connection.sourceId)?.outgoing.push(connection);
+      if (connection.kind !== "self") map.get(connection.targetId)?.incoming.push(connection);
+    });
+    return map;
+  }, [automations, classifiedConnections]);
+  // Orden de lectura de la lista: por profundidad en el flujo y luego por nombre.
+  const listOrderedAutomations = useMemo(
+    () =>
+      [...automations].sort(
+        (a, b) =>
+          (levelsMap.get(a.id) ?? 0) - (levelsMap.get(b.id) ?? 0) || a.name.localeCompare(b.name),
+      ),
+    [automations, levelsMap],
   );
   const automaticPositions = useMemo(
     () => getAutomaticPositions(automations, connections),
@@ -324,6 +359,19 @@ export function AutomationConnectionsMap({
   }));
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [viewMode, setViewMode] = useState<"graph" | "list">(() => {
+    if (typeof window === "undefined") return "graph";
+    return window.localStorage.getItem(VIEW_MODE_STORAGE_KEY) === "list" ? "list" : "graph";
+  });
+
+  const changeViewMode = (mode: "graph" | "list") => {
+    setViewMode(mode);
+    try {
+      window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
+    } catch {
+      // localStorage no disponible: la preferencia solo dura la sesión.
+    }
+  };
 
   const zoomAround = useCallback(
     (nextZoomRaw: number, anchor?: { x: number; y: number }) => {
@@ -407,15 +455,37 @@ export function AutomationConnectionsMap({
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-muted-foreground"
-            onClick={resetLayout}
-            title={labels.resetLayout}
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-          </Button>
+          <div className="mr-1 flex items-center rounded-md border bg-muted/40 p-0.5">
+            <Button
+              variant={viewMode === "graph" ? "secondary" : "ghost"}
+              size="icon"
+              className="h-6 w-6 text-muted-foreground"
+              onClick={() => changeViewMode("graph")}
+              title={labels.viewGraph}
+            >
+              <Network className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant={viewMode === "list" ? "secondary" : "ghost"}
+              size="icon"
+              className="h-6 w-6 text-muted-foreground"
+              onClick={() => changeViewMode("list")}
+              title={labels.viewList}
+            >
+              <List className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          {viewMode === "graph" && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground"
+              onClick={resetLayout}
+              title={labels.resetLayout}
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
@@ -428,6 +498,7 @@ export function AutomationConnectionsMap({
         </div>
       </div>
 
+      {viewMode === "graph" && (
       <div className="relative min-h-0 flex-1">
         <div
           ref={viewportRef}
@@ -642,6 +713,115 @@ export function AutomationConnectionsMap({
           </Button>
         </div>
       </div>
+      )}
+
+      {viewMode === "list" && (
+        <div className={["min-h-0 flex-1 overflow-auto bg-muted/20 p-3", viewportClassName].join(" ")}>
+          <div className="flex flex-col gap-2">
+            {listOrderedAutomations.map((automation) => {
+              const lists = connectionsByAutomation.get(automation.id) ?? { outgoing: [], incoming: [] };
+              const isCurrent = currentAutomationId === automation.id;
+              const level = levelsMap.get(automation.id) ?? 0;
+              const hasAny = lists.outgoing.length > 0 || lists.incoming.length > 0;
+
+              const renderChip = (connection: ClassifiedConnection, direction: "out" | "in") => {
+                const otherId = direction === "out" ? connection.targetId : connection.sourceId;
+                const other = automationById.get(otherId);
+                if (!other) return null;
+                const isReturn = connection.kind !== "forward";
+                return (
+                  <button
+                    key={`${direction}-${connection.id}`}
+                    type="button"
+                    onClick={() => openAutomation(otherId)}
+                    title={labels.opensFlow}
+                    className={[
+                      "inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition hover:shadow-sm",
+                      isReturn
+                        ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:border-amber-500/70"
+                        : "border-primary/30 bg-primary/5 text-foreground hover:border-primary/60",
+                    ].join(" ")}
+                  >
+                    {connection.kind === "self" ? (
+                      <Repeat className="h-3 w-3 shrink-0" />
+                    ) : isReturn ? (
+                      <Undo2 className="h-3 w-3 shrink-0" />
+                    ) : (
+                      <ArrowRight className="h-3 w-3 shrink-0" />
+                    )}
+                    <span className="truncate">
+                      {connection.kind === "self" ? labels.selfBadge : other.name}
+                    </span>
+                    {connection.kind === "back" && (
+                      <span className="shrink-0 rounded-full bg-amber-500/20 px-1.5 text-[9px] font-medium uppercase tracking-wide">
+                        {labels.returnsBadge}
+                      </span>
+                    )}
+                  </button>
+                );
+              };
+
+              return (
+                <div
+                  key={automation.id}
+                  className={[
+                    "rounded-lg border bg-card p-3 shadow-sm",
+                    isCurrent ? "border-primary/60 ring-1 ring-primary/30" : "",
+                  ].join(" ")}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border bg-muted/40 text-[10px] font-semibold tabular-nums text-muted-foreground">
+                      {level + 1}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => openAutomation(automation.id)}
+                      title={labels.opensFlow}
+                      className="min-w-0 truncate text-left text-sm font-medium text-foreground hover:underline"
+                    >
+                      {automation.name}
+                    </button>
+                    <span
+                      className={[
+                        "ml-auto inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px]",
+                        automation.isActive
+                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                          : "bg-muted text-muted-foreground",
+                      ].join(" ")}
+                    >
+                      <span className={["h-1.5 w-1.5 rounded-full", automation.isActive ? "bg-emerald-500" : "bg-muted-foreground/50"].join(" ")} />
+                      {automation.isActive ? labels.active : labels.paused}
+                    </span>
+                  </div>
+
+                  {hasAny ? (
+                    <div className="mt-2 space-y-1.5">
+                      {lists.outgoing.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                            {labels.sendsTo}
+                          </span>
+                          {lists.outgoing.map((connection) => renderChip(connection, "out"))}
+                        </div>
+                      )}
+                      {lists.incoming.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                            {labels.receivesFrom}
+                          </span>
+                          {lists.incoming.map((connection) => renderChip(connection, "in"))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-[11px] text-muted-foreground">{labels.noConnections}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </>
   );
 
