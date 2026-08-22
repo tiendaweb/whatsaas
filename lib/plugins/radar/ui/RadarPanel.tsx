@@ -2,9 +2,20 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
-import { ArrowLeft, Ban, Gauge, ListChecks, Loader2, RefreshCcw, Sparkles, TriangleAlert } from 'lucide-react';
+import {
+  ArrowLeft, Ban, FileCode2, FileText, Gauge, ListChecks,
+  Loader2, RefreshCcw, ScrollText, Sparkles, TriangleAlert,
+} from 'lucide-react';
 import './radar.css';
 import { humanize, INTENCION_LABEL, OBJECION_LABEL, PRIORIDAD_BADGE, RECUPERABILIDAD_LABEL } from './labels';
+
+type RadarReport = { id: number; title: string; emoji: string | null; format: 'markdown' | 'html'; updatedAt: string };
+type ReportCategory = 'clientes' | 'equipo' | 'generales';
+const REPORT_CATEGORY_LABEL: Record<ReportCategory, string> = {
+  clientes: 'Este cliente',
+  equipo: 'Equipo',
+  generales: 'Generales',
+};
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -144,6 +155,8 @@ export function RadarPanel({
               </Section>
             )}
 
+            <ReportsSection contactId={contactId} />
+
             <Section label="Mensajes sugeridos" icon={Sparkles}>
               {!suggestions && (
                 <button
@@ -218,6 +231,84 @@ function FichaSection({ fields }: { fields: RadarSummary['fields'] }) {
       </dl>
       {fields.radar_fecha_analisis && (
         <p className="mt-2 text-[10px] text-neutral-400">Último análisis: {fields.radar_fecha_analisis}</p>
+      )}
+    </Section>
+  );
+}
+
+/**
+ * Informes de Radar (para clientes / equipo / generales) — son documentos del
+ * plugin Documentos, organizados en la carpeta "Radar · Informes" (get-or-create
+ * server-side, ver lib/plugins/radar/server/reports.ts). Acá solo se lista y se
+ * abre en /plugins/documents/doc/<id> — el visor completo (Tiptap o el iframe
+ * sandboxeado para HTML) vive ahí, no adentro de este panel angosto.
+ */
+function ReportsSection({ contactId }: { contactId: number }) {
+  const [category, setCategory] = useState<ReportCategory>('clientes');
+  const { data, isLoading } = useSWR<{ reports: RadarReport[] }>(
+    `/api/plugins/radar/reports?category=${category}${category === 'clientes' ? `&contactId=${contactId}` : ''}`,
+    fetcher,
+  );
+  const reports = data?.reports ?? [];
+
+  const emptyLabel = category === 'clientes'
+    ? 'Todavía no hay informes para este cliente.'
+    : category === 'equipo'
+      ? 'Todavía no hay informes del equipo.'
+      : 'Todavía no hay informes generales.';
+
+  return (
+    <Section label="Informes" icon={ScrollText}>
+      <div className="mb-2.5 flex flex-wrap gap-1.5">
+        {(Object.keys(REPORT_CATEGORY_LABEL) as ReportCategory[]).map((key) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setCategory(key)}
+            className={`rounded-xl border px-2.5 py-1 text-[11px] font-bold transition-all duration-200 ${
+              category === key
+                ? 'border-indigo-500 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
+                : 'border-neutral-100 bg-neutral-50 text-neutral-500 hover:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-400'
+            }`}
+          >
+            {REPORT_CATEGORY_LABEL[key]}
+          </button>
+        ))}
+      </div>
+
+      {isLoading && (
+        <div className="flex items-center gap-2 py-3 text-xs text-neutral-400">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Cargando informes…
+        </div>
+      )}
+
+      {!isLoading && reports.length === 0 && (
+        <p className="py-2 text-xs text-neutral-400">{emptyLabel}</p>
+      )}
+
+      {!isLoading && reports.length > 0 && (
+        <div className="space-y-1.5">
+          {reports.map((report) => {
+            const Icon = report.format === 'html' ? FileCode2 : FileText;
+            return (
+              <a
+                key={report.id}
+                href={`/plugins/documents/doc/${report.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-2 rounded-xl border border-neutral-100 bg-white px-3 py-2 text-xs transition-all duration-200 hover:border-indigo-500 dark:border-neutral-700 dark:bg-neutral-800"
+              >
+                <Icon className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
+                <span className="min-w-0 flex-1 truncate font-bold text-neutral-800 dark:text-neutral-100">
+                  {report.emoji ? `${report.emoji} ` : ''}{report.title}
+                </span>
+                {report.format === 'html' && (
+                  <span className="shrink-0 rounded-md bg-neutral-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-neutral-500 dark:bg-neutral-900">HTML</span>
+                )}
+              </a>
+            );
+          })}
+        </div>
       )}
     </Section>
   );
