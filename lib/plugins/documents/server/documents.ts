@@ -27,6 +27,7 @@ export type DocumentSummary = {
   version: number;
   position: number;
   updatedAt: string;
+  format: 'markdown' | 'html';
 };
 
 const summarize = (row: typeof teamDocuments.$inferSelect): DocumentSummary => ({
@@ -39,7 +40,18 @@ const summarize = (row: typeof teamDocuments.$inferSelect): DocumentSummary => (
   version: row.version,
   position: row.position,
   updatedAt: row.updatedAt.toISOString(),
+  format: row.format === 'html' ? 'html' : 'markdown',
 });
+
+/** Extracción de texto plano bruta, solo para indexar el buscador. No es un renderer. */
+function htmlToText(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 export async function listDocuments(teamId: number): Promise<DocumentSummary[]> {
   const rows = await db
@@ -83,6 +95,8 @@ export async function getDocument(teamId: number, id: number) {
     slug: row.doc.slug,
     emoji: row.doc.emoji,
     content: row.doc.content,
+    format: row.doc.format === 'html' ? ('html' as const) : ('markdown' as const),
+    htmlContent: row.doc.htmlContent,
     version: row.doc.version,
     updatedAt: row.doc.updatedAt.toISOString(),
     updatedByName: row.author,
@@ -97,12 +111,22 @@ export async function createDocument(input: {
   emoji?: string | null;
   folderId?: number | null;
   content?: unknown;
+  format?: 'markdown' | 'html';
+  htmlContent?: string;
 }): Promise<DocumentSummary> {
   const title = (input.title ?? '').trim() || 'Documento sin título';
+  const format = input.format === 'html' ? 'html' : 'markdown';
 
   let content: DocumentJson = emptyDocument();
   let contentText = '';
-  if (input.content) {
+  let htmlContent: string | null = null;
+
+  if (format === 'html') {
+    // Documento HTML: no pasa por Tiptap. `content` queda en el default vacío,
+    // `contentText` es solo para que el buscador lo indexe.
+    htmlContent = input.htmlContent ?? '';
+    contentText = htmlToText(htmlContent);
+  } else if (input.content) {
     const parsed = parseDocumentJson(input.content);
     if (!parsed) throw new DocumentError('El contenido del documento no es válido.');
     content = parsed.toJSON() as DocumentJson;
@@ -132,6 +156,8 @@ export async function createDocument(input: {
           emoji: input.emoji ?? null,
           content,
           contentText,
+          format,
+          htmlContent,
           position,
           createdBy: input.userId,
           updatedBy: input.userId,
@@ -158,6 +184,8 @@ export async function updateDocument(input: {
   emoji?: string | null;
   folderId?: number | null;
   content?: unknown;
+  format?: 'markdown' | 'html';
+  htmlContent?: string;
   version?: number;
 }) {
   const [current] = await db
@@ -192,8 +220,14 @@ export async function updateDocument(input: {
     patch.folderId = input.folderId;
   }
 
+  if (input.format !== undefined) patch.format = input.format;
+  const effectiveFormat = input.format ?? (current.format === 'html' ? 'html' : 'markdown');
+
   let content: DocumentJson | null = null;
-  if (input.content !== undefined) {
+  if (effectiveFormat === 'html' && input.htmlContent !== undefined) {
+    patch.htmlContent = input.htmlContent;
+    patch.contentText = htmlToText(input.htmlContent);
+  } else if (input.content !== undefined) {
     const parsed = parseDocumentJson(input.content);
     if (!parsed) throw new DocumentError('El contenido del documento no es válido.');
     content = parsed.toJSON() as DocumentJson;

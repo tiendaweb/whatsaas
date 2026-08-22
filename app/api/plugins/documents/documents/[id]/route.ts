@@ -45,6 +45,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       emoji: body.emoji,
       folderId: body.folderId === undefined ? undefined : body.folderId === null ? null : Number(body.folderId),
       content: body.content,
+      format: body.format === 'html' ? 'html' : body.format === 'markdown' ? 'markdown' : undefined,
+      htmlContent: typeof body.htmlContent === 'string' ? body.htmlContent : undefined,
       version: body.version === undefined ? undefined : Number(body.version),
     });
     return NextResponse.json(document);

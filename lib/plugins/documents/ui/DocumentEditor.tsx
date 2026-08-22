@@ -55,6 +55,8 @@ type DocumentDetail = {
   title: string;
   emoji: string | null;
   content: Record<string, unknown>;
+  format: 'markdown' | 'html';
+  htmlContent: string | null;
   version: number;
   updatedAt: string;
   updatedByName: string | null;
@@ -313,6 +315,21 @@ export function DocumentEditor({ documentId, onSaved, onOpenDocument }: Props) {
     return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">El documento no existe.</div>;
   }
 
+  if (data.format === 'html') {
+    return (
+      <HtmlDocumentViewer
+        title={title}
+        onTitleChange={(value) => {
+          setTitle(value);
+          queueSave({ title: value });
+        }}
+        breadcrumbs={data.breadcrumbs}
+        html={data.htmlContent ?? ''}
+        saveState={saveState}
+      />
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="sticky top-0 z-10 shrink-0 border-b bg-background/95 px-4 py-2 backdrop-blur md:px-8">
@@ -403,6 +420,80 @@ function SaveBadge({ state }: { state: SaveState }) {
     <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
       <Check className="h-3 w-3" /> Guardado
     </span>
+  );
+}
+
+function HtmlDocumentViewer({
+  title,
+  onTitleChange,
+  breadcrumbs,
+  html,
+  saveState,
+}: {
+  title: string;
+  onTitleChange: (value: string) => void;
+  breadcrumbs: Array<{ id: number; name: string; emoji: string | null }>;
+  html: string;
+  saveState: SaveState;
+}) {
+  const openInNewTab = useCallback(() => {
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank', 'noopener,noreferrer');
+    // El navegador libera el blob al cerrar la pestaña; igual lo revocamos como
+    // buena práctica una vez que tuvo tiempo de abrirse.
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  }, [html]);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="sticky top-0 z-10 shrink-0 border-b bg-background/95 px-4 py-2 backdrop-blur md:px-8">
+        <div className="mx-auto flex w-full max-w-[64rem] items-center justify-between gap-3">
+          <nav className="min-w-0 truncate text-xs text-muted-foreground">
+            {breadcrumbs.length
+              ? breadcrumbs.map((crumb) => `${crumb.emoji ?? '📁'} ${crumb.name}`).join(' / ')
+              : 'Documentos'}
+          </nav>
+          <SaveBadge state={saveState} />
+        </div>
+      </header>
+
+      <div className="mx-auto w-full max-w-[64rem] shrink-0 px-4 pt-6 md:px-8">
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            value={title}
+            onChange={(event) => onTitleChange(event.target.value)}
+            placeholder="Documento sin título"
+            className="min-w-0 flex-1 border-none bg-transparent text-3xl font-bold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/50 md:text-4xl"
+          />
+          <span className="shrink-0 rounded-md bg-muted px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
+            HTML
+          </span>
+          <Button type="button" variant="outline" size="sm" onClick={openInNewTab} className="shrink-0">
+            Abrir en pestaña nueva
+          </Button>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 px-4 pb-4 pt-4 md:px-8">
+        <iframe
+          title={title || 'Informe HTML'}
+          srcDoc={html}
+          className="h-full w-full rounded-lg border bg-white"
+          // allow-scripts: muchos informes/HTML generados por IA traen gráficos
+          // interactivos (chart.js, JS inline) que no renderizan sin ejecutar JS.
+          // A PROPÓSITO sin allow-same-origin: con srcDoc, agregar allow-same-origin
+          // hace que el iframe herede el origen real de la app (whatspro.uno), lo
+          // que le daría a un HTML no confiable (generado por una IA, posible
+          // inyección) acceso a las cookies de sesión y a fetch() autenticado del
+          // usuario logueado. Sin allow-same-origin el iframe corre en un origen
+          // "null" propio: puede ejecutar JS y dibujar gráficos, pero no puede leer
+          // la sesión ni hacer pedidos autenticados a la app. El sandbox además
+          // bloquea top-navigation y popups — el iframe no puede escapar de esta caja.
+          sandbox="allow-scripts"
+        />
+      </div>
+    </div>
   );
 }
 

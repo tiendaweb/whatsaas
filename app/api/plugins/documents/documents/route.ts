@@ -25,6 +25,8 @@ export async function POST(request: Request) {
       emoji: body.emoji ?? null,
       folderId: body.folderId ? Number(body.folderId) : null,
       content: body.content,
+      format: body.format === 'html' ? 'html' : undefined,
+      htmlContent: typeof body.htmlContent === 'string' ? body.htmlContent : undefined,
     });
     return NextResponse.json(document, { status: 201 });
   } catch (error) {
