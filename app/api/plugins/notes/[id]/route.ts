@@ -4,11 +4,19 @@ import { z } from 'zod';
 import { db } from '@/lib/db/drizzle';
 import { teamNotes } from '@/lib/db/schema';
 import { getPluginRequestContext } from '@/lib/plugins/core/runtime-permissions';
+import { attachCommitmentTaskStatus, syncNoteCommitmentsToTasks } from '@/lib/plugins/notes/server/meeting-notes';
 
 const dueDateSchema = z
   .union([z.string().date(), z.string().datetime({ offset: true }), z.string().datetime()])
   .nullable()
   .optional();
+
+const commitmentSchema = z.object({
+  text: z.string().trim().min(1).max(500),
+  assigneeUserId: z.number().int().positive().optional(),
+  dueDate: z.string().date().optional(),
+  taskItemId: z.number().int().positive().optional(),
+});
 
 const updateSchema = z.object({
   title: z.string().min(1).max(180).optional(),
@@ -17,6 +25,8 @@ const updateSchema = z.object({
   pinned: z.boolean().optional(),
   status: z.enum(['todo', 'in_progress', 'done']).optional(),
   dueDate: dueDateSchema,
+  eventId: z.number().int().positive().nullable().optional(),
+  commitments: z.array(commitmentSchema).optional(),
 });
 
 function parseDueDate(value: string | null | undefined) {
@@ -53,7 +63,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     .where(and(eq(teamNotes.id, Number(id)), eq(teamNotes.teamId, context.team.id)))
     .returning();
 
-  return NextResponse.json(updated ?? null);
+  if (!updated) return NextResponse.json(null);
+
+  let result = await syncNoteCommitmentsToTasks(updated, { teamId: context.team.id, userId: context.user.id });
+  result = (await attachCommitmentTaskStatus(result)) ?? result;
+
+  return NextResponse.json(result);
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {

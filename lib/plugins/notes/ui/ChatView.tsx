@@ -13,8 +13,11 @@ interface TeamNote {
   title: string;
   content: string;
   tags: string[];
+  pinned: boolean;
   status: NoteStatus;
   dueDate: string | null;
+  eventId?: number | null;
+  commitments?: { text: string; assigneeUserId?: number; dueDate?: string; taskItemId?: number }[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -164,8 +167,11 @@ export function ChatView({ notes, onDelete, onUpdate }: ChatViewProps) {
                 title: editingNote.title,
                 content: editingNote.content,
                 tags: editingNote.tags,
+                pinned: editingNote.pinned,
                 status: editingNote.status,
                 dueDate: editingNote.dueDate ? editingNote.dueDate.split('T')[0] : '',
+                eventId: editingNote.eventId ?? null,
+                commitments: editingNote.commitments ?? [],
               }
             : undefined
         }

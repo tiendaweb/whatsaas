@@ -1,9 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Calendar, Tag, Trash2, Edit2 } from 'lucide-react';
+import {
+  Circle, AlertCircle, CheckCircle2,
+  Calendar, Pin, Tag, Trash2, Pencil,
+  ArrowUpDown, Plus,
+} from 'lucide-react';
 import { NoteEditor, NoteEditorData } from './NoteEditor';
 
 type NoteStatus = 'todo' | 'in_progress' | 'done';
@@ -13,8 +15,11 @@ interface TeamNote {
   title: string;
   content: string;
   tags: string[];
+  pinned: boolean;
   status: NoteStatus;
   dueDate: string | null;
+  eventId?: number | null;
+  commitments?: { text: string; assigneeUserId?: number; dueDate?: string; taskItemId?: number }[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -25,197 +30,202 @@ interface ListViewProps {
   onUpdate: (id: number, data: NoteEditorData) => Promise<void>;
 }
 
-const STATUS_BADGE = {
-  todo: 'bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300',
-  in_progress: 'bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300',
-  done: 'bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300',
+const STATUS_CONFIG: Record<NoteStatus, {
+  label: string;
+  icon: React.ElementType;
+  pill: string;
+}> = {
+  todo: {
+    label: 'Pendiente',
+    icon: Circle,
+    pill: 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800',
+  },
+  in_progress: {
+    label: 'En progreso',
+    icon: AlertCircle,
+    pill: 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800',
+  },
+  done: {
+    label: 'Completado',
+    icon: CheckCircle2,
+    pill: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800',
+  },
 };
 
-const STATUS_LABEL = {
-  todo: 'Por hacer',
-  in_progress: 'En progreso',
-  done: 'Completado',
-};
+const SORT_OPTIONS = [
+  { value: 'date' as const, label: 'Fecha' },
+  { value: 'status' as const, label: 'Estado' },
+  { value: 'title' as const, label: 'Título' },
+];
+
+function isOverdue(dueDate: string | null) {
+  if (!dueDate) return false;
+  return new Date(dueDate) < new Date();
+}
 
 export function ListView({ notes, onDelete, onUpdate }: ListViewProps) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [sortBy, setSortBy] = useState<'date' | 'status' | 'title'>('date');
 
-  const isOverdue = (dueDate: string | null) => {
-    if (!dueDate) return false;
-    return new Date(dueDate) < new Date();
-  };
+  const sorted = [...notes].sort((a, b) => {
+    if (sortBy === 'date') {
+      return new Date(b.updatedAt || b.createdAt || 0).getTime() -
+             new Date(a.updatedAt || a.createdAt || 0).getTime();
+    }
+    if (sortBy === 'status') {
+      const order = { todo: 0, in_progress: 1, done: 2 };
+      return order[a.status] - order[b.status];
+    }
+    return a.title.localeCompare(b.title);
+  });
 
-  let sortedNotes = [...notes];
-
-  if (sortBy === 'date') {
-    sortedNotes.sort((a, b) => {
-      const aDate = new Date(a.updatedAt || a.createdAt || 0).getTime();
-      const bDate = new Date(b.updatedAt || b.createdAt || 0).getTime();
-      return bDate - aDate;
-    });
-  } else if (sortBy === 'status') {
-    const statusOrder = { todo: 0, in_progress: 1, done: 2 };
-    sortedNotes.sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
-  } else if (sortBy === 'title') {
-    sortedNotes.sort((a, b) => a.title.localeCompare(b.title));
-  }
-
-  const editingNote = editingId ? notes.find((n) => n.id === editingId) : null;
+  const editingNote = editingId ? notes.find(n => n.id === editingId) : null;
 
   async function handleUpdate(data: NoteEditorData) {
-    if (editingId) {
-      await onUpdate(editingId, data);
-      setEditingId(null);
-    }
+    if (editingId) { await onUpdate(editingId, data); setEditingId(null); }
+  }
+
+  if (notes.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center gap-3">
+        <div className="h-12 w-12 rounded-xl bg-muted flex items-center justify-center">
+          <Plus className="h-6 w-6 text-muted-foreground" />
+        </div>
+        <div>
+          <p className="text-sm font-medium">Sin notas aún</p>
+          <p className="text-xs text-muted-foreground mt-1">Crea tu primera nota con el botón "Nueva nota"</p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-4">
-      {/* Toolbar */}
+    <div className="space-y-3">
+      {/* Sort toolbar */}
       <div className="flex items-center gap-2">
-        <span className="text-sm text-muted-foreground">Ordenar por:</span>
-        <div className="flex gap-1">
-          {(['date', 'status', 'title'] as const).map((option) => (
-            <Button
-              key={option}
-              variant={sortBy === option ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setSortBy(option)}
-              className="text-xs"
+        <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-xs text-muted-foreground">Ordenar:</span>
+        <div className="flex rounded-lg border border-border bg-muted/40 p-0.5 gap-0.5">
+          {SORT_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setSortBy(opt.value)}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                sortBy === opt.value
+                  ? 'bg-background shadow-sm text-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
             >
-              {option === 'date' ? 'Fecha' : option === 'status' ? 'Estado' : 'Título'}
-            </Button>
+              {opt.label}
+            </button>
           ))}
         </div>
+        <span className="text-xs text-muted-foreground ml-auto">{notes.length} nota{notes.length !== 1 ? 's' : ''}</span>
       </div>
 
-      {/* Table */}
-      <div className="rounded-lg border border-border overflow-hidden">
-        {notes.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border p-12 text-center">
-            <p className="text-muted-foreground">No hay notas. Crea una nueva para empezar</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/50">
-                  <th className="px-4 py-3 text-left font-semibold text-xs text-muted-foreground">Título</th>
-                  <th className="px-4 py-3 text-left font-semibold text-xs text-muted-foreground">Estado</th>
-                  <th className="px-4 py-3 text-left font-semibold text-xs text-muted-foreground">Etiquetas</th>
-                  <th className="px-4 py-3 text-left font-semibold text-xs text-muted-foreground">Vencimiento</th>
-                  <th className="px-4 py-3 text-right font-semibold text-xs text-muted-foreground">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedNotes.map((note) => (
-                  <tr key={note.id} className="border-b border-border hover:bg-muted/30 transition-colors">
-                    {/* Title */}
-                    <td className="px-4 py-3">
-                      <div className="flex flex-col gap-1">
-                        <span className="font-medium line-clamp-1">{note.title}</span>
-                        <span className="text-xs text-muted-foreground line-clamp-1">
-                          {note.content || 'Sin contenido'}
-                        </span>
-                      </div>
-                    </td>
+      {/* List */}
+      <div className="rounded-xl border border-border overflow-hidden bg-card">
+        {sorted.map((note, i) => {
+          const cfg = STATUS_CONFIG[note.status];
+          const Icon = cfg.icon;
+          const overdue = isOverdue(note.dueDate);
+          const isLast = i === sorted.length - 1;
 
-                    {/* Status */}
-                    <td className="px-4 py-3">
-                      <Badge className={`${STATUS_BADGE[note.status]} text-xs`}>
-                        {STATUS_LABEL[note.status]}
-                      </Badge>
-                    </td>
+          return (
+            <div
+              key={note.id}
+              className={`group flex items-center gap-4 px-4 py-3.5 hover:bg-muted/40 transition-colors ${!isLast ? 'border-b border-border/50' : ''}`}
+            >
+              {/* Status icon */}
+              <Icon className={`h-4 w-4 shrink-0 ${
+                note.status === 'todo' ? 'text-blue-500' :
+                note.status === 'in_progress' ? 'text-amber-500' :
+                'text-emerald-500'
+              }`} />
 
-                    {/* Tags */}
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {note.tags.slice(0, 2).map((tag) => (
-                          <Badge key={tag} variant="secondary" className="text-xs py-0 px-1.5">
-                            <Tag className="h-2.5 w-2.5 mr-0.5" />
-                            {tag}
-                          </Badge>
-                        ))}
-                        {note.tags.length > 2 && (
-                          <Badge variant="secondary" className="text-xs py-0 px-1.5">
-                            +{note.tags.length - 2}
-                          </Badge>
-                        )}
-                      </div>
-                    </td>
+              {/* Title + content */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  {note.pinned && <Pin className="h-3 w-3 text-amber-500 shrink-0" />}
+                  <span className={`text-sm font-medium truncate ${note.status === 'done' ? 'line-through text-muted-foreground' : ''}`}>
+                    {note.title}
+                  </span>
+                </div>
+                {note.content && (
+                  <p className="text-xs text-muted-foreground truncate mt-0.5">{note.content}</p>
+                )}
+              </div>
 
-                    {/* Due Date */}
-                    <td className="px-4 py-3">
-                      {note.dueDate ? (
-                        <div
-                          className={`text-xs flex items-center gap-1 ${
-                            isOverdue(note.dueDate) ? 'text-destructive font-semibold' : ''
-                          }`}
-                        >
-                          <Calendar className="h-3.5 w-3.5" />
-                          {new Date(note.dueDate).toLocaleDateString('es-ES', {
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                          {isOverdue(note.dueDate) && ' ⚠️'}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </td>
-
-                    {/* Actions */}
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setEditingId(note.id);
-                            setEditOpen(true);
-                          }}
-                          className="h-8 w-8 p-0"
-                          title="Editar"
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => onDelete(note.id)}
-                          className="h-8 w-8 p-0 text-destructive hover:bg-destructive/10"
-                          title="Eliminar"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
+              {/* Tags */}
+              <div className="hidden sm:flex items-center gap-1 shrink-0">
+                {note.tags.slice(0, 2).map(tag => (
+                  <span key={tag} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium">
+                    <Tag className="h-2 w-2" /> {tag}
+                  </span>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                {note.tags.length > 2 && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground text-[10px]">+{note.tags.length - 2}</span>
+                )}
+              </div>
+
+              {/* Due date */}
+              <div className="hidden md:flex items-center shrink-0 w-24">
+                {note.dueDate ? (
+                  <div className={`flex items-center gap-1 text-xs ${overdue ? 'text-destructive font-semibold' : 'text-muted-foreground'}`}>
+                    <Calendar className="h-3 w-3" />
+                    {new Date(note.dueDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
+                  </div>
+                ) : (
+                  <span className="text-xs text-muted-foreground/40">—</span>
+                )}
+              </div>
+
+              {/* Status pill */}
+              <div className="shrink-0">
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${cfg.pill}`}>
+                  <Icon className="h-2.5 w-2.5" />
+                  {cfg.label}
+                </span>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                <button
+                  onClick={() => { setEditingId(note.id); setEditOpen(true); }}
+                  className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  title="Editar"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => onDelete(note.id)}
+                  className="h-7 w-7 flex items-center justify-center rounded-md text-destructive/50 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                  title="Eliminar"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <NoteEditor
         open={editOpen}
         onOpenChange={setEditOpen}
         onSave={handleUpdate}
-        initialData={
-          editingNote
-            ? {
-                id: editingNote.id,
-                title: editingNote.title,
-                content: editingNote.content,
-                tags: editingNote.tags,
-                status: editingNote.status,
-                dueDate: editingNote.dueDate ? editingNote.dueDate.split('T')[0] : '',
-              }
-            : undefined
-        }
+        initialData={editingNote ? {
+          id: editingNote.id,
+          title: editingNote.title,
+          content: editingNote.content,
+          tags: editingNote.tags,
+          pinned: editingNote.pinned,
+          status: editingNote.status,
+          dueDate: editingNote.dueDate ? editingNote.dueDate.split('T')[0] : '',
+          eventId: editingNote.eventId ?? null,
+          commitments: editingNote.commitments ?? [],
+        } : undefined}
       />
     </div>
   );

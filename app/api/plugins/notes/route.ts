@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '@/lib/db/drizzle';
 import { teamNotes } from '@/lib/db/schema';
 import { getPluginRequestContext } from '@/lib/plugins/core/runtime-permissions';
+import { attachCommitmentTaskStatusBulk, attachCommitmentTaskStatus, syncNoteCommitmentsToTasks } from '@/lib/plugins/notes/server/meeting-notes';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -13,6 +14,13 @@ const dueDateSchema = z
   .nullable()
   .optional();
 
+const commitmentSchema = z.object({
+  text: z.string().trim().min(1).max(500),
+  assigneeUserId: z.number().int().positive().optional(),
+  dueDate: z.string().date().optional(),
+  taskItemId: z.number().int().positive().optional(),
+});
+
 const createNoteSchema = z.object({
   title: z.string().min(1).max(180),
   content: z.string().default(''),
@@ -20,6 +28,8 @@ const createNoteSchema = z.object({
   pinned: z.boolean().default(false),
   status: z.enum(['todo', 'in_progress', 'done']).default('todo'),
   dueDate: dueDateSchema,
+  eventId: z.number().int().positive().nullable().optional(),
+  commitments: z.array(commitmentSchema).default([]),
 });
 
 function parseDueDate(value: string | null | undefined) {
@@ -42,7 +52,8 @@ export async function GET() {
     .where(eq(teamNotes.teamId, context.team.id))
     .orderBy(desc(teamNotes.pinned), desc(teamNotes.updatedAt));
 
-  return NextResponse.json(notes);
+  const enriched = await attachCommitmentTaskStatusBulk(notes);
+  return NextResponse.json(enriched);
 }
 
 export async function POST(request: Request) {
@@ -67,6 +78,8 @@ export async function POST(request: Request) {
       pinned: parsed.data.pinned,
       status: parsed.data.status,
       dueDate: parseDueDate(parsed.data.dueDate),
+      eventId: parsed.data.eventId ?? null,
+      commitments: parsed.data.commitments,
       createdBy: context.user.id,
       updatedBy: context.user.id,
       createdAt: new Date(),
@@ -74,5 +87,8 @@ export async function POST(request: Request) {
     })
     .returning();
 
-  return NextResponse.json(created, { status: 201 });
+  let result = await syncNoteCommitmentsToTasks(created, { teamId: context.team.id, userId: context.user.id });
+  result = (await attachCommitmentTaskStatus(result)) ?? result;
+
+  return NextResponse.json(result, { status: 201 });
 }
