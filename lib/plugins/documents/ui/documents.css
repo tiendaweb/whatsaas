@@ -1,0 +1,4 @@
+/* Lenguaje visual ToDoS, aislado a este plugin (mismo patrón que ui-nueva/tareas.css). */
+.documentos-ui {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
