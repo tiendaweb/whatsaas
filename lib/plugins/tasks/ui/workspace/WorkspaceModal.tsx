@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Paintbrush, Plus, Share2, X } from 'lucide-react';
+import { FileCode2, Paintbrush, Plus, Share2, X } from 'lucide-react';
 import {
   composeAppearanceColor,
   getAppearanceBaseColor,
@@ -13,7 +13,10 @@ import { resolveTaskIcon, TASK_APPEARANCE_COLORS, TASK_APPEARANCE_ICONS } from '
 import { TaskOsModal, TaskOsModalHeader } from '@/lib/plugins/tasks/ui/shared';
 import { EmbedShareModal } from '@/lib/plugins/tasks/ui/embed/EmbedShareModal';
 import { taskOsBtnActive, taskOsMuted, taskOsPanel, taskOsText } from '@/lib/plugins/tasks/ui/shared/task-os-theme';
+import { WorkspaceGlobalView } from '@/lib/plugins/tasks/ui/workspace/WorkspaceGlobalView';
 import { cn } from '@/lib/utils';
+
+type WorkspaceModalTab = 'espacios' | 'global';
 
 export type WorkspaceModalProps = {
   workspaces: Workspace[];
@@ -23,6 +26,7 @@ export type WorkspaceModalProps = {
   onSelectWorkspace: (workspaceId: number, firstProjectId: number | null) => void;
   onRenameWorkspace: (workspaceId: number, name: string) => void;
   onSetWorkspaceAppearance: (workspaceId: number, patch: { color?: string | null; icon?: string | null }) => void;
+  onOpenWorkspaceCascade?: (workspace: Workspace) => void;
   onCreateWorkspace: () => void;
   onClose: () => void;
 };
@@ -35,15 +39,51 @@ export function WorkspaceModal({
   onSelectWorkspace,
   onRenameWorkspace,
   onSetWorkspaceAppearance,
+  onOpenWorkspaceCascade,
   onCreateWorkspace,
   onClose,
 }: WorkspaceModalProps) {
   const [editingWorkspace, setEditingWorkspace] = useState<Workspace | null>(null);
   const [embedWorkspace, setEmbedWorkspace] = useState<Workspace | null>(null);
+  const [activeTab, setActiveTab] = useState<WorkspaceModalTab>('espacios');
 
   return (
-    <TaskOsModal onClose={onClose} size="md">
-      <TaskOsModalHeader title="Workspaces" onClose={onClose} />
+    <TaskOsModal onClose={onClose} size={activeTab === 'global' ? '2xl' : 'md'}>
+      <TaskOsModalHeader title="Espacios de trabajo" onClose={onClose} />
+
+      <div className="mb-3 flex gap-1 rounded-xl border border-[#2a2a30] bg-[#141416] p-1">
+        <button
+          type="button"
+          onClick={() => setActiveTab('espacios')}
+          className={cn(
+            'flex-1 rounded-lg px-3 py-1.5 text-xs font-bold transition-all duration-200',
+            activeTab === 'espacios' ? 'bg-indigo-500/15 text-indigo-300' : 'text-white/40 hover:text-white/70',
+          )}
+        >
+          Espacios
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('global')}
+          className={cn(
+            'flex-1 rounded-lg px-3 py-1.5 text-xs font-bold transition-all duration-200',
+            activeTab === 'global' ? 'bg-indigo-500/15 text-indigo-300' : 'text-white/40 hover:text-white/70',
+          )}
+        >
+          Vista global
+        </button>
+      </div>
+
+      {activeTab === 'global' ? (
+        <WorkspaceGlobalView
+          workspaces={workspaces}
+          onNavigate={(workspaceId, projectId) => {
+            onSelectWorkspace(workspaceId, projectId);
+            onClose();
+          }}
+        />
+      ) : (
+      <>
       <div className="max-h-72 space-y-2 overflow-y-auto">
         {workspaces.map((workspace) => {
           const WsIcon = resolveTaskIcon(workspace.icon) || null;
@@ -76,7 +116,7 @@ export function WorkspaceModal({
                   }
                 }}
                 className="w-28 rounded-lg border border-white/10 bg-white/8 px-2 py-1 text-xs text-white outline-none focus:border-white/35"
-                title="Renombrar workspace"
+                title="Renombrar espacio de trabajo"
               />
               <button
                 type="button"
@@ -86,10 +126,20 @@ export function WorkspaceModal({
               >
                 <Paintbrush className="h-3.5 w-3.5" />
               </button>
+              {onOpenWorkspaceCascade && (
+                <button
+                  type="button"
+                  onClick={() => onOpenWorkspaceCascade(workspace)}
+                  title="Editor cascada del espacio de trabajo"
+                  className="rounded p-1 text-white/45 transition-colors hover:bg-white/10 hover:text-[#93c5fd]"
+                >
+                  <FileCode2 className="h-3.5 w-3.5" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setEmbedWorkspace(workspace)}
-                title="Compartir / Embeber workspace"
+                title="Compartir / Insertar espacio de trabajo"
                 className="rounded p-1 text-white/45 transition-colors hover:bg-white/10 hover:text-[#93c5fd]"
               >
                 <Share2 className="h-3.5 w-3.5" />
@@ -105,7 +155,7 @@ export function WorkspaceModal({
           onKeyDown={(e) => {
             if (e.key === 'Enter') void onCreateWorkspace();
           }}
-          placeholder="Nuevo workspace..."
+          placeholder="Nuevo espacio de trabajo..."
           className="min-w-0 flex-1 rounded-xl border border-white/15 bg-white/8 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-white/35"
         />
         <button
@@ -115,6 +165,8 @@ export function WorkspaceModal({
           <Plus className="h-4 w-4" />
         </button>
       </div>
+      </>
+      )}
 
       {editingWorkspace && (
         <WorkspaceAppearanceEditor
@@ -166,7 +218,7 @@ function WorkspaceAppearanceEditor({
       <div className={cn('relative w-full max-w-lg rounded-xl border border-[#2a2a30] bg-[#1a1a1e] p-4 shadow-2xl')}>
         <div className="mb-3 flex items-center justify-between">
           <div>
-            <h3 className={cn('text-sm font-semibold', taskOsText)}>Apariencia del workspace</h3>
+            <h3 className={cn('text-sm font-semibold', taskOsText)}>Apariencia del espacio de trabajo</h3>
             <p className={cn('text-xs', taskOsMuted)}>{workspace.name}</p>
           </div>
           <button type="button" onClick={onClose} className="text-[#5c5c66] hover:text-[#e8e8ed]">
