@@ -5,6 +5,7 @@ import { CalendarDashboard } from '@/lib/plugins/calendar/ui/CalendarDashboard';
 import { CalendarSettings } from '@/lib/plugins/calendar/ui/CalendarSettings';
 import { MarketplaceListPage } from '@/lib/plugins/marketplace/ui/MarketplaceListPage';
 import { MarketplaceDetailPage } from '@/lib/plugins/marketplace/ui/MarketplaceDetailPage';
+import { RadarIntro } from '@/lib/plugins/radar/ui/RadarIntro';
 
 export type PluginPageRendererProps = {
   pluginId: string;
@@ -42,6 +43,12 @@ const pluginRouteRegistry: Record<string, PluginRouteRenderer[]> = {
     {
       routeMatcher: (slug) => !slug?.length,
       renderer: () => <CalendarDashboard />,
+    },
+  ],
+  radar: [
+    {
+      routeMatcher: (slug) => !slug?.length,
+      renderer: () => <RadarIntro />,
     },
   ],
   marketplace: [

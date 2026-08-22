@@ -1,36 +1,41 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
-import { X, Loader2, Users, Download, Wand2, Copy, Sparkles, SpellCheck, Paintbrush, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Loader2, Users, Download, Wand2, Copy, ChevronDown, ChevronUp } from 'lucide-react';
 import { useParams, useSearchParams } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
-import PusherClient from 'pusher-js';
+import { usePusher } from '@/providers/pusher-provider';
 import { toast } from 'sonner';
 import { EmojiClickData } from 'emoji-picker-react';
 import Lightbox from "yet-another-react-lightbox";
 import Zoom from "yet-another-react-lightbox/plugins/zoom";
 import Video from "yet-another-react-lightbox/plugins/video";
 import "yet-another-react-lightbox/styles.css";
-import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { Chat } from '@/lib/db/schema';
 import { Message, Reaction, QuickReply, NewMessagePayload, ChatDetails, ContactData, TeamData, RecordingStatus, UserData } from '@/components/chat/types';
 import { fetcher, fileToBase64, isSameDay, formatDateSeparator } from '@/components/chat/utils';
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { ChatInput } from '@/components/chat/ChatInput';
-import { TemplateDialog } from '@/components/chat/TemplateDialog';
-import { QuickRepliesModal } from '@/components/chat/QuickRepliesModal';
-import { DraftShortcutsModal } from '@/components/chat/DraftShortcutsModal';
 import { DateSeparator } from '@/components/chat/DateSeparator';
-import { SaveDraftModal } from '@/components/chat/SaveDraftModal';
+import { isRadarUserEmail } from '@/lib/plugins/radar/shared/constants';
+import '@/lib/plugins/radar/ui/radar.css';
 import { useTheme } from 'next-themes';
 import { useTranslations } from 'next-intl';
 import type { DraftItem } from '@/components/drafts/types';
 
-type ImproveReplyMode = 'improve' | 'orthography' | 'stylize';
+type ImproveReplyMode = 'improve' | 'orthography' | 'stylize' | 'suggest';
+
+const MESSAGE_PAGE_SIZE = 100;
+const ChatSidebar = dynamic(() => import('@/components/chat/ChatSidebar').then((module) => module.ChatSidebar), { ssr: false });
+const TemplateDialog = dynamic(() => import('@/components/chat/TemplateDialog').then((module) => module.TemplateDialog), { ssr: false });
+const QuickRepliesModal = dynamic(() => import('@/components/chat/QuickRepliesModal').then((module) => module.QuickRepliesModal), { ssr: false });
+const DraftShortcutsModal = dynamic(() => import('@/components/chat/DraftShortcutsModal').then((module) => module.DraftShortcutsModal), { ssr: false });
+const SaveDraftModal = dynamic(() => import('@/components/chat/SaveDraftModal').then((module) => module.SaveDraftModal), { ssr: false });
 
 interface ChatThemeData {
   backgroundType: string;
@@ -49,6 +54,7 @@ export default function ChatPage() {
   const rawJid = params.jid as string;
   const chatNumber = rawJid ? decodeURIComponent(rawJid) : rawJid;
   const instanceIdParam = searchParams.get('instanceId');
+  const openContactPanel = searchParams.get('panel') === 'contact';
 
   const isGroup = chatNumber ? chatNumber.endsWith('@g.us') : false;
   const remoteJid = chatNumber
@@ -81,17 +87,31 @@ export default function ChatPage() {
   const [showSavedImproveContext, setShowSavedImproveContext] = useState(false);
   const [improvedReply, setImprovedReply] = useState('');
   const [isImprovingReply, setIsImprovingReply] = useState(false);
+  const [radarSuggestions, setRadarSuggestions] = useState<string[]>([]);
   const [showQuickReplySuggestions, setShowQuickReplySuggestions] = useState(false);
   const [draftShortcutQuery, setDraftShortcutQuery] = useState('');
   const [saveDraftModalOpen, setSaveDraftModalOpen] = useState(false);
   const [draftContentToSave, setDraftContentToSave] = useState('');
+  const [hasOlderMessages, setHasOlderMessages] = useState(false);
+  const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
+  const [hasLoadedOlderMessages, setHasLoadedOlderMessages] = useState(false);
+  const initializedMessageKeyRef = useRef<string | null>(null);
   const lastImproveContextChatIdRef = useRef<number | null>(null);
-  const [chatSidebarCollapsed, setChatSidebarCollapsed] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('chatSidebarCollapsed') === 'true';
+  const [chatSidebarCollapsed, setChatSidebarCollapsed] = useState(true);
+
+  useEffect(() => {
+    if (openContactPanel) {
+      setChatSidebarCollapsed(false);
+      return;
     }
-    return false;
-  });
+    const stored = localStorage.getItem('chatSidebarCollapsed');
+    if (stored !== null) {
+      setChatSidebarCollapsed(stored === 'true');
+      return;
+    }
+
+    setChatSidebarCollapsed(window.innerWidth < 768);
+  }, [openContactPanel]);
 
   const toggleChatSidebar = useCallback(() => {
     setChatSidebarCollapsed(prev => {
@@ -102,6 +122,12 @@ export default function ChatPage() {
   }, []);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLElement>(null);
+  const lastScrolledChatKeyRef = useRef<string | null>(null);
+  const lastRenderedMessageIdRef = useRef<string | null>(null);
+  const lastRenderedMessageCountRef = useRef(0);
+  const openingUnreadRef = useRef<{ key: string; count: number } | null>(null);
+  const isNearBottomRef = useRef(true);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const audioPlayerRef = useRef<HTMLAudioElement>(null);
@@ -111,6 +137,7 @@ export default function ChatPage() {
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
   const t = useTranslations('Chat');
+  const pusher = usePusher();
 
   const { data: user } = useSWR<UserData>('/api/user', fetcher);
   const { data: teamData } = useSWR<TeamData>('/api/team', fetcher);
@@ -121,31 +148,78 @@ export default function ChatPage() {
   const activeUserBubble = chatTheme ? (isDark ? chatTheme.darkUserBubbleColor : chatTheme.userBubbleColor) : undefined;
   const activeContactBubble = chatTheme ? (isDark ? chatTheme.darkContactBubbleColor : chatTheme.contactBubbleColor) : undefined;
   
-  const { data: chats } = useSWR<Chat[]>('/api/chats', fetcher);
+  const currentChatKey = useMemo(() => {
+    if (!remoteJid) return null;
 
-  const currentChat = useMemo(() => {
-      if (!chats || !remoteJid) return undefined;
-      if (instanceIdParam) {
-          return chats.find(c => c.remoteJid === remoteJid && c.instanceId === parseInt(instanceIdParam));
-      }
+    const query = new URLSearchParams({ jid: remoteJid });
+    if (instanceIdParam) query.set('instanceId', instanceIdParam);
+    return `/api/chats?${query.toString()}`;
+  }, [remoteJid, instanceIdParam]);
 
-      return chats.find(c => c.remoteJid === remoteJid);
-  }, [chats, remoteJid, instanceIdParam]);
+  const { data: currentChatData } = useSWR<Chat[]>(currentChatKey, fetcher, {
+    refreshInterval: pusher ? 0 : 10000,
+  });
+
+  const currentChat = currentChatData?.[0];
 
   const swrKey = useMemo(() => {
       if (!remoteJid) return null;
       
       if (instanceIdParam) {
-          return `/api/messages?jid=${remoteJid}&instanceId=${instanceIdParam}`;
+          return `/api/messages?jid=${encodeURIComponent(remoteJid)}&instanceId=${encodeURIComponent(instanceIdParam)}&limit=${MESSAGE_PAGE_SIZE}`;
       }
       if (currentChat?.id) {
-           return `/api/messages?chatId=${currentChat.id}`;
+           return `/api/messages?chatId=${currentChat.id}&limit=${MESSAGE_PAGE_SIZE}`;
       }
 
-      return `/api/messages?jid=${remoteJid}`;
+      return `/api/messages?jid=${encodeURIComponent(remoteJid)}&limit=${MESSAGE_PAGE_SIZE}`;
   }, [remoteJid, instanceIdParam, currentChat]);
 
-  const { data: messages, error, isLoading, mutate: mutateMessages } = useSWR<Message[]>(swrKey, fetcher, { revalidateOnFocus: true });
+  const { data: messages, error, isLoading, mutate: mutateMessages } = useSWR<Message[]>(swrKey, fetcher, {
+    revalidateOnFocus: !hasLoadedOlderMessages,
+    refreshInterval: pusher || hasLoadedOlderMessages ? 0 : 5000,
+  });
+
+  useEffect(() => {
+    if (!swrKey || !messages || initializedMessageKeyRef.current === swrKey) return;
+    initializedMessageKeyRef.current = swrKey;
+    setHasOlderMessages(messages.length === MESSAGE_PAGE_SIZE);
+    setHasLoadedOlderMessages(false);
+  }, [messages, swrKey]);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!swrKey || !messages?.length || isLoadingOlderMessages) return;
+
+    const oldestMessage = messages[0];
+    const container = messagesContainerRef.current;
+    const previousScrollHeight = container?.scrollHeight ?? 0;
+    setIsLoadingOlderMessages(true);
+
+    try {
+      const cursor = new URLSearchParams({
+        before: oldestMessage.timestamp,
+        beforeId: oldestMessage.id,
+      });
+      const olderMessages = await fetcher(`${swrKey}&${cursor.toString()}`) as Message[];
+
+      await mutateMessages((currentMessages = []) => {
+        const currentIds = new Set(currentMessages.map((message) => message.id));
+        const uniqueOlderMessages = olderMessages.filter((message) => !currentIds.has(message.id));
+        return [...uniqueOlderMessages, ...currentMessages];
+      }, false);
+
+      setHasLoadedOlderMessages(true);
+      setHasOlderMessages(olderMessages.length === MESSAGE_PAGE_SIZE);
+      requestAnimationFrame(() => {
+        if (!container) return;
+        container.scrollTop += container.scrollHeight - previousScrollHeight;
+      });
+    } catch {
+      toast.error(t('messages_error'));
+    } finally {
+      setIsLoadingOlderMessages(false);
+    }
+  }, [isLoadingOlderMessages, messages, mutateMessages, swrKey, t]);
   
   const { data: contact, mutate: mutateContact } = useSWR<ContactData | null>(
     remoteJid ? `/api/contacts/by-chat?jid=${remoteJid}` : null,
@@ -219,16 +293,78 @@ export default function ChatPage() {
     return (now - start) > 24 * 60 * 60 * 1000;
   }, [isWaba, currentChat?.lastCustomerInteraction]);
 
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  // Stable key based only on URL params so <main> doesn't remount when currentChat loads
+  const chatMountKey = useMemo(() => {
+    if (instanceIdParam) return `${remoteJid}:${instanceIdParam}`;
+    return remoteJid || 'unknown';
+  }, [remoteJid, instanceIdParam]);
+
+  if (currentChat && openingUnreadRef.current?.key !== chatMountKey) {
+    openingUnreadRef.current = {
+      key: chatMountKey,
+      count: Math.max(0, currentChat.unreadCount || 0),
+    };
+  }
+
+  const firstUnreadMessageId = useMemo(() => {
+    const unreadCount = openingUnreadRef.current?.key === chatMountKey
+      ? openingUnreadRef.current.count
+      : 0;
+    if (!messages || unreadCount <= 0) return null;
+
+    const incomingMessages = messages.filter((message) => !message.fromMe);
+    const firstUnreadIndex = Math.max(0, incomingMessages.length - unreadCount);
+    return incomingMessages[firstUnreadIndex]?.id ?? null;
+  }, [chatMountKey, currentChat?.id, messages]);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    const container = messagesContainerRef.current;
+    if (container) {
+      if (behavior === 'auto') {
+        container.scrollTop = container.scrollHeight;
+      } else {
+        container.scrollTo({ top: container.scrollHeight, behavior });
+      }
+      return;
+    }
+
+    messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' });
   }, []);
 
-  useEffect(() => {
-    if (messages && messages.length > 0 && !searchQuery) {
-      const timer = setTimeout(() => scrollToBottom(), 100);
-      return () => clearTimeout(timer);
+  const handleMessagesScroll = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    isNearBottomRef.current = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+  }, []);
+
+  const lastMessageId = messages?.[messages.length - 1]?.id ?? null;
+
+  useLayoutEffect(() => {
+    if (!currentChat || !messages || messages.length === 0 || searchQuery) {
+      return;
     }
-  }, [messages, scrollToBottom, searchQuery]);
+
+    const newestMessage = messages[messages.length - 1];
+    const previousLastMessageId = lastRenderedMessageIdRef.current;
+    const previousMessageCount = lastRenderedMessageCountRef.current;
+    lastRenderedMessageIdRef.current = newestMessage.id;
+    lastRenderedMessageCountRef.current = messages.length;
+
+    const isOpeningChat = lastScrolledChatKeyRef.current !== chatMountKey;
+    if (isOpeningChat) {
+      lastScrolledChatKeyRef.current = chatMountKey;
+      isNearBottomRef.current = true;
+      scrollToBottom('auto');
+      return;
+    }
+
+    const hasNewTailMessage = messages.length > previousMessageCount
+      && newestMessage.id !== previousLastMessageId;
+    if (hasNewTailMessage && (newestMessage.fromMe || isNearBottomRef.current)) {
+      scrollToBottom('smooth');
+    }
+  }, [currentChat?.id, messages?.length, lastMessageId, chatMountKey, scrollToBottom, searchQuery]);
 
   useEffect(() => {
     setShowQuickReplySuggestions(newMessage.startsWith('/') && filteredQuickReplies.length > 0);
@@ -242,28 +378,90 @@ export default function ChatPage() {
 
   const { cache: swrCache, mutate: globalMutate } = useSWRConfig();
 
-  useEffect(() => {
-    if (!teamId || !remoteJid || !process.env.NEXT_PUBLIC_PUSHER_KEY) return;
-    
-    const pusherClient = new PusherClient(process.env.NEXT_PUBLIC_PUSHER_KEY!, { cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER || 'us2' });
-    const channelName = `team-${teamId}`;
-    const channel = pusherClient.subscribe(channelName);
-    
-    channel.bind('new-message', (payload: NewMessagePayload) => {
-      const instanceMatch = !currentChat?.instanceId || !payload.instanceId || currentChat.instanceId === payload.instanceId;
+  const updateTaskMessageInCache = useCallback((taskId: number, status: string, text?: string | null) => {
+    mutateMessages((currentMessages = []) => currentMessages.map((message) => {
+      if (message.messageType !== 'task' || !message.quotedMessageText) return message;
+      try {
+        const metadata = JSON.parse(message.quotedMessageText) as { taskId?: number };
+        if (metadata.taskId !== taskId) return message;
+      } catch {
+        return message;
+      }
+      return {
+        ...message,
+        ...(text !== undefined && { text }),
+        quotedMessageText: JSON.stringify({ taskId, status }),
+      };
+    }), false);
+  }, [mutateMessages]);
 
-      if (payload.remoteJid === remoteJid && instanceMatch) {
+  useEffect(() => {
+    const refreshCreatedTask = () => void mutateMessages();
+    const reflectUpdatedTask = (event: Event) => {
+      const detail = (event as CustomEvent<{ taskId: number; status: string }>).detail;
+      if (detail?.taskId) updateTaskMessageInCache(detail.taskId, detail.status);
+    };
+    window.addEventListener('chat:task-created', refreshCreatedTask);
+    window.addEventListener('chat:task-updated', reflectUpdatedTask);
+    return () => {
+      window.removeEventListener('chat:task-created', refreshCreatedTask);
+      window.removeEventListener('chat:task-updated', reflectUpdatedTask);
+    };
+  }, [mutateMessages, updateTaskMessageInCache]);
+
+  useEffect(() => {
+    if (!pusher || !teamId || !remoteJid) return;
+
+    const channelName = `team-${teamId}`;
+    const channel = pusher.subscribe(channelName);
+
+    channel.bind('new-message', (payload: NewMessagePayload) => {
+      const activeInstanceId = activeChatRef.current?.instanceId;
+      const instanceMatch = !activeInstanceId || !payload.instanceId || Number(activeInstanceId) === Number(payload.instanceId);
+
+      const normalizeJid = (j: string) => (j || '').split(':')[0];
+      if (normalizeJid(payload.remoteJid) === normalizeJid(remoteJid) && instanceMatch) {
         mutateMessages((currentMessages = []) => {
           if (currentMessages.some(msg => msg.id === payload.id)) return currentMessages;
-          const messageWithStatus = { ...payload, status: payload.status || (payload.fromMe ? 'sent' : null) };
+          const ts = typeof payload.timestamp === 'string' ? payload.timestamp : new Date(payload.timestamp as any).toISOString();
+          const messageWithStatus = {
+            ...payload,
+            timestamp: ts,
+            status: payload.status || (payload.fromMe ? 'sent' : null)
+          };
           return [...(currentMessages || []), messageWithStatus as Message];
         }, false);
-        setTimeout(() => scrollToBottom(), 150);
       }
     });
-    
+
     channel.bind('message-status-update', (payload: { messageId: string; status: 'sent' | 'delivered' | 'read' }) => {
       mutateMessages((currentMessages = []) => currentMessages.map(msg => msg.id === payload.messageId ? { ...msg, status: payload.status } : msg), false);
+    });
+
+    channel.bind('message-origin-update', (payload: { messageId: string; messageType: string }) => {
+      mutateMessages((currentMessages = []) => currentMessages.map(msg => (
+        msg.id === payload.messageId ? { ...msg, messageType: payload.messageType } : msg
+      )), false);
+    });
+
+    channel.bind('task-message-update', (payload: { id: string; taskId: number; text: string | null; status: string; remoteJid: string; instanceId?: number }) => {
+      const activeInstanceId = activeChatRef.current?.instanceId;
+      const instanceMatch = !activeInstanceId || !payload.instanceId || Number(activeInstanceId) === Number(payload.instanceId);
+      const normalizeJid = (jid: string) => (jid || '').split(':')[0];
+      if (normalizeJid(payload.remoteJid) === normalizeJid(remoteJid) && instanceMatch) {
+        updateTaskMessageInCache(payload.taskId, payload.status, payload.text);
+        const activeChatId = activeChatRef.current?.id;
+        if (activeChatId) void globalMutate(`/api/chats/${activeChatId}/tasks`);
+      }
+    });
+
+    channel.bind('task-message-delete', (payload: { messageIds: string[] }) => {
+      const deletedIds = new Set(payload.messageIds || []);
+      if (deletedIds.size) {
+        mutateMessages((currentMessages = []) => currentMessages.filter((message) => !deletedIds.has(message.id)), false);
+        const activeChatId = activeChatRef.current?.id;
+        if (activeChatId) void globalMutate(`/api/chats/${activeChatId}/tasks`);
+      }
     });
 
     channel.bind('chat-status-update', (payload: { chatId: number; type: 'ai' | 'automation'; status: string }) => {
@@ -312,8 +510,17 @@ export default function ChatPage() {
       }
     });
 
-    return () => { pusherClient.unsubscribe(channelName); pusherClient.disconnect(); };
-  }, [teamId, remoteJid, mutateMessages, mutateContact, scrollToBottom, globalMutate, currentChat]);
+    return () => {
+      channel.unbind('new-message');
+      channel.unbind('message-status-update');
+      channel.unbind('message-origin-update');
+      channel.unbind('task-message-update');
+      channel.unbind('task-message-delete');
+      channel.unbind('chat-status-update');
+      channel.unbind('message-reaction');
+      channel.unbind('contact-update');
+    };
+  }, [teamId, remoteJid, pusher, mutateMessages, mutateContact, globalMutate, updateTaskMessageInCache]);
 
   useEffect(() => {
     if (messages && remoteJid && teamId) {
@@ -383,6 +590,10 @@ export default function ChatPage() {
   const handleSendText = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || !remoteJid) return;
+    if (!isInternalNote && (!currentChat?.id || !currentChat.instanceId)) {
+      toast.error(t('improve_reply.chat_not_ready_error'));
+      return;
+    }
     setRecordingStatus('sending');
     let textToSend = newMessage;
 
@@ -402,7 +613,6 @@ export default function ChatPage() {
       isAi: false, isAutomation: false
     };
     mutateMessages((currentMessages = []) => [...currentMessages, optimisticMessage], false);
-    const timer = setTimeout(() => scrollToBottom(), 100);
     try {
       const response = await fetch('/api/messages/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -417,15 +627,22 @@ export default function ChatPage() {
       const sentMessageData: Message = await response.json();
       if (!response.ok && !sentMessageData.status) throw new Error((sentMessageData as any).error || 'Failed to send message.');
       mutateMessages((currentMessages = []) => currentMessages.map(msg => msg.id === tempId ? { ...sentMessageData, timestamp: new Date(sentMessageData.timestamp).toISOString() } : msg), false);
+      if (sentMessageData.status === 'error') {
+        toast.error(sentMessageData.errorMessage || 'Failed to send message.');
+      }
       globalMutate('/api/chats');
     } catch (sendError: any) {
       mutateMessages((currentMessages = []) => currentMessages.map(msg => msg.id === tempId ? { ...msg, status: 'error' as const, errorMessage: sendError.message } : msg), false);
       toast.error(`Error sending message: ${sendError.message}`);
-    } finally { clearTimeout(timer); setRecordingStatus('idle'); }
+    } finally { setRecordingStatus('idle'); }
   };
 
   const handleSendAudio = async () => {
     if (!audioBlob || !remoteJid || recordingStatus !== 'review') return;
+    if (!currentChat?.id || !currentChat.instanceId) {
+      toast.error(t('improve_reply.chat_not_ready_error'));
+      return;
+    }
     setRecordingStatus('sending');
     const messageToQuote = quotedMessage; setQuotedMessage(null);
     const tempId = `temp_audio_${Date.now()}`;
@@ -435,7 +652,6 @@ export default function ChatPage() {
     if (messageToQuote) { quotedData = { id: messageToQuote.id, text: messageToQuote.text || messageToQuote.mediaCaption, messageType: messageToQuote.messageType, mediaUrl: messageToQuote.mediaUrl, mediaMimetype: messageToQuote.mediaMimetype, }; }
     const optimisticMessage: Message = { id: tempId, chatId: currentChat?.id || 0, fromMe: true, messageType: 'audioMessage', text: null, timestamp: new Date().toISOString(), mediaUrl: tempAudioUrl, mediaMimetype: audioMimeType, mediaCaption: null, status: 'sent', quotedMessageId: messageToQuote?.id, quotedMessageText: quotedData ? JSON.stringify(quotedData) : null, isAi: false, isAutomation: false };
     mutateMessages((currentMessages = []) => [...currentMessages, optimisticMessage], false);
-    const timer = setTimeout(() => scrollToBottom(), 100);
     try {
       const audioBase64 = await fileToBase64(audioBlob);
       const response = await fetch('/api/messages/sendAudio', {
@@ -450,18 +666,25 @@ export default function ChatPage() {
           }),
       });
       const sentMessageData: Message = await response.json();
-      if (!response.ok) throw new Error((sentMessageData as any).error || 'Failed to send audio.');
-      if (sentMessageData.status === 'error') throw new Error(sentMessageData.errorMessage || 'Failed to send audio.');
+      if (!response.ok && !sentMessageData.status) throw new Error((sentMessageData as any).error || 'Failed to send audio.');
       mutateMessages((currentMessages = []) => currentMessages.map(msg => msg.id === tempId ? { ...sentMessageData, timestamp: new Date(sentMessageData.timestamp).toISOString() } : msg), false);
+      if (sentMessageData.status === 'error') {
+        toast.error(sentMessageData.errorMessage || 'Failed to send audio.');
+        return;
+      }
       globalMutate('/api/chats');
     } catch (sendError: any) {
       mutateMessages((currentMessages = []) => currentMessages.map(msg => msg.id === tempId ? { ...msg, status: 'error' as const, errorMessage: sendError.message } : msg), false);
       toast.error(`Error sending audio: ${sendError.message}`);
-    } finally { clearTimeout(timer); cancelRecording(); if (tempAudioUrl) URL.revokeObjectURL(tempAudioUrl); }
+    } finally { cancelRecording(); if (tempAudioUrl) URL.revokeObjectURL(tempAudioUrl); }
   };
 
-  const handleSendAttachment = async (file: File) => {
+  const handleSendAttachment = async (file: File, caption?: string) => {
     if (!remoteJid) return;
+    if (!currentChat?.id || !currentChat.instanceId) {
+      toast.error(t('improve_reply.chat_not_ready_error'));
+      return;
+    }
     const tempMediaUrl = URL.createObjectURL(file);
     const messageToQuote = quotedMessage; 
     setQuotedMessage(null);
@@ -491,8 +714,8 @@ export default function ChatPage() {
         timestamp: new Date().toISOString(), 
         mediaUrl: tempMediaUrl, 
         mediaMimetype: mimeType, 
-        mediaCaption: null, 
-        status: 'sent', 
+        mediaCaption: caption || null,
+        status: 'sent',
         quotedMessageId: messageToQuote?.id, 
         quotedMessageText: quotedData ? JSON.stringify(quotedData) : null, 
         isAi: false, 
@@ -500,7 +723,6 @@ export default function ChatPage() {
     };
 
     mutateMessages((currentMessages = []) => [...currentMessages, optimisticMessage], false);
-    const timer = setTimeout(() => scrollToBottom(), 100);
 
     try {
         const fileBase64 = await fileToBase64(file);
@@ -512,22 +734,24 @@ export default function ChatPage() {
                 fileBase64,
                 mimeType,
                 fileName,
+                caption: caption || undefined,
                 quotedMessageData: quotedData,
                 instanceId: currentChat?.instanceId
             }),
         });
         
         const sentMessageData: Message = await response.json();
-        if (!response.ok) throw new Error((sentMessageData as any).error || 'Failed to send media.');
-        if (sentMessageData.status === 'error') throw new Error(sentMessageData.errorMessage || 'Failed to send media.');
-
+        if (!response.ok && !sentMessageData.status) throw new Error((sentMessageData as any).error || 'Failed to send media.');
         mutateMessages((currentMessages = []) => currentMessages.map(msg => msg.id === tempId ? { ...sentMessageData, timestamp: new Date(sentMessageData.timestamp).toISOString() } : msg), false);
+        if (sentMessageData.status === 'error') {
+          toast.error(sentMessageData.errorMessage || 'Failed to send media.');
+          return;
+        }
         globalMutate('/api/chats');
     } catch (sendError: any) {
         mutateMessages((currentMessages = []) => currentMessages.map(msg => msg.id === tempId ? { ...msg, status: 'error' as const, errorMessage: sendError.message } : msg), false);
         toast.error(`Error sending file: ${sendError.message}`);
     } finally {
-        clearTimeout(timer);
         URL.revokeObjectURL(tempMediaUrl);
     }
   };
@@ -571,6 +795,27 @@ export default function ChatPage() {
     } catch (err: any) {
       mutateMessages();
       toast.error(err.message || 'Failed to send reaction');
+    }
+  };
+
+  const handleToggleTask = async (taskId: number, currentStatus: string) => {
+    if (!currentChat?.id) return;
+    const nextStatus = currentStatus === 'done' ? 'open' : 'done';
+    updateTaskMessageInCache(taskId, nextStatus);
+
+    try {
+      const endpoint = `/api/chats/${currentChat.id}/tasks`;
+      const response = await fetch(endpoint, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId, status: nextStatus }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'server_error');
+      await globalMutate(endpoint);
+    } catch {
+      await mutateMessages();
+      toast.error(t('task_update_error'));
     }
   };
 
@@ -629,6 +874,7 @@ export default function ChatPage() {
       if (!res.ok) throw new Error(data.error);
       toast.success(t('sync_messages.success', { count: data.imported }));
       mutateMessages();
+      globalMutate('/api/chats');
     } catch (err: any) {
       toast.error(err.message || t('sync_messages.error'));
     } finally {
@@ -642,7 +888,7 @@ export default function ChatPage() {
       return;
     }
 
-    if (!newMessage.trim()) {
+    if (mode !== 'suggest' && !newMessage.trim()) {
       toast.error(t('improve_reply.empty_message_error'));
       return;
     }
@@ -682,7 +928,7 @@ export default function ChatPage() {
   }, [additionalContext, chatDetails.name, contact?.name, currentChat?.id, improveMode, isGroup, newMessage, remoteJid, savedImproveContext, t]);
 
   const handleOpenImproveDialog = useCallback(async (mode: ImproveReplyMode) => {
-    if (!newMessage.trim()) {
+    if (mode !== 'suggest' && !newMessage.trim()) {
       toast.error(t('improve_reply.empty_message_error'));
       return;
     }
@@ -693,6 +939,10 @@ export default function ChatPage() {
     setImproveDialogOpen(true);
     await requestImprovedReply(mode);
   }, [newMessage, requestImprovedReply, t]);
+
+  const handleSuggestReply = useCallback(() => {
+    void handleOpenImproveDialog('suggest');
+  }, [handleOpenImproveDialog]);
 
   const handleInsertImprovedReply = useCallback(() => {
     if (!improvedReply.trim()) return;
@@ -720,6 +970,7 @@ export default function ChatPage() {
         resultLabel: t('improve_reply.orthography_result_label'),
         resultPlaceholder: t('improve_reply.orthography_result_placeholder'),
         regenerateLabel: t('improve_reply.orthography_button'),
+        showCurrentText: true,
       };
     }
 
@@ -730,6 +981,18 @@ export default function ChatPage() {
         resultLabel: t('improve_reply.stylize_result_label'),
         resultPlaceholder: t('improve_reply.stylize_result_placeholder'),
         regenerateLabel: t('improve_reply.stylize_button'),
+        showCurrentText: true,
+      };
+    }
+
+    if (improveMode === 'suggest') {
+      return {
+        title: t('improve_reply.suggest_title'),
+        description: t('improve_reply.suggest_description'),
+        resultLabel: t('improve_reply.suggest_result_label'),
+        resultPlaceholder: t('improve_reply.suggest_result_placeholder'),
+        regenerateLabel: t('improve_reply.suggest_button'),
+        showCurrentText: false,
       };
     }
 
@@ -739,26 +1002,17 @@ export default function ChatPage() {
       resultLabel: t('improve_reply.result_label'),
       resultPlaceholder: t('improve_reply.result_placeholder'),
       regenerateLabel: t('improve_reply.button'),
+      showCurrentText: true,
     };
   }, [improveMode, t]);
 
-  const improveComposerActions = useMemo(() => ([
-    {
-      mode: 'improve' as ImproveReplyMode,
-      title: t('improve_reply.button'),
-      icon: Sparkles,
-    },
-    {
-      mode: 'orthography' as ImproveReplyMode,
-      title: t('improve_reply.orthography_button'),
-      icon: SpellCheck,
-    },
-    {
-      mode: 'stylize' as ImproveReplyMode,
-      title: t('improve_reply.stylize_button'),
-      icon: Paintbrush,
-    },
-  ]), [t]);
+  const dispatchTriggerAutomation = useCallback(() => {
+    window.dispatchEvent(new Event('chat:open-trigger-automation'));
+  }, []);
+
+  const dispatchToggleAiAgent = useCallback(() => {
+    window.dispatchEvent(new Event('chat:toggle-ai-agent'));
+  }, []);
 
   useEffect(() => {
     setSyncDismissed(false);
@@ -779,6 +1033,7 @@ export default function ChatPage() {
     setShowSavedImproveContext(false);
     setImprovedReply('');
     setImproveDialogOpen(false);
+    setRadarSuggestions([]);
   }, [currentChat?.id]);
 
   const showSyncBanner = !syncDismissed && currentChat?.instanceId && messages && messages.length === 0 && !isLoading && !error;
@@ -788,8 +1043,8 @@ export default function ChatPage() {
     return (
       <div className="relative p-2 px-4 border-t bg-accent">
         <div className="p-2 rounded-md bg-muted border-l-4 border-primary">
-          <p className="text-sm font-medium text-primary">Replying...</p>
-          <p className="text-sm text-muted-foreground truncate">{quotedMessage.text || 'Media'}</p>
+          <p className="text-sm font-medium text-primary">{t('replying_label')}</p>
+          <p className="text-sm text-muted-foreground truncate">{quotedMessage.text || t('media_fallback')}</p>
         </div>
         <Button variant="ghost" size="icon" className="absolute top-1 right-2 h-7 w-7 rounded-full" onClick={() => setQuotedMessage(null)}><X className="h-4 w-4 text-muted-foreground" /></Button>
       </div>
@@ -798,10 +1053,10 @@ export default function ChatPage() {
 
   const renderMessages = () => {
     if (isLoading) return <div className="flex justify-center items-center h-full"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>;
-    if (error) return <div className="p-4 text-center text-destructive">Error loading messages.</div>;
+    if (error) return <div className="p-4 text-center text-destructive">{t('messages_error')}</div>;
     if (!filteredMessages || filteredMessages.length === 0) {
-      if (searchQuery) return <div className="p-4 text-center text-muted-foreground">No message found for "{searchQuery}".</div>;
-      return <div className="p-4 text-center text-muted-foreground">No messages in this chat yet.</div>;
+      if (searchQuery) return <div className="p-4 text-center text-muted-foreground">{t('messages_empty_search', { query: searchQuery })}</div>;
+      return <div className="p-4 text-center text-muted-foreground">{t('messages_empty')}</div>;
     }
 
     return filteredMessages.map((msg, index) => {
@@ -824,12 +1079,20 @@ export default function ChatPage() {
         return (
             <React.Fragment key={msg.id}>
                 {showSeparator && <DateSeparator date={currentDate} label={dateLabel} />}
+                {msg.id === firstUnreadMessageId && (
+                  <div className="flex items-center gap-3 py-2" role="separator" aria-label={t('unread_messages_label')}>
+                    <div className="h-px flex-1 bg-border" />
+                    <span className="text-xs font-medium text-muted-foreground">{t('unread_messages_label')}</span>
+                    <div className="h-px flex-1 bg-border" />
+                  </div>
+                )}
                 <MessageBubble
                     msg={msg}
                     onMediaClick={handleMediaClick}
                     onReply={setQuotedMessage}
                     onRetry={handleRetryMessage}
                     onReact={handleReact}
+                    onToggleTask={handleToggleTask}
                     onSaveDraft={(content) => {
                       setDraftContentToSave(content);
                       setSaveDraftModalOpen(true);
@@ -845,8 +1108,8 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex h-screen bg-background">
-      <div className="flex flex-col flex-1 h-screen">
+    <div className="grid h-screen w-full min-w-0 max-w-full grid-cols-[minmax(0,1fr)_auto] overflow-hidden bg-background" style={{ contain: 'inline-size' }}>
+      <div className="flex h-screen w-full min-w-0 max-w-full flex-col overflow-hidden">
 
         <ChatHeader
           chatDetails={chatDetails}
@@ -874,7 +1137,10 @@ export default function ChatPage() {
         )}
 
         <main
-          className="flex-1 overflow-y-auto p-4 space-y-1"
+          key={chatMountKey}
+          ref={messagesContainerRef}
+          onScroll={handleMessagesScroll}
+          className="min-w-0 w-full max-w-full flex-1 overflow-y-auto overflow-x-hidden overscroll-contain p-4"
           style={{
             backgroundColor: activeThemeBg || undefined,
             ...(chatTheme?.backgroundType === 'image' && chatTheme?.backgroundImageUrl
@@ -886,15 +1152,60 @@ export default function ChatPage() {
               : {}),
           }}
         >
-          {renderMessages()}
-          <div ref={messagesEndRef} />
+          <div
+            className="flex min-h-full w-full min-w-0 max-w-full flex-col justify-end space-y-1 overflow-x-hidden"
+            style={{ contain: 'inline-size' }}
+          >
+            {hasOlderMessages && !searchQuery ? (
+              <div className="flex justify-center pb-3 pt-1">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-full bg-background/90 shadow-sm backdrop-blur"
+                  onClick={() => void loadOlderMessages()}
+                  disabled={isLoadingOlderMessages}
+                >
+                  {isLoadingOlderMessages ? <Loader2 className="h-4 w-4 animate-spin" /> : <ChevronUp className="h-4 w-4" />}
+                  {t(isLoadingOlderMessages ? 'loading_older_messages' : 'load_older_messages')}
+                </Button>
+              </div>
+            ) : null}
+            {renderMessages()}
+            <div ref={messagesEndRef} />
+          </div>
         </main>
 
         {renderReplyPreview()}
 
+        {isRadarUserEmail(user?.email) && radarSuggestions.length > 0 && (
+          <div className="radar-ui flex flex-wrap items-center gap-1.5 border-t border-neutral-100 bg-neutral-50 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900">
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-400">Radar</span>
+            {radarSuggestions.map((suggestion, index) => (
+              <button
+                key={index}
+                type="button"
+                onClick={() => setNewMessage(suggestion)}
+                title={suggestion}
+                className="max-w-xs truncate rounded-xl border border-neutral-200 bg-white px-3 py-1.5 text-xs font-bold text-neutral-600 transition-all duration-200 hover:border-indigo-500 hover:text-indigo-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+              >
+                {suggestion}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setRadarSuggestions([])}
+              className="ml-auto text-[10px] font-bold text-neutral-400 hover:text-neutral-600"
+            >
+              Ocultar
+            </button>
+          </div>
+        )}
+
         <footer className="border-t bg-background shrink-0">
           <div className="relative">
             <ChatInput
+              chatId={currentChat?.id}
               isInternalNote={isInternalNote}
               setIsInternalNote={setIsInternalNote}
               newMessage={newMessage}
@@ -927,46 +1238,34 @@ export default function ChatPage() {
               isWindowExpired={isWindowExpired}
               onOpenTemplateDialog={() => setTemplateDialogOpen(true)}
               isGroup={isGroup}
+              canUseChatActions={Boolean(currentChat?.id)}
+              improveReplyMode={improveMode}
+              isImprovingReply={isImprovingReply}
+              onImproveReply={handleOpenImproveDialog}
+              onSuggestReply={handleSuggestReply}
+              onToggleAiAgent={dispatchToggleAiAgent}
+              onTriggerAutomation={dispatchTriggerAutomation}
             />
-
-            <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-end px-3 py-2">
-              <div className="pointer-events-auto flex items-center gap-1 rounded-full border bg-background/90 p-1 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
-                {improveComposerActions.map(({ mode, title, icon: Icon }) => {
-                  const isLoadingAction = isImprovingReply && improveMode === mode;
-
-                  return (
-                    <Button
-                      key={mode}
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
-                      title={title}
-                      onClick={() => handleOpenImproveDialog(mode)}
-                      disabled={isImprovingReply || !newMessage.trim() || !currentChat?.id}
-                    >
-                      {isLoadingAction ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon className="h-4 w-4" />}
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
           </div>
         </footer>
       </div>
 
-      <ChatSidebar chatDetails={chatDetails} isCollapsed={chatSidebarCollapsed} onToggleCollapse={toggleChatSidebar} isGroup={isGroup} onSyncMessages={() => handleSyncMessages(100)} isSyncingMessages={isSyncingMessages} />
+      {!chatSidebarCollapsed ? (
+        <ChatSidebar chatDetails={chatDetails} chatId={currentChat?.id} isCollapsed={false} onToggleCollapse={toggleChatSidebar} isGroup={isGroup} onSyncMessages={() => handleSyncMessages(100)} isSyncingMessages={isSyncingMessages} onInsertComposerText={setNewMessage} onRadarSuggestionsLoaded={setRadarSuggestions} />
+      ) : null}
 
-      <QuickRepliesModal open={quickRepliesOpen} onOpenChange={setQuickRepliesOpen} />
-      <DraftShortcutsModal
-        open={draftShortcutsOpen}
-        onOpenChange={setDraftShortcutsOpen}
-        drafts={drafts ?? []}
-        initialQuery={draftShortcutQuery}
-        onInsertDraft={handleInsertDraft}
-      />
-      <TemplateDialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen} onSendTemplate={handleSendTemplate} />
-      <SaveDraftModal open={saveDraftModalOpen} onOpenChange={setSaveDraftModalOpen} messageContent={draftContentToSave} />
+      {quickRepliesOpen ? <QuickRepliesModal open onOpenChange={setQuickRepliesOpen} /> : null}
+      {draftShortcutsOpen ? (
+        <DraftShortcutsModal
+          open
+          onOpenChange={setDraftShortcutsOpen}
+          drafts={drafts ?? []}
+          initialQuery={draftShortcutQuery}
+          onInsertDraft={handleInsertDraft}
+        />
+      ) : null}
+      {templateDialogOpen ? <TemplateDialog open onOpenChange={setTemplateDialogOpen} onSendTemplate={handleSendTemplate} /> : null}
+      {saveDraftModalOpen ? <SaveDraftModal open onOpenChange={setSaveDraftModalOpen} messageContent={draftContentToSave} /> : null}
       <Dialog open={improveDialogOpen} onOpenChange={setImproveDialogOpen}>
         <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col overflow-hidden sm:max-w-2xl">
           <DialogHeader>
@@ -975,10 +1274,12 @@ export default function ChatPage() {
           </DialogHeader>
 
           <div className="flex-1 space-y-4 overflow-y-auto pr-1">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">{t('improve_reply.current_text_label')}</label>
-              <Textarea value={newMessage} readOnly placeholder={t('improve_reply.current_text_placeholder')} rows={4} />
-            </div>
+            {improveActionConfig.showCurrentText ? (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{t('improve_reply.current_text_label')}</label>
+                <Textarea value={newMessage} readOnly placeholder={t('improve_reply.current_text_placeholder')} rows={4} />
+              </div>
+            ) : null}
 
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('improve_reply.additional_context_label')}</label>
@@ -1037,7 +1338,7 @@ export default function ChatPage() {
                 <Copy className="h-4 w-4" />
                 {t('improve_reply.copy_button')}
               </Button>
-              <Button type="button" variant="outline" onClick={() => requestImprovedReply(improveMode)} disabled={isImprovingReply || !newMessage.trim()}>
+              <Button type="button" variant="outline" onClick={() => requestImprovedReply(improveMode)} disabled={isImprovingReply || (improveMode !== 'suggest' && !newMessage.trim())}>
                 {isImprovingReply ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
                 {improveActionConfig.regenerateLabel}
               </Button>

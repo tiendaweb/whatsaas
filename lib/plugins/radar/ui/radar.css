@@ -1,0 +1,5 @@
+/* Lenguaje visual ToDoS, aislado a este plugin (mismo patrón que
+   ui-nueva/tareas.css y documents.css: no se filtra al resto de WhatsPro). */
+.radar-ui {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}

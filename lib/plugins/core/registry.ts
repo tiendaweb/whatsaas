@@ -13,6 +13,7 @@ const pluginLoaders: Record<string, PluginLoader> = {
   notes: () => import('@/lib/plugins/notes/manifest'),
   calendar: () => import('@/lib/plugins/calendar/manifest'),
   marketplace: () => import('@/lib/plugins/marketplace/manifest'),
+  radar: () => import('@/lib/plugins/radar/manifest'),
 };
 
 const manifestCache = new Map<string, AppPluginManifest>();
