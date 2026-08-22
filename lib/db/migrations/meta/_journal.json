@@ -134,6 +134,335 @@
       "when": 1779500000000,
       "tag": "0019_notes_calendar_plugins",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1748000000000,
+      "tag": "0029_domains_plugin",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1748100000000,
+      "tag": "0030_sales_plugin",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1748200000000,
+      "tag": "0031_task_os",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1748300000000,
+      "tag": "0032_scheduled_messages",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1748400000000,
+      "tag": "0033_mini_apps",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1781134413740,
+      "tag": "0034_social_publisher",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1782172800000,
+      "tag": "0035_form_builder",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1782259200000,
+      "tag": "0036_task_os_workspaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1782345600000,
+      "tag": "0037_task_os_expansion",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1782432000000,
+      "tag": "0038_chat_theme_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1782518400000,
+      "tag": "0039_task_item_appearance",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1782604800000,
+      "tag": "0040_task_item_schedule",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1782691200000,
+      "tag": "0041_add_workspace_project_stage_appearance_and_task_cover",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1782777600000,
+      "tag": "0042_automation_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1782864000000,
+      "tag": "0043_chat_automation_disabled",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1782950400000,
+      "tag": "0044_task_os_embed",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1783568952528,
+      "tag": "0035_loud_trauma",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1783571860483,
+      "tag": "0036_panoramic_tiger_shark",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1783749609278,
+      "tag": "0037_lying_shadow_king",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1783752564679,
+      "tag": "0038_greedy_zuras",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1783754276890,
+      "tag": "0039_normal_callisto",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1784023200000,
+      "tag": "0050_resellers",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1784023260000,
+      "tag": "0051_wallet_debt",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1784109600000,
+      "tag": "0052_reseller_payment_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1784131200000,
+      "tag": "0053_reseller_reconciliation",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1784145600000,
+      "tag": "0054_reseller_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1784707200000,
+      "tag": "0055_aapp_renewal_queue",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1785024000000,
+      "tag": "0056_sites",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1785027600000,
+      "tag": "0057_navigation_performance",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1785202923000,
+      "tag": "0058_sites_categories",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1785283200000,
+      "tag": "0059_dashboard_bookmarks",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1785369600000,
+      "tag": "0060_automation_folders",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1785601309008,
+      "tag": "0061_automations_updated_at_ms_precision",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1785809729447,
+      "tag": "0052_membership_plan_visibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1786060800000,
+      "tag": "0062_dashboard_agenda_funnel_groups",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1786147200000,
+      "tag": "0063_multiple_agendas_per_funnel_group",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1786166690526,
+      "tag": "0064_read_only_api_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1786204800000,
+      "tag": "0065_grok_connector",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1786212000000,
+      "tag": "0066_finance",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1786331032499,
+      "tag": "0067_conversation_ai_summaries",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1786739595555,
+      "tag": "0068_business_os_phase1",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1786741440000,
+      "tag": "0069_business_os_phase2",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1786745000000,
+      "tag": "0070_business_os_phase3",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1786745001000,
+      "tag": "0071_team_menu_items",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1787289806432,
+      "tag": "0072_site_connector_admin",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1787349783950,
+      "tag": "0073_task_item_assignee",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1787376969028,
+      "tag": "0074_document_html_format",
+      "breakpoints": true
     }
   ]
 }

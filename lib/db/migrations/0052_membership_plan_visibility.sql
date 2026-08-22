@@ -1,0 +1,2 @@
+ALTER TABLE "team_membership_plans" ADD COLUMN "visibility" varchar(20) DEFAULT 'public' NOT NULL;--> statement-breakpoint
+CREATE INDEX "team_membership_plans_team_visibility_idx" ON "team_membership_plans" USING btree ("team_id","visibility");
