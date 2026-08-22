@@ -19,6 +19,7 @@ export type DocumentSummary = {
   version: number;
   position: number;
   updatedAt: string;
+  format: 'markdown' | 'html';
 };
 
 export type FolderNode = FolderSummary & {

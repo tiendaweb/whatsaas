@@ -135,6 +135,33 @@ export function DocumentsApp({ documentId }: { documentId?: number }) {
     [mutate, openDocument],
   );
 
+  const createHtmlDocument = useCallback(
+    async (folderId: number | null, title: string, htmlContent: string) => {
+      if (creatingDocumentRef.current) return;
+      creatingDocumentRef.current = true;
+
+      try {
+        const response = await fetch('/api/plugins/documents/documents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, folderId, format: 'html', htmlContent }),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          toast.error(result.error ?? 'No se pudo crear el informe HTML.');
+          return;
+        }
+        await mutate();
+        openDocument(result.id);
+      } catch {
+        toast.error('No se pudo crear el informe HTML.');
+      } finally {
+        creatingDocumentRef.current = false;
+      }
+    },
+    [mutate, openDocument],
+  );
+
   const createFolder = useCallback(
     async (parentId: number | null) => {
       const name = window.prompt(parentId ? 'Nombre de la subcarpeta' : 'Nombre de la carpeta');
@@ -410,6 +437,7 @@ export function DocumentsApp({ documentId }: { documentId?: number }) {
             onOpenFolder={openFolder}
             onOpenDocument={openDocument}
             onCreateDocument={createDocument}
+            onCreateHtmlDocument={createHtmlDocument}
             onCreateFolder={createFolder}
           />
         )}
