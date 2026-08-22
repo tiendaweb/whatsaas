@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import { and, asc, eq, gte, lte, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/lib/db/drizzle';
-import { teamEvents, teamNotifications, teamPlugins } from '@/lib/db/schema';
+import { teamEventParticipants, teamEvents, teamNotifications, teamPlugins } from '@/lib/db/schema';
 import { getPluginRequestContext } from '@/lib/plugins/core/runtime-permissions';
+import { participantInputSchema, syncEventParticipants } from '@/lib/plugins/calendar/server/participants';
 
 const createEventSchema = z.object({
   title: z.string().min(1).max(180),
@@ -17,6 +18,13 @@ const createEventSchema = z.object({
   relatedUserId: z.number().int().nullable().optional(),
   contactId: z.number().int().nullable().optional(),
   validateOverlap: z.boolean().optional(),
+  kind: z.enum(['meeting', 'call']).default('meeting'),
+  subtype: z.string().trim().max(40).nullable().optional(),
+  outcome: z.string().default(''),
+  nextAction: z.string().default(''),
+  customerId: z.number().int().positive().nullable().optional(),
+  relatedEventId: z.number().int().positive().nullable().optional(),
+  participants: z.array(participantInputSchema).default([]),
 });
 
 export async function GET() {
@@ -31,7 +39,19 @@ export async function GET() {
     .where(eq(teamEvents.teamId, context.team.id))
     .orderBy(asc(teamEvents.startsAt));
 
-  return NextResponse.json(events);
+  const participants = await db
+    .select()
+    .from(teamEventParticipants)
+    .where(eq(teamEventParticipants.teamId, context.team.id));
+
+  const participantsByEvent = new Map<number, typeof participants>();
+  for (const p of participants) {
+    const list = participantsByEvent.get(p.eventId) ?? [];
+    list.push(p);
+    participantsByEvent.set(p.eventId, list);
+  }
+
+  return NextResponse.json(events.map((event) => ({ ...event, participants: participantsByEvent.get(event.id) ?? [] })));
 }
 
 export async function POST(request: Request) {
@@ -96,12 +116,22 @@ export async function POST(request: Request) {
       departmentId: parsed.data.departmentId ?? null,
       relatedUserId: parsed.data.relatedUserId ?? null,
       contactId: parsed.data.contactId ?? null,
+      kind: parsed.data.kind,
+      subtype: parsed.data.subtype || null,
+      outcome: parsed.data.outcome,
+      nextAction: parsed.data.nextAction,
+      customerId: parsed.data.customerId ?? null,
+      relatedEventId: parsed.data.relatedEventId ?? null,
       createdBy: context.user.id,
       updatedBy: context.user.id,
       createdAt: new Date(),
       updatedAt: new Date(),
     })
     .returning();
+
+  if (parsed.data.participants.length > 0) {
+    await syncEventParticipants(context.team.id, created.id, parsed.data.participants);
+  }
 
   await db.insert(teamNotifications).values({
     teamId: context.team.id,

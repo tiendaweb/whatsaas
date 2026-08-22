@@ -2,13 +2,13 @@ import { z } from 'zod';
 import type { AppPluginManifest } from '@/lib/plugins/core/types';
 
 const calendarSettingsSchema = z.object({
-  defaultView: z.enum(['month', 'week']).default('month'),
-  enforceOverlapValidation: z.boolean().default(false),
+  defaultView: z.enum(['calendar', 'gantt']).default('calendar'),
+  calendarSubView: z.enum(['month', 'week']).default('month'),
 });
 
 const manifest: AppPluginManifest<typeof calendarSettingsSchema> = {
   id: 'calendar',
-  displayName:  'Team Calendar',
+  displayName: 'Calendario de tareas',
   activationMode: 'global',
   scopes: ['dashboard.nav', 'dashboard.page', 'admin.settings'],
   routes: [
@@ -16,7 +16,7 @@ const manifest: AppPluginManifest<typeof calendarSettingsSchema> = {
     { path: '/plugins/calendar/settings', title: 'Configuración de calendario', scope: 'dashboard.page' },
   ],
   navItems: [
-    { label: 'Tareas', href: '/plugins/calendar', icon: 'CalendarDays', order: 46, requiredPermission: 'calendar.read' },
+    { label: 'Calendario', href: '/plugins/calendar', icon: 'CalendarDays', order: 46, requiredPermission: 'calendar.read' },
   ],
   settingsSchema: calendarSettingsSchema,
   featureFlags: [],
