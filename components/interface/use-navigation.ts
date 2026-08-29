@@ -111,6 +111,7 @@ export const APP_VISUAL: Record<string, { gradient: string; iconColor: string }>
   '/plugins/contracts':           { gradient: 'from-sky-600 to-blue-700',       iconColor: 'text-white' },
   '/plugins/intelligence':        { gradient: 'from-indigo-600 to-violet-700',  iconColor: 'text-white' },
   '/escritorio':                  { gradient: 'from-slate-600 to-slate-800',    iconColor: 'text-white' },
+  '/seguimiento':                 { gradient: 'from-emerald-500 to-teal-600',   iconColor: 'text-white' },
   '/escritorio/bandeja':          { gradient: 'from-[#2f9e44] to-[#86efac]',   iconColor: 'text-white' },
 };
 
@@ -240,6 +241,7 @@ export function useNavegacion() {
 
   const apps: NavEntry[] = [
     conVisual('/escritorio', DesktopIcon, 'Escritorio'),
+    conVisual('/seguimiento', Target, t('seguimiento')),
     // El Centro de Comandos vive dentro del Escritorio, pero es su propia
     // pantalla de trabajo: si sólo se llega pasando por otra, no se usa.
     conVisual('/escritorio/bandeja', Inbox, 'Centro de comandos'),

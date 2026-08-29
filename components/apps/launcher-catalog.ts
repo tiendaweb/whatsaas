@@ -135,6 +135,7 @@ const APPS_LAUNCHER_PREFIXES = [
   '/plugins/chatgpt-connector',
   '/escritorio',
   '/escritorio/bandeja',
+  '/seguimiento',
 ];
 
 const APP_VISUAL: Record<string, LauncherApp['visual']> = {
@@ -194,6 +195,7 @@ const APP_VISUAL: Record<string, LauncherApp['visual']> = {
     invertInDark: true,
   },
   '/escritorio': { gradient: 'from-slate-600 to-slate-800', iconColor: 'text-white' },
+  '/seguimiento': { gradient: 'from-emerald-500 to-teal-600', iconColor: 'text-white' },
   '/escritorio/bandeja': { gradient: 'from-[#2f9e44] to-[#86efac]', iconColor: 'text-white' },
 };
 
@@ -229,6 +231,7 @@ const APP_LABEL_OVERRIDE: Record<string, string> = {
   '/plugins/claude-code-connector': 'Claude Code',
   '/plugins/chatgpt-connector': 'ChatGPT',
   '/escritorio': 'Escritorio',
+  '/seguimiento': 'Seguimiento',
   '/escritorio/bandeja': 'Centro de comandos',
 };
 
@@ -265,6 +268,7 @@ const APP_DESCRIPTION: Record<string, string> = {
   '/plugins/claude-code-connector': 'Conector MCP de solo lectura para trabajar con WhatsPro desde Claude Code.',
   '/plugins/chatgpt-connector': 'Conector MCP de solo lectura para consultar WhatsPro desde ChatGPT.',
   '/escritorio': 'Acceso rapido al escritorio operativo.',
+  '/seguimiento': 'Agenda de contactos por etapa del embudo, con filtros por etiqueta y segmento.',
   '/escritorio/bandeja': 'Todo lo que hay que atender, con la respuesta ya redactada por la IA.',
 };
 
@@ -300,6 +304,13 @@ export function buildLauncherApps(
       label: 'Centro de comandos',
       description: APP_DESCRIPTION['/escritorio/bandeja'],
       visual: APP_VISUAL['/escritorio/bandeja'],
+    },
+    {
+      href: '/seguimiento',
+      icon: Target,
+      label: 'Seguimiento',
+      description: APP_DESCRIPTION['/seguimiento'],
+      visual: APP_VISUAL['/seguimiento'],
     },
   ];
 

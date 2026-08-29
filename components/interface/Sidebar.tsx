@@ -215,6 +215,12 @@ export function Sidebar() {
       label: 'Escritorio',
       visual: APP_VISUAL['/escritorio'] ?? { gradient: 'from-slate-600 to-slate-800', iconColor: 'text-white' },
     },
+    {
+      href: '/seguimiento',
+      icon: Target,
+      label: t('seguimiento'),
+      visual: APP_VISUAL['/seguimiento'] ?? { gradient: 'from-emerald-500 to-teal-600', iconColor: 'text-white' },
+    },
   ];
 
   // Installed mini-apps as individual launcher entries
