@@ -4,6 +4,7 @@ import { dossierActionTools, dossierReadTools, executeDossierTool } from '@/lib/
 import { executeQueueTool, queueActionTools, queueReadTools } from '@/lib/plugins/sales-ops/tools/queue-tools';
 import { executeSignalTool, signalActionTools, signalReadTools } from '@/lib/plugins/sales-ops/tools/signal-tools';
 import { executeWorkTool, workActionTools, workReadTools } from '@/lib/plugins/sales-ops/tools/work-tools';
+import { executePromptTool, promptActionTools, promptReadTools } from '@/lib/plugins/sales-ops/tools/prompt-tools';
 
 /**
  * Command Center Comercial por MCP (`whatspro_sales_*`).
@@ -13,12 +14,13 @@ import { executeWorkTool, workActionTools, workReadTools } from '@/lib/plugins/s
  * `z.object` adentro hace desaparecer la tool en silencio (verificar con
  * scripts/verify-connector-tools.mts).
  */
-export const salesOpsReadTools: GrokActionTool[] = [...workReadTools, ...dossierReadTools, ...queueReadTools, ...signalReadTools];
-export const salesOpsActionTools: GrokActionTool[] = [...dossierActionTools, ...queueActionTools, ...signalActionTools, ...workActionTools];
+export const salesOpsReadTools: GrokActionTool[] = [...workReadTools, ...promptReadTools, ...dossierReadTools, ...queueReadTools, ...signalReadTools];
+export const salesOpsActionTools: GrokActionTool[] = [...dossierActionTools, ...queueActionTools, ...signalActionTools, ...workActionTools, ...promptActionTools];
 
 const has = (tools: GrokActionTool[], name: string) => tools.some((tool) => tool.name === name);
 
 export async function executeSalesOpsTool(name: string, input: Record<string, unknown>, context: GrokActionContext) {
+  if (has(promptReadTools, name) || has(promptActionTools, name)) return executePromptTool(name, input, context);
   if (has(workReadTools, name) || has(workActionTools, name)) return executeWorkTool(name, input, context);
   if (has(dossierReadTools, name) || has(dossierActionTools, name)) return executeDossierTool(name, input, context);
   if (has(queueReadTools, name) || has(queueActionTools, name)) return executeQueueTool(name, input, context);

@@ -1,4 +1,4 @@
-export const VISTAS = ['hoy', 'dinero', 'oportunidades', 'barrido', 'limpieza', 'respuestas', 'cola', 'todos', 'experimentos', 'metricas'] as const;
+export const VISTAS = ['hoy', 'dinero', 'oportunidades', 'barrido', 'limpieza', 'respuestas', 'cola', 'todos', 'experimentos', 'prompts', 'metricas'] as const;
 export type Vista = (typeof VISTAS)[number];
 
 export const VISTA_LABELS: Record<Vista, string> = {
@@ -11,6 +11,7 @@ export const VISTA_LABELS: Record<Vista, string> = {
   cola: 'Cola',
   todos: 'Todos',
   experimentos: 'Experimentos',
+  prompts: 'Prompt Studio',
   metricas: 'Métricas',
 };
 

@@ -4,6 +4,7 @@ import { chats, messageAudioInsights, teamCommercialActions, teamCommercialAnaly
 import { maskJid } from '@/lib/desktop/command-center/types';
 import { listPendingChats, type PendingChat } from './classifier';
 import { listScanCandidates, type ScanCandidate } from './radar';
+import { listPromptRuns } from './prompt-queue';
 
 /**
  * Cola de trabajo para conectores.
@@ -15,10 +16,11 @@ import { listScanCandidates, type ScanCandidate } from './radar';
  * Grok) pide la cola, ejecuta ítem por ítem y devuelve el resultado con las
  * tools de escritura. Nada de acá toca el CRM.
  */
-export type WorkKind = 'classify' | 'execute_action' | 'classify_signal' | 'transcribe';
-export const WORK_KINDS: WorkKind[] = ['classify', 'execute_action', 'classify_signal', 'transcribe'];
+export type WorkKind = 'run_prompt' | 'classify' | 'execute_action' | 'classify_signal' | 'transcribe';
+export const WORK_KINDS: WorkKind[] = ['run_prompt', 'classify', 'execute_action', 'classify_signal', 'transcribe'];
 
 export type WorkItem =
+  | { kind: 'run_prompt'; priority: number; runId: number; title: string; promptKey: string; text: string; targetKind: string; targetId: string; targetName: string | null; chatId: number | null; createdAt: string; tools: string[]; steps: string[] }
   | { kind: 'classify'; priority: number; chatId: number; name: string; phoneMasked: string; reason: PendingChat['pendingReason']; signals: string[]; automationActive: boolean; pendingAudios: number; tools: string[]; steps: string[] }
   | { kind: 'execute_action'; priority: number; actionId: number; batchId: string; batchLabel: string; actionKind: string; chatId: number; name: string; payload: Record<string, unknown>; idempotencyKey: string; approvedAt: string | null; tools: string[]; steps: string[] }
   | { kind: 'classify_signal'; priority: number; messageId: string; chatId: number; name: string; excerpt: string; at: string; tools: string[]; steps: string[] }
@@ -62,7 +64,34 @@ export async function listWorkQueue(teamId: number, opts: { kinds?: WorkKind[]; 
   const kinds = new Set(opts.kinds?.length ? opts.kinds : WORK_KINDS);
   const limit = Math.min(Math.max(1, opts.limit ?? 30), 200);
   const items: WorkItem[] = [];
-  const counts: Record<WorkKind, number> = { classify: 0, execute_action: 0, classify_signal: 0, transcribe: 0 };
+  const counts: Record<WorkKind, number> = { run_prompt: 0, classify: 0, execute_action: 0, classify_signal: 0, transcribe: 0 };
+
+  // 0. Prompts encolados a mano (Prompt Studio / "Siguiente acción"): lo más explícito va primero.
+  const runs = await listPromptRuns(teamId, { status: 'queued', limit: 200 });
+  counts.run_prompt = runs.length;
+  if (kinds.has('run_prompt')) {
+    for (const run of runs) {
+      items.push({
+        kind: 'run_prompt',
+        priority: 2500,
+        runId: run.id,
+        title: run.title,
+        promptKey: run.promptKey,
+        text: run.text,
+        targetKind: run.targetKind,
+        targetId: run.targetId,
+        targetName: run.targetName,
+        chatId: run.targetKind === 'chat' ? Number(run.targetId) : null,
+        createdAt: run.createdAt,
+        tools: ['whatspro_sales_prompt_result'],
+        steps: [
+          `whatspro_sales_prompt_result {run_id: ${run.id}, status: "in_progress"} (opcional, para marcar que lo tomaste)`,
+          'ejecutar el texto del prompt tal cual, con las tools whatspro_* que pida; respetar las reglas del Command Center',
+          `whatspro_sales_prompt_result {run_id: ${run.id}, status: "completed"|"failed"|"blocked", summary: "<qué hiciste, 1-3 líneas>"}`,
+        ],
+      });
+    }
+  }
 
   // 1. Envíos y acciones aprobadas que el servidor no ejecuta (Fase 6 pendiente).
   const approved = await db
@@ -196,5 +225,6 @@ export async function countConnectorPending(teamId: number, totals: { total: num
     .select({ n: sql<number>`count(*)::int` })
     .from(teamCommercialActions)
     .where(and(eq(teamCommercialActions.teamId, teamId), eq(teamCommercialActions.status, 'approved')));
-  return (row?.n ?? 0) + Math.max(0, totals.total - totals.analyzed) + totals.stale;
+  const queuedRuns = await listPromptRuns(teamId, { status: 'queued', limit: 200 });
+  return (row?.n ?? 0) + queuedRuns.length + Math.max(0, totals.total - totals.analyzed) + totals.stale;
 }

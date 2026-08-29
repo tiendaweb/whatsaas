@@ -14,7 +14,7 @@ import {
   Radar,
   Sparkles,
   Sun,
-  type LucideIcon,
+  type LucideIcon, Wand2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OwnerFilter, type OwnerFilterValue } from './OwnerFilter';
@@ -31,6 +31,7 @@ export const VISTA_ICONS: Record<Vista, LucideIcon> = {
   cola: Inbox,
   todos: LayoutList,
   experimentos: FlaskConical,
+  prompts: Wand2,
   metricas: BarChart,
 };
 

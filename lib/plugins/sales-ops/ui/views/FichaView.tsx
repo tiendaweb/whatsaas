@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import type { ActionRow, AnalysisDetail, AnalysisVersionRow, DetailPayload, SignalRow, TimelineGap, TimelineHit } from '../../shared/api-types';
 import { ANALYSIS_STATUSES, GATES, GATE_LABELS, type AnalysisStatus, type Gate } from '../../shared/taxonomy';
 import { GateBadge } from '../components/GateBadge';
+import { FichaChat } from '../components/FichaChat';
 import { TemperatureIcon } from '../components/PriorityPill';
 import { ErrorState } from '../components/States';
 import {
@@ -40,7 +41,18 @@ import {
   tiempoRelativo,
 } from '../components/format';
 
-type Header = { chatId: number; contactId: number | null; name: string; phoneMasked: string; avatarUrl: string | null };
+type Header = {
+  chatId: number;
+  contactId: number | null;
+  name: string;
+  phoneMasked: string;
+  avatarUrl: string | null;
+  remoteJid?: string;
+  instanceId?: number | null;
+  customData?: Record<string, unknown>;
+  contactNotes?: string | null;
+  tags?: Array<{ id: number; name: string; color: string | null }>;
+};
 type Payload = DetailPayload & { header: Header };
 
 type Props = { chatId: number; onClose?: () => void };
@@ -76,29 +88,24 @@ export function FichaView({ chatId }: Props) {
         </div>
       </header>
 
-      <Tabs defaultValue="resumen" className="min-h-0 flex-1">
-        <TabsList className="w-full justify-start overflow-x-auto">
-          <TabsTrigger value="resumen">Resumen</TabsTrigger>
-          <TabsTrigger value="timeline">Timeline</TabsTrigger>
-          <TabsTrigger value="chat">Chat</TabsTrigger>
-          <TabsTrigger value="acciones">Acciones{data.actions.length ? ` (${data.actions.length})` : ''}</TabsTrigger>
-          <TabsTrigger value="versiones">Versiones{data.versions.length ? ` (${data.versions.length})` : ''}</TabsTrigger>
+      <Tabs defaultValue="resumen" className="flex min-h-0 flex-1 flex-col">
+        <TabsList className="h-9 w-full shrink-0 flex-nowrap justify-start gap-0.5 overflow-x-auto overflow-y-hidden [scrollbar-width:none]">
+          <TabsTrigger className="shrink-0 flex-none px-2.5 text-xs" value="resumen">Resumen</TabsTrigger>
+          <TabsTrigger className="shrink-0 flex-none px-2.5 text-xs" value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger className="shrink-0 flex-none px-2.5 text-xs" value="chat">Chat</TabsTrigger>
+          <TabsTrigger className="shrink-0 flex-none px-2.5 text-xs" value="acciones">Acciones{data.actions.length ? ` (${data.actions.length})` : ''}</TabsTrigger>
+          <TabsTrigger className="shrink-0 flex-none px-2.5 text-xs" value="versiones">Versiones{data.versions.length ? ` (${data.versions.length})` : ''}</TabsTrigger>
         </TabsList>
         <TabsContent value="resumen" className="mt-3">
           {a ? <Resumen a={a} onOverride={() => void mutate()} /> : <SinAnalisis chatId={chatId} onOverride={() => void mutate()} />}
+          <ContextoContacto header={h} timeline={data.timeline} />
+          <DejarPromptBlock chatId={chatId} />
         </TabsContent>
         <TabsContent value="timeline" className="mt-3">
           <Timeline items={data.timeline} chatHref={data.chatHref} signals={data.signals} />
         </TabsContent>
-        <TabsContent value="chat" className="mt-3">
-          <div className="rounded-xl border border-dashed border-border p-6 text-center">
-            <p className="text-sm text-muted-foreground">El chat embebido llega en una fase posterior. Sólo lectura.</p>
-            <Button asChild variant="outline" size="sm" className="mt-3">
-              <a href={data.chatHref} target="_blank" rel="noreferrer">
-                Abrir chat completo <ExternalLink className="size-3.5" aria-hidden />
-              </a>
-            </Button>
-          </div>
+        <TabsContent value="chat" className="mt-3 flex min-h-[60vh] flex-1 flex-col">
+          <FichaChat chatId={chatId} chatHref={data.chatHref} className="flex min-h-0 flex-1 flex-col" />
         </TabsContent>
         <TabsContent value="acciones" className="mt-3">
           <Acciones actions={data.actions} signals={data.signals} />
@@ -288,6 +295,101 @@ function ClasificarAhoraButton({ chatId, onDone }: { chatId: number; onDone: () 
     <Button type="button" size="sm" variant="outline" disabled={busy} onClick={run}>
       {busy ? 'Clasificando…' : 'Clasificar ahora'}
     </Button>
+  );
+}
+
+// ── Contexto del contacto: campos personalizados y notas internas ───────────
+
+function ContextoContacto({ header, timeline }: { header: Header; timeline: DetailPayload['timeline'] }) {
+  const custom = Object.entries(header.customData ?? {}).filter(([, v]) => v !== null && v !== '' && typeof v !== 'object');
+  const notas = timeline.filter((t): t is TimelineHit => 'who' in t && t.who === 'nota').slice(-8).reverse();
+  if (!custom.length && !notas.length && !header.contactNotes && !(header.tags?.length)) return null;
+  return (
+    <div className="mt-4 space-y-3">
+      {(custom.length > 0 || header.tags?.length) && (
+        <section className="rounded-xl border border-border p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Campos del contacto</p>
+          {header.tags && header.tags.length > 0 && (
+            <p className="mt-1 text-xs text-muted-foreground">Etiquetas: <span className="text-foreground">{header.tags.map((t) => t.name).join(' · ')}</span></p>
+          )}
+          <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">
+            {custom.map(([k, v]) => (
+              <div key={k} className="min-w-0">
+                <dt className="truncate text-[10px] text-muted-foreground">{k.replace(/_/g, ' ')}</dt>
+                <dd className="break-words text-xs text-foreground">{String(v)}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
+      {(notas.length > 0 || header.contactNotes) && (
+        <section className="rounded-xl border border-border p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Notas internas</p>
+          {header.contactNotes && <p className="mt-1 whitespace-pre-wrap text-xs text-foreground">{header.contactNotes}</p>}
+          <ul className="mt-2 space-y-1.5">
+            {notas.map((n) => (
+              <li key={n.id} className="rounded-md border border-dashed border-border px-2 py-1.5 text-xs">
+                <span className="text-muted-foreground">{tiempoRelativo(n.at)} · </span>
+                <span className="whitespace-pre-wrap">{n.text}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
+  );
+}
+
+// ── Dejar un prompt al conector (entra a la cola de ejecución) ──────────────
+
+function DejarPromptBlock({ chatId }: { chatId: number }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const { data, mutate } = useSWR<{ runs: Array<{ id: number; title: string; status: string; summary: string | null; createdAt: string }> }>(`${SALES_OPS_API}/prompts/queue?status=all&chatId=${chatId}`, fetcher);
+  const submit = async () => {
+    if (text.trim().length < 5) {
+      toast.error('Escribí qué tiene que hacer el conector (mínimo 5 caracteres).');
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await fetch(`${SALES_OPS_API}/prompts/queue`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: text.trim(), targetKind: 'chat', targetId: chatId }) });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(String(body?.error ?? `Error ${r.status}`));
+      toast.success('Quedó en la cola de conectores. Se ejecuta con el prompt P9 (vista Cola).');
+      setText('');
+      void mutate();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo encolar.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const runs = data?.runs ?? [];
+  return (
+    <section className="mt-4 rounded-xl border border-border p-3">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Dejar un prompt al conector</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">Lo que escribas queda en la cola de ejecución y lo corre Claude, ChatGPT o Grok con el contexto de este chat.</p>
+      <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} placeholder="Ej.: Redactá el mensaje para confirmar el plan Combo Full y pedir la seña; no lo envíes." className="mt-2 text-sm" />
+      <div className="mt-2 flex justify-end">
+        <Button size="sm" disabled={busy} onClick={submit}>{busy ? 'Encolando…' : 'Encolar para el conector'}</Button>
+      </div>
+      {runs.length > 0 && (
+        <ul className="mt-3 space-y-1.5">
+          {runs.slice(0, 6).map((r) => (
+            <li key={r.id} className="flex items-start justify-between gap-2 rounded-md bg-muted/50 px-2 py-1.5 text-xs">
+              <div className="min-w-0">
+                <p className="truncate font-medium">{r.title}</p>
+                {r.summary && <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">{r.summary}</p>}
+              </div>
+              <span className={cn('shrink-0 rounded-full px-1.5 py-0.5 text-[10px]', r.status === 'completed' ? 'bg-primary/10 text-foreground' : r.status === 'queued' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200' : 'bg-muted text-muted-foreground')}>
+                {r.status === 'queued' ? 'en cola' : r.status === 'in_progress' ? 'en curso' : r.status === 'completed' ? 'hecho' : r.status}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

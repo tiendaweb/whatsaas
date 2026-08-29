@@ -451,7 +451,7 @@ export async function getAnalysisDetail(teamId: number, chatId: number): Promise
 
   const now = Date.now();
   const [contact, analysisRows, msgsDesc, audioRows, versionRows, actionRows, signalRows] = await Promise.all([
-    db.query.contacts.findFirst({ where: eq(contacts.chatId, chatId), columns: { id: true, name: true } }),
+    db.query.contacts.findFirst({ where: eq(contacts.chatId, chatId), columns: { id: true, name: true, notes: true, customData: true, funnelStageId: true }, with: { contactTags: { with: { tag: { columns: { id: true, name: true, color: true } } } } } }),
     db.select().from(teamCommercialAnalysis).where(and(eq(teamCommercialAnalysis.teamId, teamId), eq(teamCommercialAnalysis.chatId, chatId))).limit(1),
     db
       .select({
@@ -584,10 +584,29 @@ export async function getAnalysisDetail(teamId: number, chatId: number): Promise
     name,
     phoneMasked: maskJid(chat.remoteJid),
     avatarUrl: chat.profilePicUrl,
+    remoteJid: chat.remoteJid,
+    instanceId: chat.instanceId ?? null,
+    customData: (contact?.customData as Record<string, unknown> | null) ?? {},
+    contactNotes: contact?.notes ?? null,
+    tags: (contact?.contactTags ?? []).map((ct) => ct.tag).filter(Boolean) as Array<{ id: number; name: string; color: string | null }>,
   };
 
   return { analysis, timeline, versions, actions, signals, chatHref, header };
 }
 
 /** Cabecera mínima de un chat sin análisis (para la ficha). */
-export type ChatHeader = { chatId: number; contactId: number | null; name: string; phoneMasked: string; avatarUrl: string | null };
+export type ChatHeader = {
+  chatId: number;
+  contactId: number | null;
+  name: string;
+  phoneMasked: string;
+  avatarUrl: string | null;
+  /** JID técnico para el chat embebido (`/api/messages?jid=`). No se muestra: para la UI está `phoneMasked`. */
+  remoteJid: string;
+  instanceId: number | null;
+  /** Campos personalizados del contacto (contacts.customData) tal cual, sin secretos. */
+  customData: Record<string, unknown>;
+  /** Nota libre de la ficha del contacto (contacts.notes). */
+  contactNotes: string | null;
+  tags: Array<{ id: number; name: string; color: string | null }>;
+};

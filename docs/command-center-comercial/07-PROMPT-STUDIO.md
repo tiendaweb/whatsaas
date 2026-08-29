@@ -3,7 +3,7 @@
 Qué es: una biblioteca de prompts **con contrato de salida y cadena de tools**, pensados para pegarse en Claude / ChatGPT / Grok con el conector `whatspro_*` conectado. Cada prompt lee de WhatsPro, razona con las reglas del documento 04 y **escribe sólo en la capa del Command Center** (documentos de esta carpeta, notas internas, y —cuando exista— la tabla de análisis). Ninguno cambia etapas, etiquetas, campos, automatizaciones ni clientes.
 
 **v0 (hoy):** los prompts viven en esta carpeta de Documentos; el conector los encuentra con `whatspro_documents_search "Prompt Studio"`. Los resultados van a dos subcarpetas: **Auditoría** (lotes clasificados) y **Cola** (lotes propuestos/aprobados/ejecutados).
-**v1 (Fase 1):** los mismos prompts pasan a `team_prompts` (versionados) y cada corrida queda en `team_prompt_runs`; las tools `whatspro_sales_*` reemplazan los documentos como destino.
+**v1 (hecho el 2026-08-29):** los prompts viven en `team_prompts` (versionados, keys `qa.*`) y se ven en la vista **Prompt Studio** del Command Center; cada botón **Encolar** crea una corrida en `team_prompt_runs` que el conector toma con `whatspro_sales_work_queue` (kind `run_prompt`) y cierra con `whatspro_sales_prompt_result`. Desde la ficha de un chat, **"Dejar un prompt al conector"** encola un texto libre con el contexto del chat. `whatspro_sales_prompts_list` devuelve las acciones y las corridas abiertas. Las tools `whatspro_sales_*` reemplazan los documentos como destino; esta carpeta queda como referencia y para prompts largos.
 
 Reglas comunes a todos los prompts (van al principio de cada uno):
 

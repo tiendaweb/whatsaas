@@ -298,6 +298,8 @@ const PRIORITY_TOOLS = [
   'whatspro_tasks_comment',
   // Command Center Comercial.
   'whatspro_sales_work_queue',
+  'whatspro_sales_prompt_result',
+  'whatspro_sales_prompts_list',
   'whatspro_sales_pending',
   'whatspro_sales_dossier',
   'whatspro_sales_classification_write',

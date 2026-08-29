@@ -7,12 +7,13 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { SALES_OPS_API } from '../components/format';
 
-type WorkCounts = { classify: number; execute_action: number; classify_signal: number; transcribe: number };
+type WorkCounts = { run_prompt: number; classify: number; execute_action: number; classify_signal: number; transcribe: number };
 type WorkPayload = { generatedAt: string; counts: WorkCounts; items: Array<{ kind: keyof WorkCounts; name: string }>; rules: string[] };
 
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Error ${r.status}`))));
 
 const LABELS: Record<keyof WorkCounts, string> = {
+  run_prompt: 'Prompts encolados',
   execute_action: 'Envíos y acciones aprobadas',
   classify: 'Chats por clasificar',
   classify_signal: 'Respuestas por clasificar',
@@ -76,7 +77,7 @@ export function ConectoresCard() {
         </div>
       </div>
       {data && total > 0 && (
-        <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
           {(Object.keys(LABELS) as Array<keyof WorkCounts>).map((kind) => (
             <div key={kind} className="rounded-lg bg-muted/60 px-3 py-2">
               <dt className="text-[11px] text-muted-foreground">{LABELS[kind]}</dt>
