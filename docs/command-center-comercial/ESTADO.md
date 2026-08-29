@@ -41,7 +41,9 @@ Se construyeron las Fases 1 a 5 el mismo día, en paralelo por cuatro equipos co
 
 **Desviaciones respecto al plan:** una sola migración para las Fases 1–5 (en vez de una por fase) para permitir el paralelismo; UI en español hardcodeado (sin namespace i18n `SalesOps`) por la misma razón; `priority = P × valor × velocidad` sin el ×100 (los ejemplos del doc 04 ya estaban en esa escala); el conector se identifica por input (`GrokActionContext` no lo trae).
 
-**Falta (en orden):** desplegar con `pnpm run deploy:saasfy`; registrar en PM2 `scripts/sales-ops-{classify,radar,housekeeping}.js` (15 min / 2 min / diario, con `--node-args="--env-file=/root/whatsaas/.env"`); cargar keys con cuota en el banco Gemini del equipo 2 o una key paga; set de control de 50 chats (P8) antes de lotes grandes; Fase 6 (ejecución desde el servidor vía `executeCommandBatch`) y Fase 7 (leads nuevos, atribución al anuncio).
+**Desplegado el 2026-08-29** (`pnpm run deploy:saasfy`, commits 70a5cff y a9688d6) y crons registrados en PM2: `sales-ops-classify` (*/15), `sales-ops-radar` (*/2), `sales-ops-housekeeping` (04:15). Disponible para los tres conectores (Claude, ChatGPT, Grok comparten el handler MCP); las instrucciones del servidor MCP mencionan `whatspro_sales_work_queue`. En la UI: vista Cola → bloque "Cola de conectores" con conteos y botón "Copiar prompt P9"; ficha → "Clasificar ahora" que, sin cuota de IA, avisa que el chat quedó en la cola de conectores.
+
+**Falta (en orden):** cargar keys con cuota en el banco Gemini del equipo 2 o una key paga; set de control de 50 chats (P8) antes de lotes grandes; Fase 6 (ejecución desde el servidor vía `executeCommandBatch`) y Fase 7 (leads nuevos, atribución al anuncio).
 
 ## Fases
 
