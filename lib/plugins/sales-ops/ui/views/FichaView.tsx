@@ -227,6 +227,7 @@ function Resumen({ a, onOverride }: { a: AnalysisDetail; onOverride: () => void 
                 <TooltipContent>Fase 6</TooltipContent>
               </Tooltip>
             ))}
+            <ClasificarAhoraButton chatId={a.chatId} onDone={onOverride} />
             <OverrideDialog chatId={a.chatId} currentGate={a.currentGate} currentStatus={a.status} onDone={onOverride} />
           </div>
         </TooltipProvider>
@@ -247,10 +248,46 @@ function SinAnalisis({ chatId, onOverride }: { chatId: number; onOverride: () =>
     <div className="space-y-3 rounded-xl border border-dashed border-border p-4 text-center">
       <p className="text-sm font-medium">Este chat todavía no fue analizado</p>
       <p className="text-xs text-muted-foreground">El timeline ya está disponible en la pestaña correspondiente. Podés fijar un gate a mano mientras tanto.</p>
-      <div className="flex justify-center">
+      <div className="flex justify-center gap-2">
+        <ClasificarAhoraButton chatId={chatId} onDone={onOverride} />
         <OverrideDialog chatId={chatId} currentGate={null} currentStatus={null} onDone={onOverride} />
       </div>
     </div>
+  );
+}
+
+/** Clasifica con el motor del servidor; si no hay cuota de IA, el chat queda en la cola de conectores. */
+function ClasificarAhoraButton({ chatId, onDone }: { chatId: number; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    try {
+      const response = await fetch(`${SALES_OPS_API}/classify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId, engine: 'server' }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(String(body?.error ?? `Error ${response.status}`));
+        return;
+      }
+      if (body?.aiUsed === false) {
+        toast.warning('Sin cuota de IA en el servidor: el chat quedó en la cola de conectores. Ejecutalo desde Claude/ChatGPT/Grok con el prompt P9 (vista Cola).', { duration: 8000 });
+      } else {
+        toast.success(`Clasificado: ${body?.gate ?? 'ok'} · confianza ${body?.confidence ?? '—'}`);
+      }
+      onDone();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo clasificar.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Button type="button" size="sm" variant="outline" disabled={busy} onClick={run}>
+      {busy ? 'Clasificando…' : 'Clasificar ahora'}
+    </Button>
   );
 }
 

@@ -9,6 +9,7 @@ import type { QueueListPayload } from '../../shared/api-types';
 import { BatchCard } from '../cola/BatchCard';
 import { NuevoLoteDialog } from '../cola/NuevoLoteDialog';
 import { RevisarLote } from '../cola/RevisarLote';
+import { ConectoresCard } from '../cola/ConectoresCard';
 import { QUEUE_ENDPOINT, batchPhase, fetcher } from '../cola/api';
 
 /**
@@ -38,6 +39,8 @@ export function ColaView({ presetChatIds }: { presetChatIds?: number[] } = {}) {
 
   return (
     <div className="space-y-6">
+      <ConectoresCard />
+
       <section className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Lotes propuestos</h2>
