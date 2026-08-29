@@ -15,17 +15,29 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const scope = searchParams.get('scope');
+    const jid = searchParams.get('jid')?.trim();
+    const instanceIdParam = searchParams.get('instanceId');
 
     const whereConditions = [eq(chats.teamId, permCtx.teamId)];
 
-    if (scope !== 'kanban') {
+    if (jid) {
+      whereConditions.push(eq(chats.remoteJid, jid));
+    } else if (scope !== 'kanban') {
       whereConditions.push(isNotNull(chats.lastMessageTimestamp));
+    }
+
+    if (instanceIdParam) {
+      const instanceId = Number(instanceIdParam);
+      if (!Number.isInteger(instanceId) || instanceId <= 0) {
+        return NextResponse.json({ error: 'Invalid instanceId' }, { status: 400 });
+      }
+      whereConditions.push(eq(chats.instanceId, instanceId));
     }
 
     const teamChats = await db.query.chats.findMany({
       where: and(...whereConditions),
       orderBy: [desc(chats.lastMessageTimestamp)],
-      limit: scope === 'kanban' ? undefined : 50,
+      limit: jid ? 1 : undefined,
       with: {
         contact: {
           columns: {
@@ -34,6 +46,8 @@ export async function GET(req: NextRequest) {
             notes: true,
             showTimeInStage: true,
             assignedDepartmentId: true,
+            temperature: true,
+            isVip: true,
           },
           with: {
             funnelStage: {

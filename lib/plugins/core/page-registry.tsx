@@ -121,6 +121,40 @@ const pluginRouteRegistry: Record<string, PluginRouteRenderer[]> = {
       },
     },
   ],
+  gemini: [
+    {
+      routeMatcher: (slug) => !slug?.length,
+      loadRenderer: async () => {
+        const { GeminiKeysDashboard } = await import('@/lib/plugins/gemini/ui/GeminiKeysDashboard');
+        return () => <GeminiKeysDashboard />;
+      },
+    },
+  ],
+  'sales-ops': [
+    {
+      routeMatcher: () => true,
+      loadRenderer: async () => {
+        const { SalesOpsApp } = await import('@/lib/plugins/sales-ops/ui/SalesOpsApp');
+        return ({ slug }) => <SalesOpsApp slug={slug ?? []} />;
+      },
+    },
+  ],
+  deals: [
+    {
+      routeMatcher: (slug) => Boolean(slug?.[0]),
+      loadRenderer: async () => {
+        const { DealDetail } = await import('@/lib/plugins/deals/ui/DealDetail');
+        return ({ slug }) => <DealDetail dealId={Number(slug?.[0])} />;
+      },
+    },
+    {
+      routeMatcher: (slug) => !slug?.length,
+      loadRenderer: async () => {
+        const { DealsBoard } = await import('@/lib/plugins/deals/ui/DealsBoard');
+        return () => <DealsBoard />;
+      },
+    },
+  ],
   customers: [
     {
       routeMatcher: (slug) => Boolean(slug?.[0]),
@@ -214,6 +248,29 @@ const pluginRouteRegistry: Record<string, PluginRouteRenderer[]> = {
       loadRenderer: async () => {
         const { MiniAppsDashboard } = await import('@/lib/plugins/mini-apps/ui/MiniAppsDashboard');
         return () => <MiniAppsDashboard />;
+      },
+    },
+  ],
+  'app-maker': [
+    {
+      routeMatcher: (slug) => slug?.[0] === 'apps' && Boolean(slug?.[1]),
+      loadRenderer: async () => {
+        const { AppMakerStudio } = await import('@/lib/plugins/app-maker/ui/AppMakerStudio');
+        return ({ slug }) => <AppMakerStudio slug={slug?.[1] ?? ''} />;
+      },
+    },
+    {
+      routeMatcher: (slug) => slug?.[0] === 'run' && Boolean(slug?.[1]),
+      loadRenderer: async () => {
+        const { AppMakerRuntime } = await import('@/lib/plugins/app-maker/ui/AppMakerRuntime');
+        return ({ slug }) => <AppMakerRuntime slug={slug?.[1] ?? ''} />;
+      },
+    },
+    {
+      routeMatcher: (slug) => !slug?.length,
+      loadRenderer: async () => {
+        const { AppMakerDashboard } = await import('@/lib/plugins/app-maker/ui/AppMakerDashboard');
+        return () => <AppMakerDashboard />;
       },
     },
   ],
@@ -407,8 +464,8 @@ const pluginRouteRegistry: Record<string, PluginRouteRenderer[]> = {
     {
       routeMatcher: (slug) => !slug?.length,
       loadRenderer: async () => {
-        const { RadarDashboard } = await import('@/lib/plugins/radar/ui/RadarDashboard');
-        return () => <RadarDashboard />;
+        const { RadarApp } = await import('@/lib/plugins/radar/ui/RadarApp');
+        return () => <RadarApp />;
       },
     },
   ],

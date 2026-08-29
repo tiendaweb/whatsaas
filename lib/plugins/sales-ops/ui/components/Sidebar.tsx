@@ -1,0 +1,190 @@
+'use client';
+
+import {
+  ArrowLeft,
+  BarChart,
+  Brush,
+  ChevronsLeft,
+  ChevronsRight,
+  Coins,
+  FlaskConical,
+  Inbox,
+  LayoutList,
+  ListChecks,
+  Radar,
+  Sparkles,
+  Sun,
+  type LucideIcon,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { OwnerFilter, type OwnerFilterValue } from './OwnerFilter';
+import { VISTAS, VISTA_LABELS, type Vista } from './vistas';
+import { fmtInt, iniciales } from './format';
+
+export const VISTA_ICONS: Record<Vista, LucideIcon> = {
+  hoy: Sun,
+  dinero: Coins,
+  oportunidades: Sparkles,
+  barrido: Brush,
+  limpieza: ListChecks,
+  respuestas: Radar,
+  cola: Inbox,
+  todos: LayoutList,
+  experimentos: FlaskConical,
+  metricas: BarChart,
+};
+
+export type SidebarUser = { name: string | null; email: string | null } | null;
+
+export type SidebarProps = {
+  vista: Vista;
+  counts: Partial<Record<Vista, number>>;
+  owner: OwnerFilterValue;
+  user: SidebarUser;
+  collapsed?: boolean;
+  onNav: (v: Vista) => void;
+  onOwner: (v: OwnerFilterValue) => void;
+  onToggleCollapse?: () => void;
+  className?: string;
+};
+
+/**
+ * Rail izquierdo del Command Center. Minimalista y operativo: sin sombras ni
+ * gradientes; la jerarquía la hacen el peso tipográfico y el espacio.
+ */
+export function Sidebar({ vista, counts, owner, user, collapsed, onNav, onOwner, onToggleCollapse, className }: SidebarProps) {
+  return (
+    <aside
+      className={cn(
+        'flex h-full shrink-0 flex-col border-r border-border bg-background transition-[width] duration-200',
+        collapsed ? 'w-16' : 'w-[232px]',
+        className,
+      )}
+      aria-label="Navegación del Command Center"
+    >
+      <div className={cn('flex items-center gap-2.5 px-3 pt-4 pb-3', collapsed && 'justify-center px-0')}>
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <Radar className="size-4" aria-hidden />
+        </span>
+        {!collapsed && (
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold leading-tight">Command Center</span>
+            <span className="block truncate text-[11px] leading-tight text-muted-foreground">Comercial</span>
+          </span>
+        )}
+      </div>
+
+      {!collapsed && (
+        <div className="px-3 pb-3">
+          <OwnerFilter value={owner} onChange={onOwner} />
+        </div>
+      )}
+
+      <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2">
+        {VISTAS.map((v) => {
+          const Icon = VISTA_ICONS[v];
+          const active = vista === v;
+          const n = counts[v];
+          return (
+            <button
+              key={v}
+              type="button"
+              onClick={() => onNav(v)}
+              title={VISTA_LABELS[v]}
+              aria-current={active ? 'page' : undefined}
+              className={cn(
+                'flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition-colors',
+                active ? 'bg-muted font-semibold text-foreground' : 'font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                collapsed && 'justify-center px-0',
+              )}
+            >
+              <Icon className="size-4 shrink-0" aria-hidden />
+              {!collapsed && (
+                <>
+                  <span className="min-w-0 flex-1 truncate">{VISTA_LABELS[v]}</span>
+                  {typeof n === 'number' && n > 0 && <span className="text-[11px] tabular-nums text-muted-foreground">{fmtInt(n)}</span>}
+                </>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="mt-auto space-y-1 border-t border-border p-2">
+        {onToggleCollapse && (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className={cn('hidden w-full items-center gap-3 rounded-lg px-2.5 py-2 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground lg:flex', collapsed && 'justify-center px-0')}
+            aria-label={collapsed ? 'Expandir navegación' : 'Plegar navegación'}
+          >
+            {collapsed ? <ChevronsRight className="size-4" aria-hidden /> : <ChevronsLeft className="size-4" aria-hidden />}
+            {!collapsed && 'Plegar'}
+          </button>
+        )}
+        <a
+          href="/dashboard"
+          className={cn('flex items-center gap-3 rounded-lg px-2.5 py-2 text-xs font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground', collapsed && 'justify-center px-0')}
+          title="Volver a WhatsPro"
+        >
+          <ArrowLeft className="size-4 shrink-0" aria-hidden />
+          {!collapsed && 'Volver a WhatsPro'}
+        </a>
+        <div className={cn('flex items-center gap-2.5 px-2.5 py-2', collapsed && 'justify-center px-0')}>
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-foreground">
+            {iniciales(user?.name || user?.email || '?')}
+          </span>
+          {!collapsed && (
+            <span className="min-w-0">
+              <span className="block truncate text-xs font-medium">{user?.name || user?.email || '—'}</span>
+              {user?.name && user.email && <span className="block truncate text-[10px] text-muted-foreground">{user.email}</span>}
+            </span>
+          )}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+const MOBILE_TABS: Vista[] = ['hoy', 'dinero', 'respuestas', 'cola'];
+
+/** Barra inferior propia (móvil): 4 accesos + "Más" que abre el drawer. */
+export function MobileBar({ vista, counts, onNav, onMore }: { vista: Vista; counts: Partial<Record<Vista, number>>; onNav: (v: Vista) => void; onMore: () => void }) {
+  const moreActive = !MOBILE_TABS.includes(vista);
+  return (
+    <nav
+      className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-background pb-[env(safe-area-inset-bottom)] lg:hidden"
+      aria-label="Accesos rápidos"
+    >
+      {MOBILE_TABS.map((v) => {
+        const Icon = VISTA_ICONS[v];
+        const active = vista === v;
+        const n = counts[v];
+        return (
+          <button
+            key={v}
+            type="button"
+            onClick={() => onNav(v)}
+            aria-current={active ? 'page' : undefined}
+            className={cn('relative flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium', active ? 'text-foreground' : 'text-muted-foreground')}
+          >
+            <Icon className="size-5" aria-hidden />
+            {VISTA_LABELS[v]}
+            {typeof n === 'number' && n > 0 && (
+              <span className="absolute right-[18%] top-1 rounded-full bg-foreground px-1 text-[9px] font-semibold tabular-nums text-background">{n > 99 ? '99+' : n}</span>
+            )}
+          </button>
+        );
+      })}
+      <button
+        type="button"
+        onClick={onMore}
+        className={cn('flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium', moreActive ? 'text-foreground' : 'text-muted-foreground')}
+        aria-label="Más vistas"
+      >
+        <LayoutList className="size-5" aria-hidden />
+        Más
+      </button>
+    </nav>
+  );
+}

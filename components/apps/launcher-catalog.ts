@@ -1,6 +1,7 @@
 import {
   BadgeDollarSign,
   Bot,
+  Blocks,
   Building2,
   CalendarDays,
   CheckSquare,
@@ -12,6 +13,8 @@ import {
   Files,
   FileStack,
   Globe,
+  Inbox,
+  Handshake,
   LayoutDashboard,
   LayoutGrid,
   LayoutTemplate,
@@ -33,12 +36,24 @@ import {
   LifeBuoy,
   FileSignature,
   Zap,
-  type LucideIcon,
+  type LucideIcon, Target,
 } from 'lucide-react';
 import { CORE_NAV_ITEMS, type MenuOverride } from '@/lib/menu/core-nav-items';
 
 export type PluginNavItem = { href: string; label: string; icon?: string; order?: number };
 export type InstalledMiniApp = { slug: string; installedAt: string };
+export type PublishedAppMakerApp = {
+  slug: string;
+  name: string;
+  description: string;
+  icon: string;
+  category: string;
+  accent: string;
+  status: 'published';
+  version: number;
+  publishedVersion: number | null;
+  updatedAt: string;
+};
 export type LauncherApp = {
   href: string;
   icon: LucideIcon;
@@ -80,8 +95,11 @@ const PLUGIN_NAV_ICON_MAP: Record<string, LucideIcon> = {
   Zap,
   Users,
   FileText,
+  Target,
   LayoutTemplate,
+  Blocks,
   Radar,
+  Handshake,
 };
 
 const APPS_LAUNCHER_PREFIXES = [
@@ -90,12 +108,15 @@ const APPS_LAUNCHER_PREFIXES = [
   '/plugins/domains',
   '/plugins/articles',
   '/plugins/sales',
+  '/plugins/deals',
+  '/plugins/sales-ops',
   '/plugins/customers',
   '/plugins/memberships',
   '/plugins/aapp-space',
   '/plugins/tasks',
   '/plugins/scheduled-messages',
   '/plugins/mini-apps',
+  '/plugins/app-maker',
   '/plugins/form-builder',
   '/plugins/hostinger',
   '/plugins/meta-ads',
@@ -108,10 +129,12 @@ const APPS_LAUNCHER_PREFIXES = [
   '/plugins/support',
   '/plugins/contracts',
   '/plugins/intelligence',
+  '/plugins/radar',
   '/plugins/grok-connector',
   '/plugins/claude-code-connector',
   '/plugins/chatgpt-connector',
   '/escritorio',
+  '/escritorio/bandeja',
 ];
 
 const APP_VISUAL: Record<string, LauncherApp['visual']> = {
@@ -134,6 +157,7 @@ const APP_VISUAL: Record<string, LauncherApp['visual']> = {
   '/plugins/tasks': { gradient: 'from-indigo-500 to-violet-600', iconColor: 'text-white' },
   '/plugins/scheduled-messages': { gradient: 'from-rose-500 to-pink-600', iconColor: 'text-white' },
   '/plugins/mini-apps': { gradient: 'from-fuchsia-500 to-pink-600', iconColor: 'text-white' },
+  '/plugins/app-maker': { gradient: 'from-emerald-500 to-teal-600', iconColor: 'text-white' },
   '/plugins/form-builder': { gradient: 'from-teal-500 to-cyan-600', iconColor: 'text-white' },
   '/plugins/hostinger': { gradient: 'from-purple-600 to-indigo-700', iconColor: 'text-white' },
   '/plugins/meta-ads': { gradient: 'from-blue-600 to-sky-500', iconColor: 'text-white' },
@@ -147,6 +171,8 @@ const APP_VISUAL: Record<string, LauncherApp['visual']> = {
   '/plugins/contracts': { gradient: 'from-sky-600 to-blue-700', iconColor: 'text-white' },
   '/plugins/intelligence': { gradient: 'from-indigo-600 to-violet-700', iconColor: 'text-white' },
   '/plugins/radar': { gradient: 'from-indigo-500 to-violet-600', iconColor: 'text-white' },
+  '/plugins/deals': { gradient: 'from-green-600 to-emerald-500', iconColor: 'text-white' },
+  '/plugins/sales-ops': { gradient: 'from-slate-800 to-emerald-600', iconColor: 'text-white' },
   '/plugins/grok-connector': {
     gradient: 'from-white to-white',
     iconColor: 'text-slate-950',
@@ -168,6 +194,7 @@ const APP_VISUAL: Record<string, LauncherApp['visual']> = {
     invertInDark: true,
   },
   '/escritorio': { gradient: 'from-slate-600 to-slate-800', iconColor: 'text-white' },
+  '/escritorio/bandeja': { gradient: 'from-[#2f9e44] to-[#86efac]', iconColor: 'text-white' },
 };
 
 const APP_LABEL_OVERRIDE: Record<string, string> = {
@@ -185,6 +212,7 @@ const APP_LABEL_OVERRIDE: Record<string, string> = {
   '/plugins/tasks': 'Tareas OS',
   '/plugins/scheduled-messages': 'Programados',
   '/plugins/mini-apps': 'Mis Apps',
+  '/plugins/app-maker': 'APP MAKER',
   '/plugins/form-builder': 'Formularios',
   '/plugins/hostinger': 'Hostinger',
   '/plugins/meta-ads': 'Meta Ads',
@@ -201,6 +229,7 @@ const APP_LABEL_OVERRIDE: Record<string, string> = {
   '/plugins/claude-code-connector': 'Claude Code',
   '/plugins/chatgpt-connector': 'ChatGPT',
   '/escritorio': 'Escritorio',
+  '/escritorio/bandeja': 'Centro de comandos',
 };
 
 const APP_DESCRIPTION: Record<string, string> = {
@@ -218,6 +247,7 @@ const APP_DESCRIPTION: Record<string, string> = {
   '/plugins/tasks': 'Sistema completo de tareas, tableros y proyectos.',
   '/plugins/scheduled-messages': 'Mensajes programados para WhatsApp.',
   '/plugins/mini-apps': 'Coleccion de mini aplicaciones instalables.',
+  '/plugins/app-maker': 'Constructor declarativo de aplicaciones internas conectadas a WhatsPro.',
   '/plugins/form-builder': 'Formularios para capturar datos y solicitudes.',
   '/plugins/hostinger': 'Conecta cuentas de Hostinger e importa dominios.',
   '/plugins/meta-ads': 'Campañas publicitarias de Meta: resultados, historial y reportes en PDF.',
@@ -230,11 +260,12 @@ const APP_DESCRIPTION: Record<string, string> = {
   '/plugins/support': 'Tickets de soporte y postventa por cliente.',
   '/plugins/contracts': 'Contratos comerciales por cliente, vencimientos y renovación.',
   '/plugins/intelligence': 'Panel de dirección: finanzas, ventas, compras, soporte y contratos en un vistazo.',
-  '/plugins/radar': 'Inteligencia comercial por chat: prioridad, estrategia y mensajes sugeridos.',
+  '/plugins/radar': 'Inteligencia comercial viva: clientes analizados, informes y widgets que generan las IA.',
   '/plugins/grok-connector': 'Conector MCP de solo lectura para consultar WhatsPro desde Grok.',
   '/plugins/claude-code-connector': 'Conector MCP de solo lectura para trabajar con WhatsPro desde Claude Code.',
   '/plugins/chatgpt-connector': 'Conector MCP de solo lectura para consultar WhatsPro desde ChatGPT.',
   '/escritorio': 'Acceso rapido al escritorio operativo.',
+  '/escritorio/bandeja': 'Todo lo que hay que atender, con la respuesta ya redactada por la IA.',
 };
 
 const MINI_APP_VISUAL: Record<string, { gradient: string; iconColor: string; label: string; icon: LucideIcon; description: string }> = {
@@ -251,16 +282,26 @@ export function buildLauncherApps(
   pluginNavItems: PluginNavItem[] = [],
   installedMiniApps: InstalledMiniApp[] = [],
   menuOverrides: MenuOverride[] = [],
+  publishedAppMakerApps: PublishedAppMakerApp[] = [],
 ) {
   const overrideMap = new Map(menuOverrides.map((o) => [o.itemKey, o.pinned]));
 
-  const staticApps: LauncherApp[] = [{
-    href: '/escritorio',
-    icon: LayoutDashboard,
-    label: 'Escritorio',
-    description: APP_DESCRIPTION['/escritorio'],
-    visual: APP_VISUAL['/escritorio'],
-  }];
+  const staticApps: LauncherApp[] = [
+    {
+      href: '/escritorio',
+      icon: LayoutDashboard,
+      label: 'Escritorio',
+      description: APP_DESCRIPTION['/escritorio'],
+      visual: APP_VISUAL['/escritorio'],
+    },
+    {
+      href: '/escritorio/bandeja',
+      icon: Inbox,
+      label: 'Centro de comandos',
+      description: APP_DESCRIPTION['/escritorio/bandeja'],
+      visual: APP_VISUAL['/escritorio/bandeja'],
+    },
+  ];
 
   const miniApps = installedMiniApps
     .filter((app) => MINI_APP_VISUAL[app.slug])
@@ -274,6 +315,22 @@ export function buildLauncherApps(
         visual: { gradient: visual.gradient, iconColor: visual.iconColor },
       };
     });
+
+  const appMakerApps: LauncherApp[] = publishedAppMakerApps.map((app) => ({
+    href: `/plugins/app-maker/run/${app.slug}`,
+    icon: PLUGIN_NAV_ICON_MAP[app.icon] ?? Blocks,
+    label: app.name,
+    description: app.description || `Aplicación ${app.category} creada con APP MAKER.`,
+    visual: {
+      gradient: app.accent === 'blue' ? 'from-blue-500 to-cyan-600'
+        : app.accent === 'violet' ? 'from-violet-500 to-purple-600'
+          : app.accent === 'rose' ? 'from-rose-500 to-pink-600'
+            : app.accent === 'amber' ? 'from-amber-500 to-orange-600'
+              : app.accent === 'slate' ? 'from-slate-600 to-slate-800'
+                : 'from-emerald-500 to-teal-600',
+      iconColor: 'text-white',
+    },
+  }));
 
   const pluginApps = pluginNavItems
     .filter((item) => !item.href.startsWith('/plugins/marketplace'))
@@ -303,6 +360,6 @@ export function buildLauncherApps(
     }));
 
   const byHref = new Map<string, LauncherApp>();
-  [...staticApps, ...miniApps, ...pluginApps, ...coreApps].forEach((app) => byHref.set(app.href, app));
+  [...staticApps, ...miniApps, ...appMakerApps, ...pluginApps, ...coreApps].forEach((app) => byHref.set(app.href, app));
   return Array.from(byHref.values());
 }

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useState, Suspense, useEffect, useTransition } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { LogOut, Settings, MessageCircle, Menu, X, ShieldAlert } from 'lucide-react';
+import { LogOut, Settings, MessageCircle, Menu, X, ShieldAlert, Store } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,6 +19,11 @@ import { Sidebar } from '@/components/interface/Sidebar';
 import Logo from '@/components/interface/Logo';
 import { ThemeSwitcher } from '@/components/theme-switcher';
 import { adminStopImpersonation } from '@/app/[locale]/(admin)/admin-actions';
+import { PusherProvider } from '@/providers/pusher-provider';
+import { MobileBottomNav } from '@/components/interface/MobileBottomNav';
+import { cn } from '@/lib/utils';
+import { GlobalChatNotifications } from '@/components/notifications/GlobalChatNotifications';
+import { useTranslations } from 'next-intl';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 type UserWithImpersonation = User & {
@@ -26,9 +31,11 @@ type UserWithImpersonation = User & {
     isImpersonating: boolean;
     impersonatorId: number | null;
   };
+  ownedReseller?: { id: number; slug: string; companyName: string } | null;
 };
 
 function UserMenu() {
+  const t = useTranslations('Chat');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isStoppingImpersonation, startStopImpersonation] = useTransition();
   const { data: user } = useSWR<UserWithImpersonation>('/api/user', fetcher);
@@ -47,10 +54,13 @@ function UserMenu() {
           href="/#pricing"
           className="text-sm font-medium text-muted-foreground hover:text-foreground"
         >
-          Pricing
+          {t('pricing_nav')}
         </Link>
+        <Button asChild variant="outline" className="rounded-full">
+          <Link href="/sign-in">{t('sign_in')}</Link>
+        </Button>
         <Button asChild className="rounded-full bg-primary hover:bg-primary/90 text-primary-foreground">
-          <Link href="/sign-up">Sign Up</Link>
+          <Link href="/sign-up">{t('sign_up')}</Link>
         </Button>
       </>
     );
@@ -84,26 +94,42 @@ function UserMenu() {
         {user.impersonation?.isImpersonating && (
           <DropdownMenuItem className="cursor-pointer" onClick={handleStopImpersonation} disabled={isStoppingImpersonation}>
             <ShieldAlert className="mr-2 h-4 w-4" />
-            <span>{isStoppingImpersonation ? 'Leaving...' : 'Stop impersonation'}</span>
+            <span>{isStoppingImpersonation ? t('leaving_impersonation') : t('stop_impersonation')}</span>
+          </DropdownMenuItem>
+        )}
+        {user.role === 'admin' && (
+          <DropdownMenuItem className="cursor-pointer" asChild>
+            <Link href="/admin/resellers" className="flex w-full items-center">
+              <ShieldAlert className="mr-2 h-4 w-4" />
+              <span>{t('admin_resellers')}</span>
+            </Link>
+          </DropdownMenuItem>
+        )}
+        {user.ownedReseller && (
+          <DropdownMenuItem className="cursor-pointer" asChild>
+            <Link href="/reseller" className="flex w-full items-center">
+              <Store className="mr-2 h-4 w-4" />
+              <span>{t('reseller_panel')}</span>
+            </Link>
           </DropdownMenuItem>
         )}
         <DropdownMenuItem className="cursor-pointer">
           <Link href="/dashboard" className="flex w-full items-center">
             <MessageCircle className="mr-2 h-4 w-4" />
-            <span>Dashboard</span>
+            <span>{t('dashboard_nav')}</span>
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem className="cursor-pointer">
           <Link href="/settings" className="flex w-full items-center">
             <Settings className="mr-2 h-4 w-4" />
-            <span>Settings</span>
+            <span>{t('settings_nav')}</span>
           </Link>
         </DropdownMenuItem>
         <form action={handleSignOut} className="w-full">
           <button type="submit" className="flex w-full">
             <DropdownMenuItem className="w-full flex-1 cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10">
               <LogOut className="mr-2 h-4 w-4" />
-              <span>Sign out</span>
+              <span>{t('sign_out')}</span>
             </DropdownMenuItem>
           </button>
         </form>
@@ -153,16 +179,28 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const isHomePage = pathname === '/' || /^\/[a-z]{2}$/.test(pathname);
-  
-  const { data: team } = useSWR('/api/team', fetcher);
+  const pathWithoutLocale = pathname.replace(/^\/(pt|en|es)(?=\/|$)/, '') || '/';
+  const isBusinessWoman = pathname.includes('/plugins/mini-apps/business-woman-planner');
+  // Tareas OS y el Command Center Comercial son "aplicaciones aparte": takeover a pantalla completa.
+  const isTasksOS = pathWithoutLocale.startsWith('/plugins/tasks') || pathWithoutLocale.startsWith('/plugins/sales-ops');
+  const isAutomationEditor = /\/automation\/\d+/.test(pathWithoutLocale);
+  // Tareas OS y el constructor de flujos traen su propia navegación a pantalla
+  // completa; dentro de una conversación la barra taparía el teclado.
+  const mostrarBarraInferior = !isTasksOS
+    && !isAutomationEditor
+    && !pathWithoutLocale.startsWith('/dashboard/chat/');
+  // When true, the main "WhatsPro" / system general sidebar is hidden only for the flow editor (constructor).
+
+  const { data: team } = useSWR(isHomePage ? null : '/api/team', fetcher);
+  const teamId = (team as { id?: number } | undefined)?.id;
 
   useEffect(() => {
     if (team && typeof team === 'object' && 'id' in team && !team.planId) {
-      if (!isHomePage && !pathname.startsWith('/pricing')) {
+      if (!isHomePage && !pathWithoutLocale.startsWith('/pricing')) {
         router.push('/pricing');
       }
     }
-  }, [team, pathname, isHomePage, router]);
+  }, [team, pathWithoutLocale, isHomePage, router]);
 
   if (isHomePage) {
     return (
@@ -176,11 +214,32 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen bg-muted overflow-hidden">
-      <Sidebar />
-      <main className="relative flex flex-1 min-h-0 flex-col overflow-hidden">
-        {children}
-      </main>
-    </div>
+    <PusherProvider teamId={teamId}>
+      <div className="flex h-screen min-w-0 max-w-full overflow-hidden bg-muted">
+        {/* La barra de escritorio NUNCA en móvil: ahí navega la barra inferior
+            más el menú único. Antes aparecía en algunas rutas y en otras no, así
+            que el celular a veces tenía un riel lateral comiéndole el ancho y a
+            veces no. */}
+        {!isAutomationEditor && !isBusinessWoman && !isTasksOS && (
+          <div className="hidden md:flex">
+            <Sidebar />
+          </div>
+        )}
+        <main
+          className={cn(
+            'relative flex h-screen min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden',
+            (isBusinessWoman || isTasksOS || isAutomationEditor) && 'w-full',
+            // La barra inferior es `fixed`: si no se le reserva el alto, tapa el
+            // final de cada pantalla. Antes sólo salía en la bandeja, que ya lo
+            // resolvía por su cuenta; ahora sale en todas.
+            mostrarBarraInferior && 'pb-[calc(4.25rem+env(safe-area-inset-bottom))] md:pb-0',
+          )}
+        >
+          {children}
+        </main>
+      </div>
+      {teamId ? <GlobalChatNotifications teamId={teamId} /> : null}
+      {mostrarBarraInferior && <MobileBottomNav />}
+    </PusherProvider>
   );
 }

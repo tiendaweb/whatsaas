@@ -14,6 +14,7 @@ import {
   uniqueIndex,
   decimal,
   bigint,
+  smallint,
   PgColumn,
   PgTableWithColumns,
   AnyPgColumn,
@@ -306,6 +307,9 @@ export const activityLogs = pgTable("activity_logs", {
   action: text("action").notNull(),
   timestamp: timestamp("timestamp").notNull().defaultNow(),
   ipAddress: varchar("ip_address", { length: 45 }),
+  // Datos estructurados del evento. Antes de que esta columna existiera se
+  // empujaban por `ipAddress`, que es exactamente lo que no hay que hacer.
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
 });
 
 export const invitations = pgTable("invitations", {
@@ -424,6 +428,149 @@ export const conversationAiSummaries = pgTable(
   (table) => ({
     chatUnique: uniqueIndex("conversation_ai_summaries_chat_uidx").on(table.chatId),
     teamUpdatedIndex: index("conversation_ai_summaries_team_updated_idx").on(table.teamId, table.updatedAt),
+  }),
+);
+
+/**
+ * Ficha de un audio de WhatsApp: lo que el audio DICE, en un formato que
+ * pueden leer los conectores y Radar.
+ *
+ * Vive aparte de `messages` a propósito. El intento anterior guardaba la
+ * transcripción como prefijo "[transcripción]" dentro de `messages.text`, lo
+ * que pisaba el campo, obligaba a un NOT LIKE para saber qué faltaba y no
+ * dejaba lugar para el estado del proceso. Acá entra todo: el texto, la
+ * lectura del contenido (resumen, intención, urgencia) y el rastro operativo
+ * (proveedor, modelo, intentos, error) que hace falta para reprocesar cuando
+ * se cambia de modelo.
+ *
+ * Una fila por mensaje de audio, creada por el cron. `status` distingue lo que
+ * está en cola de lo que falló definitivamente: sin eso, un audio corrupto se
+ * reintenta para siempre.
+ */
+export const messageAudioInsights = pgTable(
+  "message_audio_insights",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    chatId: integer("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    messageId: text("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    /** pending | done | failed */
+    status: varchar("status", { length: 16 }).notNull().default("pending"),
+    transcript: text("transcript").notNull().default(""),
+    language: varchar("language", { length: 16 }).notNull().default(""),
+    summary: text("summary").notNull().default(""),
+    /** Qué venía a hacer quien habla: consulta, reclamo, pedido, pago, coordinación… */
+    intent: varchar("intent", { length: 48 }).notNull().default(""),
+    /** baja | media | alta */
+    urgency: varchar("urgency", { length: 16 }).notNull().default(""),
+    /** positivo | neutral | negativo */
+    sentiment: varchar("sentiment", { length: 16 }).notNull().default(""),
+    /** Montos, fechas, direcciones, números de pedido que se nombran en el audio. */
+    entities: jsonb("entities").notNull().default(sql`'{}'::jsonb`),
+    actionItems: jsonb("action_items").notNull().default(sql`'[]'::jsonb`),
+    durationSeconds: integer("duration_seconds").notNull().default(0),
+    provider: varchar("provider", { length: 40 }).notNull().default(""),
+    model: varchar("model", { length: 80 }).notNull().default(""),
+    attempts: integer("attempts").notNull().default(0),
+    error: text("error").notNull().default(""),
+    generatedAt: timestamp("generated_at", { withTimezone: true }),
+    /** Cuándo se corrió el análisis (aparte de la transcripción, y sólo si alguien lo pidió). */
+    analyzedAt: timestamp("analyzed_at", { withTimezone: true }),
+    /** Cola: cuándo entró, con qué prioridad y quién la pidió. */
+    queuedAt: timestamp("queued_at", { withTimezone: true }),
+    priority: integer("priority").notNull().default(0),
+    /** auto | connector | radar | ui */
+    requestedBy: varchar("requested_by", { length: 24 }).notNull().default("auto"),
+    /** Con qué API key del banco se procesó, para poder culpar a la correcta. */
+    keyId: integer("key_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    messageUnique: uniqueIndex("message_audio_insights_message_uidx").on(table.messageId),
+    queueIndex: index("message_audio_insights_queue_idx").on(table.status, table.priority, table.queuedAt),
+    teamStatusIndex: index("message_audio_insights_team_status_idx").on(table.teamId, table.status, table.updatedAt),
+    chatIndex: index("message_audio_insights_chat_idx").on(table.chatId, table.generatedAt),
+  }),
+);
+
+/**
+ * Banco de API keys de Gemini de un equipo.
+ *
+ * Existe porque el free tier de Gemini limita por key (requests por minuto y
+ * por día), no por cuenta: con una sola key la cola de transcripción se frena
+ * a los pocos audios. Varias keys en rotación multiplican el techo sin pagar.
+ *
+ * La key se guarda cifrada con el mismo AES-256-GCM que las credenciales de
+ * pago. `limitRpm`/`limitRpd` son editables porque Google cambia los límites
+ * del free tier sin avisar y no hay forma de consultarlos: si el número está
+ * mal, la barra de progreso miente.
+ */
+export const teamGeminiKeys = pgTable(
+  "team_gemini_keys",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    /** Nombre para reconocerla: "cuenta personal", "cuenta del estudio"… */
+    label: varchar("label", { length: 80 }).notNull(),
+    apiKey: text("api_key").notNull(),
+    /** active | disabled */
+    status: varchar("status", { length: 16 }).notNull().default("active"),
+    model: varchar("model", { length: 80 }).notNull().default("gemini-3.6-flash"),
+    limitRpm: integer("limit_rpm").notNull().default(10),
+    limitRpd: integer("limit_rpd").notNull().default(20),
+    notes: text("notes").notNull().default(""),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    lastError: text("last_error").notNull().default(""),
+    lastErrorAt: timestamp("last_error_at", { withTimezone: true }),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    teamLabelUnique: uniqueIndex("team_gemini_keys_team_label_uidx").on(table.teamId, table.label),
+    teamStatusIndex: index("team_gemini_keys_team_status_idx").on(table.teamId, table.status),
+  }),
+);
+
+/**
+ * Consumo diario de cada key.
+ *
+ * Google NO expone cuánta cuota queda: no hay endpoint. Lo único que se puede
+ * saber es lo que gastamos nosotros, así que se cuenta acá. Si la misma key se
+ * usa desde otro lado, este número queda corto — y la UI lo dice.
+ *
+ * `minuteWindow` + `minuteRequests` son la ventana de requests por minuto: al
+ * usar la key, si la ventana guardada no es el minuto actual el contador
+ * arranca de cero. Evita una tabla de eventos por llamada.
+ */
+export const teamGeminiKeyUsage = pgTable(
+  "team_gemini_key_usage",
+  {
+    id: serial("id").primaryKey(),
+    keyId: integer("key_id")
+      .notNull()
+      .references(() => teamGeminiKeys.id, { onDelete: "cascade" }),
+    day: date("day").notNull(),
+    requests: integer("requests").notNull().default(0),
+    errors: integer("errors").notNull().default(0),
+    /** 429 y demás: la señal de que la key tocó su techo. */
+    quotaErrors: integer("quota_errors").notNull().default(0),
+    audioSeconds: integer("audio_seconds").notNull().default(0),
+    minuteWindow: timestamp("minute_window", { withTimezone: true }),
+    minuteRequests: integer("minute_requests").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    keyDayUnique: uniqueIndex("team_gemini_key_usage_key_day_uidx").on(table.keyId, table.day),
   }),
 );
 
@@ -737,12 +884,27 @@ export const contacts = pgTable(
     notes: text("notes"),
     customData: jsonb("custom_data").$type<Record<string, any>>().default({}),
     showTimeInStage: boolean("show_time_in_stage").default(false),
+    // Datos de la persona. Vivían en `custom_data`, donde no se puede ordenar
+    // ni filtrar con índice.
+    email: varchar("email", { length: 255 }),
+    phone: varchar("phone", { length: 80 }),
+    company: varchar("company", { length: 200 }),
+    jobTitle: varchar("job_title", { length: 120 }),
+    // Texto libre. NO reemplaza a `departments`, que es la asignación operativa
+    // de agentes: son dos cosas distintas y no se mezclan.
+    department: varchar("department", { length: 120 }),
+    linkedinUrl: varchar("linkedin_url", { length: 255 }),
+    leadScore: smallint("lead_score").notNull().default(0),
+    temperature: varchar("temperature", { length: 10 }).notNull().default("warm"),
+    isVip: boolean("is_vip").notNull().default(false),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => ({
     teamIdIndex: index("contact_team_id_idx").on(table.teamId),
     chatIdIndex: index("contact_chat_id_idx").on(table.chatId),
+    temperatureIndex: index("contacts_temperature_idx").on(table.teamId, table.temperature),
+    leadScoreIndex: index("contacts_lead_score_idx").on(table.teamId, table.leadScore),
   }),
 );
 
@@ -3065,6 +3227,18 @@ export const teamSales = pgTable(
       .notNull()
       .references(() => teams.id, { onDelete: "cascade" }),
     contactId: integer("contact_id").references(() => contacts.id, { onDelete: "set null" }),
+    // Una venta podía atarse sólo a un contacto de WhatsApp. Las oportunidades
+    // se atan a un cliente, así que sin esta columna ganar una oportunidad
+    // perdía a quién se le vendió.
+    customerId: integer("customer_id").references(() => teamCustomers.id, { onDelete: "set null" }),
+    // Puente de vuelta hacia la oportunidad que generó esta venta. Nullable y
+    // `set null` al borrar: borrar una oportunidad nunca puede borrar la venta,
+    // que es un hecho contable.
+    dealId: integer("deal_id").references((): AnyPgColumn => teamDeals.id, { onDelete: "set null" }),
+    // Clave de idempotencia del cierre. El índice único parcial de la migración
+    // 0089 es lo que impide que un doble clic en "Marcar como ganada" facture
+    // dos veces.
+    idempotencyKey: varchar("idempotency_key", { length: 120 }),
     saleNumber: varchar("sale_number", { length: 50 }).notNull(),
     status: varchar("status", { length: 30 }).notNull().default("draft"),
     currency: varchar("currency", { length: 3 }).notNull().default("USD"),
@@ -3085,6 +3259,63 @@ export const teamSales = pgTable(
     teamSalesIdx: index("team_sales_team_idx").on(table.teamId),
     teamSalesContactIdx: index("team_sales_contact_idx").on(table.teamId, table.contactId),
     teamSalesStatusIdx: index("team_sales_status_idx").on(table.teamId, table.status),
+    teamSalesCustomerIdx: index("team_sales_customer_idx").on(table.teamId, table.customerId),
+    teamSalesDealIdx: index("team_sales_deal_idx").on(table.teamId, table.dealId),
+  }),
+);
+
+// ─── Oportunidades (app `deals`) ─────────────────────────────────────────────
+//
+// Una oportunidad NO es una venta. `team_sales` es la factura emitida
+// (sale_number, items, total, paid_at); esto es lo que pasa antes: una etapa, una
+// probabilidad y una fecha estimada de cierre. Al ganarla se crea la venta y las
+// dos quedan enlazadas en ambos sentidos (`sale_id` acá, `deal_id` allá).
+
+export const DEAL_STAGES = [
+  "qualified",
+  "proposal",
+  "negotiation",
+  "closed_won",
+  "closed_lost",
+] as const;
+
+export type DealStage = (typeof DEAL_STAGES)[number];
+
+export const teamDeals = pgTable(
+  "team_deals",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 200 }).notNull(),
+    customerId: integer("customer_id").references(() => teamCustomers.id, { onDelete: "set null" }),
+    contactId: integer("contact_id").references(() => contacts.id, { onDelete: "set null" }),
+    stage: varchar("stage", { length: 30 }).$type<DealStage>().notNull().default("qualified"),
+    // Centavos, igual que team_sales.total. Nunca un float.
+    value: integer("value").notNull().default(0),
+    currency: varchar("currency", { length: 3 }).notNull().default("USD"),
+    probability: smallint("probability").notNull().default(50),
+    expectedCloseDate: timestamp("expected_close_date"),
+    closedAt: timestamp("closed_at"),
+    lostReason: text("lost_reason").notNull().default(""),
+    ownerId: integer("owner_id").references(() => users.id, { onDelete: "set null" }),
+    saleId: integer("sale_id").references((): AnyPgColumn => teamSales.id, { onDelete: "set null" }),
+    source: varchar("source", { length: 40 }).notNull().default("manual"),
+    notes: text("notes").notNull().default(""),
+    // Orden dentro de la columna del kanban.
+    position: integer("position").notNull().default(0),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamDealsTeamIdx: index("team_deals_team_idx").on(table.teamId),
+    teamDealsStageIdx: index("team_deals_stage_idx").on(table.teamId, table.stage),
+    teamDealsCustomerIdx: index("team_deals_customer_idx").on(table.teamId, table.customerId),
+    teamDealsContactIdx: index("team_deals_contact_idx").on(table.teamId, table.contactId),
+    teamDealsOwnerIdx: index("team_deals_owner_idx").on(table.teamId, table.ownerId),
   }),
 );
 
@@ -3103,6 +3334,14 @@ export const teamCustomers = pgTable(
     externalData: jsonb("external_data").$type<Record<string, unknown>>().notNull().default({}),
     profileImage: text("profile_image"),
     status: varchar("status", { length: 20 }).notNull().default("active"),
+    // Datos de la organización. `industry` es un enum de aplicación, no de BD:
+    // el catálogo vive en lib/deals/types.ts y cambia sin migración.
+    industry: varchar("industry", { length: 60 }),
+    website: varchar("website", { length: 255 }),
+    employees: integer("employees"),
+    annualRevenue: integer("annual_revenue"),
+    location: varchar("location", { length: 160 }),
+    customerSince: timestamp("customer_since"),
     notes: text("notes").notNull().default(""),
     lastSyncedAt: timestamp("last_synced_at"),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
@@ -3988,6 +4227,8 @@ export const teamTaskWorkspaces = pgTable(
     id: serial("id").primaryKey(),
     teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
     name: varchar("name", { length: 200 }).notNull(),
+    /** Instrucciones heredables para cualquier IA que trabaje dentro del espacio. */
+    aiPrompt: text("ai_prompt").notNull().default(""),
     order: integer("order").notNull().default(0),
     color: varchar("color", { length: 20 }),
     icon: varchar("icon", { length: 60 }),
@@ -4010,6 +4251,8 @@ export const teamTaskProjects = pgTable(
     teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
     workspaceId: integer("workspace_id").references(() => teamTaskWorkspaces.id, { onDelete: "set null" }),
     name: varchar("name", { length: 200 }).notNull(),
+    /** Contexto específico del proyecto; complementa al prompt del espacio. */
+    aiPrompt: text("ai_prompt").notNull().default(""),
     backgroundUrl: text("background_url"),
     labels: jsonb("labels").$type<TaskLabel[]>().notNull().default([]),
     order: integer("order").notNull().default(0),
@@ -4076,6 +4319,21 @@ export const teamTaskItems = pgTable(
     teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
     title: varchar("title", { length: 500 }).notNull(),
     notes: text("notes").notNull().default(""),
+    /**
+     * Instrucciones para la IA sobre esta tarea, escritas por una persona.
+     * Es CONTENIDO, no configuración: los conectores lo leen para saber qué
+     * se espera que hagan acá (redactar, investigar, generar subtareas…).
+     * Nada lo ejecuta solo — se ejecuta cuando alguien se lo pide a la IA.
+     */
+    aiPrompt: text("ai_prompt").notNull().default(""),
+    /** Próxima acción concreta propuesta o confirmada para esta tarea. */
+    aiNextStep: text("ai_next_step").notNull().default(""),
+    /** Pregunta abierta que la IA necesita resolver antes de continuar. */
+    aiContextQuestion: text("ai_context_question").notNull().default(""),
+    /** Respuesta humana a la pregunta de contexto. */
+    aiContextAnswer: text("ai_context_answer").notNull().default(""),
+    /** La persona revisó el prompt y lo entregó a la cola de conectores. */
+    aiReadyAt: timestamp("ai_ready_at"),
     labelIds: jsonb("label_ids").$type<string[]>().notNull().default([]),
     checklist: jsonb("checklist").$type<TaskChecklistItem[]>().notNull().default([]),
     status: varchar("status", { length: 30 }).notNull().default("open"),
@@ -4207,6 +4465,18 @@ export const teamTaskComments = pgTable(
     taskId: integer("task_id").notNull().references(() => teamTaskItems.id, { onDelete: "cascade" }),
     teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
     text: text("text").notNull(),
+    /**
+     * 'comment' = un comentario del hilo. 'report' = un parte de trabajo: qué
+     * se hizo, qué se encontró, qué quedó pendiente. Se separan porque se leen
+     * distinto: el hilo es conversación, la bitácora es historial.
+     */
+    kind: varchar("kind", { length: 20 }).notNull().default("comment"),
+    /**
+     * Quién lo escribió DE VERDAD. `createdBy` no alcanza: cuando una IA
+     * escribe por MCP queda el id del usuario que autorizó el conector, así
+     * que un reporte automático era indistinguible de algo escrito a mano.
+     */
+    source: varchar("source", { length: 20 }).notNull().default("user"),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
@@ -4304,6 +4574,9 @@ export const teamScheduledMessages = pgTable("team_scheduled_messages", {
   nextRunAt: timestamp("next_run_at"),
   runCount: integer("run_count").notNull().default(0),
   maxRuns: integer("max_runs"),
+  // Por qué falló la última corrida. Sin esto un programado queda en "fallido"
+  // sin ninguna pista: el motivo sólo vivía en los logs del cron.
+  lastError: text("last_error"),
   createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -4314,6 +4587,29 @@ export const teamScheduledMessages = pgTable("team_scheduled_messages", {
 
 export type TeamScheduledMessage = typeof teamScheduledMessages.$inferSelect;
 export type NewTeamScheduledMessage = typeof teamScheduledMessages.$inferInsert;
+
+// ─── Idempotencia de envíos salientes ────────────────────────────────────────
+
+/**
+ * Un mensaje de WhatsApp que salió no se puede deshacer. Cuando el envío lo
+ * dispara una IA por MCP, un reintento por timeout o por reconexión del
+ * conector volvería a escribirle al cliente. Esta tabla guarda la clave de
+ * idempotencia consumida y el id del mensaje resultante: el segundo intento
+ * con la misma clave devuelve el mensaje original en vez de mandar otro.
+ */
+export const teamMessageSendKeys = pgTable("team_message_send_keys", {
+  id: serial("id").primaryKey(),
+  teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+  keyHash: varchar("key_hash", { length: 64 }).notNull(),
+  messageId: text("message_id").notNull(),
+  chatId: integer("chat_id").references(() => chats.id, { onDelete: "set null" }),
+  source: varchar("source", { length: 30 }).notNull().default("mcp"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  messageSendKeysUnique: unique("team_message_send_keys_team_key_idx").on(table.teamId, table.keyHash),
+}));
+
+export type TeamMessageSendKey = typeof teamMessageSendKeys.$inferSelect;
 
 // ─── Mini Apps ───────────────────────────────────────────────────────────────
 
@@ -4342,8 +4638,102 @@ export const miniAppRecords = pgTable("mini_app_records", {
   miniAppRecordsLookupIdx: index("mini_app_records_lookup_idx").on(table.teamId, table.appSlug, table.collection),
 }));
 
+/**
+ * Bitácora de un cliente: notas internas con fecha y autor.
+ *
+ * Existe porque las "notas internas" del CRM se guardan como mensajes dentro
+ * de un chat, y un cliente importado de AAPP Space puede no tener ninguna
+ * conversación (hoy 156 de 242 no la tienen). Para esos, el único lugar era
+ * `teamCustomers.notes`: un texto plano, sin fecha, sin autor, donde cada
+ * escritura pisa la anterior.
+ *
+ * Mismo patrón que la bitácora de tareas: varias entradas, y `source`
+ * distingue lo que escribió una persona de lo que dejó una IA por MCP
+ * (`createdBy` no alcanza: guarda el usuario que autorizó el conector).
+ */
+export const teamCustomerNotes = pgTable(
+  "team_customer_notes",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    customerId: integer("customer_id").notNull().references(() => teamCustomers.id, { onDelete: "cascade" }),
+    text: text("text").notNull(),
+    /** 'note' = nota del equipo. 'report' = parte de trabajo de una IA. */
+    kind: varchar("kind", { length: 20 }).notNull().default("note"),
+    /** 'user' = escrito en la app; 'connector' = lo dejó una IA por MCP. */
+    source: varchar("source", { length: 20 }).notNull().default("user"),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamCustomerNotesCustomerIdx: index("team_customer_notes_customer_idx").on(table.teamId, table.customerId),
+  }),
+);
+
+export type TeamCustomerNote = typeof teamCustomerNotes.$inferSelect;
+
 export type MiniAppInstall = typeof miniAppInstalls.$inferSelect;
 export type MiniAppRecord = typeof miniAppRecords.$inferSelect;
+
+// Mini Apps · Temas personalizados por conector (mismo patrón que Radar
+// Engine: un borrador versionado + publicación congelada aparte). `mode`
+// decide si el mini-app se renderiza con su UI clásica hardcodeada
+// ("default", sin cambios) o con el motor data-driven ("custom"). La
+// definición vive en un solo blob jsonb — el contrato real está en zod
+// (lib/plugins/mini-apps/apps/business-woman-planner/theme/shared/schema.ts),
+// no en columnas SQL, para que una IA pueda reescribirlo por completo sin
+// migraciones nuevas cada vez que aparece un tipo de bloque.
+export const teamMiniAppThemes = pgTable(
+  "team_mini_app_themes",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    appSlug: varchar("app_slug", { length: 100 }).notNull(),
+    // 'default' | 'custom'
+    mode: varchar("mode", { length: 20 }).notNull().default("default"),
+    // 'draft' | 'published' | 'archived' (igual semántica que team_radar_apps)
+    status: varchar("status", { length: 20 }).notNull().default("draft"),
+    // Borrador actual: SIEMPRE coincide con la última fila del historial.
+    definition: jsonb("definition").notNull().default({}),
+    version: integer("version").notNull().default(1),
+    publishedVersion: integer("published_version"),
+    // Copia congelada de la versión publicada: publicar no bloquea el borrador.
+    publishedDefinition: jsonb("published_definition"),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamAppUnique: unique("team_mini_app_themes_team_app_uidx").on(table.teamId, table.appSlug),
+    teamIdx: index("team_mini_app_themes_team_idx").on(table.teamId),
+  }),
+);
+
+// Historial de versiones de un tema. Cada apply crea una fila nueva (nunca se
+// reescribe una versión ya guardada: el rollback aplica la definición vieja
+// como versión NUEVA). Se podan las más viejas al superar
+// MINI_APP_THEME_LIMITS.maxVersionsKept, nunca la publicada.
+export const teamMiniAppThemeVersions = pgTable(
+  "team_mini_app_theme_versions",
+  {
+    id: serial("id").primaryKey(),
+    themeId: integer("theme_id").notNull().references(() => teamMiniAppThemes.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    definition: jsonb("definition").notNull(),
+    summary: varchar("summary", { length: 300 }),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    themeVersionUnique: unique("team_mini_app_theme_versions_theme_version_uidx").on(table.themeId, table.version),
+  }),
+);
+
+export type TeamMiniAppTheme = typeof teamMiniAppThemes.$inferSelect;
+export type NewTeamMiniAppTheme = typeof teamMiniAppThemes.$inferInsert;
+export type TeamMiniAppThemeVersion = typeof teamMiniAppThemeVersions.$inferSelect;
+export type NewTeamMiniAppThemeVersion = typeof teamMiniAppThemeVersions.$inferInsert;
 
 // ─── Form Builder ────────────────────────────────────────────────────────────
 
@@ -4777,6 +5167,30 @@ export const teamDocumentMedia = pgTable(
   }),
 );
 
+/**
+ * Definición declarativa del portal principal de Documentos.
+ *
+ * Las vistas y secciones viven en JSON versionado porque su forma es de UI, no
+ * una entidad de negocio independiente. Los documentos referenciados siguen
+ * validados contra `team_documents` antes de cada escritura.
+ */
+export const teamDocumentPortals = pgTable(
+  "team_document_portals",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    definition: jsonb("definition").$type<Record<string, unknown>>().notNull(),
+    version: integer("version").notNull().default(1),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamUnique: unique("team_document_portals_team_uidx").on(table.teamId),
+  }),
+);
+
 // Per-user layout for the operations desktop. The JSON payload is versioned so
 // widgets can evolve without destructive migrations.
 export const teamDesktopPreferences = pgTable(
@@ -4785,10 +5199,20 @@ export const teamDesktopPreferences = pgTable(
     id: serial("id").primaryKey(),
     teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
     userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    // El tipo admite las dos versiones: hay filas guardadas con `version: 1` y
+    // `normalizeDesktopLayout` las migra al leerlas. Estrecharlo a `2` haría que
+    // drizzle rechace lo que ya está en la base.
     layout: jsonb("layout")
-      .$type<{ version: 1; order: string[]; pinned: string[]; hidden: string[] }>()
+      .$type<{
+        version: 1 | 2;
+        order: string[];
+        pinned: string[];
+        hidden: string[];
+        headerPosition?: string;
+        period?: string;
+      }>()
       .notNull()
-      .default({ version: 1, order: [], pinned: [], hidden: [] }),
+      .default({ version: 2, order: [], pinned: [], hidden: [] }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -4798,10 +5222,281 @@ export const teamDesktopPreferences = pgTable(
   }),
 );
 
+// Radar: widgets vivos del plugin. Cada fila es un bloque reutilizable que la
+// UI dibuja a partir de `blocks` (contrato en lib/plugins/radar/shared/blocks.ts).
+// Los conectores de IA los crean y editan por `key`, que es única por equipo —
+// re-enviar la misma key actualiza el widget en vez de duplicarlo.
+export const teamRadarWidgets = pgTable(
+  "team_radar_widgets",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    key: varchar("key", { length: 80 }).notNull(),
+    title: varchar("title", { length: 200 }).notNull(),
+    description: text("description"),
+    icon: varchar("icon", { length: 40 }),
+    tone: varchar("tone", { length: 20 }),
+    section: varchar("section", { length: 32 }).notNull().default("resumen"),
+    surface: varchar("surface", { length: 16 }).notNull().default("dashboard"),
+    size: varchar("size", { length: 8 }).notNull().default("md"),
+    position: integer("position").notNull().default(0),
+    // Widget acotado a un contacto: solo se muestra en su ficha Radar.
+    contactId: integer("contact_id").references(() => contacts.id, { onDelete: "cascade" }),
+    enabled: boolean("enabled").notNull().default(true),
+    source: varchar("source", { length: 12 }).notNull().default("ai"),
+    blocks: jsonb("blocks").notNull().default([]),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    // Banco de widgets: eliminar un widget lo archiva en vez de borrarlo. Se
+    // conserva su `key` (sigue siendo única por equipo), así que la IA que lo
+    // creó puede recrearlo con la misma key y el archivado se restaura solo.
+    // El borrado definitivo se hace explícitamente desde el banco.
+    archivedAt: timestamp("archived_at"),
+    archivedBy: integer("archived_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamKeyUnique: unique("team_radar_widgets_team_key_uidx").on(table.teamId, table.key),
+    teamSectionIdx: index("team_radar_widgets_team_section_idx").on(table.teamId, table.section),
+    contactIdx: index("team_radar_widgets_contact_idx").on(table.contactId),
+    archivedIdx: index("team_radar_widgets_archived_idx").on(table.teamId, table.archivedAt),
+  }),
+);
+
+// Radar: vínculo explícito entre un informe (documento de Documentos) y aquello
+// que describe — un contacto, un usuario asignado, o nada (informe general).
+// Sin esto no se puede responder "¿este cliente tiene informes?" sin recorrer
+// carpetas por nombre, que es frágil.
+export const teamRadarReports = pgTable(
+  "team_radar_reports",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    documentId: integer("document_id").notNull().references(() => teamDocuments.id, { onDelete: "cascade" }),
+    // clientes | equipo | generales | mejoras | trabajos
+    category: varchar("category", { length: 24 }).notNull().default("generales"),
+    contactId: integer("contact_id").references(() => contacts.id, { onDelete: "cascade" }),
+    assignedUserId: integer("assigned_user_id").references(() => users.id, { onDelete: "set null" }),
+    summary: text("summary"),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    documentUnique: unique("team_radar_reports_document_uidx").on(table.documentId),
+    teamCategoryIdx: index("team_radar_reports_team_category_idx").on(table.teamId, table.category),
+    contactIdx: index("team_radar_reports_contact_idx").on(table.contactId),
+    assignedIdx: index("team_radar_reports_assigned_idx").on(table.assignedUserId),
+  }),
+);
+
+// Radar Engine: apps declarativas construibles por IA. Cada fila es una app
+// completa: `definition` guarda el BORRADOR (última versión siempre) y
+// `publishedDefinition` la versión congelada que ve el usuario final. El
+// contrato del JSON vive en lib/plugins/radar/shared/engine.ts; el historial
+// completo va aparte en team_radar_app_versions.
+export const teamRadarApps = pgTable(
+  "team_radar_apps",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    slug: varchar("slug", { length: 80 }).notNull(),
+    name: varchar("name", { length: 160 }).notNull(),
+    icon: varchar("icon", { length: 60 }),
+    tone: varchar("tone", { length: 20 }),
+    // Dueño de la experiencia (p. ej. la vendedora para la que se armó la app).
+    ownerUserId: integer("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+    // draft | published | archived
+    status: varchar("status", { length: 20 }).notNull().default("draft"),
+    // Borrador actual: SIEMPRE coincide con la última fila del historial.
+    definition: jsonb("definition").notNull(),
+    version: integer("version").notNull().default(1),
+    publishedVersion: integer("published_version"),
+    // Copia congelada de la versión publicada: publicar no bloquea el borrador.
+    publishedDefinition: jsonb("published_definition"),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamSlugUnique: unique("team_radar_apps_team_slug_uidx").on(table.teamId, table.slug),
+    teamIdx: index("team_radar_apps_team_idx").on(table.teamId),
+  }),
+);
+
+// Radar Engine: historial de versiones de cada app. Cada apply crea una fila
+// nueva (nunca se reescribe una versión ya guardada: el rollback aplica la
+// definición vieja como versión NUEVA). Se podan las más viejas al superar
+// RADAR_ENGINE_LIMITS.maxVersionsKept, nunca la publicada.
+export const teamRadarAppVersions = pgTable(
+  "team_radar_app_versions",
+  {
+    id: serial("id").primaryKey(),
+    appId: integer("app_id").notNull().references(() => teamRadarApps.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    definition: jsonb("definition").notNull(),
+    // Etiqueta humana de la versión ("agregado AI Coach").
+    summary: varchar("summary", { length: 300 }),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    appVersionUnique: unique("team_radar_app_versions_app_version_uidx").on(table.appId, table.version),
+  }),
+);
+
+// APP MAKER keeps model definitions versioned in team_radar_apps, while the
+// operational records remain stable across draft/publish cycles. Every row is
+// scoped by both team and app so a definition can never cross tenant borders.
+export const teamAppMakerRecords = pgTable(
+  "team_app_maker_records",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    appId: integer("app_id").notNull().references(() => teamRadarApps.id, { onDelete: "cascade" }),
+    entityKey: varchar("entity_key", { length: 48 }).notNull(),
+    data: jsonb("data").notNull().default({}),
+    version: integer("version").notNull().default(1),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    appEntityIdx: index("team_app_maker_records_app_entity_idx").on(table.teamId, table.appId, table.entityKey),
+    appRecordUnique: unique("team_app_maker_records_scope_id_uidx").on(table.teamId, table.appId, table.id),
+  }),
+);
+
+// Relation edges work for app-owned records and existing WhatsPro resources.
+// targetRecordId is text because system resources may use numeric or string IDs.
+export const teamAppMakerRecordLinks = pgTable(
+  "team_app_maker_record_links",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    appId: integer("app_id").notNull().references(() => teamRadarApps.id, { onDelete: "cascade" }),
+    relationKey: varchar("relation_key", { length: 48 }).notNull(),
+    sourceRecordId: integer("source_record_id").notNull().references(() => teamAppMakerRecords.id, { onDelete: "cascade" }),
+    targetKind: varchar("target_kind", { length: 16 }).notNull(),
+    targetKey: varchar("target_key", { length: 80 }).notNull(),
+    targetRecordId: varchar("target_record_id", { length: 160 }).notNull(),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    sourceIdx: index("team_app_maker_record_links_source_idx").on(table.teamId, table.appId, table.sourceRecordId),
+    targetIdx: index("team_app_maker_record_links_target_idx").on(table.teamId, table.targetKind, table.targetKey, table.targetRecordId),
+    edgeUnique: unique("team_app_maker_record_links_edge_uidx").on(table.appId, table.relationKey, table.sourceRecordId, table.targetKind, table.targetKey, table.targetRecordId),
+    sourceScopeFk: foreignKey({
+      columns: [table.teamId, table.appId, table.sourceRecordId],
+      foreignColumns: [teamAppMakerRecords.teamId, teamAppMakerRecords.appId, teamAppMakerRecords.id],
+      name: "team_app_maker_record_links_source_scope_fk",
+    }).onDelete("cascade"),
+  }),
+);
+
+// Binary content is stored outside /public. This table only exposes metadata;
+// downloads always pass through an authenticated, audited route.
+export const teamAppMakerAttachments = pgTable(
+  "team_app_maker_attachments",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    appId: integer("app_id").notNull().references(() => teamRadarApps.id, { onDelete: "cascade" }),
+    recordId: integer("record_id").notNull().references(() => teamAppMakerRecords.id, { onDelete: "cascade" }),
+    fieldKey: varchar("field_key", { length: 48 }).notNull(),
+    fileName: varchar("file_name", { length: 240 }).notNull(),
+    mimeType: varchar("mime_type", { length: 160 }).notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    storagePath: text("storage_path").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    recordIdx: index("team_app_maker_attachments_record_idx").on(table.teamId, table.appId, table.recordId),
+    recordScopeFk: foreignKey({
+      columns: [table.teamId, table.appId, table.recordId],
+      foreignColumns: [teamAppMakerRecords.teamId, teamAppMakerRecords.appId, teamAppMakerRecords.id],
+      name: "team_app_maker_attachments_record_scope_fk",
+    }).onDelete("cascade"),
+  }),
+);
+
+// Radar Engine: estado libre por usuario y app (tab elegida, filtros, snoozes,
+// pins…). `appSlug` vacío = estado global de Radar, no atado a ninguna app.
+export const teamRadarUserState = pgTable(
+  "team_radar_user_state",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    appSlug: varchar("app_slug", { length: 80 }).notNull().default(""),
+    state: jsonb("state").notNull().default({}),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamUserAppUnique: unique("team_radar_user_state_team_user_app_uidx").on(table.teamId, table.userId, table.appSlug),
+  }),
+);
+
+// Radar Engine: hallazgos que la IA (o el sistema) deja para que alguien los
+// mire — oportunidades, alertas, cosas por vencer. Tienen ciclo de vida
+// (new → seen → accepted/dismissed/resolved, o expired al pasar expiresAt).
+export const teamRadarInsights = pgTable(
+  "team_radar_insights",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    appSlug: varchar("app_slug", { length: 80 }),
+    // Insight acotado a un contacto: se muestra también en su ficha.
+    contactId: integer("contact_id").references(() => contacts.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 200 }).notNull(),
+    description: text("description"),
+    // info | opportunity | warning | critical
+    severity: varchar("severity", { length: 20 }).notNull().default("info"),
+    // 0-100.
+    confidence: integer("confidence"),
+    // De dónde salió ("grok", "coach-semanal", …), texto libre.
+    source: varchar("source", { length: 80 }),
+    // Lista de evidencias textuales que sostienen el hallazgo.
+    evidence: jsonb("evidence"),
+    recommendedAction: text("recommended_action"),
+    // new | seen | accepted | dismissed | resolved | expired
+    status: varchar("status", { length: 20 }).notNull().default("new"),
+    expiresAt: timestamp("expires_at"),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamStatusIdx: index("team_radar_insights_team_status_idx").on(table.teamId, table.status),
+    teamContactIdx: index("team_radar_insights_team_contact_idx").on(table.teamId, table.contactId),
+  }),
+);
+
+export type TeamRadarWidget = typeof teamRadarWidgets.$inferSelect;
+export type NewTeamRadarWidget = typeof teamRadarWidgets.$inferInsert;
+export type TeamRadarReport = typeof teamRadarReports.$inferSelect;
+export type NewTeamRadarReport = typeof teamRadarReports.$inferInsert;
+export type TeamRadarApp = typeof teamRadarApps.$inferSelect;
+export type NewTeamRadarApp = typeof teamRadarApps.$inferInsert;
+export type TeamRadarAppVersion = typeof teamRadarAppVersions.$inferSelect;
+export type NewTeamRadarAppVersion = typeof teamRadarAppVersions.$inferInsert;
+export type TeamRadarUserStateRow = typeof teamRadarUserState.$inferSelect;
+export type NewTeamRadarUserStateRow = typeof teamRadarUserState.$inferInsert;
+export type TeamRadarInsight = typeof teamRadarInsights.$inferSelect;
+export type NewTeamRadarInsight = typeof teamRadarInsights.$inferInsert;
+
 export type TeamDocumentFolder = typeof teamDocumentFolders.$inferSelect;
 export type NewTeamDocumentFolder = typeof teamDocumentFolders.$inferInsert;
 export type TeamDocument = typeof teamDocuments.$inferSelect;
 export type NewTeamDocument = typeof teamDocuments.$inferInsert;
+export type TeamDocumentPortal = typeof teamDocumentPortals.$inferSelect;
+export type NewTeamDocumentPortal = typeof teamDocumentPortals.$inferInsert;
 export type TeamDocumentLink = typeof teamDocumentLinks.$inferSelect;
 export type TeamDocumentMedia = typeof teamDocumentMedia.$inferSelect;
 export type TeamDesktopPreference = typeof teamDesktopPreferences.$inferSelect;
@@ -4882,3 +5577,380 @@ export const brandingRelations = relations(branding, ({ one }) => ({
     references: [resellers.id],
   }),
 }));
+
+/**
+ * Caché de las respuestas que la IA sugiere en el Centro de Comandos.
+ *
+ * El `fingerprint` incluye SIEMPRE el contacto destinatario: si a una membresía
+ * o a una oportunidad le cambian el contacto vinculado sin tocar su estado, la
+ * caché serviría durante 30 minutos un borrador dirigido a la persona anterior.
+ * `status = 'pending'` es la reserva que se toma ANTES de llamar al modelo, para
+ * que dos scrolls no paguen dos generaciones de la misma fila.
+ */
+export const teamCommandSuggestions = pgTable(
+  "team_command_suggestions",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    /** `${kind}:${entityId}` del ítem de la bandeja. */
+    itemKey: text("item_key").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    status: varchar("status", { length: 12 }).notNull().default("pending"),
+    suggestions: jsonb("suggestions")
+      .$type<Array<{
+        id: string;
+        text: string;
+        tone: string;
+        source: string;
+        purpose?: "reply" | "next-step" | "context-question";
+        warning?: string | null;
+        needsEdit?: boolean;
+      }>>()
+      .notNull()
+      .default([]),
+    provider: varchar("provider", { length: 40 }),
+    model: varchar("model", { length: 80 }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    expiresAt: timestamp("expires_at").notNull(),
+  },
+  (table) => ({
+    itemUnique: uniqueIndex("team_command_suggestions_item_idx").on(table.teamId, table.itemKey),
+    expiresIdx: index("team_command_suggestions_expires_idx").on(table.expiresAt),
+  }),
+);
+
+/** Conversación operativa compartida entre Tareas y Centro de Comandos. */
+export const teamOperationsAiMessages = pgTable(
+  "team_operations_ai_messages",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    role: varchar("role", { length: 16 }).$type<"user" | "assistant" | "system">().notNull(),
+    content: text("content").notNull(),
+    /** ui, integrated-ai, chatgpt, grok o system. */
+    source: varchar("source", { length: 40 }).notNull().default("ui"),
+    surface: varchar("surface", { length: 32 }).notNull().default("general"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamCreatedIdx: index("team_operations_ai_messages_team_created_idx").on(table.teamId, table.createdAt),
+  }),
+);
+
+/** Resultados auditables de las fases preparar/ejecutar de los prompts de Tareas. */
+export const teamTaskAiRuns = pgTable(
+  "team_task_ai_runs",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    targetType: varchar("target_type", { length: 16 }).$type<"workspace" | "project" | "task">().notNull(),
+    targetId: integer("target_id").notNull(),
+    phase: varchar("phase", { length: 16 }).$type<"prepare" | "execute">().notNull(),
+    status: varchar("status", { length: 16 })
+      .$type<"completed" | "blocked" | "failed">()
+      .notNull(),
+    promptFingerprint: varchar("prompt_fingerprint", { length: 64 }).notNull(),
+    promptSnapshot: text("prompt_snapshot").notNull(),
+    summary: text("summary").notNull(),
+    connector: varchar("connector", { length: 40 }).notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    targetIdx: index("team_task_ai_runs_target_idx").on(
+      table.teamId,
+      table.targetType,
+      table.targetId,
+      table.createdAt,
+    ),
+    fingerprintIdx: index("team_task_ai_runs_fingerprint_idx").on(
+      table.teamId,
+      table.promptFingerprint,
+      table.phase,
+    ),
+  }),
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Command Center Comercial (plugin sales-ops) — capa DERIVADA de sólo lectura
+// sobre chats/contacts. Nada de acá escribe en el CRM. Ver
+// docs/command-center-comercial/03-MODELO-DE-DATOS.md.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Estado vigente del análisis comercial de un chat (una fila por chat). */
+export const teamCommercialAnalysis = pgTable(
+  "team_commercial_analysis",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    chatId: integer("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
+    contactId: integer("contact_id").references(() => contacts.id, { onDelete: "set null" }),
+    version: integer("version").notNull().default(0),
+    fingerprint: varchar("fingerprint", { length: 64 }),
+    stale: boolean("stale").notNull().default(false),
+    firstContactAt: timestamp("first_contact_at", { withTimezone: true }),
+    lastCustomerMessageAt: timestamp("last_customer_message_at", { withTimezone: true }),
+    lastTeamMessageAt: timestamp("last_team_message_at", { withTimezone: true }),
+    lastHumanMessageAt: timestamp("last_human_message_at", { withTimezone: true }),
+    source: varchar("source", { length: 24 }).notNull().default("desconocido"),
+    sourceDetail: varchar("source_detail", { length: 120 }),
+    currentGate: varchar("current_gate", { length: 4 }),
+    maxGate: varchar("max_gate", { length: 4 }),
+    dropGate: varchar("drop_gate", { length: 4 }),
+    dropReason: varchar("drop_reason", { length: 40 }),
+    confidence: smallint("confidence").notNull().default(0),
+    evidence: jsonb("evidence").$type<Record<string, string[]>>().notNull().default({}),
+    businessType: varchar("business_type", { length: 120 }),
+    need: varchar("need", { length: 24 }).notNull().default("indefinida"),
+    needDetail: varchar("need_detail", { length: 300 }),
+    quotedPrice: integer("quoted_price"),
+    quotedCurrency: varchar("quoted_currency", { length: 3 }),
+    proposalSummary: varchar("proposal_summary", { length: 600 }),
+    objectionType: varchar("objection_type", { length: 24 }).notNull().default("ninguna"),
+    objectionDetail: varchar("objection_detail", { length: 300 }),
+    intent: varchar("intent", { length: 16 }).notNull().default("ninguna"),
+    intentScore: smallint("intent_score").notNull().default(0),
+    temperature: varchar("temperature", { length: 8 }).notNull().default("cold"),
+    recoveryProbability: smallint("recovery_probability").notNull().default(0),
+    potentialValueUsd: integer("potential_value_usd").notNull().default(0),
+    collectionSpeed: varchar("collection_speed", { length: 12 }).notNull().default("indefinida"),
+    priorityScore: integer("priority_score").notNull().default(0),
+    followupsTotal: smallint("followups_total").notNull().default(0),
+    followupsAutomated: smallint("followups_automated").notNull().default(0),
+    followupsManual: smallint("followups_manual").notNull().default(0),
+    lastFollowupAt: timestamp("last_followup_at", { withTimezone: true }),
+    automationActive: boolean("automation_active").notNull().default(false),
+    isExistingCustomer: boolean("is_existing_customer").notNull().default(false),
+    customerEvidence: varchar("customer_evidence", { length: 40 }).notNull().default("none"),
+    paymentPending: boolean("payment_pending").notNull().default(false),
+    autoReplyDetected: boolean("auto_reply_detected").notNull().default(false),
+    evidenceGap: boolean("evidence_gap").notNull().default(false),
+    lastProspectAction: varchar("last_prospect_action", { length: 300 }),
+    lastTeamAction: varchar("last_team_action", { length: 300 }),
+    recommendedAction: varchar("recommended_action", { length: 400 }),
+    recommendedOwner: varchar("recommended_owner", { length: 12 }).notNull().default("nadie"),
+    status: varchar("status", { length: 24 }).notNull().default("sin_analizar"),
+    statusReason: varchar("status_reason", { length: 300 }),
+    nextActionAt: date("next_action_at"),
+    notesForHuman: text("notes_for_human"),
+    crmToFix: text("crm_to_fix"),
+    priorRadar: jsonb("prior_radar").$type<Record<string, unknown>>(),
+    analyzedAt: timestamp("analyzed_at", { withTimezone: true }),
+    analyzedBy: varchar("analyzed_by", { length: 16 }),
+    provider: varchar("provider", { length: 40 }),
+    model: varchar("model", { length: 80 }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    chatUnique: uniqueIndex("team_commercial_analysis_chat_idx").on(table.teamId, table.chatId),
+    gatePriorityIdx: index("team_commercial_analysis_gate_priority_idx").on(table.teamId, table.currentGate, table.priorityScore),
+    statusIdx: index("team_commercial_analysis_status_idx").on(table.teamId, table.status),
+    ownerIdx: index("team_commercial_analysis_owner_idx").on(table.teamId, table.recommendedOwner, table.priorityScore),
+    staleIdx: index("team_commercial_analysis_stale_idx").on(table.teamId, table.stale),
+    nextActionIdx: index("team_commercial_analysis_next_action_idx").on(table.teamId, table.nextActionAt),
+  }),
+);
+
+/** Historial inmutable: cada análisis inserta una versión; la vigente se copia a la tabla de arriba. */
+export const teamCommercialAnalysisVersions = pgTable(
+  "team_commercial_analysis_versions",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    analysisId: integer("analysis_id").notNull().references(() => teamCommercialAnalysis.id, { onDelete: "cascade" }),
+    chatId: integer("chat_id").notNull(),
+    version: integer("version").notNull(),
+    reason: varchar("reason", { length: 24 }).notNull(),
+    promptRunId: integer("prompt_run_id"),
+    /** Snapshot completo de la fila vigente en ese momento (mismas claves que la tabla). */
+    snapshot: jsonb("snapshot").$type<Record<string, unknown>>().notNull(),
+    evidence: jsonb("evidence").$type<Record<string, string[]>>().notNull().default({}),
+    diff: jsonb("diff").$type<Record<string, { from: unknown; to: unknown }>>(),
+    analyzedBy: varchar("analyzed_by", { length: 16 }),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    analysisVersionUnique: uniqueIndex("team_commercial_analysis_versions_unique").on(table.analysisId, table.version),
+    chatIdx: index("team_commercial_analysis_versions_chat_idx").on(table.teamId, table.chatId),
+  }),
+);
+
+/** Radar de respuestas: una señal por mensaje entrante clasificado. */
+export const teamCommercialSignals = pgTable(
+  "team_commercial_signals",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    chatId: integer("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
+    contactId: integer("contact_id").references(() => contacts.id, { onDelete: "set null" }),
+    messageId: text("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+    kind: varchar("kind", { length: 24 }).notNull(),
+    confidence: smallint("confidence").notNull().default(0),
+    excerpt: varchar("excerpt", { length: 300 }).notNull().default(""),
+    triggeredByActionId: integer("triggered_by_action_id"),
+    gateBefore: varchar("gate_before", { length: 4 }),
+    gateAfter: varchar("gate_after", { length: 4 }),
+    status: varchar("status", { length: 12 }).notNull().default("new"),
+    handledBy: integer("handled_by").references(() => users.id, { onDelete: "set null" }),
+    handledAt: timestamp("handled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    messageUnique: uniqueIndex("team_commercial_signals_message_idx").on(table.teamId, table.messageId),
+    statusIdx: index("team_commercial_signals_status_idx").on(table.teamId, table.status, table.createdAt),
+    kindIdx: index("team_commercial_signals_kind_idx").on(table.teamId, table.kind),
+  }),
+);
+
+/** Experimentos A/B: elegibles → enviados → … → caja. */
+export const teamCommercialExperiments = pgTable(
+  "team_commercial_experiments",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 160 }).notNull(),
+    hypothesis: text("hypothesis"),
+    segmentGates: jsonb("segment_gates").$type<string[]>().notNull().default([]),
+    messageA: text("message_a"),
+    messageB: text("message_b"),
+    status: varchar("status", { length: 12 }).notNull().default("draft"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamIdx: index("team_commercial_experiments_team_idx").on(table.teamId, table.status),
+  }),
+);
+
+/** Cola de ejecución: una fila por contacto y acción; el lote agrupa por batch_id. */
+export const teamCommercialActions = pgTable(
+  "team_commercial_actions",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    chatId: integer("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
+    contactId: integer("contact_id").references(() => contacts.id, { onDelete: "set null" }),
+    batchId: varchar("batch_id", { length: 64 }).notNull(),
+    batchLabel: varchar("batch_label", { length: 120 }).notNull(),
+    experimentId: integer("experiment_id").references(() => teamCommercialExperiments.id, { onDelete: "set null" }),
+    variant: varchar("variant", { length: 8 }),
+    kind: varchar("kind", { length: 24 }).notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    gateAtCreation: varchar("gate_at_creation", { length: 4 }),
+    status: varchar("status", { length: 20 }).notNull().default("proposed"),
+    requiresRole: varchar("requires_role", { length: 12 }).notNull().default("any"),
+    proposedBy: varchar("proposed_by", { length: 24 }).notNull().default("ia"),
+    approvedBy: integer("approved_by").references(() => users.id, { onDelete: "set null" }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    executedAt: timestamp("executed_at", { withTimezone: true }),
+    executedVia: varchar("executed_via", { length: 20 }),
+    resultMessageId: text("result_message_id"),
+    result: jsonb("result").$type<Record<string, unknown>>(),
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    statusIdx: index("team_commercial_actions_status_idx").on(table.teamId, table.status, table.scheduledFor),
+    batchIdx: index("team_commercial_actions_batch_idx").on(table.teamId, table.batchId),
+    chatIdx: index("team_commercial_actions_chat_idx").on(table.teamId, table.chatId, table.createdAt),
+  }),
+);
+
+export const teamCommercialExperimentMembers = pgTable(
+  "team_commercial_experiment_members",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    experimentId: integer("experiment_id").notNull().references(() => teamCommercialExperiments.id, { onDelete: "cascade" }),
+    chatId: integer("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
+    variant: varchar("variant", { length: 8 }).notNull().default("A"),
+    eligibleAt: timestamp("eligible_at", { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    respondedAt: timestamp("responded_at", { withTimezone: true }),
+    recoveredAt: timestamp("recovered_at", { withTimezone: true }),
+    proposalAt: timestamp("proposal_at", { withTimezone: true }),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    revenueCents: integer("revenue_cents"),
+    currency: varchar("currency", { length: 3 }),
+  },
+  (table) => ({
+    memberUnique: uniqueIndex("team_commercial_experiment_members_unique").on(table.experimentId, table.chatId),
+  }),
+);
+
+/** Prompt Studio: prompts versionados por equipo. Un solo `active` por key (índice parcial en SQL). */
+export const teamPrompts = pgTable(
+  "team_prompts",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    key: varchar("key", { length: 64 }).notNull(),
+    title: varchar("title", { length: 160 }).notNull(),
+    purpose: varchar("purpose", { length: 24 }).notNull().default("custom"),
+    audience: varchar("audience", { length: 12 }).notNull().default("both"),
+    version: integer("version").notNull().default(1),
+    status: varchar("status", { length: 12 }).notNull().default("draft"),
+    systemPrompt: text("system_prompt").notNull().default(""),
+    userTemplate: text("user_template").notNull().default(""),
+    outputSchema: jsonb("output_schema").$type<Record<string, unknown>>(),
+    toolChain: jsonb("tool_chain").$type<string[]>().notNull().default([]),
+    notes: text("notes"),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    keyVersionUnique: uniqueIndex("team_prompts_key_version_idx").on(table.teamId, table.key, table.version),
+  }),
+);
+
+/** Cada corrida de un prompt, con el texto exacto que se usó. Generaliza team_task_ai_runs. */
+export const teamPromptRuns = pgTable(
+  "team_prompt_runs",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    promptId: integer("prompt_id").references(() => teamPrompts.id, { onDelete: "set null" }),
+    promptKey: varchar("prompt_key", { length: 64 }).notNull(),
+    promptVersion: integer("prompt_version").notNull().default(0),
+    promptFingerprint: varchar("prompt_fingerprint", { length: 64 }).notNull(),
+    promptSnapshot: text("prompt_snapshot").notNull().default(""),
+    targetKind: varchar("target_kind", { length: 12 }).notNull(),
+    targetId: varchar("target_id", { length: 64 }).notNull(),
+    connector: varchar("connector", { length: 16 }).notNull().default("server"),
+    status: varchar("status", { length: 12 }).notNull().default("completed"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    summary: text("summary"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    targetIdx: index("team_prompt_runs_target_idx").on(table.teamId, table.targetKind, table.targetId),
+    keyIdx: index("team_prompt_runs_key_idx").on(table.teamId, table.promptKey, table.createdAt),
+  }),
+);
+
+export type TeamCommercialAnalysis = typeof teamCommercialAnalysis.$inferSelect;
+export type NewTeamCommercialAnalysis = typeof teamCommercialAnalysis.$inferInsert;
+export type TeamCommercialAction = typeof teamCommercialActions.$inferSelect;
+export type TeamCommercialSignal = typeof teamCommercialSignals.$inferSelect;
+export type TeamPrompt = typeof teamPrompts.$inferSelect;

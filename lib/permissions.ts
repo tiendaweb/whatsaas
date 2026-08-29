@@ -14,6 +14,59 @@ export type MemberPermissions = {
   notesWrite: boolean;
   calendarRead: boolean;
   calendarWrite: boolean;
+  domainsRead: boolean;
+  domainsWrite: boolean;
+  articlesRead: boolean;
+  articlesWrite: boolean;
+  salesRead: boolean;
+  salesWrite: boolean;
+  dealsRead: boolean;
+  dealsWrite: boolean;
+  salesOpsRead: boolean;
+  salesOpsWrite: boolean;
+  customersRead: boolean;
+  customersWrite: boolean;
+  aappSpaceRead: boolean;
+  aappSpaceWrite: boolean;
+  membershipsRead: boolean;
+  membershipsWrite: boolean;
+  tasksRead: boolean;
+  tasksWrite: boolean;
+  scheduledMessagesRead: boolean;
+  scheduledMessagesWrite: boolean;
+  miniAppsRead: boolean;
+  miniAppsWrite: boolean;
+  socialPublisherRead: boolean;
+  socialPublisherWrite: boolean;
+  formBuilderRead: boolean;
+  formBuilderWrite: boolean;
+  hostingerRead: boolean;
+  hostingerWrite: boolean;
+  metaAdsRead: boolean;
+  metaAdsWrite: boolean;
+  documentsRead: boolean;
+  documentsWrite: boolean;
+  filesRead: boolean;
+  sitesRead: boolean;
+  sitesWrite: boolean;
+  financeRead: boolean;
+  financeWrite: boolean;
+  purchasesRead: boolean;
+  purchasesWrite: boolean;
+  hrRead: boolean;
+  hrWrite: boolean;
+  supportRead: boolean;
+  supportWrite: boolean;
+  contractsRead: boolean;
+  contractsWrite: boolean;
+  intelligenceRead: boolean;
+  intelligenceWrite: boolean;
+  // Leer y enviar conversaciones no tenían permiso propio: la lectura se
+  // gobernaba sólo por chatVisibility y el envío por nada. Que el envío cuelgue
+  // de `contacts` significaría que quien puede etiquetar puede escribirle al
+  // cliente, y eso después no se saca sin romperle el acceso a alguien.
+  messagesRead: boolean;
+  messagesSend: boolean;
   chatVisibility: ChatVisibility;
 };
 
@@ -30,6 +83,55 @@ export const ROLE_PRESETS: Record<TeamRole, MemberPermissions> = {
     notesWrite: true,
     calendarRead: true,
     calendarWrite: true,
+    domainsRead: true,
+    domainsWrite: true,
+    articlesRead: true,
+    articlesWrite: true,
+    salesRead: true,
+    salesWrite: true,
+    dealsRead: true,
+    dealsWrite: true,
+    salesOpsRead: true,
+    salesOpsWrite: true,
+    customersRead: true,
+    customersWrite: true,
+    aappSpaceRead: true,
+    aappSpaceWrite: true,
+    membershipsRead: true,
+    membershipsWrite: true,
+    tasksRead: true,
+    tasksWrite: true,
+    scheduledMessagesRead: true,
+    scheduledMessagesWrite: true,
+    miniAppsRead: true,
+    miniAppsWrite: true,
+    socialPublisherRead: true,
+    socialPublisherWrite: true,
+    formBuilderRead: true,
+    formBuilderWrite: true,
+    hostingerRead: true,
+    hostingerWrite: true,
+    metaAdsRead: true,
+    metaAdsWrite: true,
+    documentsRead: true,
+    documentsWrite: true,
+    filesRead: true,
+    sitesRead: true,
+    sitesWrite: true,
+    financeRead: true,
+    financeWrite: true,
+    purchasesRead: true,
+    purchasesWrite: true,
+    hrRead: true,
+    hrWrite: true,
+    supportRead: true,
+    supportWrite: true,
+    contractsRead: true,
+    contractsWrite: true,
+    intelligenceRead: true,
+    intelligenceWrite: true,
+    messagesRead: true,
+    messagesSend: true,
     chatVisibility: 'all',
   },
   admin: {
@@ -44,6 +146,55 @@ export const ROLE_PRESETS: Record<TeamRole, MemberPermissions> = {
     notesWrite: true,
     calendarRead: true,
     calendarWrite: true,
+    domainsRead: true,
+    domainsWrite: true,
+    articlesRead: true,
+    articlesWrite: true,
+    salesRead: true,
+    salesWrite: true,
+    dealsRead: true,
+    dealsWrite: true,
+    salesOpsRead: true,
+    salesOpsWrite: true,
+    customersRead: true,
+    customersWrite: true,
+    aappSpaceRead: true,
+    aappSpaceWrite: true,
+    membershipsRead: true,
+    membershipsWrite: true,
+    tasksRead: true,
+    tasksWrite: true,
+    scheduledMessagesRead: true,
+    scheduledMessagesWrite: true,
+    miniAppsRead: true,
+    miniAppsWrite: true,
+    socialPublisherRead: true,
+    socialPublisherWrite: true,
+    formBuilderRead: true,
+    formBuilderWrite: true,
+    hostingerRead: true,
+    hostingerWrite: true,
+    metaAdsRead: true,
+    metaAdsWrite: true,
+    documentsRead: true,
+    documentsWrite: true,
+    filesRead: true,
+    sitesRead: true,
+    sitesWrite: true,
+    financeRead: true,
+    financeWrite: true,
+    purchasesRead: true,
+    purchasesWrite: true,
+    hrRead: true,
+    hrWrite: true,
+    supportRead: true,
+    supportWrite: true,
+    contractsRead: true,
+    contractsWrite: true,
+    intelligenceRead: true,
+    intelligenceWrite: true,
+    messagesRead: true,
+    messagesSend: true,
     chatVisibility: 'all',
   },
   agent: {
@@ -58,14 +209,68 @@ export const ROLE_PRESETS: Record<TeamRole, MemberPermissions> = {
     notesWrite: false,
     calendarRead: false,
     calendarWrite: false,
+    domainsRead: false,
+    domainsWrite: false,
+    articlesRead: false,
+    articlesWrite: false,
+    salesRead: false,
+    salesWrite: false,
+    dealsRead: false,
+    dealsWrite: false,
+    salesOpsRead: false,
+    salesOpsWrite: false,
+    customersRead: false,
+    customersWrite: false,
+    aappSpaceRead: false,
+    aappSpaceWrite: false,
+    membershipsRead: false,
+    membershipsWrite: false,
+    tasksRead: true,
+    tasksWrite: true,
+    scheduledMessagesRead: false,
+    scheduledMessagesWrite: false,
+    miniAppsRead: false,
+    miniAppsWrite: false,
+    socialPublisherRead: false,
+    socialPublisherWrite: false,
+    formBuilderRead: false,
+    formBuilderWrite: false,
+    hostingerRead: false,
+    hostingerWrite: false,
+    metaAdsRead: false,
+    metaAdsWrite: false,
+    documentsRead: true,
+    documentsWrite: true,
+    filesRead: false,
+    sitesRead: false,
+    sitesWrite: false,
+    financeRead: false,
+    financeWrite: false,
+    purchasesRead: false,
+    purchasesWrite: false,
+    hrRead: false,
+    hrWrite: false,
+    supportRead: true,
+    supportWrite: true,
+    contractsRead: false,
+    contractsWrite: false,
+    intelligenceRead: false,
+    intelligenceWrite: false,
+    messagesRead: true,
+    messagesSend: true,
     chatVisibility: 'assigned',
   },
 };
 
 export function getPermissions(role: string, customPermissions?: MemberPermissions | null): MemberPermissions {
   if (role === 'owner') return ROLE_PRESETS.owner;
-  if (customPermissions) return customPermissions;
-  return ROLE_PRESETS[role as TeamRole] || ROLE_PRESETS.agent;
+  const preset = ROLE_PRESETS[role as TeamRole] || ROLE_PRESETS.agent;
+  // Los permisos guardados son un JSON viejo: cuando se agrega una clave nueva
+  // no está en la fila del miembro. Sin este merge, cada clave nueva nacería en
+  // `undefined` (o sea, denegada) para todos los que ya tenían permisos
+  // personalizados, incluidos los admins.
+  if (customPermissions) return { ...preset, ...customPermissions };
+  return preset;
 }
 
 export function hasPermission(
@@ -101,5 +306,28 @@ export const ROUTE_PERMISSIONS: Record<string, PermissionResource> = {
   '/campaigns': 'campaigns',
   '/plugins/notes': 'notesRead',
   '/plugins/calendar': 'calendarRead',
+  '/plugins/domains': 'domainsRead',
+  '/plugins/articles': 'articlesRead',
+  '/plugins/sales': 'salesRead',
+  '/plugins/customers': 'customersRead',
+  '/plugins/aapp-space': 'aappSpaceRead',
+  '/plugins/memberships': 'membershipsRead',
+  '/plugins/tasks': 'tasksRead',
+  '/escritorio': 'tasksRead',
+  '/plugins/scheduled-messages': 'scheduledMessagesRead',
+  '/plugins/mini-apps': 'miniAppsRead',
+  '/plugins/social-publisher': 'socialPublisherRead',
+  '/plugins/form-builder': 'formBuilderRead',
+  '/plugins/hostinger': 'hostingerRead',
+  '/plugins/meta-ads': 'metaAdsRead',
+  '/plugins/documents': 'documentsRead',
+  '/plugins/files': 'filesRead',
+  '/plugins/sites': 'sitesRead',
+  '/plugins/finance': 'financeRead',
+  '/plugins/purchases': 'purchasesRead',
+  '/plugins/hr': 'hrRead',
+  '/plugins/support': 'supportRead',
+  '/plugins/contracts': 'contractsRead',
+  '/plugins/intelligence': 'intelligenceRead',
   '/settings': 'settings',
 };

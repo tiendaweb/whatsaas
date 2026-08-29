@@ -1,0 +1,200 @@
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { db } from '@/lib/db/drizzle';
+import { chats, messageAudioInsights, teamCommercialActions, teamCommercialAnalysis } from '@/lib/db/schema';
+import { maskJid } from '@/lib/desktop/command-center/types';
+import { listPendingChats, type PendingChat } from './classifier';
+import { listScanCandidates, type ScanCandidate } from './radar';
+
+/**
+ * Cola de trabajo para conectores.
+ *
+ * Todo lo que el servidor no puede hacer solo —por falta de cuota/tokens de IA
+ * (clasificar chats, clasificar respuestas, transcribir) o por diseño (los
+ * envíos aprobados no salen del servidor hasta la Fase 6)— queda acá, con la
+ * cadena de tools `whatspro_*` que lo resuelve. Un conector (Claude / ChatGPT /
+ * Grok) pide la cola, ejecuta ítem por ítem y devuelve el resultado con las
+ * tools de escritura. Nada de acá toca el CRM.
+ */
+export type WorkKind = 'classify' | 'execute_action' | 'classify_signal' | 'transcribe';
+export const WORK_KINDS: WorkKind[] = ['classify', 'execute_action', 'classify_signal', 'transcribe'];
+
+export type WorkItem =
+  | { kind: 'classify'; priority: number; chatId: number; name: string; phoneMasked: string; reason: PendingChat['pendingReason']; signals: string[]; automationActive: boolean; pendingAudios: number; tools: string[]; steps: string[] }
+  | { kind: 'execute_action'; priority: number; actionId: number; batchId: string; batchLabel: string; actionKind: string; chatId: number; name: string; payload: Record<string, unknown>; idempotencyKey: string; approvedAt: string | null; tools: string[]; steps: string[] }
+  | { kind: 'classify_signal'; priority: number; messageId: string; chatId: number; name: string; excerpt: string; at: string; tools: string[]; steps: string[] }
+  | { kind: 'transcribe'; priority: number; messageId: string; chatId: number; name: string; queuedAt: string | null; tools: string[]; steps: string[] };
+
+export type WorkQueue = {
+  generatedAt: string;
+  counts: Record<WorkKind, number>;
+  items: WorkItem[];
+  rules: string[];
+};
+
+const RULES = [
+  'No tocar el CRM: nada de etapas, etiquetas, campos, automatizaciones ni clientes.',
+  'Un envío por llamada, con la idempotency_key que viene en el ítem; nunca reintentar un envío con timeout.',
+  'Antes de ejecutar un envío aprobado, verificá que el cliente no haya escrito después de la aprobación (whatspro_list_records messages fromMe=false limit=1); si escribió, reportá el resultado como skipped.',
+  'Todo resultado vuelve por la tool de escritura del ítem; sin eso el servidor no se entera.',
+];
+
+function classifyItem(p: PendingChat, index: number): WorkItem {
+  return {
+    kind: 'classify',
+    priority: 1000 - index,
+    chatId: p.chatId,
+    name: p.name,
+    phoneMasked: p.phoneMasked,
+    reason: p.pendingReason,
+    signals: p.signals,
+    automationActive: p.automationActive,
+    pendingAudios: p.pendingAudios,
+    tools: ['whatspro_sales_dossier', 'whatspro_sales_classification_write'],
+    steps: [
+      `whatspro_sales_dossier {chat_id: ${p.chatId}} → leer expediente y facts`,
+      'aplicar el prompt sales-ops.classify (whatspro_sales_prompts o doc 07 P2) y armar el JSON del contrato',
+      `whatspro_sales_classification_write {chat_id: ${p.chatId}, classification, connector}`,
+    ],
+  };
+}
+
+export async function listWorkQueue(teamId: number, opts: { kinds?: WorkKind[]; limit?: number } = {}): Promise<WorkQueue> {
+  const kinds = new Set(opts.kinds?.length ? opts.kinds : WORK_KINDS);
+  const limit = Math.min(Math.max(1, opts.limit ?? 30), 200);
+  const items: WorkItem[] = [];
+  const counts: Record<WorkKind, number> = { classify: 0, execute_action: 0, classify_signal: 0, transcribe: 0 };
+
+  // 1. Envíos y acciones aprobadas que el servidor no ejecuta (Fase 6 pendiente).
+  const approved = await db
+    .select({
+      id: teamCommercialActions.id,
+      batchId: teamCommercialActions.batchId,
+      batchLabel: teamCommercialActions.batchLabel,
+      kind: teamCommercialActions.kind,
+      chatId: teamCommercialActions.chatId,
+      payload: teamCommercialActions.payload,
+      approvedAt: teamCommercialActions.approvedAt,
+      remoteJid: chats.remoteJid,
+      name: chats.name,
+      pushName: chats.pushName,
+    })
+    .from(teamCommercialActions)
+    .innerJoin(chats, eq(chats.id, teamCommercialActions.chatId))
+    .where(and(eq(teamCommercialActions.teamId, teamId), eq(teamCommercialActions.status, 'approved')))
+    .orderBy(desc(teamCommercialActions.approvedAt));
+  counts.execute_action = approved.length;
+  if (kinds.has('execute_action')) {
+    for (const a of approved) {
+      const idempotencyKey = `sales-ops:${a.id}`;
+      const tools =
+        a.kind === 'send_message'
+          ? ['whatspro_chat_send_message', 'whatspro_sales_queue_result']
+          : a.kind === 'create_task'
+            ? ['whatspro_create_contact_task', 'whatspro_sales_queue_result']
+            : a.kind === 'register_sale'
+              ? ['whatspro_register_sale', 'whatspro_sales_queue_result']
+              : ['whatspro_sales_queue_result'];
+      items.push({
+        kind: 'execute_action',
+        priority: 2000,
+        actionId: a.id,
+        batchId: a.batchId,
+        batchLabel: a.batchLabel,
+        actionKind: a.kind,
+        chatId: a.chatId,
+        name: a.name || a.pushName || maskJid(a.remoteJid),
+        payload: a.payload ?? {},
+        idempotencyKey,
+        approvedAt: a.approvedAt ? a.approvedAt.toISOString() : null,
+        tools,
+        steps:
+          a.kind === 'send_message'
+            ? [
+                `verificar que el chat ${a.chatId} no tenga mensaje del cliente posterior a ${a.approvedAt?.toISOString() ?? 'la aprobación'}`,
+                `whatspro_chat_send_message {chat_id: ${a.chatId}, text: payload.text, idempotency_key: "${idempotencyKey}", dry_run: true} y después sin dry_run`,
+                `whatspro_sales_queue_result {action_id: ${a.id}, status: "executed", result_message_id, executed_via: "connector"}`,
+              ]
+            : [`ejecutar ${a.kind} según payload`, `whatspro_sales_queue_result {action_id: ${a.id}, status: "executed"|"failed", result}`],
+      });
+    }
+  }
+
+  // 2. Chats sin clasificar o desactualizados (prefiltro de dinero primero).
+  if (kinds.has('classify')) {
+    const pending = await listPendingChats(teamId, { source: 'prefiltro', limit: Math.max(limit, 50) });
+    let list = pending;
+    if (list.length < limit) {
+      const stale = await listPendingChats(teamId, { source: 'stale', limit });
+      const seen = new Set(list.map((p) => p.chatId));
+      list = [...list, ...stale.filter((p) => !seen.has(p.chatId))];
+    }
+    counts.classify = list.length;
+    list.slice(0, limit).forEach((p, i) => items.push(classifyItem(p, i)));
+  } else {
+    const [row] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(teamCommercialAnalysis)
+      .where(and(eq(teamCommercialAnalysis.teamId, teamId), eq(teamCommercialAnalysis.stale, true)));
+    counts.classify = row?.n ?? 0;
+  }
+
+  // 3. Respuestas nuevas sin señal (el radar por reglas las clasifica solo; el conector afina lo ambiguo).
+  if (kinds.has('classify_signal')) {
+    const { candidates } = await listScanCandidates(teamId, { limit });
+    counts.classify_signal = candidates.length;
+    for (const c of candidates as ScanCandidate[]) {
+      items.push({
+        kind: 'classify_signal',
+        priority: 1500,
+        messageId: c.messageId,
+        chatId: c.chatId,
+        name: c.name,
+        excerpt: c.excerpt,
+        at: c.timestamp,
+        tools: ['whatspro_sales_signal_write'],
+        steps: [
+          'clasificar el mensaje con el prompt sales-ops.radar (interesado · pide_informacion · precio · objecion · quiere_llamada · intencion_compra · pago · rechazo · respuesta_automatica · irrelevante)',
+          `whatspro_sales_signal_write {message_id: "${c.messageId}", kind, confidence, urgent}`,
+        ],
+      });
+    }
+  }
+
+  // 4. Audios sin ficha de los chats del prefiltro: el servidor los encola; sin cuota, los toma el conector.
+  if (kinds.has('transcribe')) {
+    const pendingChats = items.filter((i): i is Extract<WorkItem, { kind: 'classify' }> => i.kind === 'classify' && i.pendingAudios > 0).map((i) => i.chatId);
+    if (pendingChats.length) {
+      const audios = await db
+        .select({ messageId: messageAudioInsights.messageId, chatId: messageAudioInsights.chatId, queuedAt: messageAudioInsights.queuedAt })
+        .from(messageAudioInsights)
+        .where(and(eq(messageAudioInsights.teamId, teamId), inArray(messageAudioInsights.chatId, pendingChats), inArray(messageAudioInsights.status, ['queued', 'pending'])))
+        .limit(limit);
+      counts.transcribe = audios.length;
+      const names = new Map(items.filter((i) => i.kind === 'classify').map((i) => [i.chatId, i.name]));
+      for (const a of audios) {
+        items.push({
+          kind: 'transcribe',
+          priority: 900,
+          messageId: a.messageId,
+          chatId: a.chatId,
+          name: names.get(a.chatId) ?? `chat ${a.chatId}`,
+          queuedAt: a.queuedAt ? a.queuedAt.toISOString() : null,
+          tools: ['whatspro_audio_queue_takeover', 'whatspro_audio_insight_write'],
+          steps: ['whatspro_audio_queue_takeover → descargar y escuchar', `whatspro_audio_insight_write {message_id: "${a.messageId}", transcript, summary, intent}`],
+        });
+      }
+    }
+  }
+
+  items.sort((a, b) => b.priority - a.priority);
+  return { generatedAt: new Date().toISOString(), counts, items: items.slice(0, limit), rules: RULES };
+}
+
+/** Conteo barato para el dashboard: aprobadas sin ejecutar + sin analizar + desactualizados. */
+export async function countConnectorPending(teamId: number, totals: { total: number; analyzed: number; stale: number }): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(teamCommercialActions)
+    .where(and(eq(teamCommercialActions.teamId, teamId), eq(teamCommercialActions.status, 'approved')));
+  return (row?.n ?? 0) + Math.max(0, totals.total - totals.analyzed) + totals.stale;
+}

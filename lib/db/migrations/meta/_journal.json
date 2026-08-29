@@ -463,6 +463,153 @@
       "when": 1787376969028,
       "tag": "0074_document_html_format",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1787463369028,
+      "tag": "0075_radar_widgets",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1787466969028,
+      "tag": "0076_radar_widget_bank",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1787788800000,
+      "tag": "0077_radar_engine",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1787788800001,
+      "tag": "0078_document_portal",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1787875200000,
+      "tag": "0079_app_maker_data_model",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1787961600000,
+      "tag": "0080_mini_app_themes",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1787980000000,
+      "tag": "0081_task_item_ai_prompt",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1787990000000,
+      "tag": "0082_task_comment_kind_source",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1788000000000,
+      "tag": "0083_customer_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1788000010000,
+      "tag": "0084_message_send_diagnostics",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1788000020000,
+      "tag": "0085_team_deals",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1788000030000,
+      "tag": "0086_customer_company_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1788000040000,
+      "tag": "0087_contact_person_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1788000050000,
+      "tag": "0088_activity_log_metadata",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1788000060000,
+      "tag": "0089_sale_customer_and_deal",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1788000120000,
+      "tag": "0090_command_center_suggestions",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1788000180000,
+      "tag": "0091_task_ai_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1788000240000,
+      "tag": "0092_message_audio_insights",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1788000300000,
+      "tag": "0093_gemini_key_bank",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1788000360000,
+      "tag": "0094_gemini_free_tier_limit",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1788100000000,
+      "tag": "0095_sales_ops",
+      "breakpoints": true
     }
   ]
 }
