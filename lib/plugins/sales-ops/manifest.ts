@@ -10,6 +10,10 @@ const salesOpsSettingsSchema = z.object({
   fx: z.object({ ARS: z.number().default(1000), PYG: z.number().default(7500) }).default({ ARS: 1000, PYG: 7500 }),
   /** Horas sin proponer un segundo envío al mismo chat. */
   sendCooldownHours: z.number().default(72),
+  /** Visibilidad por membresía (id de team_membership_subscriptions): 'private' se ve sólo en la pestaña Privadas; 'hidden' no se ve. */
+  subscriptionVisibility: z.record(z.string(), z.enum(['private', 'hidden'])).default({}),
+  /** Visibilidad por cliente/empresa (`customer:{id}` | `company:{id}`). */
+  accountVisibility: z.record(z.string(), z.enum(['private', 'hidden'])).default({}),
 });
 
 const manifest: AppPluginManifest<typeof salesOpsSettingsSchema> = {

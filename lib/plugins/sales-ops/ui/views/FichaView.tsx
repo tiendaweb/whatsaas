@@ -93,19 +93,25 @@ export function FichaView({ chatId }: Props) {
           <TabsTrigger className="shrink-0 flex-none px-2.5 text-xs" value="resumen">Resumen</TabsTrigger>
           <TabsTrigger className="shrink-0 flex-none px-2.5 text-xs" value="timeline">Timeline</TabsTrigger>
           <TabsTrigger className="shrink-0 flex-none px-2.5 text-xs" value="chat">Chat</TabsTrigger>
+          <TabsTrigger className="shrink-0 flex-none px-2.5 text-xs" value="notas">Notas</TabsTrigger>
+          <TabsTrigger className="shrink-0 flex-none px-2.5 text-xs" value="campos">Campos</TabsTrigger>
           <TabsTrigger className="shrink-0 flex-none px-2.5 text-xs" value="acciones">Acciones{data.actions.length ? ` (${data.actions.length})` : ''}</TabsTrigger>
           <TabsTrigger className="shrink-0 flex-none px-2.5 text-xs" value="versiones">Versiones{data.versions.length ? ` (${data.versions.length})` : ''}</TabsTrigger>
         </TabsList>
         <TabsContent value="resumen" className="mt-3">
           {a ? <Resumen a={a} onOverride={() => void mutate()} /> : <SinAnalisis chatId={chatId} onOverride={() => void mutate()} />}
-          <ContextoContacto header={h} timeline={data.timeline} />
-          <DejarPromptBlock chatId={chatId} />
         </TabsContent>
         <TabsContent value="timeline" className="mt-3">
           <Timeline items={data.timeline} chatHref={data.chatHref} signals={data.signals} />
         </TabsContent>
         <TabsContent value="chat" className="mt-3 flex min-h-[60vh] flex-1 flex-col">
           <FichaChat chatId={chatId} chatHref={data.chatHref} className="flex min-h-0 flex-1 flex-col" />
+        </TabsContent>
+        <TabsContent value="notas" className="mt-3">
+          <NotasTab header={h} timeline={data.timeline} />
+        </TabsContent>
+        <TabsContent value="campos" className="mt-3">
+          <CamposTab header={h} />
         </TabsContent>
         <TabsContent value="acciones" className="mt-3">
           <Acciones actions={data.actions} signals={data.signals} />
@@ -236,6 +242,7 @@ function Resumen({ a, onOverride }: { a: AnalysisDetail; onOverride: () => void 
             ))}
             <ClasificarAhoraButton chatId={a.chatId} onDone={onOverride} />
             <OverrideDialog chatId={a.chatId} currentGate={a.currentGate} currentStatus={a.status} onDone={onOverride} />
+            <DejarPromptDialog chatId={a.chatId} />
           </div>
         </TooltipProvider>
       </section>
@@ -258,6 +265,7 @@ function SinAnalisis({ chatId, onOverride }: { chatId: number; onOverride: () =>
       <div className="flex justify-center gap-2">
         <ClasificarAhoraButton chatId={chatId} onDone={onOverride} />
         <OverrideDialog chatId={chatId} currentGate={null} currentStatus={null} onDone={onOverride} />
+        <DejarPromptDialog chatId={chatId} />
       </div>
     </div>
   );
@@ -298,42 +306,58 @@ function ClasificarAhoraButton({ chatId, onDone }: { chatId: number; onDone: () 
   );
 }
 
-// ── Contexto del contacto: campos personalizados y notas internas ───────────
+// ── Pestañas Notas y Campos ─────────────────────────────────────────────────
 
-function ContextoContacto({ header, timeline }: { header: Header; timeline: DetailPayload['timeline'] }) {
-  const custom = Object.entries(header.customData ?? {}).filter(([, v]) => v !== null && v !== '' && typeof v !== 'object');
-  const notas = timeline.filter((t): t is TimelineHit => 'who' in t && t.who === 'nota').slice(-8).reverse();
-  if (!custom.length && !notas.length && !header.contactNotes && !(header.tags?.length)) return null;
+function NotasTab({ header, timeline }: { header: Header; timeline: DetailPayload['timeline'] }) {
+  const notas = timeline.filter((t): t is TimelineHit => 'who' in t && t.who === 'nota').reverse();
+  if (!notas.length && !header.contactNotes) {
+    return <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">Sin notas internas. Se agregan desde el chat (switch "Nota") o con whatspro_add_internal_note.</p>;
+  }
   return (
-    <div className="mt-4 space-y-3">
-      {(custom.length > 0 || header.tags?.length) && (
+    <div className="space-y-3">
+      {header.contactNotes && (
         <section className="rounded-xl border border-border p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Campos del contacto</p>
-          {header.tags && header.tags.length > 0 && (
-            <p className="mt-1 text-xs text-muted-foreground">Etiquetas: <span className="text-foreground">{header.tags.map((t) => t.name).join(' · ')}</span></p>
-          )}
-          <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Nota de la ficha</p>
+          <p className="mt-1 whitespace-pre-wrap text-sm">{header.contactNotes}</p>
+        </section>
+      )}
+      <ul className="space-y-2">
+        {notas.map((n) => (
+          <li key={n.id} className="rounded-xl border border-dashed border-border px-3 py-2 text-sm">
+            <p className="text-[11px] text-muted-foreground">{tiempoRelativo(n.at)}</p>
+            <p className="mt-0.5 whitespace-pre-wrap">{n.text}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function CamposTab({ header }: { header: Header }) {
+  const custom = Object.entries(header.customData ?? {}).filter(([, v]) => v !== null && v !== '');
+  const tags = header.tags ?? [];
+  if (!custom.length && !tags.length) {
+    return <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">Este contacto no tiene campos personalizados ni etiquetas.</p>;
+  }
+  return (
+    <div className="space-y-3">
+      {tags.length > 0 && (
+        <section className="rounded-xl border border-border p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Etiquetas</p>
+          <p className="mt-1 text-sm">{tags.map((t) => t.name).join(' · ')}</p>
+        </section>
+      )}
+      {custom.length > 0 && (
+        <section className="rounded-xl border border-border p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Campos personalizados</p>
+          <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
             {custom.map(([k, v]) => (
               <div key={k} className="min-w-0">
                 <dt className="truncate text-[10px] text-muted-foreground">{k.replace(/_/g, ' ')}</dt>
-                <dd className="break-words text-xs text-foreground">{String(v)}</dd>
+                <dd className="break-words text-sm">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</dd>
               </div>
             ))}
           </dl>
-        </section>
-      )}
-      {(notas.length > 0 || header.contactNotes) && (
-        <section className="rounded-xl border border-border p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Notas internas</p>
-          {header.contactNotes && <p className="mt-1 whitespace-pre-wrap text-xs text-foreground">{header.contactNotes}</p>}
-          <ul className="mt-2 space-y-1.5">
-            {notas.map((n) => (
-              <li key={n.id} className="rounded-md border border-dashed border-border px-2 py-1.5 text-xs">
-                <span className="text-muted-foreground">{tiempoRelativo(n.at)} · </span>
-                <span className="whitespace-pre-wrap">{n.text}</span>
-              </li>
-            ))}
-          </ul>
         </section>
       )}
     </div>
@@ -342,10 +366,10 @@ function ContextoContacto({ header, timeline }: { header: Header; timeline: Deta
 
 // ── Dejar un prompt al conector (entra a la cola de ejecución) ──────────────
 
-function DejarPromptBlock({ chatId }: { chatId: number }) {
+function DejarPromptDialog({ chatId }: { chatId: number }) {
+  const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const { data, mutate } = useSWR<{ runs: Array<{ id: number; title: string; status: string; summary: string | null; createdAt: string }> }>(`${SALES_OPS_API}/prompts/queue?status=all&chatId=${chatId}`, fetcher);
   const submit = async () => {
     if (text.trim().length < 5) {
       toast.error('Escribí qué tiene que hacer el conector (mínimo 5 caracteres).');
@@ -358,38 +382,30 @@ function DejarPromptBlock({ chatId }: { chatId: number }) {
       if (!r.ok) throw new Error(String(body?.error ?? `Error ${r.status}`));
       toast.success('Quedó en la cola de conectores. Se ejecuta con el prompt P9 (vista Cola).');
       setText('');
-      void mutate();
+      setOpen(false);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'No se pudo encolar.');
     } finally {
       setBusy(false);
     }
   };
-  const runs = data?.runs ?? [];
   return (
-    <section className="mt-4 rounded-xl border border-border p-3">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Dejar un prompt al conector</p>
-      <p className="mt-0.5 text-xs text-muted-foreground">Lo que escribas queda en la cola de ejecución y lo corre Claude, ChatGPT o Grok con el contexto de este chat.</p>
-      <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} placeholder="Ej.: Redactá el mensaje para confirmar el plan Combo Full y pedir la seña; no lo envíes." className="mt-2 text-sm" />
-      <div className="mt-2 flex justify-end">
-        <Button size="sm" disabled={busy} onClick={submit}>{busy ? 'Encolando…' : 'Encolar para el conector'}</Button>
-      </div>
-      {runs.length > 0 && (
-        <ul className="mt-3 space-y-1.5">
-          {runs.slice(0, 6).map((r) => (
-            <li key={r.id} className="flex items-start justify-between gap-2 rounded-md bg-muted/50 px-2 py-1.5 text-xs">
-              <div className="min-w-0">
-                <p className="truncate font-medium">{r.title}</p>
-                {r.summary && <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">{r.summary}</p>}
-              </div>
-              <span className={cn('shrink-0 rounded-full px-1.5 py-0.5 text-[10px]', r.status === 'completed' ? 'bg-primary/10 text-foreground' : r.status === 'queued' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200' : 'bg-muted text-muted-foreground')}>
-                {r.status === 'queued' ? 'en cola' : r.status === 'in_progress' ? 'en curso' : r.status === 'completed' ? 'hecho' : r.status}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setOpen(true)}>
+        Dejar prompt
+      </Button>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Dejar un prompt al conector</DialogTitle>
+          <DialogDescription>Queda en la cola de ejecución con el contexto de este chat. Lo corre Claude, ChatGPT o Grok con el prompt P9.</DialogDescription>
+        </DialogHeader>
+        <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={5} placeholder="Ej.: Redactá el mensaje para confirmar el plan Combo Full y pedir la seña; no lo envíes." className="text-sm" />
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+          <Button disabled={busy} onClick={submit}>{busy ? 'Encolando…' : 'Encolar para el conector'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

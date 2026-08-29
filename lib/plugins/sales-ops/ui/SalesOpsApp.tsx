@@ -15,6 +15,7 @@ import { LS_OWNER, SALES_OPS_API, fetcher, fmtInt } from './components/format';
 import { ColaView } from './views/ColaView';
 import { ExperimentosView } from './views/ExperimentosView';
 import { PromptStudioView } from './views/PromptStudioView';
+import { ClientesView } from './views/ClientesView';
 import { FichaView } from './views/FichaView';
 import { HoyView } from './views/HoyView';
 import { ListaView, type ListaVista } from './views/ListaView';
@@ -156,6 +157,7 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
     if (vista === 'cola') return <ColaView />;
     if (vista === 'experimentos') return <ExperimentosView />;
     if (vista === 'prompts') return <PromptStudioView onOpen={onOpen} />;
+    if (vista === 'clientes') return <ClientesView onOpen={onOpen} />;
     return <MetricasView />;
   })();
 
