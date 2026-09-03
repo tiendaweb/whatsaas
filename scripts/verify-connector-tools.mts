@@ -24,6 +24,7 @@ import { documentsPortalActionTools, documentsPortalReadTools } from '@/lib/plug
 import { messagingActionTools } from '@/lib/plugins/grok-connector/server/messaging-actions';
 import { operationsActionTools, operationsReadTools } from '@/lib/plugins/grok-connector/server/operations-actions';
 import { salesOpsActionTools, salesOpsReadTools } from '@/lib/plugins/grok-connector/server/sales-ops-actions';
+import { notifyActionTools, notifyReadTools } from '@/lib/notifications/tools';
 import { financeActionTools, financeReadTools } from '@/lib/plugins/grok-connector/server/finance-actions';
 import { attachmentsActionTools, attachmentsReadTools } from '@/lib/plugins/grok-connector/server/attachments-actions';
 import { checklistActionTools } from '@/lib/plugins/grok-connector/server/checklist-actions';
@@ -33,6 +34,19 @@ import { bulkActionTools, bulkReadTools } from '@/lib/plugins/grok-connector/ser
 import { dealsActionTools, dealsReadTools } from '@/lib/plugins/grok-connector/server/deals-actions';
 import { detailReadTools } from '@/lib/plugins/grok-connector/server/detail-actions';
 import { helpReadTools } from '@/lib/plugins/grok-connector/server/help-actions';
+import { chatActionTools, chatReadTools } from '@/lib/plugins/grok-connector/server/chat-actions';
+import { settingsActionTools, settingsReadTools } from '@/lib/plugins/grok-connector/server/settings-actions';
+import { membershipsActionTools, membershipsReadTools } from '@/lib/plugins/grok-connector/server/memberships-actions';
+import { calendarActionTools, calendarReadTools } from '@/lib/plugins/grok-connector/server/calendar-actions';
+import { contentActionTools, contentReadTools } from '@/lib/plugins/grok-connector/server/content-actions';
+import { readOnlyResources } from '@/lib/readonly-api/catalog';
+import { readOnlyResourcePolicy } from '@/lib/readonly-api/resource-policies';
+import {
+  commandCenterActionTools,
+  commandCenterReadTools,
+  desktopActionTools,
+  desktopReadTools,
+} from '@/lib/plugins/grok-connector/server/desktop-actions';
 
 const grupos: Array<[string, Array<{ name: string; description: string; inputSchema: unknown }>]> = [
   ['actions', grokActionTools],
@@ -53,12 +67,20 @@ const grupos: Array<[string, Array<{ name: string; description: string; inputSch
   ['messaging', messagingActionTools],
   ['operations', [...operationsReadTools, ...operationsActionTools]],
   ['sales-ops', [...salesOpsReadTools, ...salesOpsActionTools]],
+  ['notificaciones', [...notifyReadTools, ...notifyActionTools]],
   ['finance', [...financeReadTools, ...financeActionTools]],
   ['attachments', [...attachmentsReadTools, ...attachmentsActionTools]],
   ['checklist', checklistActionTools],
   ['transcription', [...transcriptionReadTools, ...transcriptionActionTools]],
   ['links', [...linksReadTools, ...linksActionTools]],
   ['bulk', [...bulkReadTools, ...bulkActionTools]],
+  ['desktop', [...desktopReadTools, ...desktopActionTools]],
+  ['command-center', [...commandCenterReadTools, ...commandCenterActionTools]],
+  ['chat', [...chatReadTools, ...chatActionTools]],
+  ['settings', [...settingsReadTools, ...settingsActionTools]],
+  ['memberships', [...membershipsReadTools, ...membershipsActionTools]],
+  ['calendar', [...calendarReadTools, ...calendarActionTools]],
+  ['content', [...contentReadTools, ...contentActionTools]],
 ];
 
 /** Palabras clave de JSON Schema cuyo valor DEBE ser numérico. */
@@ -130,7 +152,18 @@ for (const [grupo, tools] of grupos) {
   }
 }
 
+/**
+ * Todo recurso del catálogo de sólo lectura tiene que tener política declarada.
+ * El chequeo es fail-closed: sin política no se sirve, así que un recurso nuevo
+ * sin mapear se rompe de entrada en vez de quedar legible sin permiso.
+ */
+const sinPolitica = readOnlyResources.filter((recurso) => !readOnlyResourcePolicy(recurso.key));
+for (const recurso of sinPolitica) {
+  fallos.push(`recurso "${recurso.key}" sin política de lectura: agregalo a lib/readonly-api/resource-policies.ts`);
+}
+
 console.log(`Tools revisadas: ${total} (${vistos.size} nombres únicos)`);
+console.log(`Recursos de sólo lectura: ${readOnlyResources.length} (todos con política: ${sinPolitica.length === 0 ? 'sí' : 'NO'})`);
 if (fallos.length === 0) {
   console.log('✓ Todos los inputSchema son JSON Schema válido y serializable.');
   process.exit(0);

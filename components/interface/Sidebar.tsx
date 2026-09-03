@@ -60,18 +60,24 @@ import { signOut } from '@/app/[locale]/(login)/actions';
 import { User } from '@/lib/db/schema';
 import { cn } from '@/lib/utils';
 import { ThemeSwitcher } from '../theme-switcher';
+import { NotificacionesCampana } from '../notifications/NotificacionesCampana';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import Logo from './Logo';
 import { useTranslations } from 'next-intl';
 import type { MemberPermissions } from '@/lib/permissions';
 import {
-  APPS_LAUNCHER_PREFIXES,
   APP_LABEL_OVERRIDE,
   APP_VISUAL,
   MINI_APP_VISUAL,
   NAV_PERMISSION_MAP,
   PLUGIN_NAV_ICON_MAP,
 } from './use-navigation';
+import {
+  APPS_LAUNCHER_PREFIXES,
+  compareMainNavigation,
+  isAppsOnlyItem,
+  isMainNavOnlyItem,
+} from '@/lib/menu/core-nav-items';
 
 const fetcher = async (url: string) => {
   const res = await fetch(url, { cache: 'no-store' });
@@ -165,7 +171,7 @@ export function Sidebar() {
       href: item.href,
       icon: item.icon,
       label: item.label,
-      pinned: override?.pinned ?? true,
+      pinned: isAppsOnlyItem(item.href) ? false : override?.pinned ?? true,
       order: override?.order ?? idx,
     };
   });
@@ -180,14 +186,18 @@ export function Sidebar() {
         href: item.href,
         icon: item.icon ? (PLUGIN_NAV_ICON_MAP[item.icon] ?? Plug) : Plug,
         label: item.label,
-        pinned: override?.pinned ?? defaultPinned,
+        pinned: isMainNavOnlyItem(item.href)
+          ? true
+          : isAppsOnlyItem(item.href)
+            ? false
+            : override?.pinned ?? defaultPinned,
         order: override?.order ?? (100 + idx),
       };
     });
 
   const dynamicPluginNavItems = [...coreCandidates, ...pluginCandidates]
     .filter(item => item.pinned)
-    .sort((a, b) => a.order - b.order);
+    .sort(compareMainNavigation);
 
   // Apps for the launcher panel: default-launcher plugin items plus any core item unpinned via the menu editor.
   const launcherApps = pluginCandidates
@@ -406,7 +416,16 @@ export function Sidebar() {
             <LanguageSwitcher />
           </div>
         )}
-        <ThemeSwitcher compact />
+        {/* Colapsado el riel mide ~54 px: en fila la campana se salía y el
+            contador quedaba cortado, así que ahí van apilados. */}
+        <div className={cn('flex items-center gap-1', !isExpanded && 'flex-col')}>
+          {/* Siempre `left`: el riel está pegado al borde izquierdo de la
+              pantalla, así que un panel de 20rem anclado a la derecha de la
+              campana arranca en x negativo y se ve cortado. Expandido (200 px) o
+              colapsado (54 px), el espacio libre está siempre a la derecha. */}
+          <NotificacionesCampana compact={!isExpanded} align="left" side="top" />
+          <ThemeSwitcher compact />
+        </div>
       </div>
 
     </aside>

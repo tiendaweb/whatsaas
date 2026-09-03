@@ -5,6 +5,8 @@ import { executeQueueTool, queueActionTools, queueReadTools } from '@/lib/plugin
 import { executeSignalTool, signalActionTools, signalReadTools } from '@/lib/plugins/sales-ops/tools/signal-tools';
 import { executeWorkTool, workActionTools, workReadTools } from '@/lib/plugins/sales-ops/tools/work-tools';
 import { executePromptTool, promptActionTools, promptReadTools } from '@/lib/plugins/sales-ops/tools/prompt-tools';
+import { executeTareasTool, tareasActionTools } from '@/lib/plugins/sales-ops/tools/tareas-tools';
+import { executeManageTool, manageActionTools, manageReadTools } from '@/lib/plugins/sales-ops/tools/manage-tools';
 
 /**
  * Command Center Comercial por MCP (`whatspro_sales_*`).
@@ -14,8 +16,8 @@ import { executePromptTool, promptActionTools, promptReadTools } from '@/lib/plu
  * `z.object` adentro hace desaparecer la tool en silencio (verificar con
  * scripts/verify-connector-tools.mts).
  */
-export const salesOpsReadTools: GrokActionTool[] = [...workReadTools, ...promptReadTools, ...dossierReadTools, ...queueReadTools, ...signalReadTools];
-export const salesOpsActionTools: GrokActionTool[] = [...dossierActionTools, ...queueActionTools, ...signalActionTools, ...workActionTools, ...promptActionTools];
+export const salesOpsReadTools: GrokActionTool[] = [...workReadTools, ...promptReadTools, ...dossierReadTools, ...queueReadTools, ...signalReadTools, ...manageReadTools];
+export const salesOpsActionTools: GrokActionTool[] = [...dossierActionTools, ...queueActionTools, ...signalActionTools, ...workActionTools, ...promptActionTools, ...tareasActionTools, ...manageActionTools];
 
 const has = (tools: GrokActionTool[], name: string) => tools.some((tool) => tool.name === name);
 
@@ -25,5 +27,7 @@ export async function executeSalesOpsTool(name: string, input: Record<string, un
   if (has(dossierReadTools, name) || has(dossierActionTools, name)) return executeDossierTool(name, input, context);
   if (has(queueReadTools, name) || has(queueActionTools, name)) return executeQueueTool(name, input, context);
   if (has(signalReadTools, name) || has(signalActionTools, name)) return executeSignalTool(name, input, context);
+  if (has(tareasActionTools, name)) return executeTareasTool(name, input, context);
+  if (has(manageReadTools, name) || has(manageActionTools, name)) return executeManageTool(name, input, context);
   throw new Error(`sales-ops: tool desconocida ${name}`);
 }

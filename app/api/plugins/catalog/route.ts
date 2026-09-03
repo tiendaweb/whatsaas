@@ -11,14 +11,12 @@ import {
   teamMembers,
   teamPlugins,
 } from '@/lib/db/schema';
+import { getRegisteredPlugins } from '@/lib/plugins/core/registry';
 import {
-  getRegisteredPluginById,
-  getRegisteredPlugins,
-} from '@/lib/plugins/core/registry';
-import {
+  ALWAYS_ON_PLUGIN_IDS,
   ensureSystemPluginStateForTeam,
-  saveTeamMemberPluginState,
-  saveTeamPluginState,
+  PluginToggleError,
+  setPluginEnabledByMember,
 } from '@/lib/plugins/core/service';
 
 const updatePluginSchema = z.object({
@@ -62,8 +60,6 @@ const PLUGIN_CATEGORIES: Partial<Record<string, PluginCategory>> = {
   sites: 'web',
   hostinger: 'web',
 };
-
-const ALWAYS_ON_PLUGIN_IDS = new Set(['tasks']);
 
 async function authenticatedContext(request: NextRequest) {
   const [team, user] = await Promise.all([getAuthenticatedTeam(request), getUser()]);
@@ -166,48 +162,31 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 400 });
     }
 
-    const manifest = await getRegisteredPluginById(parsed.data.pluginId);
-    if (!manifest || manifest.id === 'marketplace') {
-      return NextResponse.json({ error: 'Plugin not found.' }, { status: 404 });
-    }
-    if (manifest.activationMode === 'system' || ALWAYS_ON_PLUGIN_IDS.has(manifest.id)) {
-      return NextResponse.json({ error: 'System plugins cannot be disabled.' }, { status: 409 });
-    }
-
-    if (manifest.activationMode === 'global') {
-      const canManageTeam = context.membership.role === 'owner' || context.membership.role === 'admin';
-      if (!canManageTeam) {
-        return NextResponse.json({ error: 'Only a team owner or administrator can change this app.' }, { status: 403 });
+    let result: Awaited<ReturnType<typeof setPluginEnabledByMember>>;
+    try {
+      result = await setPluginEnabledByMember({
+        teamId: context.team.id,
+        actorUserId: context.user.id,
+        actorRole: context.membership.role,
+        pluginId: parsed.data.pluginId,
+        enabled: parsed.data.enabled,
+      });
+    } catch (error) {
+      if (error instanceof PluginToggleError) {
+        const status = error.code === 'not_found' ? 404 : error.code === 'always_on' ? 409 : 403;
+        return NextResponse.json({ error: error.message }, { status });
       }
-      const current = await db.query.teamPlugins.findFirst({
-        where: and(eq(teamPlugins.teamId, context.team.id), eq(teamPlugins.pluginId, manifest.id)),
-        columns: { settings: true },
-      });
-      await saveTeamPluginState({
-        teamId: context.team.id,
-        pluginId: manifest.id,
-        enabled: parsed.data.enabled,
-        settings: current?.settings ?? {},
-        actorUserId: context.user.id,
-      });
-    } else {
-      await saveTeamMemberPluginState({
-        teamId: context.team.id,
-        userId: context.user.id,
-        pluginId: manifest.id,
-        enabled: parsed.data.enabled,
-        actorUserId: context.user.id,
-      });
+      throw error;
     }
 
     await db.insert(activityLogs).values({
       teamId: context.team.id,
       userId: context.user.id,
       action: parsed.data.enabled ? 'app.plugin.enabled' : 'app.plugin.disabled',
-      ipAddress: manifest.id.slice(0, 45),
+      ipAddress: result.pluginId.slice(0, 45),
     });
 
-    return NextResponse.json({ success: true, pluginId: manifest.id, enabled: parsed.data.enabled });
+    return NextResponse.json({ success: true, pluginId: result.pluginId, enabled: result.enabled });
   } catch (error) {
     console.error('[plugins/catalog PATCH]', error);
     return NextResponse.json({

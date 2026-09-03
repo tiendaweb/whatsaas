@@ -3,6 +3,9 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Calendar, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { getBranding } from '@/lib/db/queries/branding';
+import { getTenant } from '@/lib/tenant/context';
+import { buildBrandIdentity, renderTenantText } from '@/lib/branding/constants';
 
 interface Props {
   params: Promise<{
@@ -11,9 +14,30 @@ interface Props {
   }>;
 }
 
-// Simple markdown to HTML converter for basic markdown
+/**
+ * Conversor de markdown mínimo para los artículos de ayuda.
+ *
+ * El código en línea se aparta ANTES que nada y vuelve al final. Sin eso, las
+ * reglas de énfasis corrían primero y se comían los guiones bajos: un
+ * `whatspro_command_center_inbox` se publicaba como "whatspro<em>command</em>
+ * center_inbox", con el nombre roto y sin ningún error visible. Cualquier
+ * artículo técnico caía en la misma trampa.
+ */
 function markdownToHtml(markdown: string) {
   let html = markdown;
+
+  // 1. Apartar el código en línea.
+  const codeSpans: string[] = [];
+  html = html.replace(/`([^`]+)`/g, (_match, code: string) => {
+    codeSpans.push(code);
+    return `\u0000CODE${codeSpans.length - 1}\u0000`;
+  });
+
+  // 2. Escapar el HTML del autor: el resultado va por dangerouslySetInnerHTML.
+  html = html
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 
   // Headers
   html = html.replace(/^### (.*?)$/gm, '<h3 class="text-xl font-semibold mt-6 mb-3">$1</h3>');
@@ -22,14 +46,9 @@ function markdownToHtml(markdown: string) {
 
   // Bold
   html = html.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold">$1</strong>');
-  html = html.replace(/__((.*?)(?:__)?)/g, '<strong class="font-semibold">$1</strong>');
 
   // Italic
-  html = html.replace(/\*(.*?)\*/g, '<em class="italic">$1</em>');
-  html = html.replace(/_([^_]+)_/g, '<em class="italic">$1</em>');
-
-  // Code inline
-  html = html.replace(/`([^`]+)`/g, '<code class="bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded text-sm font-mono">$1</code>');
+  html = html.replace(/\*([^*\n]+)\*/g, '<em class="italic">$1</em>');
 
   // Links
   html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" class="text-blue-600 hover:underline">$1</a>');
@@ -46,20 +65,44 @@ function markdownToHtml(markdown: string) {
   html = html.replace(/<p><\/p>/g, '');
   html = html.replace(/<p>\s*<\/p>/g, '');
 
+  // 3. Devolver el código a su lugar, ya escapado y sin pasar por el énfasis.
+  html = html.replace(/\u0000CODE(\d+)\u0000/g, (_match, index: string) => {
+    const code = (codeSpans[Number(index)] ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    return `<code class="bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded text-sm font-mono">${code}</code>`;
+  });
+
   return html;
 }
 
 export default async function DocArticlePage({ params }: Props) {
   const { slug, locale } = await params;
 
-  const article = await getDocsArticleBySlug(slug).catch((error) => {
-    console.error('Failed to load docs article:', error);
-    return null;
-  });
+  const [rawArticle, branding, tenant] = await Promise.all([
+    getDocsArticleBySlug(slug).catch((error) => {
+      console.error('Failed to load docs article:', error);
+      return null;
+    }),
+    getBranding(),
+    getTenant(),
+  ]);
 
-  if (!article) {
+  if (!rawArticle) {
     notFound();
   }
+
+  const identity = buildBrandIdentity(branding, tenant?.hostname);
+  const article = {
+    ...rawArticle,
+    title: renderTenantText(rawArticle.title, identity),
+    excerpt: rawArticle.excerpt ? renderTenantText(rawArticle.excerpt, identity) : null,
+    contentMd: rawArticle.contentMd ? renderTenantText(rawArticle.contentMd, identity) : null,
+    category: rawArticle.category
+      ? { ...rawArticle.category, name: renderTenantText(rawArticle.category.name, identity) }
+      : null,
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
@@ -161,4 +204,4 @@ export default async function DocArticlePage({ params }: Props) {
   );
 }
 
-export const revalidate = 3600; // Revalidate every hour
+export const dynamic = 'force-dynamic';

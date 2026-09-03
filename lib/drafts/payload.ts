@@ -1,32 +1,31 @@
-type ParseSuccess = {
-  ok: true;
-  value: {
-    title: string;
-    content: string;
-    draftType: 'static' | 'dynamic';
-    aiMetadata: {
-      prompt: string;
-      mode: 'create' | 'rewrite' | 'variables';
-      generatedAt: string;
-    } | null;
-    categoryId: number | null;
-    tagIds: number[];
-    contactId: number | null;
-    assignedUserId: number | null;
-    departmentId: number | null;
-    stages: {
-      stages: Array<{ id: string; name: string; order: number; departmentId: number | null }>;
-      tasks: Array<{
-        id: string;
-        stageId: string;
-        name: string;
-        order: number;
-        type: 'task' | 'subtask' | 'group';
-        parentTaskId: string | null;
-      }>;
-    } | null;
-  };
+export type DraftWritePayload = {
+  title: string;
+  content: string;
+  draftType: 'static' | 'dynamic';
+  aiMetadata: {
+    prompt: string;
+    mode: 'create' | 'rewrite' | 'variables';
+    generatedAt: string;
+  } | null;
+  categoryId: number | null;
+  tagIds: number[];
+  contactId: number | null;
+  assignedUserId: number | null;
+  departmentId: number | null;
+  stages: {
+    stages: Array<{ id: string; name: string; order: number; departmentId: number | null }>;
+    tasks: Array<{
+      id: string;
+      stageId: string;
+      name: string;
+      order: number;
+      type: 'task' | 'subtask' | 'group';
+      parentTaskId: string | null;
+    }>;
+  } | null;
 };
+
+type ParseSuccess = { ok: true; value: DraftWritePayload };
 
 type ParseFailure = { ok: false; error: string };
 

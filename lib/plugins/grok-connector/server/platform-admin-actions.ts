@@ -1,16 +1,19 @@
 import 'server-only';
 
-import { and, asc, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, ilike, isNotNull, lte, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/lib/db/drizzle';
 import {
   contacts,
   teamCustomerContacts,
+  teamCustomerStores,
   teamCustomers,
   teamDomains,
   teamSiteFiles,
   teamSites,
 } from '@/lib/db/schema';
+import { addCustomerNote, listCustomerNotes } from '@/lib/plugins/customers/server/notes';
+import { listCustomersPendingPayment } from '@/lib/plugins/customers/server/pending-payment';
 import {
   assertPermission,
   audit,
@@ -43,6 +46,35 @@ const siteFields = {
 
 export const platformAdminReadTools: GrokActionTool[] = [
   {
+    name: 'whatspro_customer_notes',
+    description:
+      'Bitácora de un CLIENTE: notas internas del equipo y partes de trabajo que dejan las IA, con fecha y autor. action="list" (por defecto) devuelve el historial de más nuevo a más viejo. action="add" agrega una entrada; usá kind="report" cuando estés documentando tu propio trabajo sobre ese cliente (qué hiciste, qué encontraste, qué queda pendiente) y kind="note" cuando le estés dejando un mensaje al equipo. Podés dejar tantas como haga falta: no se pisan entre sí. Sirve especialmente para los clientes importados de AAPP SPACE que NO tienen conversación de WhatsApp: para esos, las notas internas del chat no existen y ésta es la única bitácora disponible. Para el id del cliente usá whatspro_list_records con resource="customers". OJO: no confundir con la nota suelta del contacto del CRM (whatspro_add_contact_note), que es un texto único que se va acumulando dentro de la ficha del contacto.',
+    inputSchema: {
+      type: 'object',
+      required: ['customer_id'],
+      properties: {
+        action: { type: 'string', enum: ['list', 'add'], default: 'list', description: 'list = leer la bitácora. add = agregar una entrada (requiere text).' },
+        customer_id: { type: 'integer', minimum: 1, description: 'Id del cliente (resource="customers").' },
+        text: { type: 'string', minLength: 1, maxLength: 10000, description: 'Texto de la entrada. Obligatorio con action="add".' },
+        kind: { type: 'string', enum: ['note', 'report'], default: 'note', description: 'report = parte de trabajo tuyo; note = nota para el equipo.' },
+        limit: { type: 'integer', minimum: 1, maximum: 100, description: 'Sólo con list: cuántas entradas traer. Por defecto 100.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'whatspro_customers_pending_payment',
+    description:
+      'Clientes que están ESPERANDO PAGO O SEÑA: los que tienen ventas cargadas sin cobrar (en borrador o confirmadas, no pagadas). De cada uno devuelve cuántas ventas pendientes tiene, el total adeudado POR MONEDA (nunca suma monedas distintas entre sí) y la fecha de vencimiento más próxima, ordenados por lo que vence primero. Es lo que responde "¿a quién hay que cobrarle?", "¿quién me debe?", "armá los mensajes de cobranza de esta semana" o "¿qué está por vencer?". Los importes vienen en la unidad menor de cada moneda (centavos). Ojo: sale de las VENTAS cargadas en el sistema, así que un cliente que debe pero cuya venta nunca se registró no aparece acá; y las ventas cuyo contacto no está vinculado a ningún cliente quedan afuera porque no hay a quién atribuirlas. Después de esto podés usar whatspro_contact_graph para ver el historial del cliente antes de escribirle.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Cuántos clientes devolver, de vencimiento más próximo a más lejano. Por defecto todos.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'whatspro_list_sites',
     description: 'Lista los sitios/proyectos del equipo con slug, subdominio, dominio personalizado, publicación, configuración y métricas de archivos.',
     inputSchema: {
@@ -69,6 +101,35 @@ export const platformAdminReadTools: GrokActionTool[] = [
       required: ['site_id'],
       properties: { site_id: positiveId, file_id: positiveId, path: { type: 'string', minLength: 1, maxLength: 800 } },
       anyOf: [{ required: ['file_id'] }, { required: ['path'] }],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'whatspro_domains_expiring',
+    description:
+      'Dominios por vencer (o ya vencidos) en una ventana de días, ordenados por fecha de vencimiento, con registrador, precio de renovación, auto-renovación y el cliente vinculado con su nombre resuelto. Es la tool para "¿qué dominios se vencen antes de fin de mes y de quién son?" — la pregunta que decide a quién hay que cobrarle la renovación. Los dominios sin fecha de vencimiento no aparecen (cargásela con whatspro_manage_domain).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        within_days: { type: 'integer', minimum: 0, maximum: 365, default: 45, description: 'Ventana hacia adelante en días.' },
+        include_expired: { type: 'boolean', default: true, description: 'Incluir los que ya vencieron.' },
+        customer_id: { type: 'integer', minimum: 1, description: 'Solo los dominios de ese cliente.' },
+        status: { type: 'string', maxLength: 30, description: 'Filtra por estado del dominio (ej. "active").' },
+        limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'whatspro_sites_list_by_domain',
+    description:
+      'Resuelve el triángulo dominio ↔ sitio/tienda ↔ cliente: para un dominio dice qué sitio del equipo o qué tienda de cliente (AAPP) responde ahí y de qué cliente es; para un cliente lista todos sus dominios, sitios y tiendas con sus URLs. Es la tool para "¿de quién es tal dominio?", "¿qué responde en esa URL?" o "¿qué presencia web tiene este cliente?". Sin parámetros lista todos los cruces del equipo.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        domain: { type: 'string', maxLength: 253, description: 'Dominio a resolver (con o sin www).' },
+        customer_id: { type: 'integer', minimum: 1, description: 'Alternativa: todos los dominios/sitios/tiendas de ese cliente.' },
+      },
       additionalProperties: false,
     },
   },
@@ -197,7 +258,9 @@ export const platformAdminActionTools: GrokActionTool[] = [
   },
   {
     name: 'whatspro_manage_customer',
-    description: 'Crea, edita, archiva o elimina un cliente del equipo. Mantiene el aislamiento de tenant y delete requiere confirm=true.',
+    description:
+      'Crea, edita, archiva o elimina un cliente del equipo, con su ficha de empresa (rubro, sitio, tamaño, facturación anual, ubicación y desde cuándo es cliente). '
+      + 'Mantiene el aislamiento de tenant y delete requiere confirm=true. Mandá sólo los campos que querés cambiar: lo que no viaja se conserva.',
     inputSchema: {
       type: 'object',
       required: ['action'],
@@ -210,6 +273,12 @@ export const platformAdminActionTools: GrokActionTool[] = [
         status: { type: 'string', enum: ['active', 'inactive', 'archived'] },
         notes: { type: 'string', maxLength: 10000 },
         profile_image: { type: ['string', 'null'], maxLength: 2000 },
+        industry: { type: ['string', 'null'], maxLength: 60, description: 'Rubro o industria.' },
+        website: { type: ['string', 'null'], maxLength: 255 },
+        employees: { type: ['integer', 'null'], minimum: 0, description: 'Cantidad de empleados.' },
+        annual_revenue: { type: ['integer', 'null'], minimum: 0, description: 'Facturación anual, en unidades enteras de la moneda con la que trabaja el equipo. No se convierte ni se suma con otras monedas.' },
+        location: { type: ['string', 'null'], maxLength: 160 },
+        customer_since: { type: ['string', 'null'], format: 'date-time', description: 'Desde cuándo es cliente. ISO 8601; null lo borra.' },
         confirm: { type: 'boolean' },
       },
       additionalProperties: false,
@@ -327,6 +396,12 @@ const manageCustomerSchema = z.object({
   status: z.enum(['active', 'inactive', 'archived']).optional(),
   notes: z.string().max(10000).optional(),
   profile_image: z.string().trim().max(2000).nullable().optional(),
+  industry: z.string().trim().max(60).nullable().optional(),
+  website: z.string().trim().max(255).nullable().optional(),
+  employees: z.number().int().min(0).nullable().optional(),
+  annual_revenue: z.number().int().min(0).nullable().optional(),
+  location: z.string().trim().max(160).nullable().optional(),
+  customer_since: z.string().datetime().nullable().optional(),
   confirm: z.boolean().optional(),
 }).superRefine((data, ctx) => {
   if (data.action === 'create' && !data.name) ctx.addIssue({ code: 'custom', message: 'name is required for create', path: ['name'] });
@@ -597,6 +672,163 @@ async function listDomains(input: Record<string, unknown>, context: GrokActionCo
   return { domains };
 }
 
+const domainsExpiringSchema = z.object({
+  within_days: z.number().int().min(0).max(365).default(45),
+  include_expired: z.boolean().default(true),
+  customer_id: z.number().int().positive().optional(),
+  status: z.string().trim().max(30).optional(),
+  limit: z.number().int().min(1).max(200).default(50),
+});
+
+async function domainsExpiring(input: Record<string, unknown>, context: GrokActionContext) {
+  await assertPermission(context, 'domainsRead', 'domains');
+  const data = parse(domainsExpiringSchema, input);
+
+  const horizon = new Date(Date.now() + data.within_days * 86400000);
+  const now = new Date();
+  // Comparaciones de fecha con los helpers de drizzle, no con SQL crudo: un
+  // Date como parámetro crudo revienta en runtime (el build no lo detecta).
+  const conditions = [
+    eq(teamDomains.teamId, context.teamId),
+    isNotNull(teamDomains.expiresAt),
+    lte(teamDomains.expiresAt, horizon),
+  ];
+  if (!data.include_expired) conditions.push(gte(teamDomains.expiresAt, now));
+  if (data.customer_id) conditions.push(eq(teamDomains.customerId, data.customer_id));
+  if (data.status) conditions.push(eq(teamDomains.status, data.status));
+
+  const rows = await db.select({
+    domain: teamDomains,
+    customerName: teamCustomers.name,
+  })
+    .from(teamDomains)
+    .leftJoin(teamCustomers, eq(teamDomains.customerId, teamCustomers.id))
+    .where(and(...conditions))
+    .orderBy(asc(teamDomains.expiresAt))
+    .limit(data.limit);
+
+  const today = Date.now();
+  return {
+    object: 'domains_expiring',
+    count: rows.length,
+    within_days: data.within_days,
+    domains: rows.map(({ domain, customerName }) => {
+      const expiresAt = domain.expiresAt!;
+      const daysLeft = Math.ceil((expiresAt.getTime() - today) / 86400000);
+      return {
+        id: domain.id,
+        name: domain.name,
+        registrar: domain.registrar,
+        expires_at: expiresAt.toISOString().slice(0, 10),
+        days_left: daysLeft,
+        expired: daysLeft < 0,
+        auto_renew: domain.autoRenew,
+        status: domain.status,
+        price: domain.price,
+        currency: domain.currency,
+        customer: domain.customerId ? { id: domain.customerId, name: customerName } : null,
+        contact_id: domain.contactId,
+        source: domain.source,
+      };
+    }),
+  };
+}
+
+const sitesByDomainSchema = z.object({
+  domain: z.string().trim().max(253).optional(),
+  customer_id: z.number().int().positive().optional(),
+});
+
+/** Normaliza un dominio para comparar: minúsculas y sin "www.". */
+function bareDomain(value: string) {
+  return value.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
+}
+
+async function sitesListByDomain(input: Record<string, unknown>, context: GrokActionContext) {
+  await assertPermission(context, 'domainsRead', 'domains');
+  await assertPermission(context, 'sitesRead', 'sites');
+  const data = parse(sitesByDomainSchema, input);
+
+  const [domainRows, siteRows, storeRows] = await Promise.all([
+    db.select({
+      id: teamDomains.id,
+      name: teamDomains.name,
+      status: teamDomains.status,
+      expiresAt: teamDomains.expiresAt,
+      customerId: teamDomains.customerId,
+      customerName: teamCustomers.name,
+    }).from(teamDomains)
+      .leftJoin(teamCustomers, eq(teamDomains.customerId, teamCustomers.id))
+      .where(eq(teamDomains.teamId, context.teamId)),
+    db.select({
+      id: teamSites.id,
+      title: teamSites.name,
+      slug: teamSites.slug,
+      subdomain: teamSites.subdomain,
+      customDomain: teamSites.customDomain,
+    }).from(teamSites).where(eq(teamSites.teamId, context.teamId)),
+    db.select({
+      id: teamCustomerStores.id,
+      title: teamCustomerStores.title,
+      cardUrl: teamCustomerStores.cardUrl,
+      customDomain: teamCustomerStores.customDomain,
+      customerId: teamCustomerStores.customerId,
+      customerName: teamCustomers.name,
+    }).from(teamCustomerStores)
+      .leftJoin(teamCustomers, eq(teamCustomerStores.customerId, teamCustomers.id))
+      .where(eq(teamCustomerStores.teamId, context.teamId)),
+  ]);
+
+  const wanted = data.domain ? bareDomain(data.domain) : null;
+
+  const matches = domainRows
+    .filter((row) => (wanted ? bareDomain(row.name) === wanted : true))
+    .filter((row) => (data.customer_id ? row.customerId === data.customer_id : true))
+    .map((row) => {
+      const bare = bareDomain(row.name);
+      const site = siteRows.find((candidate) => candidate.customDomain && bareDomain(candidate.customDomain) === bare) ?? null;
+      const store = storeRows.find((candidate) => candidate.customDomain && bareDomain(candidate.customDomain) === bare) ?? null;
+      return {
+        domain: {
+          id: row.id,
+          name: row.name,
+          status: row.status,
+          expires_at: row.expiresAt ? row.expiresAt.toISOString().slice(0, 10) : null,
+        },
+        customer: row.customerId
+          ? { id: row.customerId, name: row.customerName }
+          : store?.customerId
+            ? { id: store.customerId, name: store.customerName }
+            : null,
+        site: site ? { id: site.id, title: site.title, slug: site.slug, subdomain: site.subdomain } : null,
+        store: store ? { id: store.id, title: store.title, card_url: store.cardUrl } : null,
+      };
+    });
+
+  // Un cliente puede tener tiendas con dominio propio que no están cargadas en
+  // teamDomains: se listan igual para que el triángulo cierre.
+  const extraStores = data.customer_id
+    ? storeRows.filter((store) => store.customerId === data.customer_id
+      && !matches.some((match) => match.store?.id === store.id))
+    : wanted
+      ? storeRows.filter((store) => store.customDomain && bareDomain(store.customDomain) === wanted
+        && !matches.some((match) => match.store?.id === store.id))
+      : [];
+
+  return {
+    object: 'sites_by_domain',
+    count: matches.length,
+    matches,
+    stores_without_domain_record: extraStores.map((store) => ({
+      id: store.id,
+      title: store.title,
+      custom_domain: store.customDomain,
+      card_url: store.cardUrl,
+      customer: store.customerId ? { id: store.customerId, name: store.customerName } : null,
+    })),
+  };
+}
+
 async function assertDomainRelations(context: GrokActionContext, contactId?: number | null, customerId?: number | null) {
   if (contactId != null) {
     const contact = await db.query.contacts.findFirst({ where: and(eq(contacts.id, contactId), eq(contacts.teamId, context.teamId)), columns: { id: true } });
@@ -685,6 +917,12 @@ async function manageCustomer(input: Record<string, unknown>, context: GrokActio
       status: data.status ?? 'active',
       notes: data.notes ?? '',
       profileImage: data.profile_image ?? null,
+      industry: data.industry ?? null,
+      website: data.website ?? null,
+      employees: data.employees ?? null,
+      annualRevenue: data.annual_revenue ?? null,
+      location: data.location ?? null,
+      customerSince: data.customer_since ? new Date(data.customer_since) : null,
       createdBy: context.userId,
       updatedBy: context.userId,
     }).returning();
@@ -699,6 +937,14 @@ async function manageCustomer(input: Record<string, unknown>, context: GrokActio
     ...(data.action === 'archive' ? { status: 'archived' } : {}),
     ...(data.notes !== undefined ? { notes: data.notes } : {}),
     ...(data.profile_image !== undefined ? { profileImage: data.profile_image } : {}),
+    ...(data.industry !== undefined ? { industry: data.industry } : {}),
+    ...(data.website !== undefined ? { website: data.website } : {}),
+    ...(data.employees !== undefined ? { employees: data.employees } : {}),
+    ...(data.annual_revenue !== undefined ? { annualRevenue: data.annual_revenue } : {}),
+    ...(data.location !== undefined ? { location: data.location } : {}),
+    ...(data.customer_since !== undefined
+      ? { customerSince: data.customer_since ? new Date(data.customer_since) : null }
+      : {}),
     updatedBy: context.userId,
     updatedAt: new Date(),
   }).where(and(eq(teamCustomers.id, data.customer_id!), eq(teamCustomers.teamId, context.teamId))).returning();
@@ -731,6 +977,60 @@ async function linkCustomerContact(input: Record<string, unknown>, context: Grok
 }
 
 export async function executePlatformAdminTool(name: string, input: Record<string, unknown>, context: GrokActionContext) {
+  if (name === 'whatspro_customer_notes') {
+    const data = parse(z.object({
+      action: z.enum(['list', 'add']).default('list'),
+      customer_id: z.number().int().positive(),
+      text: z.string().trim().min(1).max(10000).optional(),
+      kind: z.enum(['note', 'report']).optional(),
+      limit: z.number().int().min(1).max(100).optional(),
+    }), input);
+
+    if (data.action === 'list') {
+      await assertPermission(context, 'customersRead', 'customers');
+      const notas = await listCustomerNotes(context.teamId, data.customer_id, data.limit ?? 100);
+      return {
+        action: 'list' as const,
+        customer_id: data.customer_id,
+        count: notas.length,
+        notes: notas.map((nota) => ({
+          id: nota.id,
+          text: nota.text,
+          kind: nota.kind,
+          author: nota.source === 'connector' ? 'IA' : 'equipo',
+          created_at: nota.createdAt,
+        })),
+      };
+    }
+
+    await assertPermission(context, 'customersWrite', 'customers');
+    if (!data.text) throw new Error('Con action="add" tenés que mandar "text".');
+    const nota = await addCustomerNote({
+      teamId: context.teamId,
+      customerId: data.customer_id,
+      userId: context.userId,
+      text: data.text,
+      kind: data.kind ?? 'note',
+      // Todo lo que entra por MCP lo escribió un conector, aunque createdBy
+      // guarde al usuario que lo autorizó.
+      source: 'connector',
+    });
+    if (!nota) throw new Error(`No existe el cliente ${data.customer_id} en este equipo.`);
+    await audit(context, 'connector.customer.note_added', nota.id);
+    return { action: 'add' as const, customer_id: data.customer_id, note: { id: nota.id, kind: nota.kind, created_at: nota.createdAt } };
+  }
+  if (name === 'whatspro_customers_pending_payment') {
+    await assertPermission(context, 'customersRead', 'customers');
+    const data = parse(z.object({ limit: z.number().int().min(1).max(200).optional() }), input);
+    const rows = await listCustomersPendingPayment(context.teamId);
+    const items = data.limit ? rows.slice(0, data.limit) : rows;
+    return {
+      total: rows.length,
+      returned: items.length,
+      note: 'Importes en la unidad menor de cada moneda (centavos). Los totales NO se suman entre monedas distintas.',
+      customers: items,
+    };
+  }
   if (name === 'whatspro_list_sites') {
     await assertPermission(context, 'sitesRead', 'sites');
     const data = parse(siteListSchema, input);
@@ -744,6 +1044,8 @@ export async function executePlatformAdminTool(name: string, input: Record<strin
   if (name === 'whatspro_list_site_files') return listSiteFiles(input, context);
   if (name === 'whatspro_read_site_file') return readSiteFile(input, context);
   if (name === 'whatspro_list_domains') return listDomains(input, context);
+  if (name === 'whatspro_domains_expiring') return domainsExpiring(input, context);
+  if (name === 'whatspro_sites_list_by_domain') return sitesListByDomain(input, context);
   if (name === 'whatspro_manage_site') return manageSite(input, context);
   if (name === 'whatspro_manage_site_file') return manageSiteFile(input, context);
   if (name === 'whatspro_patch_site_file') return patchSiteFile(input, context);

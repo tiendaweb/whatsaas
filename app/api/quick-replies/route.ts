@@ -1,53 +1,37 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { db } from '@/lib/db/drizzle';
-import { getTeamForUser } from '@/lib/db/queries';
-import { quickReplies } from '@/lib/db/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { getTeamForUser, getUser } from '@/lib/db/queries';
+import { createQuickReply, deleteQuickReply, listQuickReplies } from '@/lib/quick-replies/service';
 
 export async function GET() {
   const team = await getTeamForUser();
   if (!team) return NextResponse.json([]);
-  
-  const replies = await db.query.quickReplies.findMany({
-    where: eq(quickReplies.teamId, team.id),
-    orderBy: [desc(quickReplies.createdAt)]
-  });
 
-  const normalizedReplies = replies.map((reply) => ({
-    ...reply,
-    content: reply.content.replace(/\r\n/g, '\n'),
-  }));
-
-  return NextResponse.json(normalizedReplies);
+  return NextResponse.json(await listQuickReplies(team.id));
 }
 
 export async function POST(request: NextRequest) {
-  const team = await getTeamForUser();
-  if (!team) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  
+  const [team, user] = await Promise.all([getTeamForUser(), getUser()]);
+  if (!team || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const { shortcut, content } = await request.json();
-  const cleanShortcut = String(shortcut || '').replace(/^\//, '').trim().toLowerCase();
-  const normalizedContent = typeof content === 'string' ? content.replace(/\r\n/g, '\n') : '';
 
-  if (!cleanShortcut || !normalizedContent.trim()) {
-    return NextResponse.json({ error: 'shortcut and content are required' }, { status: 400 });
+  try {
+    const newReply = await createQuickReply(team.id, user.id, { shortcut, content });
+    return NextResponse.json(newReply);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'shortcut and content are required') {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    throw error;
   }
-
-  const [newReply] = await db.insert(quickReplies).values({
-    teamId: team.id,
-    shortcut: cleanShortcut,
-    content: normalizedContent
-  }).returning();
-
-  return NextResponse.json(newReply);
 }
 
 export async function DELETE(request: NextRequest) {
-    const team = await getTeamForUser();
-    if (!team) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const [team, user] = await Promise.all([getTeamForUser(), getUser()]);
+    if (!team || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { id } = await request.json();
-    await db.delete(quickReplies).where(and(eq(quickReplies.id, id), eq(quickReplies.teamId, team.id)));
-    
+    await deleteQuickReply(team.id, user.id, Number(id));
+
     return NextResponse.json({ success: true });
 }

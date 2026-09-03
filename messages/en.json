@@ -2601,7 +2601,39 @@
     "type_add_note": "Add Note",
     "type_add_tag": "Add Tag",
     "select_tag_placeholder": "Select tag",
-    "tag_required": "Please select a tag"
+    "tag_required": "Please select a tag",
+    "apps_actions_separator": "App actions (based on active apps)",
+    "type_trigger_automation": "Trigger Automation",
+    "type_create_task": "Create Task",
+    "type_create_deal": "Create Opportunity",
+    "type_open_ticket": "Open Support Ticket",
+    "type_schedule_message": "Schedule Reminder",
+    "select_automation_placeholder": "Select automation",
+    "automation_required": "Select an automation",
+    "task_title_placeholder": "Fixed title (empty = AI writes it)",
+    "deal_currency_placeholder": "Currency",
+    "ticket_category_placeholder": "Category (optional)",
+    "priority_low": "Low",
+    "priority_normal": "Normal",
+    "priority_high": "High",
+    "priority_urgent": "Urgent",
+    "schedule_hours_label": "Send in (hours)",
+    "schedule_message_placeholder": "Fixed message (empty = AI writes it)",
+    "type_update_contact": "Save Contact Details",
+    "update_contact_hint": "The AI saves the name, email, company or job title the person mentions.",
+    "type_book_appointment": "Book Appointment",
+    "appointment_duration_label": "Duration (min)",
+    "appointment_kind_meeting": "Meeting",
+    "appointment_kind_call": "Call",
+    "type_register_customer": "Register as Customer",
+    "register_customer_hint": "Turns the contact into a customer (or links it if one exists by email/phone).",
+    "type_register_membership": "Enroll in Membership",
+    "select_plan_placeholder": "Plan",
+    "plan_chosen_by_ai": "Plan the customer picks (AI decides)",
+    "type_report_payment": "Record Payment Notice",
+    "payment_method_placeholder": "Fixed method (empty = customer says it)",
+    "type_register_sale": "Record Sale",
+    "register_sale_hint": "The AI fills in the agreed items and prices; the sale stays pending payment."
   },
   "Apps": {
     "title": "Applications",
@@ -3319,7 +3351,8 @@
         "task": "Tasks",
         "membership": "Memberships",
         "deal": "Deals",
-        "event": "Calendar"
+        "event": "Calendar",
+        "finance": "Receivables"
       },
       "filters": {
         "all": "All"
@@ -3330,7 +3363,14 @@
         "complete-task": "Complete",
         "snooze-task": "Snooze 1 day",
         "set-task-ai-detail": "Save AI detail",
-        "move-deal-stage": "Advance stage"
+        "move-deal-stage": "Advance stage",
+        "set-crm-stage": "Move stage",
+        "change-contact-tags": "Tag",
+        "assign-contact": "Assign",
+        "add-internal-note": "Internal note",
+        "create-task": "Create task",
+        "renew-membership": "Renew",
+        "settle-entry": "Record payment"
       },
       "taskAi": {
         "add": "Add instruction",
@@ -3391,7 +3431,9 @@
         "send_unknown": "We do not know if it arrived: check the conversation before resending.",
         "duplicate_recipient": "There is already another message for this contact in this batch.",
         "invalid": "Could not process."
-      }
+      },
+      "helpLink": "How it works",
+      "helpLinkTitle": "How to use the Command Center"
     }
   },
   "ScheduledMessagesAapp": {
@@ -4438,5 +4480,20 @@
       "moved": "Moved to {stage}",
       "moveError": "Could not move. Change reverted."
     }
+  },
+  "AiBuiltinTools": {
+    "title": "Built-in functions per app",
+    "description": "Functions the agent can call automatically based on the team's active apps. They turn on with the app; here you can switch off any single one.",
+    "loading": "Loading functions…",
+    "empty": "No built-in functions available.",
+    "active_count": "{count} of {total} active",
+    "plugin_active": "App active",
+    "plugin_inactive": "App inactive",
+    "risk_read": "Read-only",
+    "risk_write": "Writes data",
+    "enabled_toast": "Function enabled",
+    "disabled_toast": "Function disabled",
+    "enable_aria": "Enable {name}",
+    "disable_aria": "Disable {name}"
   }
 }

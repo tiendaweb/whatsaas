@@ -1,7 +1,9 @@
 import 'server-only';
 
+import { createHash } from 'crypto';
 import { and, eq, gte, ilike, inArray, lte, max, ne, or } from 'drizzle-orm';
 import { z } from 'zod';
+import { taskPatchFieldsSchema } from '@/lib/plugins/grok-connector/shared/task-patch-schema';
 import { ensureCustomFieldsTable } from '@/lib/contacts/custom-fields';
 import { db } from '@/lib/db/drizzle';
 import {
@@ -24,6 +26,8 @@ import {
   teamMembershipPlans,
   teamMembershipSubscriptions,
   teamNotes,
+  teamDeals,
+  teamMessageSendKeys,
   teamScheduledMessages,
   teamTaskColumns,
   teamTaskItemLocations,
@@ -51,6 +55,7 @@ import {
   SUBSCRIPTION_STATUS,
 } from '@/lib/plugins/memberships/constants';
 import { assertCompanyOwnership } from '@/lib/plugins/memberships/server/plan-schema';
+import { resolveSendingInstance } from '@/lib/messaging/send';
 import { computeNextRunAt } from '@/lib/plugins/scheduled-messages/schedule';
 import {
   assertEntity,
@@ -100,6 +105,30 @@ const taskChecklistProperty = {
 const taskFields = {
   title: { type: 'string', minLength: 1, maxLength: 500 },
   notes: { type: 'string', maxLength: 20000 },
+  ai_prompt: {
+    type: 'string',
+    maxLength: 20000,
+    description: 'Instrucciones que una persona dejó escritas para la IA sobre esta tarea (qué se espera que hagas acá). Leelo antes de trabajar sobre la tarea; escribilo sólo si te lo piden explícitamente.',
+  },
+  ai_next_step: {
+    type: 'string',
+    maxLength: 20000,
+    description: 'Próxima acción concreta guardada para continuar la tarea.',
+  },
+  ai_context_question: {
+    type: 'string',
+    maxLength: 20000,
+    description: 'Pregunta que la IA necesita que una persona responda antes de continuar.',
+  },
+  ai_context_answer: {
+    type: 'string',
+    maxLength: 20000,
+    description: 'Respuesta humana a ai_context_question. Leela antes de volver a preguntar.',
+  },
+  ai_ready: {
+    type: 'boolean',
+    description: 'true pone la tarea en la cola de whatspro_tasks_ai_worklist (equivale al botón "Revisada: preparar para ejecutar" de la app). Usalo cuando termines de preparar una tarea y quieras que la próxima corrida la ejecute; false la saca de la cola y la devuelve a la lista abierta. Una tarea sin ai_ready NO aparece en la cola por más prompt que tenga.',
+  },
   label_ids: { type: 'array', maxItems: 50, items: { type: 'string', maxLength: 100 } },
   checklist: taskChecklistProperty,
   status: { type: 'string', enum: ['open', 'in_progress', 'done'] },
@@ -308,6 +337,7 @@ export const grokExtendedActionTools: GrokActionTool[] = [
       required: ['name'],
       properties: {
         name: { type: 'string', minLength: 1, maxLength: 200 },
+        ai_prompt: { type: 'string', maxLength: 20000 },
         workspace_id: { type: 'integer', minimum: 1 },
         workspace_name: { type: 'string', minLength: 1, maxLength: 200 },
         background_url: { type: ['string', 'null'], maxLength: 2000 },
@@ -456,7 +486,8 @@ export const grokExtendedActionTools: GrokActionTool[] = [
   },
   {
     name: 'whatspro_manage_scheduled_message',
-    description: 'Crea o edita un mensaje programado único, diario o semanal; también puede ejecutar una automatización.',
+    description:
+      'Crea o edita un mensaje programado único, diario o semanal; también puede ejecutar una automatización. IMPORTANTE: si el programado queda con status "active" y más de 10 destinatarios, es un envío masivo real de WhatsApp y la llamada se rechaza salvo que pases confirm: true. Antes de confirmar, mostrale al usuario a cuántos números le va a escribir y con qué texto. Si sólo querés dejarlo preparado sin que salga, usá status: "paused".',
     inputSchema: {
       type: 'object',
       required: ['action'],
@@ -477,13 +508,19 @@ export const grokExtendedActionTools: GrokActionTool[] = [
         media_url: { type: ['string', 'null'], maxLength: 2000 },
         automation_id: nullablePositiveId,
         max_runs: { type: ['integer', 'null'], minimum: 1 },
+        confirm: { type: 'boolean', description: 'Obligatorio en true cuando el programado queda ACTIVO y apunta a más de 10 números: sin esto no se encola un envío masivo.' },
+        dry_run: { type: 'boolean', description: 'true = no escribe nada y devuelve exactamente qué quedaría: destinatarios, instancia resuelta, próxima corrida calculada y si haría falta confirm. Usalo SIEMPRE antes de un envío masivo.' },
+        idempotency_key: { type: 'string', minLength: 8, maxLength: 80, description: 'Sólo para action="create". Repetir la llamada con la misma clave devuelve el programado que ya se creó en vez de crear otro. Sin esto, un reintento por timeout deja dos programados idénticos y el cliente recibe el mensaje dos veces.' },
       },
       additionalProperties: false,
     },
   },
   {
     name: 'whatspro_manage_custom_field',
-    description: 'Crea o edita una definición de campo personalizado del CRM. Para guardar valores en un contacto usa whatspro_set_custom_fields.',
+    description:
+      'Crea o edita una definición de campo personalizado del CRM. Para guardar valores en un contacto usá whatspro_set_custom_fields; '
+      + 'para ver el catálogo con los valores ya resueltos y qué campos usa de verdad el equipo, whatspro_custom_fields; '
+      + 'para eliminar una definición, whatspro_delete_record(resource="custom_field", record_id=<field_id>).',
     inputSchema: {
       type: 'object',
       required: ['action'],
@@ -551,6 +588,11 @@ export const grokExtendedActionTools: GrokActionTool[] = [
         action: { type: 'string', enum: ['create', 'update'] },
         workspace_id: { type: 'integer', minimum: 1 },
         name: { type: 'string', minLength: 1, maxLength: 200 },
+        ai_prompt: {
+          type: 'string',
+          maxLength: 20000,
+          description: 'Contexto general que las interfaces de IA deben heredar para todos los proyectos y tareas de este espacio.',
+        },
         order: { type: 'integer', minimum: 0 },
         color: { type: ['string', 'null'], maxLength: 20 },
         icon: { type: ['string', 'null'], maxLength: 60 },
@@ -568,6 +610,11 @@ export const grokExtendedActionTools: GrokActionTool[] = [
         project_id: { type: 'integer', minimum: 1 },
         workspace_id: nullablePositiveId,
         name: { type: 'string', minLength: 1, maxLength: 200 },
+        ai_prompt: {
+          type: 'string',
+          maxLength: 20000,
+          description: 'Contexto específico del proyecto; se combina con el prompt del espacio y de cada tarea.',
+        },
         background_url: { type: ['string', 'null'], maxLength: 2000 },
         labels: {
           type: 'array',
@@ -600,9 +647,9 @@ export const grokExtendedActionTools: GrokActionTool[] = [
       properties: {
         action: { type: 'string', enum: ['create', 'delete'] },
         relation_id: { type: 'integer', minimum: 1 },
-        source_type: { type: 'string', enum: ['workspace', 'project', 'task', 'contact', 'customer', 'note', 'event'] },
+        source_type: { type: 'string', enum: ['workspace', 'project', 'task', 'contact', 'customer', 'document', 'note', 'event'] },
         source_id: { type: 'integer', minimum: 1 },
-        target_type: { type: 'string', enum: ['workspace', 'project', 'task', 'contact', 'customer', 'note', 'event'] },
+        target_type: { type: 'string', enum: ['workspace', 'project', 'task', 'contact', 'customer', 'document', 'note', 'event'] },
         target_id: { type: 'integer', minimum: 1 },
         relation_type: { type: 'string', enum: ['related', 'shared_in', 'generated_from', 'converted_to'] },
       },
@@ -648,7 +695,7 @@ export const grokExtendedActionTools: GrokActionTool[] = [
       properties: {
         resource: {
           type: 'string',
-          enum: ['crm_stage_group', 'crm_stage', 'tag', 'department', 'agenda', 'membership_plan', 'membership', 'task_workspace', 'task_project', 'task_column', 'task', 'document_folder', 'document', 'scheduled_message', 'team_note', 'custom_field', 'calendar_event'],
+          enum: ['crm_stage_group', 'crm_stage', 'tag', 'department', 'agenda', 'membership_plan', 'membership', 'task_workspace', 'task_project', 'task_column', 'task', 'document_folder', 'document', 'scheduled_message', 'team_note', 'custom_field', 'calendar_event', 'deal'],
         },
         record_id: { type: 'integer', minimum: 1 },
         confirm: { type: 'boolean', const: true },
@@ -779,6 +826,11 @@ const checklistItemSchema = z.object({
 const taskBaseSchema = z.object({
   title: z.string().trim().min(1).max(500),
   notes: z.string().max(20000).default(''),
+  ai_prompt: z.string().max(20000).optional(),
+  ai_next_step: z.string().max(20000).optional(),
+  ai_context_question: z.string().max(20000).optional(),
+  ai_context_answer: z.string().max(20000).optional(),
+  ai_ready: z.boolean().optional(),
   label_ids: z.array(z.string().max(100)).max(50).default([]),
   checklist: z.array(checklistItemSchema).max(100).default([]),
   status: z.enum(['open', 'in_progress', 'done']).default('open'),
@@ -791,6 +843,7 @@ const taskBaseSchema = z.object({
 const taskWithSubtasksSchema = taskBaseSchema.extend({ subtasks: z.array(taskBaseSchema).max(100).default([]) });
 const taskProjectSchema = z.object({
   name: z.string().trim().min(1).max(200),
+  ai_prompt: z.string().max(20000).optional(),
   workspace_id: z.number().int().positive().optional(),
   workspace_name: z.string().trim().min(1).max(200).optional(),
   background_url: z.string().max(2000).nullable().optional(),
@@ -825,7 +878,14 @@ const taskColumnSchema = z.object({
   if (data.action === 'create' && !data.title) ctx.addIssue({ code: 'custom', message: 'title is required for create', path: ['title'] });
   if (data.action === 'update' && !data.column_id) ctx.addIssue({ code: 'custom', message: 'column_id is required for update', path: ['column_id'] });
 });
-const taskManageSchema = taskBaseSchema.partial().extend({
+/**
+ * El esquema de parcheo parcial vive en `shared/task-patch-schema.ts` (sin
+ * `server-only`) para poder testearlo: garantiza que un campo ausente llegue
+ * como `undefined` y no como su valor por defecto. Ver el comentario largo
+ * ahí y `tests/connectors/task-patch-schema.test.ts`.
+ */
+
+const taskManageSchema = taskPatchFieldsSchema.extend({
   action: actionSchema,
   task_id: z.number().int().positive().optional(),
   column_id: z.number().int().positive().optional(),
@@ -873,6 +933,7 @@ const scheduledManageSchema = z.object({
   status: z.enum(['active', 'paused', 'completed', 'failed']).optional(),
   instance_id: z.number().int().positive().nullable().optional(),
   target_numbers: z.array(z.string().trim().min(5).max(40)).max(10000).optional(),
+  confirm: z.boolean().optional(),
   schedule_type: z.enum(['once', 'daily', 'weekly']).optional(),
   scheduled_at: z.string().datetime().nullable().optional(),
   hour: z.number().int().min(0).max(23).nullable().optional(),
@@ -883,6 +944,8 @@ const scheduledManageSchema = z.object({
   media_url: z.string().max(2000).nullable().optional(),
   automation_id: z.number().int().positive().nullable().optional(),
   max_runs: z.number().int().min(1).nullable().optional(),
+  dry_run: z.boolean().optional(),
+  idempotency_key: z.string().trim().min(8).max(80).optional(),
 }).superRefine((data, ctx) => {
   if (data.action === 'create' && !data.name) ctx.addIssue({ code: 'custom', message: 'name is required for create', path: ['name'] });
   if (data.action === 'update' && !data.scheduled_message_id) ctx.addIssue({ code: 'custom', message: 'scheduled_message_id is required for update', path: ['scheduled_message_id'] });
@@ -935,6 +998,7 @@ const taskWorkspaceManageSchema = z.object({
   action: actionSchema,
   workspace_id: z.number().int().positive().optional(),
   name: z.string().trim().min(1).max(200).optional(),
+  ai_prompt: z.string().max(20000).optional(),
   order: z.number().int().min(0).optional(),
   color: z.string().max(20).nullable().optional(),
   icon: z.string().max(60).nullable().optional(),
@@ -951,6 +1015,7 @@ const taskProjectManageSchema = z.object({
   project_id: z.number().int().positive(),
   workspace_id: z.number().int().positive().nullable().optional(),
   name: z.string().trim().min(1).max(200).optional(),
+  ai_prompt: z.string().max(20000).optional(),
   background_url: z.string().max(2000).nullable().optional(),
   labels: z.array(taskLabelSchema).max(50).optional(),
   order: z.number().int().min(0).optional(),
@@ -960,6 +1025,7 @@ const taskProjectManageSchema = z.object({
 const deletableResourceSchema = z.enum([
   'crm_stage_group', 'crm_stage', 'tag', 'department', 'agenda', 'membership_plan', 'membership', 'task_workspace', 'task_project',
   'task_column', 'task', 'document_folder', 'document', 'scheduled_message', 'team_note', 'custom_field', 'calendar_event',
+  'deal',
 ]);
 const deleteRecordSchema = z.object({
   resource: deletableResourceSchema,
@@ -1371,6 +1437,10 @@ function taskValues(task: z.infer<typeof taskBaseSchema>) {
   return {
     title: task.title,
     notes: task.notes,
+    aiPrompt: task.ai_prompt ?? '',
+    aiNextStep: task.ai_next_step ?? '',
+    aiContextQuestion: task.ai_context_question ?? '',
+    aiContextAnswer: task.ai_context_answer ?? '',
     labelIds: task.label_ids,
     checklist: task.checklist as TaskChecklistItem[],
     status: task.status,
@@ -1425,6 +1495,7 @@ async function createTaskProject(input: Record<string, unknown>, context: GrokAc
       teamId: context.teamId,
       workspaceId: workspace.id,
       name: data.name,
+      aiPrompt: data.ai_prompt ?? '',
       backgroundUrl: data.background_url ?? null,
       labels: data.labels as TaskLabel[],
       order: (lastProject?.order ?? -1) + 1,
@@ -1530,6 +1601,11 @@ async function manageTask(input: Record<string, unknown>, context: GrokActionCon
       columnId: data.column_id!,
       title: data.title!,
       notes: data.notes,
+      aiPrompt: data.ai_prompt,
+      aiNextStep: data.ai_next_step,
+      aiContextQuestion: data.ai_context_question,
+      aiContextAnswer: data.ai_context_answer,
+      aiReadyAt: data.ai_ready ? new Date().toISOString() : null,
       labelIds: data.label_ids,
       checklist: data.checklist as TaskChecklistItem[] | undefined,
       status: data.status,
@@ -1548,6 +1624,11 @@ async function manageTask(input: Record<string, unknown>, context: GrokActionCon
   const result = await patchTaskItem({ teamId: context.teamId, taskId: data.task_id!, patch: {
     ...(data.title !== undefined ? { title: data.title } : {}),
     ...(data.notes !== undefined ? { notes: data.notes } : {}),
+    ...(data.ai_prompt !== undefined ? { aiPrompt: data.ai_prompt } : {}),
+    ...(data.ai_next_step !== undefined ? { aiNextStep: data.ai_next_step } : {}),
+    ...(data.ai_context_question !== undefined ? { aiContextQuestion: data.ai_context_question } : {}),
+    ...(data.ai_context_answer !== undefined ? { aiContextAnswer: data.ai_context_answer } : {}),
+    ...(data.ai_ready !== undefined ? { aiReadyAt: data.ai_ready ? new Date().toISOString() : null } : {}),
     ...(data.label_ids !== undefined ? { labelIds: data.label_ids } : {}),
     ...(data.checklist !== undefined ? { checklist: data.checklist as TaskChecklistItem[] } : {}),
     ...(data.status !== undefined ? { status: data.status } : {}),
@@ -1618,8 +1699,11 @@ async function assertScheduledReferences(context: GrokActionContext, instanceId?
   if (instanceId != null) {
     const instance = await db.query.evolutionInstances.findFirst({ where: and(
       eq(evolutionInstances.id, instanceId), eq(evolutionInstances.teamId, context.teamId),
-    ), columns: { id: true } });
+    ), columns: { id: true, accessToken: true, instanceName: true } });
     if (!instance) throw new Error('WhatsApp instance not found.');
+    if (!instance.accessToken) {
+      throw new Error(`La instancia "${instance.instanceName}" no tiene token de acceso: el programado fallaría al ejecutarse.`);
+    }
   }
   if (automationId != null) {
     const automation = await db.query.automations.findFirst({ where: and(
@@ -1629,6 +1713,73 @@ async function assertScheduledReferences(context: GrokActionContext, instanceId?
   }
 }
 
+/**
+ * Un programado ACTIVO con muchos destinatarios es un envío masivo real de
+ * WhatsApp: `target_numbers` acepta hasta 10.000 y `scheduled_at` puede ser ya.
+ * Sin freno, una sola llamada mal interpretada le escribe a diez mil personas y
+ * eso no se deshace — además de arriesgar el número. Por debajo del umbral no
+ * se pide nada, para no estorbar el uso normal.
+ */
+const MASS_SEND_THRESHOLD = 10;
+
+function assertMassSendConfirmed(
+  data: { status?: string; target_numbers?: string[]; confirm?: boolean },
+  currentStatus?: string,
+) {
+  const recipients = data.target_numbers?.length ?? 0;
+  const status = data.status ?? currentStatus ?? 'active';
+  if (status !== 'active' || recipients <= MASS_SEND_THRESHOLD) return;
+  if (data.confirm === true) return;
+  throw new Error(
+    `Este programado quedaría ACTIVO con ${recipients} destinatarios: es un envío masivo de WhatsApp y no se puede deshacer una vez que sale. `
+    + 'Mostrale al usuario a cuántos números le va a escribir y con qué texto, y recién con su OK explícito repetí la llamada agregando confirm: true. '
+    + 'Si sólo querés dejarlo preparado sin que salga, mandá status: "paused".',
+  );
+}
+
+/**
+ * Un programado sin instancia no falla al crearse: falla recién cuando el cron
+ * intenta ejecutarlo, y hasta ahí el usuario cree que quedó bien. Como el
+ * conector casi nunca manda `instance_id`, se resuelve acá igual que lo hace el
+ * inbox: la instancia conectada del equipo.
+ */
+async function resolveScheduledInstance(context: GrokActionContext, instanceId?: number | null) {
+  if (instanceId != null) return instanceId;
+  try {
+    return (await resolveSendingInstance(context.teamId)).instance.id;
+  } catch (error) {
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)} `
+      + 'El programado no tendría desde qué número salir: conectá una instancia en Ajustes o pasá instance_id.',
+    );
+  }
+}
+
+/**
+ * Reserva de la clave idempotente de un programado.
+ *
+ * Se apoya en `team_message_send_keys`, que ya existe con un unique por
+ * `(teamId, keyHash)`: crear una tabla nueva para lo mismo sería duplicar el
+ * mecanismo. La reserva se toma ANTES de insertar el programado —no después—,
+ * porque el reintento que hay que atajar es justamente el del timeout, cuando el
+ * primer intento ya está escribiendo.
+ */
+async function claimScheduledKey(context: GrokActionContext, key: string) {
+  const keyHash = createHash('sha256').update(`sched:${context.teamId}:${key}`).digest('hex');
+  const [claimed] = await db
+    .insert(teamMessageSendKeys)
+    .values({ teamId: context.teamId, keyHash, messageId: 'pending', source: 'mcp-scheduled' })
+    .onConflictDoNothing()
+    .returning();
+  if (claimed) return { keyHash, fresh: true as const, existing: null };
+  const [row] = await db
+    .select({ messageId: teamMessageSendKeys.messageId })
+    .from(teamMessageSendKeys)
+    .where(and(eq(teamMessageSendKeys.teamId, context.teamId), eq(teamMessageSendKeys.keyHash, keyHash)))
+    .limit(1);
+  return { keyHash, fresh: false as const, existing: row?.messageId ?? null };
+}
+
 async function manageScheduledMessage(input: Record<string, unknown>, context: GrokActionContext) {
   await assertPermission(context, 'scheduledMessagesWrite', 'scheduled-messages');
   const data = parse(scheduledManageSchema, input);
@@ -1636,11 +1787,56 @@ async function manageScheduledMessage(input: Record<string, unknown>, context: G
   if (data.action === 'create') {
     const scheduleType = data.schedule_type ?? 'once';
     const scheduledAt = data.scheduled_at ? new Date(data.scheduled_at) : null;
+
+    if (data.dry_run) {
+      // La simulación NO reserva la clave y NO exige confirm: su trabajo es
+      // justamente decirte si haría falta antes de que lo intentes en serio.
+      const recipients = data.target_numbers?.length ?? 0;
+      let instance: number | null = null;
+      let instanceError: string | null = null;
+      try {
+        instance = await resolveScheduledInstance(context, data.instance_id);
+      } catch (error) {
+        instanceError = error instanceof Error ? error.message : String(error);
+      }
+      return {
+        dry_run: true,
+        would_create: {
+          name: data.name,
+          status: data.status ?? 'active',
+          schedule_type: scheduleType,
+          instance_id: instance,
+          recipients,
+          next_run_at: computeNextRunAt({ scheduleType, scheduledAt, hour: data.hour, minute: data.minute, weekdays: data.weekdays }),
+          action_type: data.action_type ?? 'message',
+          message: data.message ?? null,
+        },
+        confirm_required: (data.status ?? 'active') === 'active' && recipients > MASS_SEND_THRESHOLD,
+        instance_error: instanceError,
+      };
+    }
+
+    assertMassSendConfirmed(data);
+
+    if (data.idempotency_key) {
+      const claim = await claimScheduledKey(context, data.idempotency_key);
+      if (!claim.fresh) {
+        const id = Number(claim.existing);
+        if (!Number.isInteger(id) || id <= 0) {
+          throw new Error('Ya hay una creación en curso con esa idempotency_key. Volvé a consultar en unos segundos antes de reintentar.');
+        }
+        const already = await db.query.teamScheduledMessages.findFirst({
+          where: and(eq(teamScheduledMessages.id, id), eq(teamScheduledMessages.teamId, context.teamId)),
+        });
+        if (already) return { success: true, created: false, idempotent: true, scheduled_message: already };
+      }
+    }
+
     const [scheduledMessage] = await db.insert(teamScheduledMessages).values({
       teamId: context.teamId,
       name: data.name!,
       status: data.status ?? 'active',
-      instanceId: data.instance_id ?? null,
+      instanceId: await resolveScheduledInstance(context, data.instance_id),
       targetNumbers: data.target_numbers ?? [],
       scheduleType,
       scheduledAt,
@@ -1655,6 +1851,13 @@ async function manageScheduledMessage(input: Record<string, unknown>, context: G
       nextRunAt: computeNextRunAt({ scheduleType, scheduledAt, hour: data.hour, minute: data.minute, weekdays: data.weekdays }),
       createdBy: context.userId,
     }).returning();
+    if (data.idempotency_key) {
+      const keyHash = createHash('sha256').update(`sched:${context.teamId}:${data.idempotency_key}`).digest('hex');
+      await db
+        .update(teamMessageSendKeys)
+        .set({ messageId: String(scheduledMessage.id) })
+        .where(and(eq(teamMessageSendKeys.teamId, context.teamId), eq(teamMessageSendKeys.keyHash, keyHash)));
+    }
     await audit(context, 'GROK_SCHEDULED_MESSAGE_CREATED', scheduledMessage.id);
     return { success: true, created: true, scheduled_message: scheduledMessage };
   }
@@ -1662,6 +1865,10 @@ async function manageScheduledMessage(input: Record<string, unknown>, context: G
     eq(teamScheduledMessages.id, data.scheduled_message_id!), eq(teamScheduledMessages.teamId, context.teamId),
   ) });
   if (!existing) throw new Error('Scheduled message not found.');
+  // Activar un programado ya cargado dispara el mismo envío masivo que crearlo:
+  // si no vienen números nuevos, se evalúan los que ya tenía guardados.
+  const effectiveNumbers = data.target_numbers ?? (existing.targetNumbers as string[] | null) ?? [];
+  if (!data.dry_run) assertMassSendConfirmed({ ...data, target_numbers: effectiveNumbers }, existing.status);
   const scheduleType = data.schedule_type ?? existing.scheduleType;
   const scheduledAt = data.scheduled_at !== undefined ? (data.scheduled_at ? new Date(data.scheduled_at) : null) : existing.scheduledAt;
   const hour = data.hour !== undefined ? data.hour : existing.hour;
@@ -1669,10 +1876,39 @@ async function manageScheduledMessage(input: Record<string, unknown>, context: G
   const weekdays = data.weekdays ?? existing.weekdays as number[];
   const recompute = data.schedule_type !== undefined || data.scheduled_at !== undefined || data.hour !== undefined
     || data.minute !== undefined || data.weekdays !== undefined || data.status === 'active';
+  // Reactivar un programado que quedó sin instancia lo mandaría de vuelta al
+  // mismo fallo. Se resuelve al momento de activarlo, no al ejecutarlo.
+  const instanceId = data.instance_id !== undefined
+    ? data.instance_id
+    : (existing.instanceId == null && (data.status ?? existing.status) === 'active'
+      ? await resolveScheduledInstance(context, null)
+      : undefined);
+
+  if (data.dry_run) {
+    return {
+      dry_run: true,
+      would_update: {
+        scheduled_message_id: existing.id,
+        name: data.name ?? existing.name,
+        status: data.status ?? existing.status,
+        schedule_type: scheduleType,
+        instance_id: instanceId !== undefined ? instanceId : existing.instanceId,
+        recipients: effectiveNumbers.length,
+        next_run_at: recompute
+          ? computeNextRunAt({ scheduleType, scheduledAt, hour, minute, weekdays })
+          : existing.nextRunAt,
+      },
+      confirm_required:
+        (data.status ?? existing.status) === 'active' && effectiveNumbers.length > MASS_SEND_THRESHOLD,
+    };
+  }
+
   const [scheduledMessage] = await db.update(teamScheduledMessages).set({
     ...(data.name !== undefined ? { name: data.name } : {}),
     ...(data.status !== undefined ? { status: data.status } : {}),
-    ...(data.instance_id !== undefined ? { instanceId: data.instance_id } : {}),
+    ...(instanceId !== undefined ? { instanceId } : {}),
+    // Un cambio explícito borra el motivo del fallo anterior: quedó viejo.
+    ...(data.status === 'active' ? { lastError: null } : {}),
     ...(data.target_numbers !== undefined ? { targetNumbers: data.target_numbers } : {}),
     ...(data.schedule_type !== undefined ? { scheduleType: data.schedule_type } : {}),
     ...(data.scheduled_at !== undefined ? { scheduledAt } : {}),
@@ -1867,6 +2103,7 @@ async function manageTaskWorkspace(input: Record<string, unknown>, context: Grok
     const [workspace] = await db.insert(teamTaskWorkspaces).values({
       teamId: context.teamId,
       name: data.name!,
+      aiPrompt: data.ai_prompt ?? '',
       order: data.order ?? (last?.order ?? -1) + 1,
       color: data.color ?? null,
       icon: data.icon ?? null,
@@ -1877,6 +2114,7 @@ async function manageTaskWorkspace(input: Record<string, unknown>, context: Grok
   }
   const [workspace] = await db.update(teamTaskWorkspaces).set({
     ...(data.name !== undefined ? { name: data.name } : {}),
+    ...(data.ai_prompt !== undefined ? { aiPrompt: data.ai_prompt } : {}),
     ...(data.order !== undefined ? { order: data.order } : {}),
     ...(data.color !== undefined ? { color: data.color } : {}),
     ...(data.icon !== undefined ? { icon: data.icon } : {}),
@@ -1899,6 +2137,7 @@ async function manageTaskProject(input: Record<string, unknown>, context: GrokAc
   const [project] = await db.update(teamTaskProjects).set({
     ...(data.workspace_id !== undefined ? { workspaceId: data.workspace_id } : {}),
     ...(data.name !== undefined ? { name: data.name } : {}),
+    ...(data.ai_prompt !== undefined ? { aiPrompt: data.ai_prompt } : {}),
     ...(data.background_url !== undefined ? { backgroundUrl: data.background_url } : {}),
     ...(data.labels !== undefined ? { labels: data.labels as TaskLabel[] } : {}),
     ...(data.order !== undefined ? { order: data.order } : {}),
@@ -1952,6 +2191,8 @@ async function deleteRecord(input: Record<string, unknown>, context: GrokActionC
     await assertPermission(context, 'notesWrite', 'notes');
   } else if (data.resource === 'calendar_event') {
     await assertPermission(context, 'calendarWrite', 'calendar');
+  } else if (data.resource === 'deal') {
+    await assertPermission(context, 'dealsWrite', 'deals');
   }
 
   if (data.resource === 'crm_stage_group') deleted = Boolean((await db.delete(funnelStageGroups)
@@ -1968,6 +2209,11 @@ async function deleteRecord(input: Record<string, unknown>, context: GrokActionC
     .where(and(eq(teamMembershipPlans.id, data.record_id), eq(teamMembershipPlans.teamId, context.teamId))).returning({ id: teamMembershipPlans.id })).length);
   if (data.resource === 'membership') deleted = Boolean((await db.delete(teamMembershipSubscriptions)
     .where(and(eq(teamMembershipSubscriptions.id, data.record_id), eq(teamMembershipSubscriptions.teamId, context.teamId))).returning({ id: teamMembershipSubscriptions.id })).length);
+  // Borrar una oportunidad es la salida para las cargadas por error. Cerrarla
+  // como perdida —que es lo que casi siempre se quiere— va por
+  // whatspro_deals_close, que conserva el historial.
+  if (data.resource === 'deal') deleted = Boolean((await db.delete(teamDeals)
+    .where(and(eq(teamDeals.id, data.record_id), eq(teamDeals.teamId, context.teamId))).returning({ id: teamDeals.id })).length);
   if (data.resource === 'task_workspace') {
     const workspace = await db.query.teamTaskWorkspaces.findFirst({ where: and(
       eq(teamTaskWorkspaces.id, data.record_id), eq(teamTaskWorkspaces.teamId, context.teamId),
@@ -2009,9 +2255,9 @@ async function deleteRecord(input: Record<string, unknown>, context: GrokActionC
 const taskRelationManageSchema = z.object({
   action: z.enum(['create', 'delete']),
   relation_id: z.number().int().positive().optional(),
-  source_type: z.enum(['workspace', 'project', 'task', 'contact', 'customer', 'note', 'event']).optional(),
+  source_type: z.enum(['workspace', 'project', 'task', 'contact', 'customer', 'document', 'note', 'event']).optional(),
   source_id: z.number().int().positive().optional(),
-  target_type: z.enum(['workspace', 'project', 'task', 'contact', 'customer', 'note', 'event']).optional(),
+  target_type: z.enum(['workspace', 'project', 'task', 'contact', 'customer', 'document', 'note', 'event']).optional(),
   target_id: z.number().int().positive().optional(),
   relation_type: z.enum(['related', 'shared_in', 'generated_from', 'converted_to']).optional(),
 }).superRefine((data, ctx) => {

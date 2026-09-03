@@ -2600,7 +2600,39 @@
     "type_add_note": "Agregar Nota",
     "type_add_tag": "Agregar Etiqueta",
     "select_tag_placeholder": "Seleccionar etiqueta",
-    "tag_required": "Seleccione una etiqueta"
+    "tag_required": "Seleccione una etiqueta",
+    "apps_actions_separator": "Acciones de apps (según apps activas)",
+    "type_trigger_automation": "Disparar Automatización",
+    "type_create_task": "Crear Tarea",
+    "type_create_deal": "Crear Oportunidad",
+    "type_open_ticket": "Abrir Ticket de Soporte",
+    "type_schedule_message": "Programar Recordatorio",
+    "select_automation_placeholder": "Seleccionar automatización",
+    "automation_required": "Seleccione una automatización",
+    "task_title_placeholder": "Título fijo (vacío = lo escribe la IA)",
+    "deal_currency_placeholder": "Moneda",
+    "ticket_category_placeholder": "Categoría (opcional)",
+    "priority_low": "Baja",
+    "priority_normal": "Normal",
+    "priority_high": "Alta",
+    "priority_urgent": "Urgente",
+    "schedule_hours_label": "Enviar en (horas)",
+    "schedule_message_placeholder": "Mensaje fijo (vacío = lo redacta la IA)",
+    "type_update_contact": "Guardar datos del contacto",
+    "update_contact_hint": "La IA guarda en la ficha el nombre, email, empresa o cargo que la persona mencione.",
+    "type_book_appointment": "Agendar Turno",
+    "appointment_duration_label": "Duración (min)",
+    "appointment_kind_meeting": "Reunión",
+    "appointment_kind_call": "Llamada",
+    "type_register_customer": "Registrar como Cliente",
+    "register_customer_hint": "Convierte el contacto en cliente (o lo vincula si ya existe por email/teléfono).",
+    "type_register_membership": "Dar de alta Membresía",
+    "select_plan_placeholder": "Plan",
+    "plan_chosen_by_ai": "Plan que elija el cliente (lo decide la IA)",
+    "type_report_payment": "Registrar Aviso de Pago",
+    "payment_method_placeholder": "Medio fijo (vacío = lo dice el cliente)",
+    "type_register_sale": "Registrar Venta",
+    "register_sale_hint": "La IA carga los ítems y precios acordados; la venta queda pendiente de pago."
   },
   "Apps": {
     "title": "Aplicaciones",
@@ -3318,7 +3350,8 @@
         "task": "Tareas",
         "membership": "Membresías",
         "deal": "Oportunidades",
-        "event": "Agenda"
+        "event": "Agenda",
+        "finance": "Cobros y pagos"
       },
       "filters": {
         "all": "Todo"
@@ -3329,7 +3362,14 @@
         "complete-task": "Completar",
         "snooze-task": "Posponer 1 día",
         "set-task-ai-detail": "Guardar detalle de IA",
-        "move-deal-stage": "Avanzar etapa"
+        "move-deal-stage": "Avanzar etapa",
+        "set-crm-stage": "Mover de etapa",
+        "change-contact-tags": "Etiquetar",
+        "assign-contact": "Asignar",
+        "add-internal-note": "Nota interna",
+        "create-task": "Crear tarea",
+        "renew-membership": "Renovar",
+        "settle-entry": "Registrar cobro"
       },
       "taskAi": {
         "add": "Agregar indicación",
@@ -3390,7 +3430,9 @@
         "send_unknown": "No sabemos si llegó: revisá la conversación antes de reenviar.",
         "duplicate_recipient": "Ya hay otro mensaje para este contacto en este lote.",
         "invalid": "No se pudo procesar."
-      }
+      },
+      "helpLink": "Cómo funciona",
+      "helpLinkTitle": "Cómo usar el Centro de comandos"
     }
   },
   "ScheduledMessagesAapp": {
@@ -4437,5 +4479,20 @@
       "moved": "Movido a {stage}",
       "moveError": "No se pudo mover. Se deshizo el cambio."
     }
+  },
+  "AiBuiltinTools": {
+    "title": "Funciones integradas por app",
+    "description": "Funciones que el agente puede usar automáticamente según las apps activas del equipo. Se encienden solas al activar la app; acá podés apagar alguna puntual.",
+    "loading": "Cargando funciones…",
+    "empty": "No hay funciones integradas disponibles.",
+    "active_count": "{count} de {total} activas",
+    "plugin_active": "App activa",
+    "plugin_inactive": "App inactiva",
+    "risk_read": "Consulta",
+    "risk_write": "Modifica datos",
+    "enabled_toast": "Función activada",
+    "disabled_toast": "Función desactivada",
+    "enable_aria": "Activar {name}",
+    "disable_aria": "Desactivar {name}"
   }
 }

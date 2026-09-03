@@ -21,6 +21,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { buildBrandIdentity, renderTenantText } from '@/lib/branding/constants';
+import { getTenant } from '@/lib/tenant/context';
 
 const iconMap = {
   Zap,
@@ -29,6 +31,9 @@ const iconMap = {
   Book,
   Shield,
   MessageSquare,
+  Bot,
+  Cable,
+  LayoutDashboard,
 } as const;
 
 const defaultCategories = [
@@ -211,14 +216,16 @@ export default async function DocsPage({ params, searchParams }: Props) {
   const { locale } = await params;
   const { q, category } = await searchParams;
 
-  const [branding, docsHomeData] = await Promise.all([
+  const [branding, tenant, docsHomeData] = await Promise.all([
     getBranding(),
+    getTenant(),
     getDocsHomeData().catch((error) => {
       console.error('Failed to load docs home data:', error);
       return { categories: [], featuredArticles: [] };
     }),
   ]);
-  const siteName = branding?.name || 'WhatsPro';
+  const identity = buildBrandIdentity(branding, tenant?.hostname);
+  const siteName = identity.name;
 
   let articles = docsHomeData.featuredArticles;
   if (q || category) {
@@ -232,7 +239,10 @@ export default async function DocsPage({ params, searchParams }: Props) {
     if (!categorySlug || acc[categorySlug]?.length >= 3) {
       return acc;
     }
-    acc[categorySlug] = [...(acc[categorySlug] ?? []), { title: article.title, slug: article.slug }];
+    acc[categorySlug] = [
+      ...(acc[categorySlug] ?? []),
+      { title: renderTenantText(article.title, identity), slug: article.slug },
+    ];
     return acc;
   }, {});
 
@@ -246,9 +256,9 @@ export default async function DocsPage({ params, searchParams }: Props) {
           const links = linksData.length > 0 ? linksData : fallbackCategory?.links?.map(title => ({ title, slug: '' })) ?? [];
 
           return {
-            title: category.name,
+            title: renderTenantText(category.name, identity),
             slug: category.slug,
-            description: category.description || fallbackCategory?.description || '',
+            description: renderTenantText(category.description || fallbackCategory?.description || '', identity),
             icon,
             links: links as Array<{ title: string; slug: string }>
           };
@@ -454,7 +464,7 @@ export default async function DocsPage({ params, searchParams }: Props) {
               </p>
               <p>
                 El siguiente hito es desacoplar pagos mediante un contrato único para soportar
-                Stripe, Manual Payment y Mercado Pago sin editar el core.
+                Stripe, pago manual y Mercado Pago sin editar el core.
               </p>
             </CardContent>
           </Card>

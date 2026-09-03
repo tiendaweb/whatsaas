@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { SQL } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { activityLogs } from '@/lib/db/schema';
 import {
@@ -10,14 +11,47 @@ import {
   readOnlyResourceMap,
   readOnlyResourceMetadata,
   readOnlyResources,
+  type ReadOnlyResource,
 } from '@/lib/readonly-api/catalog';
 import { buildAiContext } from '@/lib/readonly-api/openapi';
+import { chatVisibilityCondition, resourceAccessDenial } from '@/lib/readonly-api/actor-guard';
+import { buildPermissionContext } from '@/lib/auth/permissions-guard';
+import { resolveActivePluginsForTeam } from '@/lib/plugins/core/registry';
 import { executeGrokAction, grokActionTools, isMcpRawResult } from '@/lib/plugins/grok-connector/server/actions';
 import {
   dealsActionTools,
   dealsReadTools,
   executeDealsAction,
 } from '@/lib/plugins/grok-connector/server/deals-actions';
+import { executeNotifyTool, notifyActionTools, notifyReadTools } from '@/lib/notifications/tools';
+import {
+  commandCenterActionTools,
+  commandCenterReadTools,
+  desktopActionTools,
+  desktopReadTools,
+  executeDesktopTool,
+} from '@/lib/plugins/grok-connector/server/desktop-actions';
+import { chatActionTools, chatReadTools, executeChatTool } from '@/lib/plugins/grok-connector/server/chat-actions';
+import {
+  executeSettingsTool,
+  settingsActionTools,
+  settingsReadTools,
+} from '@/lib/plugins/grok-connector/server/settings-actions';
+import {
+  executeMembershipsTool,
+  membershipsActionTools,
+  membershipsReadTools,
+} from '@/lib/plugins/grok-connector/server/memberships-actions';
+import {
+  calendarActionTools,
+  calendarReadTools,
+  executeCalendarTool,
+} from '@/lib/plugins/grok-connector/server/calendar-actions';
+import {
+  contentActionTools,
+  contentReadTools,
+  executeContentTool,
+} from '@/lib/plugins/grok-connector/server/content-actions';
 import {
   salesOpsActionTools,
   salesOpsReadTools,
@@ -212,7 +246,15 @@ const readOnlyTools = [
   ...bulkReadTools,
   ...dealsReadTools,
   ...salesOpsReadTools,
+  ...notifyReadTools,
   ...detailReadTools,
+  ...desktopReadTools,
+  ...commandCenterReadTools,
+  ...chatReadTools,
+  ...settingsReadTools,
+  ...membershipsReadTools,
+  ...calendarReadTools,
+  ...contentReadTools,
   ...helpReadTools,
 ];
 
@@ -239,6 +281,14 @@ const actionTools = [
   ...bulkActionTools,
   ...dealsActionTools,
   ...salesOpsActionTools,
+  ...notifyActionTools,
+  ...desktopActionTools,
+  ...commandCenterActionTools,
+  ...chatActionTools,
+  ...settingsActionTools,
+  ...membershipsActionTools,
+  ...calendarActionTools,
+  ...contentActionTools,
 ];
 
 /**
@@ -261,6 +311,13 @@ const PRIORITY_TOOLS = [
   'whatspro_get_record',
   'whatspro_ai_context',
   'whatspro_help_domain',
+  // La cola unificada: es la primera llamada de cualquier sesión de trabajo.
+  'whatspro_work_queue',
+  'whatspro_command_center_inbox',
+  'whatspro_command_center_execute',
+  'whatspro_sales_execute_batch',
+  'whatspro_desktop_search',
+  'whatspro_chat_mark_read',
   // Hablarle al cliente. Lo más pedido y lo que estaba cayendo del corte.
   'whatspro_chat_send_message',
   'whatspro_chat_send_media',
@@ -300,6 +357,10 @@ const PRIORITY_TOOLS = [
   'whatspro_sales_work_queue',
   'whatspro_sales_prompt_result',
   'whatspro_sales_prompts_list',
+  'whatspro_sales_prompt_get',
+  'whatspro_sales_prompt_render',
+  'whatspro_sales_prompt_launch',
+  'whatspro_sales_prompt_manage',
   'whatspro_sales_pending',
   'whatspro_sales_dossier',
   'whatspro_sales_classification_write',
@@ -392,6 +453,34 @@ function paramsFromArguments(args: Record<string, unknown>) {
   return params;
 }
 
+/**
+ * El portero del catálogo de sólo lectura para el conector (pendientes A3 y A4).
+ *
+ * Hasta acá `whatspro_list_records` leía cualquiera de los 131 recursos sin
+ * chequear un solo permiso, y los recursos de conversaciones ignoraban la
+ * visibilidad de chats del usuario. El aislamiento por equipo nunca estuvo en
+ * duda; lo que faltaba era la frontera de adentro del equipo.
+ *
+ * Corre sólo en el conector, que es el único camino de lectura que sabe QUIÉN
+ * está detrás del token. Devuelve las condiciones extra que hay que sumarle a la
+ * consulta, o tira si el actor directamente no puede ver ese recurso.
+ */
+async function guardReadOnlyResource(
+  resourceKey: string,
+  resource: ReadOnlyResource,
+  context: McpContext,
+): Promise<SQL[]> {
+  const ctx = await buildPermissionContext(context.teamId, context.userId);
+  if (!ctx) throw new Error('No hay membresía activa para este usuario en este equipo.');
+
+  const active = new Set((await resolveActivePluginsForTeam(ctx.teamId, ctx.userId)).map((item) => item.pluginId));
+  const denial = resourceAccessDenial(ctx, resourceKey, active);
+  if (denial) throw new Error(denial);
+
+  const condition = await chatVisibilityCondition(ctx, resource);
+  return condition ? [condition] : [];
+}
+
 async function callTool(name: string, args: Record<string, unknown>, context: McpContext) {
   const { teamId, origin } = context;
   // El conector de ChatGPT descarta todo bloque de contenido que no sea texto,
@@ -464,12 +553,23 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
   if (salesOpsReadTools.some((tool) => tool.name === name)) {
     return executeSalesOpsTool(name, args, { teamId, userId: context.userId });
   }
+  if (notifyReadTools.some((tool) => tool.name === name) || notifyActionTools.some((tool) => tool.name === name)) {
+    return executeNotifyTool(name, args, { teamId, userId: context.userId });
+  }
   if (detailReadTools.some((tool) => tool.name === name)) {
     return executeDetailTool(name, args, { teamId, userId: context.userId });
   }
   if (helpReadTools.some((tool) => tool.name === name)) {
     return executeHelpTool(name, args, { teamId, userId: context.userId });
   }
+  if (desktopReadTools.some((tool) => tool.name === name) || commandCenterReadTools.some((tool) => tool.name === name)) {
+    return executeDesktopTool(name, args, { teamId, userId: context.userId });
+  }
+  if (chatReadTools.some((tool) => tool.name === name)) return executeChatTool(name, args, { teamId, userId: context.userId });
+  if (settingsReadTools.some((tool) => tool.name === name)) return executeSettingsTool(name, args, { teamId, userId: context.userId });
+  if (membershipsReadTools.some((tool) => tool.name === name)) return executeMembershipsTool(name, args, { teamId, userId: context.userId });
+  if (calendarReadTools.some((tool) => tool.name === name)) return executeCalendarTool(name, args, { teamId, userId: context.userId });
+  if (contentReadTools.some((tool) => tool.name === name)) return executeContentTool(name, args, { teamId, userId: context.userId });
   if (actionTools.some((tool) => tool.name === name)) {
     if (!context.actionsEnabled) throw new Error('This connection does not have whatspro:write. Reconnect the assistant to authorize actions.');
     const actionContext = { teamId, userId: context.userId };
@@ -495,6 +595,13 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
     if (bulkActionTools.some((tool) => tool.name === name)) return executeBulkTool(name, args, actionContext);
     if (dealsActionTools.some((tool) => tool.name === name)) return executeDealsAction(name, args, actionContext);
     if (salesOpsActionTools.some((tool) => tool.name === name)) return executeSalesOpsTool(name, args, actionContext);
+    if (desktopActionTools.some((tool) => tool.name === name)) return executeDesktopTool(name, args, actionContext);
+    if (commandCenterActionTools.some((tool) => tool.name === name)) return executeDesktopTool(name, args, actionContext);
+    if (chatActionTools.some((tool) => tool.name === name)) return executeChatTool(name, args, actionContext);
+    if (settingsActionTools.some((tool) => tool.name === name)) return executeSettingsTool(name, args, actionContext);
+    if (membershipsActionTools.some((tool) => tool.name === name)) return executeMembershipsTool(name, args, actionContext);
+    if (calendarActionTools.some((tool) => tool.name === name)) return executeCalendarTool(name, args, actionContext);
+    if (contentActionTools.some((tool) => tool.name === name)) return executeContentTool(name, args, actionContext);
     if (grokActionTools.some((tool) => tool.name === name)) return executeGrokAction(name, args, actionContext);
     return executeGrokExtendedAction(name, args, actionContext);
   }
@@ -509,7 +616,8 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
     if (resourceKey === readOnlyPluginCatalogMetadata.key) return listReadOnlyPlugins(teamId, params);
     const resource = readOnlyResourceMap.get(resourceKey);
     if (!resource) throw new Error('Unknown resource. Run whatspro_list_resources first.');
-    return listReadOnlyResource(resource, teamId, params);
+    const extra = await guardReadOnlyResource(resourceKey, resource, context);
+    return listReadOnlyResource(resource, teamId, params, extra);
   }
   if (name === 'whatspro_get_record') {
     if (args.id === undefined || args.id === null) throw new Error('id is required.');
@@ -521,7 +629,8 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
     }
     const resource = readOnlyResourceMap.get(resourceKey);
     if (!resource?.itemLookup) throw new Error('Unknown resource or item lookup is not supported.');
-    const record = await getReadOnlyResource(resource, teamId, id);
+    const extra = await guardReadOnlyResource(resourceKey, resource, context);
+    const record = await getReadOnlyResource(resource, teamId, id, extra);
     if (!record) throw new Error('Record not found.');
     return { object: 'record', resource: resourceKey, data: record };
   }

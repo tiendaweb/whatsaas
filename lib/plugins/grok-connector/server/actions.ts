@@ -37,6 +37,43 @@ export type GrokActionTool = {
   inputSchema: JsonSchema;
 };
 
+/**
+ * Bloques de contenido MCP crudos.
+ *
+ * Por defecto el conector serializa lo que devuelve una tool a JSON dentro de
+ * un bloque de texto. Eso alcanza para datos, pero no para media: si el modelo
+ * tiene que MIRAR la foto que mandó un cliente o ESCUCHAR su audio, el
+ * contenido tiene que viajar como bloque `image` / `audio` del protocolo
+ * (soportados desde MCP 2025-06-18), no como una URL que el modelo no puede
+ * abrir — las tools corren sin sesión y `/api/media` exige cookie.
+ */
+export type McpContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; data: string; mimeType: string }
+  | { type: 'audio'; data: string; mimeType: string }
+  | { type: 'resource_link'; name: string; uri: string; mimeType?: string; size?: number }
+  | {
+      type: 'resource';
+      resource:
+        | { uri: string; mimeType?: string; text: string }
+        | { uri: string; mimeType?: string; blob: string };
+    };
+
+export type McpRawResult = { __mcpContent: McpContentBlock[] };
+
+/** Marca el retorno de una tool para que el conector lo pase tal cual. */
+export function mcpContent(blocks: McpContentBlock[]): McpRawResult {
+  return { __mcpContent: blocks };
+}
+
+export function isMcpRawResult(value: unknown): value is McpRawResult {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && Array.isArray((value as McpRawResult).__mcpContent),
+  );
+}
+
 const contactReferenceProperties = {
   contact_id: { type: 'integer', minimum: 1, description: 'ID del contacto de WhatsPro.' },
   chat_id: { type: 'integer', minimum: 1, description: 'ID del chat de WhatsPro asociado al contacto.' },
@@ -45,7 +82,10 @@ const contactReferenceProperties = {
 export const grokActionTools: GrokActionTool[] = [
   {
     name: 'whatspro_save_contact',
-    description: 'Crea un contacto desde un chat o actualiza sus datos y asignaciones. Usa IDs obtenidos con las herramientas de lectura.',
+    description:
+      'Crea un contacto desde un chat o actualiza sus datos, su ficha comercial y sus asignaciones. Usa IDs obtenidos con las herramientas de lectura. '
+      + 'La ficha comercial (empresa, cargo, área, LinkedIn, email, teléfono, puntaje, temperatura y VIP) es la que se ve en el panel del chat y en el Escritorio: '
+      + 'mandá sólo los campos que querés cambiar, lo que no viaja se conserva. Para campos que no están acá, definilos con whatspro_manage_custom_field y guardalos con whatspro_set_custom_fields.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -53,6 +93,15 @@ export const grokActionTools: GrokActionTool[] = [
         name: { type: 'string', minLength: 1, maxLength: 200 },
         assigned_user_id: { type: ['integer', 'null'], minimum: 1 },
         assigned_department_id: { type: ['integer', 'null'], minimum: 1 },
+        email: { type: ['string', 'null'], maxLength: 255 },
+        phone: { type: ['string', 'null'], maxLength: 80, description: 'Teléfono de contacto de la ficha. NO es el número de WhatsApp del chat: ese sale del remoteJid y no se edita desde acá.' },
+        company: { type: ['string', 'null'], maxLength: 200 },
+        job_title: { type: ['string', 'null'], maxLength: 120 },
+        department: { type: ['string', 'null'], maxLength: 120, description: 'Área DEL CONTACTO en su empresa (texto libre). No confundir con assigned_department_id, que es el departamento interno del equipo que lo atiende.' },
+        linkedin_url: { type: ['string', 'null'], maxLength: 255 },
+        lead_score: { type: 'integer', minimum: 0, maximum: 100, description: 'Puntaje del lead, 0 a 100.' },
+        temperature: { type: 'string', enum: ['cold', 'warm', 'hot'], description: 'Qué tan caliente está la oportunidad.' },
+        is_vip: { type: 'boolean' },
       },
       anyOf: [{ required: ['contact_id'] }, { required: ['chat_id'] }],
       additionalProperties: false,
@@ -74,12 +123,16 @@ export const grokActionTools: GrokActionTool[] = [
   },
   {
     name: 'whatspro_set_custom_fields',
-    description: 'Guarda valores de campos personalizados en un contacto. Las claves deben existir en el catálogo custom-fields.',
+    description:
+      'Guarda valores de campos personalizados en un contacto. Las claves deben existir en el catálogo (miralas con whatspro_custom_fields o creá el campo con whatspro_manage_custom_field). '
+      + 'Es un update parcial: lo que no mandás no se toca. Mandar una clave en null la BORRA del contacto — es la forma de limpiar un valor cargado mal o una clave huérfana. '
+      + 'Para leer qué tiene cargado y qué le falta usá whatspro_custom_fields(contact_id).',
     inputSchema: {
       type: 'object',
-      required: ['contact_id', 'fields'],
+      required: ['fields'],
       properties: {
         contact_id: contactReferenceProperties.contact_id,
+        chat_id: contactReferenceProperties.chat_id,
         fields: {
           type: 'object',
           minProperties: 1,
@@ -87,6 +140,7 @@ export const grokActionTools: GrokActionTool[] = [
           additionalProperties: { type: ['string', 'number', 'boolean', 'null'] },
         },
       },
+      anyOf: [{ required: ['contact_id'] }, { required: ['chat_id'] }],
       additionalProperties: false,
     },
   },
@@ -103,7 +157,9 @@ export const grokActionTools: GrokActionTool[] = [
   },
   {
     name: 'whatspro_add_internal_note',
-    description: 'Agrega una nota interna visible en la conversación y nunca la envía al contacto por WhatsApp.',
+    description:
+      'Agrega una nota interna visible en la conversación y nunca la envía al contacto por WhatsApp. '
+      + 'Para RELEER las notas internas ya escritas (las tuyas y las del equipo) usá whatspro_private_notes: no salen en whatspro_list_records porque los mensajes no están en el catálogo de solo lectura.',
     inputSchema: {
       type: 'object',
       required: ['text'],
@@ -118,7 +174,9 @@ export const grokActionTools: GrokActionTool[] = [
   },
   {
     name: 'whatspro_add_contact_note',
-    description: 'Agrega una nota al historial de notas del contacto en el CRM.',
+    description:
+      'Agrega una nota al historial de notas del contacto en el CRM (contacts.notes, un texto único que se va acumulando). '
+      + 'Para leerlo junto con las notas internas del chat y la bitácora del cliente, en una sola llamada, usá whatspro_private_notes.',
     inputSchema: {
       type: 'object',
       required: ['contact_id', 'text'],
@@ -198,6 +256,15 @@ const saveContactSchema = contactReferenceSchema.extend({
   name: z.string().trim().min(1).max(200).optional(),
   assigned_user_id: z.number().int().positive().nullable().optional(),
   assigned_department_id: z.number().int().positive().nullable().optional(),
+  email: z.string().trim().max(255).nullable().optional(),
+  phone: z.string().trim().max(80).nullable().optional(),
+  company: z.string().trim().max(200).nullable().optional(),
+  job_title: z.string().trim().max(120).nullable().optional(),
+  department: z.string().trim().max(120).nullable().optional(),
+  linkedin_url: z.string().trim().max(255).nullable().optional(),
+  lead_score: z.number().int().min(0).max(100).optional(),
+  temperature: z.enum(['cold', 'warm', 'hot']).optional(),
+  is_vip: z.boolean().optional(),
 });
 
 const changeStageSchema = z.object({
@@ -207,12 +274,13 @@ const changeStageSchema = z.object({
 });
 
 const customFieldsSchema = z.object({
-  contact_id: z.number().int().positive(),
+  contact_id: z.number().int().positive().optional(),
+  chat_id: z.number().int().positive().optional(),
   fields: z.record(z.string().min(1).max(100), z.union([z.string(), z.number(), z.boolean(), z.null()])).refine(
     (fields) => Object.keys(fields).length > 0 && Object.keys(fields).length <= 50,
     'Provide between 1 and 50 fields',
   ),
-});
+}).refine((value) => value.contact_id != null || value.chat_id != null, 'Mandá contact_id o chat_id.');
 
 const agendaSchema = contactReferenceSchema.extend({ agenda_id: z.number().int().positive() });
 const internalNoteSchema = contactReferenceSchema.extend({
@@ -344,6 +412,17 @@ async function saveContact(input: Record<string, unknown>, context: GrokActionCo
     ...(data.name !== undefined ? { name: data.name } : {}),
     ...(data.assigned_user_id !== undefined ? { assignedUserId: data.assigned_user_id } : {}),
     ...(data.assigned_department_id !== undefined ? { assignedDepartmentId: data.assigned_department_id } : {}),
+    ...(data.email !== undefined ? { email: data.email } : {}),
+    ...(data.phone !== undefined ? { phone: data.phone } : {}),
+    ...(data.company !== undefined ? { company: data.company } : {}),
+    ...(data.job_title !== undefined ? { jobTitle: data.job_title } : {}),
+    ...(data.department !== undefined ? { department: data.department } : {}),
+    ...(data.linkedin_url !== undefined ? { linkedinUrl: data.linkedin_url } : {}),
+    // `leadScore`, `temperature` e `isVip` son NOT NULL con default: aceptan
+    // cambio pero nunca `null`, por eso no están en la forma nullable.
+    ...(data.lead_score !== undefined ? { leadScore: data.lead_score } : {}),
+    ...(data.temperature !== undefined ? { temperature: data.temperature } : {}),
+    ...(data.is_vip !== undefined ? { isVip: data.is_vip } : {}),
     updatedAt: new Date(),
   };
   const [saved] = await db.update(contacts).set(patch).where(and(eq(contacts.id, contact.id), eq(contacts.teamId, context.teamId))).returning();
@@ -376,17 +455,33 @@ async function setCustomFields(input: Record<string, unknown>, context: GrokActi
   await assertPermission(context, 'contacts');
   await ensureCustomFieldsTable();
   const data = parse(customFieldsSchema, input);
-  const contact = await ownedContact(context, data.contact_id);
+  const contact = await resolveContact(context, data);
   const keys = Object.keys(data.fields);
   const definitions = await db.query.customFields.findMany({ where: eq(customFields.teamId, context.teamId) });
   const known = new Set(definitions.map((field) => field.key));
-  const unknown = keys.filter((key) => !known.has(key));
-  if (unknown.length) throw new Error(`Unknown custom field keys: ${unknown.join(', ')}.`);
-  const customData = { ...(contact.customData ?? {}), ...data.fields };
-  const [updated] = await db.update(contacts).set({ customData, updatedAt: new Date() })
+  const current = { ...((contact.customData ?? {}) as Record<string, unknown>) };
+  // Una clave sin definición sólo se acepta para BORRARLA: así se pueden limpiar
+  // los valores huérfanos que quedaron de un campo eliminado, sin abrir la puerta
+  // a inventar claves nuevas al escribir.
+  const unknown = keys.filter((key) => !known.has(key) && data.fields[key] !== null);
+  if (unknown.length) {
+    throw new Error(
+      `Unknown custom field keys: ${unknown.join(', ')}. Miralas con whatspro_custom_fields o creá el campo con whatspro_manage_custom_field.`,
+    );
+  }
+  const cleared: string[] = [];
+  for (const [key, value] of Object.entries(data.fields)) {
+    if (value === null) {
+      if (key in current) cleared.push(key);
+      delete current[key];
+    } else {
+      current[key] = value;
+    }
+  }
+  const [updated] = await db.update(contacts).set({ customData: current, updatedAt: new Date() })
     .where(and(eq(contacts.id, contact.id), eq(contacts.teamId, context.teamId))).returning();
   await audit(context, 'GROK_CUSTOM_FIELDS_UPDATED', updated.id);
-  return { success: true, contact_id: updated.id, custom_data: updated.customData };
+  return { success: true, contact_id: updated.id, cleared, custom_data: updated.customData };
 }
 
 async function assignToAgenda(input: Record<string, unknown>, context: GrokActionContext) {
@@ -424,12 +519,20 @@ async function assignToAgenda(input: Record<string, unknown>, context: GrokActio
   return { success: true, already_assigned: !created, agenda, item };
 }
 
-async function addInternalNote(input: Record<string, unknown>, context: GrokActionContext) {
-  await assertPermission(context, 'contacts');
-  const data = parse(internalNoteSchema, input);
-  const contact = await resolveContact(context, data);
-  const suffix = data.idempotency_key
-    ? crypto.createHash('sha256').update(`${context.teamId}:${contact.chatId}:${data.idempotency_key}`).digest('hex').slice(0, 32)
+/**
+ * Inserta una nota interna (mensaje `isInternal`) en el chat de un contacto,
+ * con idempotencia opcional y aviso por Pusher. Es el núcleo compartido de
+ * `whatspro_add_internal_note` y de `whatspro_radar_save_analysis` (que escribe
+ * la nota 🎯 RADAR): una sola implementación, dos puertas.
+ */
+export async function writeInternalNote(
+  context: GrokActionContext,
+  contact: { id: number; chatId: number; chat: { remoteJid: string | null } },
+  text: string,
+  idempotencyKey?: string,
+) {
+  const suffix = idempotencyKey
+    ? crypto.createHash('sha256').update(`${context.teamId}:${contact.chatId}:${idempotencyKey}`).digest('hex').slice(0, 32)
     : `${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
   const messageId = `grok_internal_${suffix}`;
   const timestamp = new Date();
@@ -438,7 +541,7 @@ async function addInternalNote(input: Record<string, unknown>, context: GrokActi
     chatId: contact.chatId,
     fromMe: true,
     messageType: 'conversation',
-    text: data.text,
+    text,
     timestamp,
     status: 'read',
     isInternal: true,
@@ -454,6 +557,14 @@ async function addInternalNote(input: Record<string, unknown>, context: GrokActi
     ]).catch((error) => console.error('[grok-connector] Could not publish internal note update', error));
     await audit(context, 'GROK_INTERNAL_NOTE_CREATED', contact.id);
   }
+  return { note, created: Boolean(created) };
+}
+
+async function addInternalNote(input: Record<string, unknown>, context: GrokActionContext) {
+  await assertPermission(context, 'contacts');
+  const data = parse(internalNoteSchema, input);
+  const contact = await resolveContact(context, data);
+  const { note, created } = await writeInternalNote(context, contact, data.text, data.idempotency_key);
   return { success: true, already_created: !created, note };
 }
 
