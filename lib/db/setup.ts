@@ -265,7 +265,7 @@ async function getEvolutionConfig(): Promise<Record<string, string>> {
     EVOLUTION_API_URL: apiUrl,
     NEXT_PUBLIC_EVOLUTION_WEBHOOK_URL: apiUrl,
     AUTHENTICATION_API_KEY: apiKey,
-    NEXT_PUBLIC_EVOLUTION_WEBHOOK_TOKEN: webhookToken,
+    EVOLUTION_WEBHOOK_TOKEN: webhookToken,
   };
 }
 

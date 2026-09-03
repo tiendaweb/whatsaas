@@ -30,6 +30,7 @@ const proposeSchema = z.object({
       textB: z.string().max(4000).optional(),
       taskTitle: z.string().max(200).optional(),
       dueInDays: z.number().int().min(0).max(365).optional(),
+      sendAt: z.string().max(40).optional(),
       extra: z.record(z.string(), z.unknown()).optional(),
     })
     .optional(),

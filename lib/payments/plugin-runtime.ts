@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getActivePaymentProvider } from './provider-settings';
 import { getPluginById } from './plugins';
 import { PaymentPlugin, WebhookHandlerResult } from './plugins/types';
+import { findResellerIdBySlug, resolvePaymentTenantContext } from './context';
+import type { PaymentProviderId } from './provider-settings';
 
 export async function resolveActivePaymentPlugin(): Promise<PaymentPlugin> {
   const activeProvider = await getActivePaymentProvider();
@@ -10,23 +12,45 @@ export async function resolveActivePaymentPlugin(): Promise<PaymentPlugin> {
 
 export async function validateActivePaymentPluginConfig(): Promise<void> {
   const plugin = await resolveActivePaymentPlugin();
-  await plugin.validateConfig();
+  const context = await resolvePaymentTenantContext({ provider: plugin.id });
+  await plugin.validateConfig(context);
 }
 
 export async function getActivePaymentPluginPublicConfig(): Promise<Record<string, unknown>> {
   const plugin = await resolveActivePaymentPlugin();
+  const context = await resolvePaymentTenantContext({ provider: plugin.id });
   if (!plugin.getPublicConfig) {
     return { provider: plugin.id };
   }
 
-  return await plugin.getPublicConfig();
+  return await plugin.getPublicConfig(context);
 }
 
-export async function handlePaymentWebhook(request: NextRequest): Promise<NextResponse<WebhookHandlerResult>> {
-  const plugin = await resolveActivePaymentPlugin();
+export async function handlePaymentWebhook(
+  request: NextRequest,
+  scope?: {
+    provider?: PaymentProviderId;
+    resellerId?: number | null;
+    resellerSlug?: string;
+  },
+): Promise<NextResponse<WebhookHandlerResult>> {
+  const resellerId = scope?.resellerSlug
+    ? await findResellerIdBySlug(scope.resellerSlug)
+    : scope?.resellerId ?? null;
+  if (scope?.resellerSlug && scope.resellerSlug !== 'platform' && resellerId == null) {
+    return NextResponse.json({ received: false, message: 'Unknown reseller.' }, { status: 404 });
+  }
+
+  const provider = scope?.provider ?? await getActivePaymentProvider(resellerId);
+  const plugin = getPluginById(provider);
+  const context = await resolvePaymentTenantContext({
+    provider,
+    resellerId,
+    requirePaymentsEnabled: false,
+  });
 
   try {
-    await plugin.validateConfig();
+    await plugin.validateConfig(context);
   } catch (error) {
     console.error({
       scope: 'payments.plugin-runtime',
@@ -45,5 +69,5 @@ export async function handlePaymentWebhook(request: NextRequest): Promise<NextRe
     );
   }
 
-  return plugin.handleWebhook(request);
+  return plugin.handleWebhook(request, context);
 }

@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
+import { getTeamForUser } from "@/lib/db/queries";
 import {
   addVoteToRequest,
+  getFeatureRequestById,
   removeVoteFromRequest,
 } from "@/lib/plugins/marketplace/server/feature-requests";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
   if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const team = await getTeamForUser();
+  if (!team) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -19,6 +25,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const requestId = parseInt(id);
     if (isNaN(requestId)) {
       return NextResponse.json({ error: "Invalid request ID" }, { status: 400 });
+    }
+
+    const featureRequest = await getFeatureRequestById(requestId);
+    if (!featureRequest) {
+      return NextResponse.json({ error: "Feature request not found" }, { status: 404 });
+    }
+    if (featureRequest.teamId !== team.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     let result;

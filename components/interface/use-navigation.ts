@@ -7,9 +7,15 @@ import {
   CreditCard, Crown, FileSignature, FileStack, FileText, Files, Globe, Inbox, LayoutGrid, Radar,
   LayoutTemplate, LayoutDashboard as DesktopIcon, LifeBuoy, Megaphone, MessageCircle,
   NotebookText, Package, PanelsTopLeft, PieChart, Plug, Receipt, Server, ShoppingCart,
-  Store, UserCheck, UserCog, Users, Zap, type LucideIcon, Target,
+  Sparkles, Store, UserCheck, UserCog, Users, Zap, type LucideIcon, Target,
 } from 'lucide-react';
 import type { MemberPermissions } from '@/lib/permissions';
+import {
+  APPS_LAUNCHER_PREFIXES,
+  compareMainNavigation,
+  isAppsOnlyItem,
+  isMainNavOnlyItem,
+} from '@/lib/menu/core-nav-items';
 
 /**
  * Fuente única de la navegación del producto.
@@ -47,7 +53,7 @@ export const PLUGIN_NAV_ICON_MAP: Record<string, LucideIcon> = {
   LifeBuoy, FileSignature, PieChart,
   // Sin estas dos entradas el manifest pide "Radar" / "Blocks", el mapa no las
   // encuentra y el ítem sale con el enchufe genérico.
-  Radar, Blocks, Handshake,
+  Radar, Blocks, Handshake, Sparkles,
 };
 
 export const NAV_PERMISSION_MAP: Record<string, keyof Omit<MemberPermissions, 'chatVisibility'>> = {
@@ -61,23 +67,8 @@ export const NAV_PERMISSION_MAP: Record<string, keyof Omit<MemberPermissions, 'c
   '/campaigns': 'campaigns',
 };
 
-/** Plugins que por defecto viven en el lanzador de apps y no en el menú principal. */
-export const APPS_LAUNCHER_PREFIXES = [
-  '/plugins/notes', '/plugins/calendar', '/plugins/domains',
-  '/plugins/articles', '/plugins/sales', '/plugins/customers', '/plugins/memberships',
-  '/plugins/aapp-space',
-  '/plugins/deals',
-  '/plugins/sales-ops',
-  '/plugins/tasks', '/plugins/scheduled-messages', '/plugins/mini-apps', '/plugins/app-maker',
-  '/plugins/form-builder',
-  '/plugins/hostinger', '/plugins/meta-ads', '/plugins/documents', '/plugins/files', '/escritorio',
-  '/plugins/sites',
-  '/plugins/finance',
-  '/plugins/purchases', '/plugins/hr', '/plugins/support', '/plugins/contracts', '/plugins/intelligence',
-  '/plugins/chatgpt-connector', '/plugins/grok-connector', '/plugins/claude-code-connector',
-];
-
 export const APP_VISUAL: Record<string, { gradient: string; iconColor: string }> = {
+  '/dashboard?view=tasks':        { gradient: 'from-slate-600 to-slate-800',    iconColor: 'text-white' },
   '/plugins/notes':               { gradient: 'from-violet-500 to-purple-600',  iconColor: 'text-white' },
   '/plugins/calendar':            { gradient: 'from-blue-500 to-cyan-500',      iconColor: 'text-white' },
   '/plugins/domains':             { gradient: 'from-emerald-500 to-teal-600',   iconColor: 'text-white' },
@@ -110,12 +101,14 @@ export const APP_VISUAL: Record<string, { gradient: string; iconColor: string }>
   '/plugins/support':             { gradient: 'from-rose-600 to-red-700',       iconColor: 'text-white' },
   '/plugins/contracts':           { gradient: 'from-sky-600 to-blue-700',       iconColor: 'text-white' },
   '/plugins/intelligence':        { gradient: 'from-indigo-600 to-violet-700',  iconColor: 'text-white' },
+  '/plugins/gemini':              { gradient: 'from-blue-500 to-violet-600',    iconColor: 'text-white' },
   '/escritorio':                  { gradient: 'from-slate-600 to-slate-800',    iconColor: 'text-white' },
   '/seguimiento':                 { gradient: 'from-emerald-500 to-teal-600',   iconColor: 'text-white' },
   '/escritorio/bandeja':          { gradient: 'from-[#2f9e44] to-[#86efac]',   iconColor: 'text-white' },
 };
 
 export const APP_LABEL_OVERRIDE: Record<string, string> = {
+  '/dashboard?view=tasks':       'Tareas',
   '/plugins/notes':              'Tareas',
   '/plugins/calendar':           'Calendario',
   '/plugins/domains':            'Dominios',
@@ -140,12 +133,13 @@ export const APP_LABEL_OVERRIDE: Record<string, string> = {
   '/plugins/documents':          'Documentos',
   '/plugins/files':              'Archivos',
   '/plugins/sites':              'Sitios',
-  '/plugins/finance':            'Financiero',
+  '/plugins/finance':            'Finanzas OS',
   '/plugins/purchases':          'Compras',
   '/plugins/hr':                 'RRHH',
   '/plugins/support':            'Soporte',
   '/plugins/contracts':          'Contratos',
   '/plugins/intelligence':       'Inteligencia',
+  '/plugins/gemini':             'Gemini',
   '/escritorio':                 'Escritorio',
   '/escritorio/bandeja':         'Centro de comandos',
 };
@@ -208,7 +202,7 @@ export function useNavegacion() {
         href: item.href,
         icon: item.icon,
         label: item.label,
-        pinned: override?.pinned ?? true,
+        pinned: isAppsOnlyItem(item.href) ? false : override?.pinned ?? true,
         order: override?.order ?? idx,
       };
     });
@@ -222,14 +216,18 @@ export function useNavegacion() {
         href: item.href,
         icon: item.icon ? (PLUGIN_NAV_ICON_MAP[item.icon] ?? Plug) : Plug,
         label: item.label,
-        pinned: override?.pinned ?? defaultPinned,
+        pinned: isMainNavOnlyItem(item.href)
+          ? true
+          : isAppsOnlyItem(item.href)
+            ? false
+            : override?.pinned ?? defaultPinned,
         order: override?.order ?? (100 + idx),
       };
     });
 
   const mainNav: NavEntry[] = [...coreCandidates, ...pluginCandidates]
     .filter((item) => item.pinned)
-    .sort((a, b) => a.order - b.order)
+    .sort(compareMainNavigation)
     .map(({ href, icon, label }) => ({ href, icon, label }));
 
   const conVisual = (href: string, icon: LucideIcon, label: string): NavEntry => ({

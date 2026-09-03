@@ -49,6 +49,7 @@ export async function GET() {
         tags: c.contactTags?.map(ct => ct.tag) ?? [],
         profilePicUrl: c.chat?.profilePicUrl,
         phone: c.chat?.remoteJid ? c.chat.remoteJid.split('@')[0] : null,
+        remoteJid: c.chat?.remoteJid || null,
         instanceId: c.chat?.instance?.id || null,
         instanceName: c.chat?.instance?.instanceName || null,
     }));

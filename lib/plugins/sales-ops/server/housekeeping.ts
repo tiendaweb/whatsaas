@@ -4,6 +4,7 @@ import { activityLogs, teamCommercialActions, teamCommercialAnalysis } from '@/l
 import { SALES_OPS_ACTIVITY_PREFIX, type CollectionSpeed, type Gate, type Objection } from '../shared/taxonomy';
 import { computePriority } from './priority';
 import { expireStale, proposeBatch } from './queue';
+import { encolarAudiosDeFrentes } from './audios';
 
 /**
  * Housekeeping diario del Command Center (doc 05 §E, reglas 4 y 5; doc 04 §9).
@@ -29,6 +30,8 @@ export type HousekeepingReport = {
   preDescarte: { batchId: string | null; proposed: number; excluded: number };
   overdue: { batchId: string | null; proposed: number };
   priority: { scanned: number; updated: number };
+  /** Audios de Dinero y Oportunidades sumados a la cola de fichas. */
+  audios: { chats: number; encolados: number; yaEstaban: number };
   seconds: number;
 };
 
@@ -186,7 +189,16 @@ export async function runHousekeeping(teamId: number): Promise<HousekeepingRepor
   const preDescarte = await proposePreDescarte(teamId, now);
   const overdue = await proposeOverdue(teamId, now);
   const priority = await recalcPriority(teamId, now);
-  const report: HousekeepingReport = { teamId, expired, preDescarte, overdue, priority, seconds: Math.round((Date.now() - started) / 1000) };
+  // Los audios entran acá porque el frente de un chat cambia con cada
+  // clasificación: lo que ayer era Barrido hoy puede ser Dinero y sus notas de
+  // voz recién ahí valen la cuota.
+  let audios = { chats: 0, encolados: 0, yaEstaban: 0 };
+  try {
+    audios = await encolarAudiosDeFrentes(teamId);
+  } catch (error) {
+    console.error('[sales-ops/housekeeping] encolar audios de frentes falló', error);
+  }
+  const report: HousekeepingReport = { teamId, expired, preDescarte, overdue, priority, audios, seconds: Math.round((Date.now() - started) / 1000) };
   try {
     await db.insert(activityLogs).values({ teamId, userId: null, action: `${SALES_OPS_ACTIVITY_PREFIX}HOUSEKEEPING`, metadata: report });
   } catch (error) {

@@ -15,11 +15,15 @@ import { LS_OWNER, SALES_OPS_API, fetcher, fmtInt } from './components/format';
 import { ColaView } from './views/ColaView';
 import { ExperimentosView } from './views/ExperimentosView';
 import { PromptStudioView } from './views/PromptStudioView';
-import { ClientesView } from './views/ClientesView';
+import { ContactosView } from './views/ContactosView';
 import { FichaView } from './views/FichaView';
 import { HoyView } from './views/HoyView';
 import { ListaView, type ListaVista } from './views/ListaView';
 import { MetricasView } from './views/MetricasView';
+import { ProgramadosView } from './views/ProgramadosView';
+import { AudiosView } from './views/AudiosView';
+import { ProduccionView } from './views/ProduccionView';
+import { AyudaView } from './views/AyudaView';
 import { RespuestasView } from './views/RespuestasView';
 
 const LIST_VISTAS: ListaVista[] = ['dinero', 'oportunidades', 'barrido', 'limpieza', 'todos'];
@@ -61,6 +65,9 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
     return Number.isInteger(raw) && raw > 0 ? raw : null;
   }, [searchParams]);
 
+  /** Sección de la ficha con la que abrir (`?sec=chat` desde el botón de las listas). */
+  const fichaSeccion = useMemo(() => searchParams.get('sec'), [searchParams]);
+
   const [owner, setOwner] = useState<OwnerFilterValue>('todos');
   const [collapsed, setCollapsed] = useState(false);
   const [drawer, setDrawer] = useState(false);
@@ -101,8 +108,10 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
     },
     [setParams],
   );
-  const onOpen = useCallback((id: number) => setParams({ chat: String(id) }), [setParams]);
-  const onClose = useCallback(() => setParams({ chat: null }), [setParams]);
+  const onOpen = useCallback((id: number) => setParams({ chat: String(id), sec: null }), [setParams]);
+  /** Abre la ficha directamente en el chat del contacto. */
+  const onOpenChat = useCallback((id: number) => setParams({ chat: String(id), sec: 'chat' }), [setParams]);
+  const onClose = useCallback(() => setParams({ chat: null, sec: null }), [setParams]);
 
   const onOwner = (v: OwnerFilterValue) => {
     setOwner(v);
@@ -152,12 +161,16 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
 
   const content = (() => {
     if (vista === 'hoy') return <HoyView owner={owner} onChangeVista={onNav} onOpen={onOpen} />;
-    if (isListaVista(vista)) return <ListaView vista={vista} owner={owner} selectedChatId={chatId} onOpen={onOpen} />;
+    if (isListaVista(vista)) return <ListaView vista={vista} owner={owner} selectedChatId={chatId} onOpen={onOpen} onOpenChat={onOpenChat} onNav={onNav} />;
     if (vista === 'respuestas') return <RespuestasView />;
-    if (vista === 'cola') return <ColaView />;
+    if (vista === 'cola') return <ColaView onOpen={onOpen} selectedChatId={chatId} />;
+    if (vista === 'programados') return <ProgramadosView onOpen={onOpen} />;
+    if (vista === 'audios') return <AudiosView onOpen={onOpen} />;
+    if (vista === 'produccion') return <ProduccionView onOpen={onOpen} />;
+    if (vista === 'ayuda') return <AyudaView onNav={onNav} />;
     if (vista === 'experimentos') return <ExperimentosView />;
-    if (vista === 'prompts') return <PromptStudioView onOpen={onOpen} />;
-    if (vista === 'clientes') return <ClientesView onOpen={onOpen} />;
+    if (vista === 'prompts') return <PromptStudioView onOpen={onOpen} onNav={onNav} />;
+    if (vista === 'clientes') return <ContactosView onOpen={onOpen} onOpenChat={onOpenChat} owner={owner} />;
     return <MetricasView />;
   })();
 
@@ -203,7 +216,7 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
                 </Button>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto p-4">
-                <FichaView key={chatId} chatId={chatId} onClose={onClose} />
+                <FichaView key={`${chatId}-${fichaSeccion ?? ''}`} chatId={chatId} seccionInicial={fichaSeccion} onClose={onClose} />
               </div>
             </aside>
           )}
@@ -214,7 +227,7 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
         <Sheet open={chatId != null} onOpenChange={(open) => !open && onClose()}>
           <SheetContent side="right" className={cn('w-full max-w-full overflow-y-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:max-w-full')}>
             <SheetTitle className="sr-only">Ficha del contacto</SheetTitle>
-            {chatId != null && <FichaView key={chatId} chatId={chatId} onClose={onClose} />}
+            {chatId != null && <FichaView key={`${chatId}-${fichaSeccion ?? ''}`} chatId={chatId} seccionInicial={fichaSeccion} onClose={onClose} />}
           </SheetContent>
         </Sheet>
       )}

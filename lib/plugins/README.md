@@ -35,5 +35,7 @@ Valores soportados actualmente:
 - `NotebookText`
 - `Plug`
 - `Rocket`
+- `ClipboardList`
+- `PanelsTopLeft`
 
 Si un plugin envía un icono no soportado (o no define `icon`), el sidebar usa fallback a `Plug`.

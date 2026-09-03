@@ -1,24 +1,67 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  ArrowDownUp,
+  ArrowRight,
+  Bot,
+  GitBranchPlus,
+  List,
+  Maximize2,
+  Minimize2,
+  Minus,
+  Network,
+  Plus,
+  Repeat,
+  RotateCcw,
+  StickyNote,
+  Undo2,
+} from "lucide-react";
 import { useRouter } from "@/i18n/routing";
-import { ArrowRight, Bot, GitBranchPlus, List, Maximize2, Minimize2, Minus, Network, Plus, Repeat, RotateCcw, StickyNote, Undo2 } from "lucide-react";
-import type { AutomationFlowNode } from "@/lib/automation/flow-schema";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AUTOMATION_CANVAS_BOTTOM_SPACE,
+  AUTOMATION_CANVAS_SIDE_SPACE,
+  AUTOMATION_CANVAS_TOP_SPACE,
+  AUTOMATION_CARD_HEIGHT,
+  AUTOMATION_CARD_WIDTH,
+  type AutomationMapConnection,
+  type AutomationMapPosition,
+  type ClassifiedAutomationConnection,
+  classifyAutomationMapConnections,
+  getAutomaticAutomationMapPositions,
+  getAutomationMapConnections,
+  getAutomationMapLevels,
+  getBackAutomationPath,
+  getForwardAutomationPath,
+  getSameLevelAutomationPath,
+  getSelfAutomationPath,
+} from "@/lib/automation/map-layout";
 
-type AutomationMapItem = {
+export type AutomationMapItem = {
   id: number;
   name: string;
   note?: string | null;
   isActive: boolean;
   nodes: unknown;
-  instance?: {
-    instanceName?: string | null;
-  } | null;
+  folderId?: number | null;
+  instance?: { instanceName?: string | null } | null;
 };
 
-type AutomationConnectionsMapLabels = {
+export type AutomationConnectionsMapLabels = {
   title: string;
   description: string;
   noLinks: string;
@@ -33,6 +76,7 @@ type AutomationConnectionsMapLabels = {
   noteFallback: string;
   legendForward: string;
   legendBack: string;
+  legendSameLevel?: string;
   viewGraph: string;
   viewList: string;
   sendsTo: string;
@@ -40,260 +84,104 @@ type AutomationConnectionsMapLabels = {
   returnsBadge: string;
   selfBadge: string;
   noConnections: string;
+  currentFlow?: string;
 };
 
-type AutomationConnection = {
-  id: string;
-  sourceId: number;
-  targetId: number;
-};
-
-type MapPosition = { x: number; y: number };
-
-const CARD_WIDTH = 260;
-const CARD_HEIGHT = 128;
-const COLUMN_GAP = 190;
-const ROW_GAP = 54;
-const PADDING = 48;
-// Extra breathing room around the content so cards can be dragged freely
-// (más lienzo) without hitting the scroll edges.
-const CANVAS_MARGIN = 320;
-const MIN_ZOOM = 0.3;
-const MAX_ZOOM = 1.5;
-const ZOOM_STEP = 0.15;
-const STORAGE_KEY = "whatsaas-automation-map-positions-v1";
-const VIEW_MODE_STORAGE_KEY = "whatsaas-automation-map-viewmode-v1";
-
-const BACK_EDGE_BASE_DROP = 56;
-const BACK_EDGE_LANE_GAP = 28;
+const MIN_ZOOM = 0.1;
+const MAX_ZOOM = 2;
+const ZOOM_STEP = 0.14;
+const WHEEL_ZOOM_SENSITIVITY = 0.0015;
+const CANVAS_PAN_GUTTER = 1280;
+const POSITION_STORAGE_PREFIX = "whatsaas-automation-map-positions-v5";
+const VIEW_STORAGE_KEY = "whatsaas-automation-map-viewmode-v2";
+const CURRENT_FLOW_COLUMN_GAP = 220;
+const CURRENT_FLOW_ROW_GAP = 52;
 
 function clampZoom(value: number) {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
 }
 
-/** Bézier horizontal estándar: sale por la derecha del origen y entra por la izquierda del destino. */
-function getForwardPath(source: MapPosition, target: MapPosition) {
-  const startX = source.x + CARD_WIDTH;
-  const startY = source.y + CARD_HEIGHT / 2;
-  const endX = target.x;
-  const endY = target.y + CARD_HEIGHT / 2;
-  const curve = Math.max(80, Math.abs(endX - startX) / 2);
-  return `M ${startX} ${startY} C ${startX + curve} ${startY}, ${endX - curve} ${endY}, ${endX} ${endY}`;
-}
-
-/**
- * Back-edge: sale por el borde inferior del origen, rodea por debajo de ambas
- * tarjetas y entra por el borde inferior del destino. laneIndex escalona la
- * profundidad para que varios retornos no se superpongan.
- */
-function getBackPath(source: MapPosition, target: MapPosition, laneIndex: number) {
-  const startX = source.x + CARD_WIDTH / 2;
-  const startY = source.y + CARD_HEIGHT;
-  const endX = target.x + CARD_WIDTH / 2;
-  const endY = target.y + CARD_HEIGHT;
-  const dropY = Math.max(startY, endY) + BACK_EDGE_BASE_DROP + laneIndex * BACK_EDGE_LANE_GAP;
-  return `M ${startX} ${startY} C ${startX} ${dropY}, ${endX} ${dropY}, ${endX} ${endY}`;
-}
-
-/** Self-loop: óvalo saliente por el borde derecho de la tarjeta. */
-function getSelfLoopPath(position: MapPosition, laneIndex: number) {
-  const x = position.x + CARD_WIDTH;
-  const startY = position.y + CARD_HEIGHT / 2 + 20;
-  const endY = position.y + CARD_HEIGHT / 2 - 20;
-  const reach = 70 + laneIndex * 20;
-  return `M ${x} ${startY} C ${x + reach} ${startY + 40}, ${x + reach} ${endY - 40}, ${x} ${endY}`;
-}
-
-function getFlowConnections(automations: AutomationMapItem[]) {
-  const automationIds = new Set(automations.map((automation) => automation.id));
-  const connections: AutomationConnection[] = [];
-  const seen = new Set<string>();
-
-  for (const automation of automations) {
-    const nodes = Array.isArray(automation.nodes)
-      ? (automation.nodes as AutomationFlowNode[])
-      : [];
-
-    for (const node of nodes) {
-      if (node.type !== "go_to_node" || node.data?.mode !== "other_flow") {
-        continue;
-      }
-
-      const targetId = Number(node.data?.targetAutomationId);
-      if (!Number.isFinite(targetId) || !automationIds.has(targetId)) {
-        continue;
-      }
-
-      const connectionId = `${automation.id}-${targetId}`;
-      if (seen.has(connectionId)) continue;
-
-      seen.add(connectionId);
-      connections.push({
-        id: connectionId,
-        sourceId: automation.id,
-        targetId,
-      });
-    }
-  }
-
-  return connections;
-}
-
-function getAutomationLevels(
-  automations: AutomationMapItem[],
-  connections: AutomationConnection[],
-) {
-  const levels = new Map<number, number>();
-  const incomingCount = new Map<number, number>();
-  const outgoing = new Map<number, number[]>();
-  const incoming = new Map<number, number[]>();
-
-  automations.forEach((automation) => {
-    levels.set(automation.id, 0);
-    incomingCount.set(automation.id, 0);
-    outgoing.set(automation.id, []);
-    incoming.set(automation.id, []);
-  });
-
-  connections.forEach((connection) => {
-    // Self-loops don't affect topological depth.
-    if (connection.sourceId === connection.targetId) return;
-    incomingCount.set(
-      connection.targetId,
-      (incomingCount.get(connection.targetId) ?? 0) + 1,
-    );
-    outgoing.get(connection.sourceId)?.push(connection.targetId);
-    incoming.get(connection.targetId)?.push(connection.sourceId);
-  });
-
-  const processed = new Set<number>();
-  const queue: number[] = [];
-
-  const enqueue = (id: number) => {
-    if (processed.has(id)) return;
-    processed.add(id);
-    queue.push(id);
-  };
-
-  automations
-    .filter((automation) => (incomingCount.get(automation.id) ?? 0) === 0)
-    .forEach((automation) => enqueue(automation.id));
-
-  // Kahn + cycle breaking: when the queue drains with unprocessed nodes left
-  // (a cycle), force-seed one of them so every automation gets a deterministic
-  // level. Prefer a node already reached by a processed predecessor so the
-  // cycle continues from where the flow enters it.
-  while (processed.size < automations.length) {
-    for (let index = 0; index < queue.length; index += 1) {
-      const sourceId = queue[index];
-      const sourceLevel = levels.get(sourceId) ?? 0;
-
-      for (const targetId of outgoing.get(sourceId) ?? []) {
-        // An edge into an already-placed node is the cycle's closing edge:
-        // don't bump its level (that's exactly what makes it a back-edge).
-        if (processed.has(targetId)) continue;
-        levels.set(targetId, Math.max(levels.get(targetId) ?? 0, sourceLevel + 1));
-        incomingCount.set(
-          targetId,
-          Math.max((incomingCount.get(targetId) ?? 1) - 1, 0),
-        );
-        if ((incomingCount.get(targetId) ?? 0) === 0) enqueue(targetId);
-      }
-    }
-    queue.length = 0;
-
-    if (processed.size >= automations.length) break;
-
-    const remaining = automations.filter((automation) => !processed.has(automation.id));
-    const seed =
-      remaining.find((automation) =>
-        (incoming.get(automation.id) ?? []).some((sourceId) => processed.has(sourceId)),
-      ) ?? remaining[0];
-    if (!seed) break;
-    enqueue(seed.id);
-  }
-
-  return levels;
-}
-
-type ConnectionKind = "forward" | "back" | "self";
-
-type ClassifiedConnection = AutomationConnection & {
-  kind: ConnectionKind;
-  laneIndex: number;
-};
-
-function classifyConnections(
-  connections: AutomationConnection[],
-  levels: Map<number, number>,
-): ClassifiedConnection[] {
-  let backLane = 0;
-  let selfLane = 0;
-
-  return connections.map((connection) => {
-    if (connection.sourceId === connection.targetId) {
-      return { ...connection, kind: "self" as const, laneIndex: selfLane++ };
-    }
-    const sourceLevel = levels.get(connection.sourceId) ?? 0;
-    const targetLevel = levels.get(connection.targetId) ?? 0;
-    if (targetLevel <= sourceLevel) {
-      return { ...connection, kind: "back" as const, laneIndex: backLane++ };
-    }
-    return { ...connection, kind: "forward" as const, laneIndex: 0 };
-  });
-}
-
-function getAutomaticPositions(
-  automations: AutomationMapItem[],
-  connections: AutomationConnection[],
-) {
-  const levels = getAutomationLevels(automations, connections);
-  const groups = new Map<number, AutomationMapItem[]>();
-
-  automations.forEach((automation) => {
-    const level = levels.get(automation.id) ?? 0;
-    const group = groups.get(level) ?? [];
-    group.push(automation);
-    groups.set(level, group);
-  });
-
-  Array.from(groups.values()).forEach((group) => {
-    group.sort((a, b) => a.name.localeCompare(b.name));
-  });
-
-  const positions: Record<number, MapPosition> = {};
-  Array.from(groups.entries()).forEach(([level, group]) => {
-    group.forEach((automation, index) => {
-      positions[automation.id] = {
-        x: PADDING + level * (CARD_WIDTH + COLUMN_GAP),
-        y: PADDING + index * (CARD_HEIGHT + ROW_GAP),
-      };
-    });
-  });
-
-  return positions;
-}
-
-function loadStoredPositions() {
+function loadPositions(storageKey: string) {
   if (typeof window === "undefined") return {};
-
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw) as Record<number, MapPosition>;
+    const raw = window.localStorage.getItem(storageKey);
+    return raw ? (JSON.parse(raw) as Record<number, AutomationMapPosition>) : {};
   } catch {
     return {};
   }
 }
 
+function getCurrentFlowPositions(
+  automations: AutomationMapItem[],
+  connections: AutomationMapConnection[],
+  currentAutomationId: number,
+) {
+  const outgoingIds = new Set(
+    connections
+      .filter(
+        (connection) =>
+          connection.sourceId === currentAutomationId &&
+          connection.targetId !== currentAutomationId,
+      )
+      .map((connection) => connection.targetId),
+  );
+  const incomingIds = new Set(
+    connections
+      .filter(
+        (connection) =>
+          connection.targetId === currentAutomationId &&
+          connection.sourceId !== currentAutomationId &&
+          !outgoingIds.has(connection.sourceId),
+      )
+      .map((connection) => connection.sourceId),
+  );
+  const byName = (a: AutomationMapItem, b: AutomationMapItem) =>
+    a.name.localeCompare(b.name);
+  const incoming = automations
+    .filter((automation) => incomingIds.has(automation.id))
+    .sort(byName);
+  const outgoing = automations
+    .filter((automation) => outgoingIds.has(automation.id))
+    .sort(byName);
+  const rowStep = AUTOMATION_CARD_HEIGHT + CURRENT_FLOW_ROW_GAP;
+  const maxRows = Math.max(1, incoming.length, outgoing.length);
+  const fullHeight =
+    maxRows * AUTOMATION_CARD_HEIGHT +
+    Math.max(0, maxRows - 1) * CURRENT_FLOW_ROW_GAP;
+  const centerY =
+    AUTOMATION_CANVAS_TOP_SPACE + (fullHeight - AUTOMATION_CARD_HEIGHT) / 2;
+  const centerX =
+    AUTOMATION_CANVAS_SIDE_SPACE + AUTOMATION_CARD_WIDTH + CURRENT_FLOW_COLUMN_GAP;
+  const positions: Record<number, AutomationMapPosition> = {
+    [currentAutomationId]: { x: centerX, y: centerY },
+  };
+  const placeColumn = (items: AutomationMapItem[], x: number) => {
+    const columnHeight =
+      items.length * AUTOMATION_CARD_HEIGHT +
+      Math.max(0, items.length - 1) * CURRENT_FLOW_ROW_GAP;
+    const top = AUTOMATION_CANVAS_TOP_SPACE + (fullHeight - columnHeight) / 2;
+    items.forEach((automation, index) => {
+      positions[automation.id] = { x, y: top + index * rowStep };
+    });
+  };
+
+  placeColumn(incoming, AUTOMATION_CANVAS_SIDE_SPACE);
+  placeColumn(
+    outgoing,
+    centerX + AUTOMATION_CARD_WIDTH + CURRENT_FLOW_COLUMN_GAP,
+  );
+  return positions;
+}
+
 export function AutomationConnectionsMap({
   automations,
-  locale,
   labels,
   currentAutomationId,
   className = "",
-  viewportClassName = "max-h-[420px]",
+  viewportClassName = "max-h-[460px]",
   autoCenterOnCurrent = false,
+  scopeKey = "all",
+  focusCurrentOnly = false,
 }: {
   automations: AutomationMapItem[];
   locale: string;
@@ -302,164 +190,806 @@ export function AutomationConnectionsMap({
   className?: string;
   viewportClassName?: string;
   autoCenterOnCurrent?: boolean;
+  scopeKey?: string;
+  focusCurrentOnly?: boolean;
 }) {
   const router = useRouter();
+  const markerId = useId().replaceAll(":", "");
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{
     id: number;
     startX: number;
     startY: number;
-    origin: MapPosition;
+    origin: AutomationMapPosition;
     moved: boolean;
   } | null>(null);
+  const panRef = useRef<{
+    startX: number;
+    startY: number;
+    scrollLeft: number;
+    scrollTop: number;
+  } | null>(null);
+  const zoomRef = useRef(1);
+  const autoCenteredKeyRef = useRef<string | null>(null);
+  const pendingFitRef = useRef(false);
+  const hasFocusedCurrent =
+    focusCurrentOnly &&
+    currentAutomationId !== undefined &&
+    automations.some((automation) => automation.id === currentAutomationId);
+  const storageKey = `${POSITION_STORAGE_PREFIX}:${
+    hasFocusedCurrent ? `current-${currentAutomationId}` : scopeKey
+  }`;
 
-  const connections = useMemo(() => getFlowConnections(automations), [automations]);
-  const levelsMap = useMemo(
-    () => getAutomationLevels(automations, connections),
-    [automations, connections],
-  );
-  const classifiedConnections = useMemo(
-    () => classifyConnections(connections, levelsMap),
-    [connections, levelsMap],
-  );
-  const hasBackConnections = useMemo(
-    () => classifiedConnections.some((connection) => connection.kind !== "forward"),
-    [classifiedConnections],
-  );
-  const automationById = useMemo(
-    () => new Map(automations.map((automation) => [automation.id, automation] as const)),
+  const allConnections = useMemo(
+    () => getAutomationMapConnections(automations),
     [automations],
   );
-  // Índice para la vista lista: conexiones salientes/entrantes por automatización.
-  const connectionsByAutomation = useMemo(() => {
-    const map = new Map<number, { outgoing: ClassifiedConnection[]; incoming: ClassifiedConnection[] }>();
-    automations.forEach((automation) => map.set(automation.id, { outgoing: [], incoming: [] }));
-    classifiedConnections.forEach((connection) => {
-      map.get(connection.sourceId)?.outgoing.push(connection);
-      if (connection.kind !== "self") map.get(connection.targetId)?.incoming.push(connection);
-    });
-    return map;
-  }, [automations, classifiedConnections]);
-  // Orden de lectura de la lista: por profundidad en el flujo y luego por nombre.
-  const listOrderedAutomations = useMemo(
+  const connections = useMemo(
     () =>
-      [...automations].sort(
-        (a, b) =>
-          (levelsMap.get(a.id) ?? 0) - (levelsMap.get(b.id) ?? 0) || a.name.localeCompare(b.name),
-      ),
-    [automations, levelsMap],
+      hasFocusedCurrent
+        ? allConnections.filter(
+            (connection) =>
+              connection.sourceId === currentAutomationId ||
+              connection.targetId === currentAutomationId,
+          )
+        : allConnections,
+    [allConnections, currentAutomationId, hasFocusedCurrent],
+  );
+  const mapAutomations = useMemo(() => {
+    if (!hasFocusedCurrent) return automations;
+    const visibleIds = new Set<number>([currentAutomationId]);
+    connections.forEach((connection) => {
+      visibleIds.add(connection.sourceId);
+      visibleIds.add(connection.targetId);
+    });
+    return automations.filter((automation) => visibleIds.has(automation.id));
+  }, [automations, connections, currentAutomationId, hasFocusedCurrent]);
+  const levels = useMemo(
+    () => {
+      if (!hasFocusedCurrent) {
+        return getAutomationMapLevels(mapAutomations, connections);
+      }
+      const focusedLevels = new Map<number, number>();
+      mapAutomations.forEach((automation) => {
+        const isOutgoing = connections.some(
+          (connection) =>
+            connection.sourceId === currentAutomationId &&
+            connection.targetId === automation.id &&
+            automation.id !== currentAutomationId,
+        );
+        focusedLevels.set(
+          automation.id,
+          automation.id === currentAutomationId ? 1 : isOutgoing ? 2 : 0,
+        );
+      });
+      return focusedLevels;
+    }, [connections, currentAutomationId, hasFocusedCurrent, mapAutomations],
+  );
+  const classified = useMemo(
+    () => classifyAutomationMapConnections(connections, levels),
+    [connections, levels],
   );
   const automaticPositions = useMemo(
-    () => getAutomaticPositions(automations, connections),
-    [automations, connections],
+    () =>
+      hasFocusedCurrent
+        ? getCurrentFlowPositions(
+            mapAutomations,
+            connections,
+            currentAutomationId,
+          )
+        : getAutomaticAutomationMapPositions(mapAutomations, connections),
+    [connections, currentAutomationId, hasFocusedCurrent, mapAutomations],
   );
-  const [positions, setPositions] = useState<Record<number, MapPosition>>(() => ({
-    ...automaticPositions,
-    ...loadStoredPositions(),
-  }));
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const automationById = useMemo(
+    () =>
+      new Map(mapAutomations.map((automation) => [automation.id, automation])),
+    [mapAutomations],
+  );
+  const connectionsByAutomation = useMemo(() => {
+    const result = new Map<
+      number,
+      { outgoing: ClassifiedAutomationConnection[]; incoming: ClassifiedAutomationConnection[] }
+    >();
+    mapAutomations.forEach((automation) =>
+      result.set(automation.id, { outgoing: [], incoming: [] }),
+    );
+    classified.forEach((connection) => {
+      result.get(connection.sourceId)?.outgoing.push(connection);
+      if (connection.kind !== "self") {
+        result.get(connection.targetId)?.incoming.push(connection);
+      }
+    });
+    return result;
+  }, [classified, mapAutomations]);
+  const listItems = useMemo(
+    () =>
+      [...mapAutomations].sort(
+        (a, b) =>
+          (levels.get(a.id) ?? 0) - (levels.get(b.id) ?? 0) ||
+          a.name.localeCompare(b.name),
+      ),
+    [levels, mapAutomations],
+  );
+
+  const [positions, setPositions] = useState<Record<number, AutomationMapPosition>>(
+    () => ({
+      ...automaticPositions,
+      ...(hasFocusedCurrent ? {} : loadPositions(storageKey)),
+    }),
+  );
   const [zoom, setZoom] = useState(1);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const [hoveredAutomationId, setHoveredAutomationId] = useState<number | null>(
+    null,
+  );
   const [viewMode, setViewMode] = useState<"graph" | "list">(() => {
     if (typeof window === "undefined") return "graph";
-    return window.localStorage.getItem(VIEW_MODE_STORAGE_KEY) === "list" ? "list" : "graph";
+    return window.localStorage.getItem(VIEW_STORAGE_KEY) === "list"
+      ? "list"
+      : "graph";
   });
 
-  const changeViewMode = (mode: "graph" | "list") => {
-    setViewMode(mode);
-    try {
-      window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
-    } catch {
-      // localStorage no disponible: la preferencia solo dura la sesión.
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+
+  useEffect(() => {
+    if (hasFocusedCurrent) {
+      setPositions({ ...automaticPositions });
+      return;
     }
-  };
+    const stored = loadPositions(storageKey);
+    setPositions((current) => {
+      const next: Record<number, AutomationMapPosition> = {};
+      mapAutomations.forEach((automation) => {
+        next[automation.id] =
+          stored[automation.id] ??
+          current[automation.id] ??
+          automaticPositions[automation.id];
+      });
+      return next;
+    });
+  }, [automaticPositions, hasFocusedCurrent, mapAutomations, storageKey]);
+
+  useEffect(() => {
+    if (hasFocusedCurrent) return;
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(positions));
+    } catch {
+      // The layout still works when storage is unavailable.
+    }
+  }, [hasFocusedCurrent, positions, storageKey]);
+
+  const backLaneCount = classified.filter(
+    (connection) => connection.kind === "back",
+  ).length;
+  const furthestRight = Math.max(
+    720,
+    ...Object.values(positions).map(
+      (position) =>
+        position.x + AUTOMATION_CARD_WIDTH + AUTOMATION_CANVAS_SIDE_SPACE,
+    ),
+  );
+  const furthestBottom = Math.max(
+    520,
+    ...Object.values(positions).map(
+      (position) =>
+        position.y +
+        AUTOMATION_CARD_HEIGHT +
+        AUTOMATION_CANVAS_BOTTOM_SPACE +
+        backLaneCount * 24,
+    ),
+  );
+  const canvasWidth = furthestRight;
+  const canvasHeight = furthestBottom;
+  const contentBounds = useMemo(() => {
+    const values = Object.values(positions);
+    if (values.length === 0) {
+      return { left: 0, top: 0, right: canvasWidth, bottom: canvasHeight };
+    }
+    return {
+      left: Math.max(0, Math.min(...values.map((position) => position.x)) - 72),
+      top: Math.max(0, Math.min(...values.map((position) => position.y)) - 72),
+      right: Math.min(
+        canvasWidth,
+        Math.max(...values.map((position) => position.x + AUTOMATION_CARD_WIDTH)) +
+          176,
+      ),
+      bottom: Math.min(
+        canvasHeight,
+        Math.max(...values.map((position) => position.y + AUTOMATION_CARD_HEIGHT)) +
+          112 +
+          backLaneCount * 24,
+      ),
+    };
+  }, [backLaneCount, canvasHeight, canvasWidth, positions]);
 
   const zoomAround = useCallback(
-    (nextZoomRaw: number, anchor?: { x: number; y: number }) => {
+    (
+      nextValue: number | ((current: number) => number),
+      anchor?: { x: number; y: number },
+    ) => {
       const viewport = viewportRef.current;
       setZoom((current) => {
-        const nextZoom = clampZoom(nextZoomRaw);
-        if (viewport && nextZoom !== current) {
-          // Keep the anchor point (defaults to viewport center) visually stable.
+        const next = clampZoom(
+          typeof nextValue === "function" ? nextValue(current) : nextValue,
+        );
+        if (viewport && next !== current) {
           const rect = viewport.getBoundingClientRect();
           const anchorX = anchor ? anchor.x - rect.left : viewport.clientWidth / 2;
           const anchorY = anchor ? anchor.y - rect.top : viewport.clientHeight / 2;
-          const contentX = (viewport.scrollLeft + anchorX) / current;
-          const contentY = (viewport.scrollTop + anchorY) / current;
-          window.requestAnimationFrame(() => {
-            viewport.scrollLeft = contentX * nextZoom - anchorX;
-            viewport.scrollTop = contentY * nextZoom - anchorY;
+          const contentX =
+            (viewport.scrollLeft + anchorX - CANVAS_PAN_GUTTER) / current;
+          const contentY =
+            (viewport.scrollTop + anchorY - CANVAS_PAN_GUTTER) / current;
+          requestAnimationFrame(() => {
+            viewport.scrollLeft =
+              CANVAS_PAN_GUTTER + contentX * next - anchorX;
+            viewport.scrollTop =
+              CANVAS_PAN_GUTTER + contentY * next - anchorY;
           });
         }
-        return nextZoom;
+        zoomRef.current = next;
+        return next;
       });
     },
     [],
   );
 
-  useEffect(() => {
-    const stored = loadStoredPositions();
-    const next: Record<number, MapPosition> = {};
-    automations.forEach((automation) => {
-      next[automation.id] =
-        stored[automation.id] ?? positions[automation.id] ?? automaticPositions[automation.id];
-    });
-    setPositions(next);
-    // Keep this tied to the automation set, not every drag update.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [automaticPositions, automations]);
+  const fitMap = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const contentWidth = Math.max(contentBounds.right - contentBounds.left, 1);
+    const contentHeight = Math.max(contentBounds.bottom - contentBounds.top, 1);
+    const padding = isFullscreen ? 44 : 28;
+    const next = clampZoom(
+      Math.min(
+        isFullscreen ? 0.96 : 0.78,
+        (viewport.clientWidth - padding * 2) / contentWidth,
+        (viewport.clientHeight - padding * 2) / contentHeight,
+      ),
+    );
+    setZoom(next);
+    zoomRef.current = next;
+    requestAnimationFrame(() =>
+      viewport.scrollTo({
+        left:
+          CANVAS_PAN_GUTTER +
+          ((contentBounds.left + contentBounds.right) / 2) * next -
+          viewport.clientWidth / 2,
+        top:
+          CANVAS_PAN_GUTTER +
+          ((contentBounds.top + contentBounds.bottom) / 2) * next -
+          viewport.clientHeight / 2,
+      }),
+    );
+  }, [contentBounds, isFullscreen]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(positions));
-  }, [positions]);
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const frame = requestAnimationFrame(() => {
+      fitMap();
+    });
+    return () => cancelAnimationFrame(frame);
+    // Establish a centered starting view for each independently stored scope.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey]);
+
+  useEffect(() => {
+    if (!pendingFitRef.current) return;
+    pendingFitRef.current = false;
+    const frame = requestAnimationFrame(fitMap);
+    return () => cancelAnimationFrame(frame);
+  }, [fitMap, positions]);
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const first = requestAnimationFrame(() => {
+      const second = requestAnimationFrame(fitMap);
+      return () => cancelAnimationFrame(second);
+    });
+    return () => cancelAnimationFrame(first);
+  }, [fitMap, isFullscreen]);
+
+  useEffect(() => {
+    if (!isFullscreen || viewMode !== "graph") return;
+    const viewport = viewportRef.current;
+    if (!viewport || typeof ResizeObserver === "undefined") return;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(fitMap);
+    });
+    observer.observe(viewport);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [fitMap, isFullscreen, viewMode]);
 
   useEffect(() => {
     if (!autoCenterOnCurrent || !currentAutomationId) return;
     const viewport = viewportRef.current;
     const position = positions[currentAutomationId];
     if (!viewport || !position) return;
-
-    const left = Math.max((position.x + CARD_WIDTH / 2) * zoom - viewport.clientWidth / 2, 0);
-    const top = Math.max((position.y + CARD_HEIGHT / 2) * zoom - viewport.clientHeight / 2, 0);
-    window.requestAnimationFrame(() => {
-      viewport.scrollTo({ left, top, behavior: "smooth" });
+    const centerKey = `${storageKey}:${currentAutomationId}`;
+    if (autoCenteredKeyRef.current === centerKey) return;
+    autoCenteredKeyRef.current = centerKey;
+    const currentZoom = zoomRef.current;
+    requestAnimationFrame(() => {
+      viewport.scrollTo({
+        left:
+          CANVAS_PAN_GUTTER +
+          (position.x + AUTOMATION_CARD_WIDTH / 2) * currentZoom -
+          viewport.clientWidth / 2,
+        top:
+          CANVAS_PAN_GUTTER +
+          (position.y + AUTOMATION_CARD_HEIGHT / 2) * currentZoom -
+          viewport.clientHeight / 2,
+        behavior: "smooth",
+      });
     });
-  }, [autoCenterOnCurrent, currentAutomationId, positions, zoom]);
+  }, [autoCenterOnCurrent, currentAutomationId, positions, storageKey]);
 
-  const canvasWidth = Math.max(
-    900,
-    ...Object.values(positions).map((position) => position.x + CARD_WIDTH + CANVAS_MARGIN),
-  );
-  const canvasHeight = Math.max(
-    440,
-    ...Object.values(positions).map((position) => position.y + CARD_HEIGHT + CANVAS_MARGIN),
-  );
-
-  const resetLayout = () => {
-    setPositions(automaticPositions);
-    setZoom(1);
+  const changeViewMode = (mode: "graph" | "list") => {
+    setViewMode(mode);
+    if (mode === "graph") {
+      requestAnimationFrame(() => {
+        const viewport = viewportRef.current;
+        if (viewport && viewport.scrollLeft === 0) fitMap();
+      });
+    }
+    try {
+      window.localStorage.setItem(VIEW_STORAGE_KEY, mode);
+    } catch {
+      // Session-only fallback.
+    }
   };
 
   const openAutomation = (automationId: number) => {
     router.push(`/automation/${automationId}`);
   };
 
-  const mapContent = (
-    <>
-      <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <h2 className="truncate text-sm font-medium text-foreground">{labels.title}</h2>
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground">
-            <GitBranchPlus className="h-3 w-3" />
-            {connections.length > 0 ? labels.linkedCount : labels.noLinks}
-          </span>
+  const edgePath = (
+    connection: ClassifiedAutomationConnection,
+    source: AutomationMapPosition,
+    target: AutomationMapPosition,
+  ) => {
+    if (connection.kind === "forward") return getForwardAutomationPath(source, target);
+    if (connection.kind === "same-level") {
+      return getSameLevelAutomationPath(source, target, connection.laneIndex);
+    }
+    if (connection.kind === "self") {
+      return getSelfAutomationPath(source, connection.laneIndex);
+    }
+    return getBackAutomationPath(source, target, connection.laneIndex);
+  };
+
+  const renderGraph = (fullscreen: boolean) => (
+    <div className="relative min-h-0 flex-1 overflow-hidden">
+      <div
+        ref={fullscreen || !isFullscreen ? viewportRef : undefined}
+        className={[
+          "h-full select-none overflow-auto overscroll-contain bg-muted/20 text-foreground",
+          isPanning ? "cursor-grabbing" : "cursor-grab",
+          fullscreen ? "min-h-0 flex-1" : viewportClassName,
+        ].join(" ")}
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(128,128,128,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(128,128,128,.08) 1px, transparent 1px)",
+          backgroundSize: "24px 24px",
+          touchAction: "none",
+        }}
+        onPointerDown={(event) => {
+          const target = event.target as HTMLElement;
+          if (
+            target.closest("button,[data-map-control]") ||
+            (event.button !== 0 && event.button !== 1)
+          ) return;
+          event.preventDefault();
+          event.currentTarget.setPointerCapture(event.pointerId);
+          panRef.current = {
+            startX: event.clientX,
+            startY: event.clientY,
+            scrollLeft: event.currentTarget.scrollLeft,
+            scrollTop: event.currentTarget.scrollTop,
+          };
+          setIsPanning(true);
+        }}
+        onPointerMove={(event) => {
+          const pan = panRef.current;
+          if (!pan) return;
+          event.currentTarget.scrollLeft =
+            pan.scrollLeft - (event.clientX - pan.startX);
+          event.currentTarget.scrollTop =
+            pan.scrollTop - (event.clientY - pan.startY);
+        }}
+        onPointerUp={(event) => {
+          if (!panRef.current) return;
+          event.currentTarget.releasePointerCapture(event.pointerId);
+          panRef.current = null;
+          setIsPanning(false);
+        }}
+        onPointerCancel={() => {
+          panRef.current = null;
+          setIsPanning(false);
+        }}
+        onLostPointerCapture={() => {
+          panRef.current = null;
+          setIsPanning(false);
+        }}
+        onWheel={(event) => {
+          event.preventDefault();
+          zoomAround(
+            (current) =>
+              current * Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY),
+            {
+              x: event.clientX,
+              y: event.clientY,
+            },
+          );
+        }}
+      >
+        <div
+          className="relative origin-top-left"
+          style={{
+            width: canvasWidth * zoom + CANVAS_PAN_GUTTER * 2,
+            height: canvasHeight * zoom + CANVAS_PAN_GUTTER * 2,
+          }}
+        >
+          <div
+            className="absolute origin-top-left"
+            style={{
+              left: CANVAS_PAN_GUTTER,
+              top: CANVAS_PAN_GUTTER,
+              width: canvasWidth,
+              height: canvasHeight,
+              transform: `scale(${zoom})`,
+            }}
+          >
+            {hasFocusedCurrent &&
+              ([0, 1, 2] as const).map((level) => {
+                const columnItems = mapAutomations.filter(
+                  (automation) => levels.get(automation.id) === level,
+                );
+                const columnPositions = columnItems
+                  .map((automation) => positions[automation.id])
+                  .filter((position): position is AutomationMapPosition =>
+                    Boolean(position),
+                  );
+                if (columnPositions.length === 0) return null;
+                const label =
+                  level === 0
+                    ? labels.receivesFrom
+                    : level === 1
+                      ? labels.currentFlow
+                      : labels.sendsTo;
+                if (!label) return null;
+                return (
+                  <div
+                    key={level}
+                    className="pointer-events-none absolute z-[5] border-b border-border/80 pb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground"
+                    style={{
+                      left: Math.min(
+                        ...columnPositions.map((position) => position.x),
+                      ),
+                      top:
+                        Math.min(
+                          ...columnPositions.map((position) => position.y),
+                        ) - 36,
+                      width: AUTOMATION_CARD_WIDTH,
+                    }}
+                  >
+                    {label}
+                  </div>
+                );
+              })}
+            <svg
+              className="pointer-events-none absolute inset-0 h-full w-full"
+              viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
+              aria-hidden="true"
+            >
+              <defs>
+                {[
+                  ["forward", "fill-primary"],
+                  ["same", "fill-muted-foreground"],
+                  ["back", "fill-muted-foreground"],
+                ].map(([name, markerClassName]) => (
+                  <marker
+                    key={name}
+                    id={`${markerId}-${name}-${fullscreen ? "full" : "base"}`}
+                    markerWidth="9"
+                    markerHeight="9"
+                    refX="8"
+                    refY="4"
+                    orient="auto"
+                    markerUnits="strokeWidth"
+                  >
+                    <path
+                      d="M0,0 L0,8 L8,4 z"
+                      className={markerClassName}
+                    />
+                  </marker>
+                ))}
+              </defs>
+              {classified.map((connection) => {
+                const source = positions[connection.sourceId];
+                const target = positions[connection.targetId];
+                if (!source || !target) return null;
+                const related =
+                  hoveredAutomationId === null ||
+                  hoveredAutomationId === connection.sourceId ||
+                  hoveredAutomationId === connection.targetId;
+                const palette =
+                  connection.kind === "forward"
+                    ? { className: "stroke-primary", marker: "forward", dash: undefined }
+                    : connection.kind === "same-level"
+                      ? { className: "stroke-muted-foreground", marker: "same", dash: undefined }
+                      : { className: "stroke-muted-foreground", marker: "back", dash: "7 7" };
+                return (
+                  <path
+                    key={connection.id}
+                    d={edgePath(connection, source, target)}
+                    fill="none"
+                    strokeWidth={related ? 2.5 : 1.5}
+                    strokeDasharray={palette.dash}
+                    strokeLinecap="round"
+                    opacity={related ? 0.78 : 0.14}
+                    markerEnd={`url(#${markerId}-${palette.marker}-${fullscreen ? "full" : "base"})`}
+                    className={`${palette.className} transition-[opacity,stroke-width] duration-200`}
+                  />
+                );
+              })}
+            </svg>
+
+            {mapAutomations.map((automation) => {
+              const position = positions[automation.id] ??
+                automaticPositions[automation.id] ?? {
+                  x: AUTOMATION_CANVAS_SIDE_SPACE,
+                  y: 176,
+                };
+              const isCurrent = currentAutomationId === automation.id;
+              const faded =
+                hoveredAutomationId !== null &&
+                hoveredAutomationId !== automation.id &&
+                !classified.some(
+                  (connection) =>
+                    (connection.sourceId === hoveredAutomationId &&
+                      connection.targetId === automation.id) ||
+                    (connection.targetId === hoveredAutomationId &&
+                      connection.sourceId === automation.id),
+                );
+              return (
+                <button
+                  key={automation.id}
+                  type="button"
+                  title={labels.opensFlow}
+                  className={[
+                    "absolute z-10 flex cursor-grab flex-col justify-between rounded-md border border-border bg-card p-4 text-left text-card-foreground transition-[opacity,border-color,box-shadow] hover:border-primary/60 hover:ring-1 hover:ring-primary/15 active:cursor-grabbing",
+                    isCurrent
+                      ? "border-primary bg-primary/[0.035] ring-2 ring-primary/15"
+                      : "",
+                    faded ? "opacity-45" : "opacity-100",
+                  ].join(" ")}
+                  style={{
+                    left: position.x,
+                    top: position.y,
+                    width: AUTOMATION_CARD_WIDTH,
+                    height: AUTOMATION_CARD_HEIGHT,
+                  }}
+                  onPointerEnter={() => setHoveredAutomationId(automation.id)}
+                  onPointerLeave={() => setHoveredAutomationId(null)}
+                  onPointerDown={(event) => {
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    dragRef.current = {
+                      id: automation.id,
+                      startX: event.clientX,
+                      startY: event.clientY,
+                      origin: position,
+                      moved: false,
+                    };
+                  }}
+                  onPointerMove={(event) => {
+                    const drag = dragRef.current;
+                    if (!drag || drag.id !== automation.id) return;
+                    const deltaX = (event.clientX - drag.startX) / zoom;
+                    const deltaY = (event.clientY - drag.startY) / zoom;
+                    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) drag.moved = true;
+                    setPositions((current) => ({
+                      ...current,
+                      [automation.id]: {
+                        x: Math.max(56, drag.origin.x + deltaX),
+                        y: Math.max(72, drag.origin.y + deltaY),
+                      },
+                    }));
+                  }}
+                  onPointerUp={(event) => {
+                    event.currentTarget.releasePointerCapture(event.pointerId);
+                    const drag = dragRef.current;
+                    dragRef.current = null;
+                    if (!drag?.moved) openAutomation(automation.id);
+                  }}
+                >
+                  <div className="flex items-start gap-3">
+                    <span
+                      className={[
+                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-sm",
+                        automation.isActive
+                          ? "bg-primary text-primary-foreground"
+                          : "border border-border bg-muted text-muted-foreground",
+                      ].join(" ")}
+                    >
+                      <Bot className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold">
+                        {automation.name}
+                      </span>
+                      <span className="mt-0.5 block truncate text-[11px] opacity-60">
+                        {automation.instance?.instanceName ?? `#${automation.id}`}
+                      </span>
+                      {isCurrent && labels.currentFlow && (
+                        <span className="mt-1.5 inline-flex border-l-2 border-primary pl-1.5 text-[9px] font-bold uppercase tracking-[0.12em] text-primary">
+                          {labels.currentFlow}
+                        </span>
+                      )}
+                    </span>
+                    <span
+                      className={[
+                        "ml-auto mt-1 h-2 w-2 shrink-0 rounded-full",
+                        automation.isActive ? "bg-primary" : "bg-muted-foreground/50",
+                      ].join(" ")}
+                    />
+                  </div>
+                  <div className="flex min-w-0 items-center gap-1.5 text-[11px] opacity-60">
+                    <StickyNote className="h-3 w-3 shrink-0" />
+                    <span className="truncate">
+                      {automation.note?.trim() || labels.noteFallback}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <div className="mr-1 flex items-center rounded-md border bg-muted/40 p-0.5">
+      </div>
+
+      <div data-map-control className="pointer-events-none absolute bottom-3 left-3 z-30 hidden items-center gap-3 rounded-lg border border-border bg-background/90 px-3 py-2 text-[10px] text-muted-foreground shadow-sm backdrop-blur-md md:flex">
+        <span className="flex items-center gap-1.5">
+          <span className="h-0.5 w-5 bg-primary" />
+          {labels.legendForward}
+        </span>
+        {!hasFocusedCurrent && (
+          <span className="flex items-center gap-1.5">
+            <span className="h-0.5 w-5 bg-muted-foreground" />
+            {labels.legendSameLevel ?? labels.legendForward}
+          </span>
+        )}
+        <span className="flex items-center gap-1.5">
+          <span className="w-5 border-t-2 border-dashed border-muted-foreground/60" />
+          {labels.legendBack}
+        </span>
+      </div>
+
+      <div data-map-control className="absolute bottom-3 right-3 z-30 flex items-center rounded-lg border border-border bg-background/90 p-1 shadow-sm backdrop-blur-md">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 rounded-md text-foreground"
+          onClick={() => zoomAround((current) => current - ZOOM_STEP)}
+          disabled={zoom <= MIN_ZOOM}
+        >
+          <Minus className="h-3.5 w-3.5" />
+        </Button>
+        <span className="w-11 text-center text-[10px] tabular-nums text-muted-foreground">
+          {Math.round(zoom * 100)}%
+        </span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 rounded-md text-foreground"
+          onClick={() => zoomAround((current) => current + ZOOM_STEP)}
+          disabled={zoom >= MAX_ZOOM}
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+
+  const renderList = () => (
+    <div className={["min-h-0 flex-1 overflow-auto bg-muted/20 p-3 pt-14 text-foreground", viewportClassName].join(" ")}>
+      <div className="space-y-2">
+        {listItems.map((automation) => {
+          const itemConnections = connectionsByAutomation.get(automation.id) ?? {
+            outgoing: [],
+            incoming: [],
+          };
+          return (
+            <div
+              key={automation.id}
+              className="rounded-xl border border-border bg-card p-3 shadow-sm"
+            >
+              <div className="flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-muted text-xs font-semibold text-foreground">
+                  {(levels.get(automation.id) ?? 0) + 1}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => openAutomation(automation.id)}
+                  className="min-w-0 truncate text-left text-sm font-semibold hover:underline"
+                >
+                  {automation.name}
+                </button>
+                <span className="ml-auto text-[10px] text-muted-foreground">
+                  {automation.isActive ? labels.active : labels.paused}
+                </span>
+              </div>
+              {itemConnections.outgoing.length + itemConnections.incoming.length === 0 ? (
+                <p className="mt-2 pl-9 text-[11px] text-muted-foreground">
+                  {labels.noConnections}
+                </p>
+              ) : (
+                <div className="mt-2 flex flex-wrap gap-1.5 pl-9">
+                  {itemConnections.outgoing.map((connection) => {
+                    const target = automationById.get(connection.targetId);
+                    if (!target) return null;
+                    const Icon =
+                      connection.kind === "self"
+                        ? Repeat
+                        : connection.kind === "back"
+                          ? Undo2
+                          : connection.kind === "same-level"
+                            ? ArrowDownUp
+                            : ArrowRight;
+                    return (
+                      <button
+                        key={`out-${connection.id}`}
+                        type="button"
+                        onClick={() => openAutomation(target.id)}
+                        className="inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[10px] transition-colors hover:border-primary/40"
+                      >
+                        <Icon className="h-3 w-3 shrink-0" />
+                        <span className="truncate">
+                          {connection.kind === "self" ? labels.selfBadge : target.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  const renderSurface = (fullscreen: boolean) => (
+    <section
+      className={[
+        "relative flex min-h-0 flex-col overflow-hidden bg-background text-foreground",
+        fullscreen ? "h-full border-0" : "h-full rounded-xl border border-border",
+      ].join(" ")}
+    >
+      <div
+        data-map-control
+        className="absolute right-3 top-3 z-40 flex shrink-0 items-center gap-1 rounded-lg border border-border bg-background/90 p-1 shadow-sm backdrop-blur-md"
+      >
+          <span
+            className="hidden items-center gap-1.5 px-2 text-[10px] text-muted-foreground sm:inline-flex"
+            title={labels.title}
+          >
+            <GitBranchPlus className="h-3 w-3" />
+            {connections.length}
+          </span>
+          <div className="flex items-center rounded-md bg-muted/60 p-0.5">
             <Button
               variant={viewMode === "graph" ? "secondary" : "ghost"}
               size="icon"
-              className="h-6 w-6 text-muted-foreground"
+              className="h-7 w-7 rounded-md"
               onClick={() => changeViewMode("graph")}
               title={labels.viewGraph}
             >
@@ -468,7 +998,7 @@ export function AutomationConnectionsMap({
             <Button
               variant={viewMode === "list" ? "secondary" : "ghost"}
               size="icon"
-              className="h-6 w-6 text-muted-foreground"
+              className="h-7 w-7 rounded-md"
               onClick={() => changeViewMode("list")}
               title={labels.viewList}
             >
@@ -479,8 +1009,11 @@ export function AutomationConnectionsMap({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground"
-              onClick={resetLayout}
+              className="h-8 w-8 rounded-md"
+              onClick={() => {
+                pendingFitRef.current = true;
+                setPositions({ ...automaticPositions });
+              }}
               title={labels.resetLayout}
             >
               <RotateCcw className="h-3.5 w-3.5" />
@@ -489,374 +1022,46 @@ export function AutomationConnectionsMap({
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-muted-foreground"
-            onClick={() => setIsFullscreen(true)}
-            title={labels.fullscreen}
+            className="h-8 w-8 rounded-md"
+            onClick={() => setIsFullscreen(!fullscreen)}
+            title={fullscreen ? labels.exitFullscreen : labels.fullscreen}
           >
-            <Maximize2 className="h-3.5 w-3.5" />
+            {fullscreen ? (
+              <Minimize2 className="h-3.5 w-3.5" />
+            ) : (
+              <Maximize2 className="h-3.5 w-3.5" />
+            )}
           </Button>
-        </div>
       </div>
-
-      {viewMode === "graph" && (
-      <div className="relative min-h-0 flex-1">
-        <div
-          ref={viewportRef}
-          className={["h-full overflow-auto bg-muted/20", viewportClassName].join(" ")}
-          onWheel={(event) => {
-            if (!event.ctrlKey && !event.metaKey) return;
-            event.preventDefault();
-            zoomAround(
-              zoom - Math.sign(event.deltaY) * ZOOM_STEP,
-              { x: event.clientX, y: event.clientY },
-            );
-          }}
-        >
-        <div
-          className="relative origin-top-left"
-          style={{
-            width: canvasWidth * zoom,
-            height: canvasHeight * zoom,
-          }}
-        >
-        <div
-          className="relative origin-top-left"
-          style={{ width: canvasWidth, height: canvasHeight, transform: `scale(${zoom})` }}
-        >
-          <svg
-            className="pointer-events-none absolute inset-0 h-full w-full"
-            viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
-            aria-hidden="true"
-          >
-            <defs>
-              <marker
-                id="automation-arrow"
-                markerWidth="10"
-                markerHeight="10"
-                refX="8"
-                refY="3"
-                orient="auto"
-                markerUnits="strokeWidth"
-              >
-                <path d="M0,0 L0,6 L9,3 z" className="fill-primary" />
-              </marker>
-              <marker
-                id="automation-arrow-back"
-                markerWidth="10"
-                markerHeight="10"
-                refX="8"
-                refY="3"
-                orient="auto"
-                markerUnits="strokeWidth"
-              >
-                <path d="M0,0 L0,6 L9,3 z" className="fill-amber-500" />
-              </marker>
-            </defs>
-            {classifiedConnections.map((connection) => {
-              const source = positions[connection.sourceId];
-              const target = positions[connection.targetId];
-              if (!source || !target) return null;
-
-              if (connection.kind === "forward") {
-                return (
-                  <path
-                    key={connection.id}
-                    d={getForwardPath(source, target)}
-                    className="fill-none stroke-primary/70"
-                    strokeWidth="2.5"
-                    markerEnd="url(#automation-arrow)"
-                  />
-                );
-              }
-
-              const path =
-                connection.kind === "self"
-                  ? getSelfLoopPath(source, connection.laneIndex)
-                  : getBackPath(source, target, connection.laneIndex);
-
-              return (
-                <path
-                  key={connection.id}
-                  d={path}
-                  className="fill-none stroke-amber-500/70"
-                  strokeWidth="2"
-                  strokeDasharray="6 6"
-                  markerEnd="url(#automation-arrow-back)"
-                />
-              );
-            })}
-          </svg>
-
-          {automations.map((automation) => {
-            const position = positions[automation.id] ?? automaticPositions[automation.id] ?? { x: PADDING, y: PADDING };
-            const isCurrent = currentAutomationId === automation.id;
-            const isDragging = dragRef.current?.id === automation.id;
-
-            return (
-              <button
-                key={automation.id}
-                type="button"
-                title={labels.opensFlow}
-                className={[
-                  "absolute flex cursor-grab flex-col justify-between rounded-lg border bg-card p-3 text-left text-card-foreground shadow-sm transition hover:border-primary/60 hover:shadow-md active:cursor-grabbing",
-                  isCurrent ? "border-primary ring-2 ring-primary/20" : "",
-                  isDragging ? "z-20 shadow-lg" : "z-10",
-                ].join(" ")}
-                style={{
-                  left: position.x,
-                  top: position.y,
-                  width: CARD_WIDTH,
-                  height: CARD_HEIGHT,
-                }}
-                onPointerDown={(event) => {
-                  event.currentTarget.setPointerCapture(event.pointerId);
-                  dragRef.current = {
-                    id: automation.id,
-                    startX: event.clientX,
-                    startY: event.clientY,
-                    origin: position,
-                    moved: false,
-                  };
-                }}
-                onPointerMove={(event) => {
-                  const drag = dragRef.current;
-                  if (!drag || drag.id !== automation.id) return;
-
-                  const deltaX = (event.clientX - drag.startX) / zoom;
-                  const deltaY = (event.clientY - drag.startY) / zoom;
-                  if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
-                    drag.moved = true;
-                  }
-
-                  setPositions((current) => ({
-                    ...current,
-                    [automation.id]: {
-                      x: Math.max(PADDING / 2, drag.origin.x + deltaX),
-                      y: Math.max(PADDING / 2, drag.origin.y + deltaY),
-                    },
-                  }));
-                }}
-                onPointerUp={(event) => {
-                  event.currentTarget.releasePointerCapture(event.pointerId);
-                  const drag = dragRef.current;
-                  dragRef.current = null;
-                  if (!drag?.moved) openAutomation(automation.id);
-                }}
-              >
-                <div className="flex items-start gap-2">
-                  <div className={automation.isActive ? "text-green-600" : "text-muted-foreground"}>
-                    <Bot className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium">{automation.name}</div>
-                    <div className="truncate text-[11px] text-muted-foreground">
-                      {automation.instance?.instanceName ?? `#${automation.id}`}
-                    </div>
-                  </div>
-                </div>
-                <div className="min-w-0 space-y-1">
-                  <div className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
-                    <StickyNote className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{automation.note?.trim() || labels.noteFallback}</span>
-                  </div>
-                  <div className={automation.isActive ? "text-[11px] font-medium text-green-700" : "text-[11px] text-muted-foreground"}>
-                    {automation.isActive ? labels.active : labels.paused}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-        </div>
-        </div>
-
-        {hasBackConnections && (
-          <div className="pointer-events-none absolute bottom-3 left-3 z-30 flex flex-col gap-1.5 rounded-lg border bg-background/90 p-2 shadow-sm backdrop-blur-sm">
-            <div className="flex items-center gap-2">
-              <svg width="28" height="8" aria-hidden="true">
-                <line x1="1" y1="4" x2="27" y2="4" className="stroke-primary/70" strokeWidth="2.5" />
-              </svg>
-              <span className="text-[10px] text-muted-foreground">{labels.legendForward}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <svg width="28" height="8" aria-hidden="true">
-                <line x1="1" y1="4" x2="27" y2="4" className="stroke-amber-500/80" strokeWidth="2" strokeDasharray="4 4" />
-              </svg>
-              <span className="text-[10px] text-muted-foreground">{labels.legendBack}</span>
-            </div>
-          </div>
-        )}
-
-        <div className="pointer-events-none absolute bottom-3 right-3 z-30 flex flex-col items-center gap-1 rounded-lg border bg-background/90 p-1 shadow-sm backdrop-blur-sm">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="pointer-events-auto h-7 w-7 text-muted-foreground"
-            onClick={() => zoomAround(zoom + ZOOM_STEP)}
-            disabled={zoom >= MAX_ZOOM}
-            title="Zoom +"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </Button>
-          <span className="select-none text-[10px] tabular-nums text-muted-foreground">
-            {Math.round(zoom * 100)}%
-          </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="pointer-events-auto h-7 w-7 text-muted-foreground"
-            onClick={() => zoomAround(zoom - ZOOM_STEP)}
-            disabled={zoom <= MIN_ZOOM}
-            title="Zoom -"
-          >
-            <Minus className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </div>
-      )}
-
-      {viewMode === "list" && (
-        <div className={["min-h-0 flex-1 overflow-auto bg-muted/20 p-3", viewportClassName].join(" ")}>
-          <div className="flex flex-col gap-2">
-            {listOrderedAutomations.map((automation) => {
-              const lists = connectionsByAutomation.get(automation.id) ?? { outgoing: [], incoming: [] };
-              const isCurrent = currentAutomationId === automation.id;
-              const level = levelsMap.get(automation.id) ?? 0;
-              const hasAny = lists.outgoing.length > 0 || lists.incoming.length > 0;
-
-              const renderChip = (connection: ClassifiedConnection, direction: "out" | "in") => {
-                const otherId = direction === "out" ? connection.targetId : connection.sourceId;
-                const other = automationById.get(otherId);
-                if (!other) return null;
-                const isReturn = connection.kind !== "forward";
-                return (
-                  <button
-                    key={`${direction}-${connection.id}`}
-                    type="button"
-                    onClick={() => openAutomation(otherId)}
-                    title={labels.opensFlow}
-                    className={[
-                      "inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition hover:shadow-sm",
-                      isReturn
-                        ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:border-amber-500/70"
-                        : "border-primary/30 bg-primary/5 text-foreground hover:border-primary/60",
-                    ].join(" ")}
-                  >
-                    {connection.kind === "self" ? (
-                      <Repeat className="h-3 w-3 shrink-0" />
-                    ) : isReturn ? (
-                      <Undo2 className="h-3 w-3 shrink-0" />
-                    ) : (
-                      <ArrowRight className="h-3 w-3 shrink-0" />
-                    )}
-                    <span className="truncate">
-                      {connection.kind === "self" ? labels.selfBadge : other.name}
-                    </span>
-                    {connection.kind === "back" && (
-                      <span className="shrink-0 rounded-full bg-amber-500/20 px-1.5 text-[9px] font-medium uppercase tracking-wide">
-                        {labels.returnsBadge}
-                      </span>
-                    )}
-                  </button>
-                );
-              };
-
-              return (
-                <div
-                  key={automation.id}
-                  className={[
-                    "rounded-lg border bg-card p-3 shadow-sm",
-                    isCurrent ? "border-primary/60 ring-1 ring-primary/30" : "",
-                  ].join(" ")}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border bg-muted/40 text-[10px] font-semibold tabular-nums text-muted-foreground">
-                      {level + 1}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => openAutomation(automation.id)}
-                      title={labels.opensFlow}
-                      className="min-w-0 truncate text-left text-sm font-medium text-foreground hover:underline"
-                    >
-                      {automation.name}
-                    </button>
-                    <span
-                      className={[
-                        "ml-auto inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px]",
-                        automation.isActive
-                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                          : "bg-muted text-muted-foreground",
-                      ].join(" ")}
-                    >
-                      <span className={["h-1.5 w-1.5 rounded-full", automation.isActive ? "bg-emerald-500" : "bg-muted-foreground/50"].join(" ")} />
-                      {automation.isActive ? labels.active : labels.paused}
-                    </span>
-                  </div>
-
-                  {hasAny ? (
-                    <div className="mt-2 space-y-1.5">
-                      {lists.outgoing.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                            {labels.sendsTo}
-                          </span>
-                          {lists.outgoing.map((connection) => renderChip(connection, "out"))}
-                        </div>
-                      )}
-                      {lists.incoming.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                            {labels.receivesFrom}
-                          </span>
-                          {lists.incoming.map((connection) => renderChip(connection, "in"))}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-[11px] text-muted-foreground">{labels.noConnections}</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </>
+      {viewMode === "graph" ? renderGraph(fullscreen) : renderList()}
+    </section>
   );
 
   return (
-    <section className={["flex shrink-0 flex-col overflow-hidden rounded-lg border bg-background", className].join(" ")}>
-      {mapContent}
-
+    <div className={["min-h-0", className].join(" ")}>
+      {renderSurface(false)}
       <Dialog open={isFullscreen} onOpenChange={setIsFullscreen}>
-        <DialogContent className="h-[96vh] max-w-[98vw] gap-0 overflow-hidden p-0">
+        <DialogContent
+          showCloseButton={false}
+          className="!fixed !inset-0 !left-0 !top-0 !h-dvh !w-screen !max-w-none !translate-x-0 !translate-y-0 gap-0 overflow-hidden rounded-none border-0 bg-background p-0"
+          style={{
+            position: "fixed",
+            inset: 0,
+            top: 0,
+            left: 0,
+            width: "100vw",
+            maxWidth: "none",
+            height: "100dvh",
+            transform: "none",
+            zIndex: 2147483647,
+          }}
+        >
           <DialogHeader className="sr-only">
             <DialogTitle>{labels.title}</DialogTitle>
           </DialogHeader>
-          <section className="flex h-full min-h-0 flex-col bg-background">
-            <div className="flex shrink-0 items-center justify-between border-b px-4 py-3">
-              <div>
-                <h2 className="text-sm font-semibold">{labels.title}</h2>
-                <p className="text-xs text-muted-foreground">{labels.dragHint}</p>
-              </div>
-              <Button variant="outline" size="sm" onClick={() => setIsFullscreen(false)}>
-                <Minimize2 className="h-3.5 w-3.5" />
-                {labels.exitFullscreen}
-              </Button>
-            </div>
-            <AutomationConnectionsMap
-              automations={automations}
-              locale={locale}
-              labels={labels}
-              currentAutomationId={currentAutomationId}
-              className="min-h-0 flex-1 flex-col border-0"
-              viewportClassName="min-h-0 flex-1"
-              autoCenterOnCurrent={autoCenterOnCurrent}
-            />
-          </section>
+          {renderSurface(true)}
         </DialogContent>
       </Dialog>
-    </section>
+    </div>
   );
 }

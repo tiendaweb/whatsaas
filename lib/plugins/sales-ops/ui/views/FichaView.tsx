@@ -1,24 +1,36 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import useSWR from 'swr';
-import { ExternalLink, Flag, Loader2 } from 'lucide-react';
+import { ChevronDown, Flag, GitBranch, History, ListChecks, Loader2, MessageSquare, Radar as RadarIcon, SendHorizontal, Sparkles, UserSquare2, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import type { ActionRow, AnalysisDetail, AnalysisVersionRow, DetailPayload, SignalRow, TimelineGap, TimelineHit } from '../../shared/api-types';
-import { ANALYSIS_STATUSES, GATES, GATE_LABELS, type AnalysisStatus, type Gate } from '../../shared/taxonomy';
+import type { ActionRow, AnalysisDetail, AnalysisVersionRow, DetailPayload, HistoryEntry, HistoryPayload, SignalRow, TimelineGap, TimelineHit } from '../../shared/api-types';
+import { ANALYSIS_STATUSES, GATES, GATE_LABELS, type ActionKind, type AnalysisStatus, type Gate } from '../../shared/taxonomy';
 import { GateBadge } from '../components/GateBadge';
+import { FichaDock, type DockItem } from '../components/FichaDock';
+import { HISTORIAL_ICONOS, HISTORIAL_TONOS } from '../components/historial-meta';
+import { FallaCorrida } from '../skills/FallaCorrida';
+import { avisarEncolado } from '../components/eventos';
+import { ScoreRadar, ejesDeAnalisis } from '../components/ScoreRadar';
+import { ResponsiveModal } from '../skills/ResponsiveModal';
 import { FichaChat } from '../components/FichaChat';
+import { KIND_META } from '../radar/kind-meta';
 import { TemperatureIcon } from '../components/PriorityPill';
 import { ErrorState } from '../components/States';
+import { SiguienteAccion } from '../skills/SiguienteAccion';
+import { ProponerAccionDialog } from '../cola/ProponerAccionDialog';
+import { CrmTab } from '../components/CrmTab';
+import { ProgramadosContacto } from '../components/ProgramadosContacto';
+import { ProyectosVinculados } from '../components/ProyectosVinculados';
+import { RadarPanel } from '@/lib/plugins/radar/ui/RadarPanel';
 import {
   ACTION_KIND_LABELS,
   ACTION_STATUS_LABELS,
@@ -33,6 +45,7 @@ import {
   fmtDate,
   fmtDateShort,
   fmtDateTime,
+  fmtHora,
   fmtInt,
   fmtMoney,
   fmtPct,
@@ -55,10 +68,27 @@ type Header = {
 };
 type Payload = DetailPayload & { header: Header };
 
-type Props = { chatId: number; onClose?: () => void };
+type Props = {
+  chatId: number;
+  onClose?: () => void;
+  /** Sección con la que abrir. `chat` es lo que usa el botón de las listas. */
+  seccionInicial?: string | null;
+};
 
-export function FichaView({ chatId }: Props) {
+type Seccion = 'resumen' | 'chat' | 'ia' | 'crm' | 'acciones' | 'radar' | 'versiones' | 'historial';
+
+/**
+ * Ficha del contacto, en el panel derecho del Command Center.
+ *
+ * Rediseñada con el patrón de Tareas OS: encabezado compacto con lo que
+ * identifica al contacto y su estado, riel de iconos para las secciones, y una
+ * sola columna de contenido que ocupa todo el alto. Antes eran nueve pestañas
+ * de texto en una tira con flechas —en 440 px entraban tres— y el encabezado se
+ * comía cuatro renglones antes de que empezara lo importante.
+ */
+export function FichaView({ chatId, seccionInicial }: Props) {
   const { data, error, isLoading, mutate } = useSWR<Payload>(`${SALES_OPS_API}/contacts/${chatId}`, fetcher);
+  const [seccion, setSeccion] = useState<Seccion>(seccionInicial === 'chat' ? 'chat' : 'resumen');
 
   if (error) return <ErrorState message={String(error.message ?? error)} onRetry={() => void mutate()} />;
   if (isLoading || !data) return <FichaSkeleton />;
@@ -66,60 +96,63 @@ export function FichaView({ chatId }: Props) {
   const a = data.analysis;
   const h = data.header;
 
+  const secciones: Array<DockItem<Seccion>> = [
+    { id: 'resumen', label: 'Resumen', icon: Sparkles },
+    { id: 'chat', label: 'Chat', icon: MessageSquare },
+    { id: 'ia', label: 'IA', icon: Wand2 },
+    { id: 'crm', label: 'CRM', icon: UserSquare2 },
+    { id: 'acciones', label: 'Acciones', icon: ListChecks, badge: data.actions.length },
+    { id: 'radar', label: 'Radar', icon: RadarIcon, badge: data.signals.length },
+    { id: 'versiones', label: 'Versiones', icon: GitBranch, badge: data.versions.length },
+    { id: 'historial', label: 'Historial', icon: History },
+  ];
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex items-start gap-3 pb-3">
-        <Avatar className="size-11 shrink-0">
+      {/* Encabezado: quién es y en qué estado está, en dos renglones. El gate
+          estaba enterrado dentro del Resumen; acá se ve sin abrir nada. */}
+      <header className="flex items-center gap-2.5 pb-3">
+        <Avatar className="size-10 shrink-0">
           {h.avatarUrl && <AvatarImage src={h.avatarUrl} alt="" />}
           <AvatarFallback>{iniciales(h.name)}</AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-base font-semibold leading-tight">{h.name}</h2>
-          <p className="truncate text-xs text-muted-foreground">
-            {h.phoneMasked} · chat {h.chatId}
-            {h.contactId != null && <> · contacto {h.contactId}</>}
+          <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground">
+            {a && <GateBadge gate={a.currentGate} className="text-[10px]" />}
+            <span className="truncate">{h.phoneMasked}</span>
+            {a?.firstContactAt && <span className="truncate">· entró {fmtDate(a.firstContactAt)} por {humanize(a.source).toLowerCase()}</span>}
           </p>
-          {a?.firstContactAt && (
-            <p className="truncate text-xs text-muted-foreground">
-              Entró {fmtDate(a.firstContactAt)} por {humanize(a.source).toLowerCase()}
-              {a.sourceDetail && <> (&ldquo;{a.sourceDetail}&rdquo;)</>}
-            </p>
-          )}
         </div>
       </header>
 
-      <Tabs defaultValue="resumen" className="flex min-h-0 flex-1 flex-col">
-        <TabsList className="h-9 w-full shrink-0 flex-nowrap justify-start gap-0.5 overflow-x-auto overflow-y-hidden [scrollbar-width:none]">
-          <TabsTrigger className="shrink-0 flex-none px-2.5 text-xs" value="resumen">Resumen</TabsTrigger>
-          <TabsTrigger className="shrink-0 flex-none px-2.5 text-xs" value="timeline">Timeline</TabsTrigger>
-          <TabsTrigger className="shrink-0 flex-none px-2.5 text-xs" value="chat">Chat</TabsTrigger>
-          <TabsTrigger className="shrink-0 flex-none px-2.5 text-xs" value="notas">Notas</TabsTrigger>
-          <TabsTrigger className="shrink-0 flex-none px-2.5 text-xs" value="campos">Campos</TabsTrigger>
-          <TabsTrigger className="shrink-0 flex-none px-2.5 text-xs" value="acciones">Acciones{data.actions.length ? ` (${data.actions.length})` : ''}</TabsTrigger>
-          <TabsTrigger className="shrink-0 flex-none px-2.5 text-xs" value="versiones">Versiones{data.versions.length ? ` (${data.versions.length})` : ''}</TabsTrigger>
-        </TabsList>
-        <TabsContent value="resumen" className="mt-3">
-          {a ? <Resumen a={a} onOverride={() => void mutate()} /> : <SinAnalisis chatId={chatId} onOverride={() => void mutate()} />}
-        </TabsContent>
-        <TabsContent value="timeline" className="mt-3">
-          <Timeline items={data.timeline} chatHref={data.chatHref} signals={data.signals} />
-        </TabsContent>
-        <TabsContent value="chat" className="mt-3 flex min-h-[60vh] flex-1 flex-col">
-          <FichaChat chatId={chatId} chatHref={data.chatHref} className="flex min-h-0 flex-1 flex-col" />
-        </TabsContent>
-        <TabsContent value="notas" className="mt-3">
-          <NotasTab header={h} timeline={data.timeline} />
-        </TabsContent>
-        <TabsContent value="campos" className="mt-3">
-          <CamposTab header={h} />
-        </TabsContent>
-        <TabsContent value="acciones" className="mt-3">
-          <Acciones actions={data.actions} signals={data.signals} />
-        </TabsContent>
-        <TabsContent value="versiones" className="mt-3">
-          <Versiones versions={data.versions} />
-        </TabsContent>
-      </Tabs>
+      {/* Sin marco: el panel ya es un contenedor con su propio borde, y la caja
+          redondeada de adentro le sacaba ancho a la única columna que hay. */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <FichaDock items={secciones} active={seccion} onChange={setSeccion} className="rounded-lg border-b-0 bg-muted/40" />
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto py-3">
+          {seccion === 'resumen' &&
+            (a ? (
+              <Resumen a={a} header={h} timeline={data.timeline} chatHref={data.chatHref} signals={data.signals} onOverride={() => void mutate()} />
+            ) : (
+              <SinAnalisis chatId={chatId} header={h} timeline={data.timeline} chatHref={data.chatHref} signals={data.signals} onOverride={() => void mutate()} />
+            ))}
+          {seccion === 'chat' && <FichaChat chatId={chatId} chatHref={data.chatHref} className="flex min-h-[60vh] flex-col" />}
+          {/* IA: el mismo hilo de burbujas del Resumen pero completo — todos los
+              pedidos del contacto, los del conector y los que corrió la IA del
+              equipo, sin recortar por análisis. */}
+          {seccion === 'ia' && (
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
+              <PromptConector chatId={chatId} desde={null} variante="completa" />
+            </div>
+          )}
+          {seccion === 'crm' && <CrmTab chatId={chatId} header={h} timeline={data.timeline} onSaved={() => void mutate()} />}
+          {seccion === 'acciones' && <Acciones actions={data.actions} />}
+          {seccion === 'radar' && <RadarSeccion header={h} signals={data.signals} onRefrescar={() => void mutate()} />}
+          {seccion === 'versiones' && <Versiones versions={data.versions} />}
+          {seccion === 'historial' && <Historial chatId={chatId} />}
+        </div>
+      </div>
     </div>
   );
 }
@@ -135,10 +168,149 @@ function Field({ label, children, className }: { label: string; children: React.
   );
 }
 
-function Resumen({ a, onOverride }: { a: AnalysisDetail; onOverride: () => void }) {
+type AccionRapida = 'chat' | 'crm' | 'prompt' | 'historial';
+
+const ACCIONES_RAPIDAS: Array<{ id: AccionRapida; label: string; icon: typeof MessageSquare; titulo: string; descripcion: string }> = [
+  { id: 'chat', label: 'Chat', icon: MessageSquare, titulo: 'Chat', descripcion: 'La conversación en miniatura: leer y contestar sin perder la ficha de vista.' },
+  { id: 'crm', label: 'CRM', icon: UserSquare2, titulo: 'CRM del contacto', descripcion: 'Etapa, etiquetas, campos y notas. Se guarda sólo lo que cambies.' },
+  { id: 'prompt', label: 'Prompt', icon: Wand2, titulo: 'Prompts al conector', descripcion: 'Dejale una indicación al conector sobre este chat.' },
+  { id: 'historial', label: 'Historial', icon: History, titulo: 'Historial del contacto', descripcion: 'Todo lo que se le hizo, con quién y cuándo.' },
+];
+
+/**
+ * Acciones rápidas del Resumen.
+ *
+ * Cada una de estas cosas ya vivía en su pestaña, y ahí sigue: el problema era
+ * que mirar el CRM o contestar un mensaje mientras se lee el análisis obligaba
+ * a cambiar de pestaña y volver, perdiendo el lugar donde uno estaba leyendo.
+ * Acá se abren en modal encima del Resumen — se edita, se cierra, y el análisis
+ * quedó donde estaba.
+ *
+ * Son las mismas piezas que dibujan las pestañas, no copias: lo que se guarda
+ * en el modal es lo mismo que se guarda en la sección.
+ */
+function AccionesRapidas({
+  chatId,
+  header,
+  chatHref,
+  timeline,
+  desdeAnalisis,
+  onCambio,
+}: {
+  chatId: number;
+  header: Header;
+  chatHref: string;
+  timeline: DetailPayload['timeline'];
+  desdeAnalisis: string | null;
+  onCambio: () => void;
+}) {
+  const [abierta, setAbierta] = useState<AccionRapida | null>(null);
+  const actual = ACCIONES_RAPIDAS.find((x) => x.id === abierta) ?? null;
+
+  /**
+   * Cuántos pedidos distintos hay para este chat desde el último análisis.
+   *
+   * Es la misma clave SWR que usa `PromptConector`, así que no agrega una
+   * llamada: sin el número, la persona tendría que abrir el modal para
+   * enterarse de que le dejó un pedido al conector y todavía no volvió.
+   */
+  const { data: prompts } = useSWR<{ runs: PromptRun[] }>(`${SALES_OPS_API}/prompts/queue?chatId=${chatId}&status=all`, fetcher, { refreshInterval: 30_000 });
+  const pedidos = useMemo(() => {
+    const todas = prompts?.runs ?? [];
+    const visibles = desdeAnalisis ? todas.filter((r) => r.createdAt >= desdeAnalisis) : todas;
+    return new Set(visibles.map((r) => r.text.trim())).size;
+  }, [prompts?.runs, desdeAnalisis]);
+
+  return (
+    <>
+      <div className="flex flex-wrap gap-1.5">
+        {ACCIONES_RAPIDAS.map(({ id, label, icon: Icon, descripcion }) => (
+          <button
+            key={id}
+            type="button"
+            title={descripcion}
+            onClick={() => setAbierta(id)}
+            className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Icon className="size-3.5" aria-hidden />
+            {label}
+            {id === 'prompt' && pedidos > 0 && (
+              <span className="rounded-full bg-primary/10 px-1.5 text-[10px] font-semibold tabular-nums text-primary">{pedidos}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {actual && (
+        <ResponsiveModal
+          open
+          onOpenChange={(abierto) => !abierto && setAbierta(null)}
+          title={`${actual.titulo} · ${header.name}`}
+          description={actual.descripcion}
+        >
+          {actual.id === 'chat' && <FichaChat chatId={chatId} chatHref={chatHref} className="flex h-[58vh] flex-col" />}
+          {actual.id === 'crm' && <CrmTab chatId={chatId} header={header} timeline={timeline} onSaved={onCambio} />}
+          {actual.id === 'prompt' && <PromptConector chatId={chatId} desde={desdeAnalisis} />}
+          {actual.id === 'historial' && <Historial chatId={chatId} />}
+        </ResponsiveModal>
+      )}
+    </>
+  );
+}
+
+function Resumen({
+  a,
+  header,
+  timeline,
+  chatHref,
+  signals,
+  onOverride,
+}: {
+  a: AnalysisDetail;
+  header: Header;
+  timeline: DetailPayload['timeline'];
+  chatHref: string;
+  signals: SignalRow[];
+  onOverride: () => void;
+}) {
+  const chatName = header.name;
   const analyzedText = a.analyzedAt ? `analizado ${tiempoRelativo(a.analyzedAt)}${a.analyzedBy ? ` por ${humanize(a.analyzedBy)}` : ''}` : 'sin analizar';
+  const ejes = ejesDeAnalisis(a);
   return (
     <div className="space-y-4">
+      <AccionesRapidas
+        chatId={a.chatId}
+        header={header}
+        chatHref={chatHref}
+        timeline={timeline}
+        desdeAnalisis={a.analyzedAt}
+        onCambio={onOverride}
+      />
+
+      {/* El perfil del contacto de un vistazo. Los seis números ya estaban en
+          la ficha, pero enterrados en el desplegable de "todos los datos": ahí
+          nadie los comparaba entre contactos, que es justamente para lo que
+          sirven. */}
+      <section className="flex flex-wrap items-center justify-center gap-3 rounded-xl border border-border p-3 sm:flex-nowrap">
+        <ScoreRadar ejes={ejes} size={168} className="shrink-0" />
+        <dl className="grid min-w-0 flex-1 grid-cols-2 gap-x-3 gap-y-2">
+          {ejes.map((eje) => (
+            <div key={eje.label} className="min-w-0">
+              <dt className="truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{eje.label}</dt>
+              <dd className="truncate text-sm font-semibold tabular-nums text-foreground">{eje.crudo}</dd>
+            </div>
+          ))}
+          <div className="min-w-0">
+            <dt className="truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Valor</dt>
+            <dd className="truncate text-sm font-semibold tabular-nums text-foreground">USD {fmtInt(a.potentialValueUsd)}</dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Impactos</dt>
+            <dd className="truncate text-sm font-semibold tabular-nums text-foreground">{a.followupsTotal}</dd>
+          </div>
+        </dl>
+      </section>
+
       <section className="rounded-xl border border-border bg-muted/30 p-3">
         <div className="flex flex-wrap items-center gap-2">
           <GateBadge gate={a.currentGate} withLabel className="text-xs" />
@@ -151,6 +323,35 @@ function Resumen({ a, onOverride }: { a: AnalysisDetail; onOverride: () => void 
           {a.stale && <span className="ml-1 rounded bg-amber-500/15 px-1 text-[10px] font-medium text-amber-700 dark:text-amber-300">desactualizado</span>}
           {a.analyzedAt && a.confidence < 55 && <span className="ml-1 rounded bg-muted px-1 text-[10px] font-medium">revisar</span>}
         </p>
+      </section>
+
+      <SiguienteAccion
+        chatId={a.chatId}
+        chatName={chatName}
+        recommendedAction={a.recommendedAction}
+        ownerLabel={OWNER_LABELS[a.recommendedOwner] ?? a.recommendedOwner}
+        statusLabel={STATUS_LABELS[a.status] ?? a.status}
+        onLaunched={onOverride}
+      />
+
+      <div className="flex flex-wrap gap-1.5">
+        <AccionesManuales chatId={a.chatId} nombre={chatName} />
+        <AccionesDeGate chatId={a.chatId} currentGate={a.currentGate} currentStatus={a.status} onDone={onOverride} />
+      </div>
+
+      {/* Lo que ya le va a llegar sin que nadie haga nada. Sólo aparece si tiene
+          alguno: escribirle encima de un programado es el error caro. */}
+      <ProgramadosContacto
+        remoteJid={header.remoteJid ?? null}
+        nombre={chatName}
+        chatId={a.chatId}
+        soloSiHay
+        inicialAbierto
+        onCambio={onOverride}
+      />
+
+      <section className="rounded-xl border border-primary/20 bg-primary/5 p-3">
+        <PromptConector chatId={a.chatId} desde={a.analyzedAt} />
       </section>
 
       <Field label="Resumen IA">{a.proposalSummary || a.notesForHuman || '—'}</Field>
@@ -166,7 +367,14 @@ function Resumen({ a, onOverride }: { a: AnalysisDetail; onOverride: () => void 
         </Field>
       </dl>
 
-      <dl className="grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-3">
+      {/* 18 datos derivados: informan, no se accionan. Plegados por defecto para
+          que lo que sí se acciona (siguiente acción, notas, timeline) entre en pantalla. */}
+      <details className="group rounded-xl border border-border">
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground">
+          <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" aria-hidden />
+          Todos los datos del análisis
+        </summary>
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-3 border-t border-border p-3 sm:grid-cols-3">
         <Field label="Necesidad">
           {humanize(a.need)}
           {a.needDetail && <span className="block text-xs text-muted-foreground">{a.needDetail}</span>}
@@ -209,7 +417,8 @@ function Resumen({ a, onOverride }: { a: AnalysisDetail; onOverride: () => void 
           v{a.version}
           {a.model && <span className="block truncate text-xs text-muted-foreground">{a.model}</span>}
         </Field>
-      </dl>
+        </dl>
+      </details>
 
       {(a.evidenceGap || a.autoReplyDetected) && (
         <p className="text-xs text-amber-700 dark:text-amber-300">
@@ -218,34 +427,6 @@ function Resumen({ a, onOverride }: { a: AnalysisDetail; onOverride: () => void 
         </p>
       )}
 
-      <section className="rounded-xl border border-primary/30 bg-primary/5 p-3">
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Siguiente acción</p>
-        <p className="mt-0.5 text-sm font-medium text-foreground">{a.recommendedAction || '—'}</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Responsable <span className="text-foreground">{OWNER_LABELS[a.recommendedOwner] ?? a.recommendedOwner}</span> · Destino{' '}
-          <span className="text-foreground">{STATUS_LABELS[a.status] ?? a.status}</span>
-          {a.statusReason && <> · {a.statusReason}</>}
-        </p>
-        <TooltipProvider delayDuration={200}>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {['Proponer envío', 'Crear tarea', 'Registrar cobro'].map((label) => (
-              <Tooltip key={label}>
-                <TooltipTrigger asChild>
-                  <span tabIndex={0}>
-                    <Button size="sm" variant="outline" className="h-8 text-xs" disabled>
-                      {label}
-                    </Button>
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>Fase 6</TooltipContent>
-              </Tooltip>
-            ))}
-            <ClasificarAhoraButton chatId={a.chatId} onDone={onOverride} />
-            <OverrideDialog chatId={a.chatId} currentGate={a.currentGate} currentStatus={a.status} onDone={onOverride} />
-            <DejarPromptDialog chatId={a.chatId} />
-          </div>
-        </TooltipProvider>
-      </section>
 
       {(a.notesForHuman || a.crmToFix) && (
         <dl className="space-y-3">
@@ -253,21 +434,169 @@ function Resumen({ a, onOverride }: { a: AnalysisDetail; onOverride: () => void 
           {a.crmToFix && <Field label="CRM a corregir">{a.crmToFix}</Field>}
         </dl>
       )}
+
+      <ProyectosVinculados chatId={a.chatId} />
+
+      {signals.length > 0 && (
+        <section className="space-y-2">
+          <h3 className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <RadarIcon className="size-3.5" aria-hidden />
+            Señales sin atender
+          </h3>
+          <Radar signals={signals} onRefrescar={onOverride} />
+        </section>
+      )}
+
+      <RadarDelCliente header={header} />
+
+      {/* El timeline era una pestaña y por eso se leía como "otra vista". Es el
+          respaldo de todo lo de arriba: va acá, después de las notas, donde uno
+          termina de leer y quiere ver de dónde salió cada cosa. */}
+      <section className="space-y-2">
+        <h3 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Timeline</h3>
+        <Timeline items={timeline} chatHref={chatHref} signals={signals} />
+      </section>
     </div>
   );
 }
 
-function SinAnalisis({ chatId, onOverride }: { chatId: number; onOverride: () => void }) {
+/**
+ * Radar del cliente dentro del Resumen.
+ *
+ * Es el análisis acumulado del contacto (los campos `radar_*`), y hasta ahora
+ * había que ir a la pestaña Radar y elegir la segunda solapa para verlo: dos
+ * clics que nadie hacía mientras leía el análisis, que es justo cuando sirve.
+ * Se reusa el mismo `RadarPanel` del plugin, no una copia.
+ *
+ * Se dibuja abierto y se puede plegar desde el título (o con el botón "volver"
+ * del propio panel) cuando estorba.
+ */
+function RadarDelCliente({ header }: { header: Header }) {
+  // Abierto de entrada: es parte de lo que se viene a leer, no un anexo.
+  const [abierto, setAbierto] = useState(true);
+
+  if (!header.contactId) return null;
+
   return (
-    <div className="space-y-3 rounded-xl border border-dashed border-border p-4 text-center">
-      <p className="text-sm font-medium">Este chat todavía no fue analizado</p>
-      <p className="text-xs text-muted-foreground">El timeline ya está disponible en la pestaña correspondiente. Podés fijar un gate a mano mientras tanto.</p>
-      <div className="flex justify-center gap-2">
-        <ClasificarAhoraButton chatId={chatId} onDone={onOverride} />
-        <OverrideDialog chatId={chatId} currentGate={null} currentStatus={null} onDone={onOverride} />
-        <DejarPromptDialog chatId={chatId} />
+    <section className="space-y-2">
+      <button
+        type="button"
+        onClick={() => setAbierto((v) => !v)}
+        aria-expanded={abierto}
+        className="flex w-full items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground"
+      >
+        <ChevronDown className={cn('size-3.5 transition-transform', abierto && 'rotate-180')} aria-hidden />
+        <RadarIcon className="size-3.5" aria-hidden />
+        Radar del cliente
+      </button>
+      {abierto && (
+        <div className="overflow-hidden rounded-xl border border-border">
+          <RadarPanel
+            contactId={header.contactId}
+            chatId={header.chatId}
+            contactName={header.name}
+            remoteJid={header.remoteJid}
+            onBack={() => setAbierto(false)}
+            onUseSuggestion={(texto) => {
+              void navigator.clipboard.writeText(texto).then(
+                () => toast.success('Sugerencia copiada. Pegala en el chat.'),
+                () => toast.error('No se pudo copiar.'),
+              );
+            }}
+          />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SinAnalisis({
+  chatId,
+  header,
+  timeline,
+  chatHref,
+  signals,
+  onOverride,
+}: {
+  chatId: number;
+  header: Header;
+  timeline: DetailPayload['timeline'];
+  chatHref: string;
+  signals: SignalRow[];
+  onOverride: () => void;
+}) {
+  const chatName = header.name;
+  return (
+    <div className="space-y-4">
+      <AccionesRapidas chatId={chatId} header={header} chatHref={chatHref} timeline={timeline} desdeAnalisis={null} onCambio={onOverride} />
+
+      <div className="space-y-3 rounded-xl border border-dashed border-border p-4 text-center">
+        <p className="text-sm font-medium">Este chat todavía no fue analizado</p>
+        <p className="text-xs text-muted-foreground">Podés fijar un gate a mano, o pedirle sugerencias a la IA leyendo el historial de abajo.</p>
+        <div className="flex flex-wrap justify-center gap-2">
+          <AccionesDeGate chatId={chatId} currentGate={null} currentStatus={null} onDone={onOverride} />
+          <AccionesManuales chatId={chatId} nombre={chatName} />
+        </div>
       </div>
+
+      <SiguienteAccion chatId={chatId} chatName={chatName} recommendedAction="Todavía sin analizar" onLaunched={onOverride} />
+
+      <ProgramadosContacto
+        remoteJid={header.remoteJid ?? null}
+        nombre={chatName}
+        chatId={chatId}
+        soloSiHay
+        inicialAbierto
+        onCambio={onOverride}
+      />
+
+      <section className="rounded-xl border border-primary/20 bg-primary/5 p-3">
+        <PromptConector chatId={chatId} desde={null} />
+      </section>
+
+      <ProyectosVinculados chatId={chatId} />
+
+      <RadarDelCliente header={header} />
+
+      <section className="space-y-2">
+        <h3 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Timeline</h3>
+        <Timeline items={timeline} chatHref={chatHref} signals={signals} />
+      </section>
     </div>
+  );
+}
+
+/**
+ * Los tres botones que decían "Fase 6".
+ *
+ * Ahora proponen de verdad: arman un lote de un contacto que entra a la Cola
+ * con las mismas exclusiones y la misma aprobación que un lote masivo. Siguen
+ * sin enviar nada por sí solos — eso pasa recién al aprobar y ejecutar.
+ */
+function AccionesManuales({ chatId, nombre }: { chatId: number; nombre: string }) {
+  const [abierto, setAbierto] = useState<ActionKind | null>(null);
+  const opciones: Array<{ kind: ActionKind; label: string }> = [
+    { kind: 'send_message', label: 'Proponer envío' },
+    { kind: 'create_task', label: 'Crear tarea' },
+    { kind: 'register_sale', label: 'Registrar cobro' },
+  ];
+  return (
+    <>
+      {opciones.map(({ kind, label }) => (
+        <Button key={kind} size="sm" variant="outline" className="h-8 text-xs" onClick={() => setAbierto(kind)}>
+          {label}
+        </Button>
+      ))}
+      {abierto && (
+        <ProponerAccionDialog
+          chatId={chatId}
+          nombre={nombre}
+          kind={abierto}
+          open
+          onOpenChange={(o) => !o && setAbierto(null)}
+        />
+      )}
+    </>
   );
 }
 
@@ -308,110 +637,299 @@ function ClasificarAhoraButton({ chatId, onDone }: { chatId: number; onDone: () 
 
 // ── Pestañas Notas y Campos ─────────────────────────────────────────────────
 
-function NotasTab({ header, timeline }: { header: Header; timeline: DetailPayload['timeline'] }) {
-  const notas = timeline.filter((t): t is TimelineHit => 'who' in t && t.who === 'nota').reverse();
-  if (!notas.length && !header.contactNotes) {
-    return <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">Sin notas internas. Se agregan desde el chat (switch "Nota") o con whatspro_add_internal_note.</p>;
-  }
-  return (
-    <div className="space-y-3">
-      {header.contactNotes && (
-        <section className="rounded-xl border border-border p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Nota de la ficha</p>
-          <p className="mt-1 whitespace-pre-wrap text-sm">{header.contactNotes}</p>
-        </section>
-      )}
-      <ul className="space-y-2">
-        {notas.map((n) => (
-          <li key={n.id} className="rounded-xl border border-dashed border-border px-3 py-2 text-sm">
-            <p className="text-[11px] text-muted-foreground">{tiempoRelativo(n.at)}</p>
-            <p className="mt-0.5 whitespace-pre-wrap">{n.text}</p>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function CamposTab({ header }: { header: Header }) {
-  const custom = Object.entries(header.customData ?? {}).filter(([, v]) => v !== null && v !== '');
-  const tags = header.tags ?? [];
-  if (!custom.length && !tags.length) {
-    return <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">Este contacto no tiene campos personalizados ni etiquetas.</p>;
-  }
-  return (
-    <div className="space-y-3">
-      {tags.length > 0 && (
-        <section className="rounded-xl border border-border p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Etiquetas</p>
-          <p className="mt-1 text-sm">{tags.map((t) => t.name).join(' · ')}</p>
-        </section>
-      )}
-      {custom.length > 0 && (
-        <section className="rounded-xl border border-border p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Campos personalizados</p>
-          <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
-            {custom.map(([k, v]) => (
-              <div key={k} className="min-w-0">
-                <dt className="truncate text-[10px] text-muted-foreground">{k.replace(/_/g, ' ')}</dt>
-                <dd className="break-words text-sm">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
-      )}
-    </div>
-  );
-}
-
 // ── Dejar un prompt al conector (entra a la cola de ejecución) ──────────────
 
-function DejarPromptDialog({ chatId }: { chatId: number }) {
-  const [open, setOpen] = useState(false);
+/**
+ * Prompts al conector, en línea y acumulados.
+ *
+ * Era un botón que abría un diálogo: escribías uno, se cerraba y no quedaba
+ * rastro de lo que ya habías pedido, así que no se sabía si el conector lo
+ * había corrido ni qué había contestado. Ahora es una caja de chat con el hilo
+ * arriba — lo que mandaste, en qué estado está y el resumen que devolvió.
+ *
+ * El hilo arranca en la última clasificación (`desde`): cada análisis nuevo
+ * deja el pizarrón limpio, porque las indicaciones viejas se escribieron contra
+ * una foto del chat que ya no es la actual. Las corridas siguen en la cola —
+ * esto es lo que se muestra, no se borra nada.
+ */
+type PromptRun = {
+  id: number;
+  /** `manual` = lo escribió una persona en esta caja; el resto son skills y corridas del motor. */
+  promptKey: string;
+  title: string;
+  text: string;
+  status: string;
+  connector: string;
+  /** `api` = lo corrió la IA del equipo en el momento; `queue` = espera conector. */
+  mode?: 'api' | 'queue';
+  summary: string | null;
+  createdAt: string;
+  completedAt: string | null;
+};
+
+const RUN_LABELS: Record<string, string> = {
+  queued: 'En cola',
+  running: 'Ejecutando',
+  completed: 'Listo',
+  failed: 'Falló',
+  cancelled: 'Cancelado',
+};
+
+/**
+ * @param variante `compacta` es la del Resumen: hilo acotado y sin las corridas
+ * que ya corrió la IA del equipo por API —esas quedan auditadas en Historial y
+ * repetirlas acá llenaba media ficha con texto que nadie vuelve a leer—.
+ * `completa` es la sección IA: todo, sin recortes.
+ */
+function PromptConector({
+  chatId,
+  desde,
+  variante = 'compacta',
+}: {
+  chatId: number;
+  desde: string | null;
+  variante?: 'compacta' | 'completa';
+}) {
+  const { data, mutate } = useSWR<{ runs: PromptRun[] }>(
+    `${SALES_OPS_API}/prompts/queue?chatId=${chatId}&status=all`,
+    fetcher,
+    { refreshInterval: 30_000 },
+  );
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const submit = async () => {
-    if (text.trim().length < 5) {
+
+  /**
+   * El hilo es sólo para lo que escribió una persona. Las corridas del motor
+   * (clasificación, radar) y las skills traen un prompt de media página y una
+   * respuesta con JSON: metidas en el hilo tapaban los pedidos reales y se
+   * leían como si alguien los hubiera escrito. Van aparte, plegadas, en
+   * `automaticas`.
+   */
+  const { runs, automaticas } = useMemo(() => {
+    const todas = data?.runs ?? [];
+    const desdeAnalisis = desde ? todas.filter((r) => r.createdAt >= desde) : todas;
+    // En el Resumen sólo lo que está en manos de un conector: lo que ya
+    // contestó la IA del equipo vive en Historial y en la sección IA.
+    const visibles = variante === 'compacta' ? desdeAnalisis.filter((r) => r.mode !== 'api') : desdeAnalisis;
+    const ordenadas = [...visibles].sort((x, y) => (x.createdAt < y.createdAt ? -1 : 1));
+    return {
+      runs: ordenadas.filter((r) => r.promptKey === 'manual'),
+      automaticas: ordenadas.filter((r) => r.promptKey !== 'manual').reverse(),
+    };
+  }, [data?.runs, desde, variante]);
+
+  /**
+   * El hilo, de lo más viejo a lo más nuevo, con el mismo pedido repetido
+   * colapsado en una sola burbuja.
+   *
+   * Lanzar tres veces "resumime el chat" deja tres corridas idénticas, y el hilo
+   * se leía como tres pedidos distintos: tres párrafos iguales ocupando la ficha
+   * entera. Se colapsan sólo las **consecutivas** —si en el medio se pidió otra
+   * cosa, la repetición vuelve a ser un pedido nuevo, porque ahí sí es una
+   * insistencia y no un doble clic. Nada se borra: las corridas siguen enteras
+   * en la Cola.
+   */
+  const hilo = useMemo(() => {
+    const grupos: Array<{ run: PromptRun; veces: number }> = [];
+    for (const run of runs) {
+      const ultimo = grupos[grupos.length - 1];
+      if (ultimo && ultimo.run.text.trim() === run.text.trim()) {
+        // Se queda el más nuevo: es el que tiene el estado y la respuesta buenas.
+        grupos[grupos.length - 1] = { run, veces: ultimo.veces + 1 };
+      } else {
+        grupos.push({ run, veces: 1 });
+      }
+    }
+    return grupos;
+  }, [runs]);
+
+  const enviar = async () => {
+    const limpio = text.trim();
+    if (limpio.length < 5) {
       toast.error('Escribí qué tiene que hacer el conector (mínimo 5 caracteres).');
       return;
     }
     setBusy(true);
     try {
-      const r = await fetch(`${SALES_OPS_API}/prompts/queue`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: text.trim(), targetKind: 'chat', targetId: chatId }) });
+      const r = await fetch(`${SALES_OPS_API}/prompts/queue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: limpio, targetKind: 'chat', targetId: chatId }),
+      });
       const body = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(String(body?.error ?? `Error ${r.status}`));
-      toast.success('Quedó en la cola de conectores. Se ejecuta con el prompt P9 (vista Cola).');
       setText('');
-      setOpen(false);
+      // El chat pasó a tener algo en cola: sale solo de "Pendiente de verificación".
+      avisarEncolado(chatId);
+      await mutate();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'No se pudo encolar.');
     } finally {
       setBusy(false);
     }
   };
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setOpen(true)}>
-        Dejar prompt
-      </Button>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Dejar un prompt al conector</DialogTitle>
-          <DialogDescription>Queda en la cola de ejecución con el contexto de este chat. Lo corre Claude, ChatGPT o Grok con el prompt P9.</DialogDescription>
-        </DialogHeader>
-        <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={5} placeholder="Ej.: Redactá el mensaje para confirmar el plan Combo Full y pedir la seña; no lo envíes." className="text-sm" />
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
-          <Button disabled={busy} onClick={submit}>{busy ? 'Encolando…' : 'Encolar para el conector'}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <div className="space-y-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {hilo.length > 0
+          ? `${hilo.length} pedido${hilo.length === 1 ? '' : 's'}${desde ? ' desde el último análisis' : ''}`
+          : desde
+            ? 'Sin pedidos desde el último análisis'
+            : 'Sin pedidos todavía'}
+      </p>
+
+      {/* Hilo de burbujas: lo que le pedimos al conector sale a la derecha (es
+          nuestro mensaje) y lo que contestó, a la izquierda. Es la misma forma
+          que el chat de al lado, así que se lee sin aprender nada nuevo. */}
+      {hilo.length > 0 && (
+        <ul className={cn('space-y-2 overflow-y-auto pr-0.5', variante === 'compacta' ? 'max-h-72' : 'max-h-[60vh]')}>
+          {hilo.map(({ run, veces }) => {
+            const pendiente = run.status === 'queued' || run.status === 'running';
+            return (
+              <li key={run.id} className="space-y-1">
+                <div className="flex justify-end">
+                  <div className="max-w-[88%] rounded-2xl rounded-br-sm bg-primary/10 px-3 py-2">
+                    <p className="whitespace-pre-wrap text-xs leading-snug text-foreground">{run.text}</p>
+                    <p className="mt-0.5 flex items-center justify-end gap-1.5 text-[10px] text-muted-foreground">
+                      {veces > 1 && <span className="font-semibold tabular-nums">×{veces}</span>}
+                      <span>{fmtHora(run.createdAt)}</span>
+                      <span className="rounded bg-background/70 px-1 font-semibold uppercase">{RUN_LABELS[run.status] ?? run.status}</span>
+                    </p>
+                  </div>
+                </div>
+
+                {run.status === 'failed' && run.summary ? (
+                  <div className="flex justify-start">
+                    <FallaCorrida run={run} className="max-w-[88%]" onRetried={() => void mutate()} />
+                  </div>
+                ) : run.summary ? (
+                  <div className="flex justify-start">
+                    <div className="max-w-[88%] rounded-2xl rounded-bl-sm bg-muted px-3 py-2">
+                      {run.connector && run.connector !== 'any' && (
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{run.connector}</p>
+                      )}
+                      <p className="whitespace-pre-wrap text-xs leading-snug text-foreground/90">{run.summary}</p>
+                      <p className="mt-0.5 text-right text-[10px] text-muted-foreground">{fmtHora(run.completedAt ?? run.createdAt)}</p>
+                    </div>
+                  </div>
+                ) : pendiente ? (
+                  <div className="flex justify-start">
+                    <span className="inline-flex items-center gap-1.5 rounded-2xl rounded-bl-sm bg-muted px-3 py-1.5 text-[11px] text-muted-foreground">
+                      <Loader2 className="size-3 animate-spin" aria-hidden />
+                      esperando al conector…
+                    </span>
+                  </div>
+                ) : null}
+
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setText(run.text)}
+                    className="text-[10px] font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  >
+                    Repetir este pedido
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <div className="flex items-end gap-1.5">
+        <Textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            // Enter manda, Shift+Enter hace salto: es una caja de chat.
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              void enviar();
+            }
+          }}
+          rows={2}
+          placeholder="Pedile algo al conector sobre este chat. Ej.: redactá el mensaje para pedir la seña, no lo envíes."
+          className="min-h-[52px] resize-none text-xs"
+        />
+        <Button type="button" size="icon" className="size-9 shrink-0" disabled={busy || text.trim().length < 5} onClick={() => void enviar()} aria-label="Enviar al conector">
+          {busy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <SendHorizontal className="size-4" aria-hidden />}
+        </Button>
+      </div>
+      <p className="text-[10px] text-muted-foreground">
+        Lo ejecuta Claude, ChatGPT o Grok con el prompt P9 (vista Cola).
+        {variante === 'compacta' && ' Lo que corre la IA del equipo queda en Historial.'}
+      </p>
+
+      {variante === 'completa' && automaticas.length > 0 && <CorridasAutomaticas runs={automaticas} />}
+    </div>
+  );
+}
+
+
+/**
+ * Skills y corridas del motor sobre este chat, plegadas.
+ *
+ * Es lo que antes ocupaba el hilo: título, estado y hora en una línea, y el
+ * texto completo (prompt y respuesta) sólo si alguien lo abre. La respuesta
+ * suele ser JSON del clasificador: se muestra en monoespaciado y chico, que es
+ * como se lee, no como una burbuja de chat.
+ */
+function CorridasAutomaticas({ runs }: { runs: PromptRun[] }) {
+  const [abierta, setAbierta] = useState<number | null>(null);
+  return (
+    <details className="group rounded-xl border border-border/60 bg-background/60">
+      <summary className="cursor-pointer select-none px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        Skills y corridas automáticas · {runs.length}
+      </summary>
+      <ul className="max-h-72 space-y-1 overflow-y-auto border-t border-border/60 p-2">
+        {runs.map((run) => {
+          const abierto = abierta === run.id;
+          return (
+            <li key={run.id} className="rounded-lg border border-border/60 bg-card px-2.5 py-1.5">
+              <button type="button" className="flex w-full items-center gap-2 text-left" onClick={() => setAbierta(abierto ? null : run.id)}>
+                <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">{run.title}</span>
+                {run.connector && !['any', 'pending', 'server'].includes(run.connector) && (
+                  <span className="shrink-0 text-[10px] uppercase text-muted-foreground">{run.connector}</span>
+                )}
+                <span className="shrink-0 rounded bg-muted px-1 text-[10px] font-semibold uppercase text-muted-foreground">{RUN_LABELS[run.status] ?? run.status}</span>
+                <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{fmtHora(run.completedAt ?? run.createdAt)}</span>
+              </button>
+              {abierto && (
+                <div className="mt-1.5 space-y-1.5">
+                  <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/60 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground">{run.text}</pre>
+                  {run.summary && (
+                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/60 p-2 font-mono text-[10px] leading-relaxed text-foreground/90">{run.summary}</pre>
+                  )}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </details>
   );
 }
 
 // ── Override manual ────────────────────────────────────────────────────────
 
-function OverrideDialog({
+/**
+ * A qué lista pertenece un contacto lo decide su gate y su estado (mismo
+ * criterio que `vistaWhere` en el servidor), no un campo aparte. Mover a
+ * "Limpieza" es marcarle el estado de descarte; mover a "Dinero" es subirle el
+ * gate. Por eso esto no es un campo editable: es un preset del override, y la
+ * persona confirma gate, destino y motivo antes de que se escriba nada.
+ */
+const LISTAS: Array<{ key: string; label: string; gates: Gate[]; gate: Gate; status: AnalysisStatus | null }> = [
+  { key: 'dinero', label: 'Dinero', gates: ['G8', 'G9', 'G10'], gate: 'G9', status: null },
+  { key: 'oportunidades', label: 'Oportunidades', gates: ['G4', 'G5', 'G6', 'G7'], gate: 'G7', status: null },
+  { key: 'barrido', label: 'Barrido', gates: ['G0', 'G1', 'G2', 'G3'], gate: 'G2', status: null },
+  { key: 'limpieza', label: 'Limpieza', gates: ['GX'], gate: 'GX', status: 'pre_descarte' },
+];
+
+type PresetOverride = { gate: Gate; status: AnalysisStatus; reason: string; titulo: string };
+
+function AccionesDeGate({
   chatId,
   currentGate,
   currentStatus,
@@ -422,11 +940,86 @@ function OverrideDialog({
   currentStatus: AnalysisStatus | null;
   onDone: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [gate, setGate] = useState<Gate>(currentGate ?? 'G0');
-  const [status, setStatus] = useState<AnalysisStatus>(currentStatus ?? 'recuperado');
+  const [preset, setPreset] = useState<PresetOverride | null>(null);
+
+  const moverA = (lista: (typeof LISTAS)[number]) => {
+    // Si el gate actual ya pertenece a la lista destino no se toca: mover de
+    // lista no debería reescribir un gate que la IA acertó.
+    const gate = currentGate && lista.gates.includes(currentGate) ? currentGate : lista.gate;
+    setPreset({
+      gate,
+      status: lista.status ?? currentStatus ?? 'en_proceso',
+      reason: `Movido a mano a ${lista.label}`,
+      titulo: `Mover a ${lista.label}`,
+    });
+  };
+
+  return (
+    <>
+      <ClasificarAhoraButton chatId={chatId} onDone={onDone} />
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button size="sm" variant="outline" className="h-8 text-xs">
+            Mover a lista
+            <ChevronDown className="ml-1 size-3.5" aria-hidden />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          {LISTAS.map((lista) => (
+            <DropdownMenuItem key={lista.key} onSelect={() => moverA(lista)}>
+              {lista.label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-8 text-xs"
+        onClick={() =>
+          setPreset({
+            gate: currentGate ?? 'G0',
+            status: currentStatus ?? 'recuperado',
+            reason: '',
+            titulo: 'Cambiar gate manualmente',
+          })
+        }
+      >
+        Cambiar gate manualmente
+      </Button>
+
+      <OverrideDialog chatId={chatId} preset={preset} onClose={() => setPreset(null)} onDone={onDone} />
+    </>
+  );
+}
+
+function OverrideDialog({
+  chatId,
+  preset,
+  onClose,
+  onDone,
+}: {
+  chatId: number;
+  /** null = cerrado. Trae los valores con los que abre el formulario. */
+  preset: PresetOverride | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [gate, setGate] = useState<Gate>('G0');
+  const [status, setStatus] = useState<AnalysisStatus>('recuperado');
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Cada vez que se abre (o cambia el preset) el formulario arranca de cero con
+  // los valores del destino elegido.
+  useEffect(() => {
+    if (!preset) return;
+    setGate(preset.gate);
+    setStatus(preset.status);
+    setReason(preset.reason);
+  }, [preset]);
 
   const submit = async () => {
     if (reason.trim().length < 5) {
@@ -456,8 +1049,7 @@ function OverrideDialog({
         return;
       }
       toast.success(`Gate cambiado a ${gate}.`);
-      setOpen(false);
-      setReason('');
+      onClose();
       onDone();
     } catch {
       toast.error('No se pudo conectar con el servidor.');
@@ -467,13 +1059,10 @@ function OverrideDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setOpen(true)}>
-        Cambiar gate manualmente
-      </Button>
+    <Dialog open={preset !== null} onOpenChange={(abierto) => !abierto && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Cambiar gate manualmente</DialogTitle>
+          <DialogTitle>{preset?.titulo ?? 'Cambiar gate manualmente'}</DialogTitle>
           <DialogDescription>Crea una versión `manual_override`. La IA respeta el gate hasta que el chat cambie.</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -494,8 +1083,8 @@ function OverrideDialog({
               <Select value={status} onValueChange={(v) => setStatus(v as AnalysisStatus)}>
                 <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {ANALYSIS_STATUSES.map((s) => (
-                    <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
+                  {ANALYSIS_STATUSES.map((sts) => (
+                    <SelectItem key={sts} value={sts}>{STATUS_LABELS[sts]}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -507,7 +1096,7 @@ function OverrideDialog({
           </label>
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => setOpen(false)} disabled={saving}>Cancelar</Button>
+          <Button variant="ghost" onClick={onClose} disabled={saving}>Cancelar</Button>
           <Button onClick={submit} disabled={saving}>
             {saving && <Loader2 className="size-4 animate-spin" aria-hidden />} Guardar
           </Button>
@@ -615,9 +1204,9 @@ function Timeline({ items, chatHref, signals }: { items: Array<TimelineHit | Tim
 
 // ── Acciones y versiones ───────────────────────────────────────────────────
 
-function Acciones({ actions, signals }: { actions: ActionRow[]; signals: SignalRow[] }) {
-  if (actions.length === 0 && signals.length === 0) {
-    return <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">Sin acciones ni señales todavía.</p>;
+function Acciones({ actions }: { actions: ActionRow[] }) {
+  if (actions.length === 0) {
+    return <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">Sin acciones todavía. Las señales del radar están en la pestaña Radar.</p>;
   }
   return (
     <div className="space-y-4">
@@ -646,24 +1235,224 @@ function Acciones({ actions, signals }: { actions: ActionRow[]; signals: SignalR
           ))}
         </ul>
       )}
-      {signals.length > 0 && (
-        <div>
-          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Señales del radar</p>
-          <ul className="divide-y divide-border/60 rounded-xl border border-border">
-            {signals.map((s) => (
-              <li key={s.id} className="px-3 py-2">
-                <div className="flex items-center justify-between gap-2 text-sm">
-                  <span className="font-medium">{SIGNAL_LABELS[s.kind] ?? s.kind}</span>
-                  <span className="shrink-0 text-[11px] text-muted-foreground">
-                    {tiempoRelativo(s.createdAt)} · {s.status}
-                    {s.gateBefore && s.gateAfter && <> · {s.gateBefore}→{s.gateAfter}</>}
-                  </span>
-                </div>
-                {s.excerpt && <p className="truncate text-xs text-muted-foreground">&ldquo;{s.excerpt}&rdquo;</p>}
-              </li>
-            ))}
-          </ul>
+    </div>
+  );
+}
+
+/**
+ * Radar del contacto: lo que el barrido detectó en sus mensajes.
+ *
+ * Vivía apretado al final de Acciones, que es otra cosa (lo que NOSOTROS le
+ * propusimos hacer). Separado tiene lugar para lo que hace falta al mirar una
+ * ficha: qué dijo, cuándo, y poder darlo por atendido sin volver a la bandeja.
+ */
+function Radar({ signals, onRefrescar }: { signals: SignalRow[]; onRefrescar: () => void }) {
+  const [ocupado, setOcupado] = useState(false);
+  const pendientes = signals.filter((s) => s.status === 'new' || s.status === 'seen');
+
+  const atender = async (ids: number[]) => {
+    if (!ids.length) return;
+    setOcupado(true);
+    try {
+      const res = await fetch(`${SALES_OPS_API}/signals`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'mark', signalIds: ids, status: 'handled' }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error ?? 'No se pudo marcar');
+      toast.success(ids.length > 1 ? `Atendidas ${ids.length} señales` : 'Señal atendida');
+      onRefrescar();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo marcar');
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  if (signals.length === 0) {
+    return <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">El radar todavía no detectó nada en este chat.</p>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {pendientes.length > 0 && (
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-muted-foreground">
+            {pendientes.length} sin atender de {signals.length}
+          </span>
+          <Button size="sm" variant="outline" className="h-7 text-xs" disabled={ocupado} onClick={() => void atender(pendientes.map((s) => s.id))}>
+            {ocupado ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : null}
+            Atender todas ({pendientes.length})
+          </Button>
         </div>
+      )}
+      <ul className="divide-y divide-border/60 rounded-xl border border-border">
+        {signals.map((s) => {
+          const meta = KIND_META[s.kind];
+          const pendiente = s.status === 'new' || s.status === 'seen';
+          return (
+            <li key={s.id} className={cn('space-y-1 px-3 py-2', meta?.urgent && pendiente && 'bg-primary/5')}>
+              <div className="flex items-center justify-between gap-2 text-sm">
+                <span className="flex min-w-0 items-center gap-1.5 font-medium">
+                  <span aria-hidden>{meta?.emoji ?? '•'}</span>
+                  <span className="truncate">{SIGNAL_LABELS[s.kind] ?? s.kind}</span>
+                </span>
+                <span className="shrink-0 text-[11px] text-muted-foreground">
+                  {tiempoRelativo(s.createdAt)} · {s.confidence}%
+                  {s.gateBefore && s.gateAfter && <> · {s.gateBefore}→{s.gateAfter}</>}
+                </span>
+              </div>
+              {s.excerpt && <p className="line-clamp-2 text-xs text-muted-foreground">&ldquo;{s.excerpt}&rdquo;</p>}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-muted-foreground">
+                  {pendiente ? 'Sin atender' : `${s.status}${s.handledAt ? ` · ${fmtDateTime(s.handledAt)}` : ''}`}
+                </span>
+                {pendiente && (
+                  <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" disabled={ocupado} onClick={() => void atender([s.id])}>
+                    Atendida
+                  </Button>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Historial del contacto: qué pasó, cuándo y quién. Sale de `activity_logs`
+ * (prefijo `SALES_OPS_`), que es donde ya quedaba registrado cada
+ * clasificación, override, señal atendida y prompt.
+ *
+ * Era una lista plana donde cada fila repetía el mismo relojito gris y la fecha
+ * completa, y los eventos sin etiqueta salían con el nombre crudo de la
+ * constante (`skill_saved`). Ahora se agrupa por día —que es como uno recuerda
+ * las cosas: "esto fue ayer"—, cada familia tiene su ícono, y la hora sola
+ * alcanza porque el día está en el encabezado del grupo.
+ */
+function Historial({ chatId }: { chatId: number }) {
+  const { data, error, isLoading, mutate } = useSWR<HistoryPayload>(`${SALES_OPS_API}/contacts/${chatId}/history`, fetcher);
+
+  const porDia = useMemo(() => {
+    const grupos = new Map<string, HistoryEntry[]>();
+    for (const entry of data?.entries ?? []) {
+      const dia = entry.at.slice(0, 10);
+      const lista = grupos.get(dia);
+      if (lista) lista.push(entry);
+      else grupos.set(dia, [entry]);
+    }
+    return [...grupos.entries()];
+  }, [data?.entries]);
+
+  if (error) return <ErrorState message={String(error.message ?? error)} onRetry={() => void mutate()} />;
+  if (isLoading && !data) {
+    return <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">Cargando historial…</p>;
+  }
+  if (porDia.length === 0) {
+    return <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">Todavía no se hizo nada sobre este contacto.</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {porDia.map(([dia, entradas]) => (
+        <section key={dia} className="space-y-1.5">
+          <h3 className="sticky top-0 z-10 -mx-1 bg-background/95 px-1 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur">
+            {fmtDate(entradas[0].at)}
+          </h3>
+          <ul className="space-y-1">
+            {entradas.map((entry) => {
+              const Icon = HISTORIAL_ICONOS[entry.kind] ?? History;
+              return (
+                <li key={entry.id} className="flex gap-2.5 rounded-lg border border-border/60 bg-card px-2.5 py-2">
+                  <span className={cn('mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md', HISTORIAL_TONOS[entry.kind] ?? HISTORIAL_TONOS.otro)}>
+                    <Icon className="size-3.5" aria-hidden />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                      <span className="text-sm font-medium leading-snug text-foreground">{entry.label}</span>
+                      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{fmtHora(entry.at)}</span>
+                    </div>
+                    {entry.detail && <p className="text-xs leading-snug text-muted-foreground">{entry.detail}</p>}
+                    <p className="text-[11px] text-muted-foreground/80">
+                      {/* Sin persona = lo hizo el cron o un conector; decirlo evita
+                          que alguien busque quién fue. */}
+                      {entry.by ?? 'automático'}
+                    </p>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Sección Radar de la ficha: las señales del Command Center y el radar del
+ * cliente, en el mismo lugar.
+ *
+ * Son dos radares distintos que el equipo usa para lo mismo. Las **señales**
+ * son lo que el cliente acaba de responder (pago, objeción, quiere llamada);
+ * el **radar del cliente** es el análisis acumulado que vive en los campos
+ * `radar_*` y que hasta ahora sólo se veía apretando "Radar" dentro del chat de
+ * WhatsPro. Tener que saltar entre dos pantallas para mirar al mismo contacto
+ * era lo que hacía que una de las dos no se mirara nunca.
+ *
+ * Se reusa el `RadarPanel` del plugin tal cual, no una copia: si el radar
+ * cambia, esto cambia con él.
+ */
+function RadarSeccion({ header, signals, onRefrescar }: { header: Header; signals: SignalRow[]; onRefrescar: () => void }) {
+  const [cara, setCara] = useState<'senales' | 'cliente'>('senales');
+
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-1">
+        {([
+          { id: 'senales' as const, label: `Señales${signals.length ? ` (${signals.length})` : ''}` },
+          { id: 'cliente' as const, label: 'Radar del cliente' },
+        ]).map(({ id, label }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setCara(id)}
+            aria-pressed={cara === id}
+            className={cn(
+              'rounded-full border px-2.5 py-1 text-[11px] transition-colors',
+              cara === id ? 'border-transparent bg-foreground font-medium text-background' : 'border-border text-muted-foreground hover:bg-muted',
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {cara === 'senales' ? (
+        <Radar signals={signals} onRefrescar={onRefrescar} />
+      ) : header.contactId ? (
+        <div className="overflow-hidden rounded-xl border border-border">
+          <RadarPanel
+            contactId={header.contactId}
+            chatId={header.chatId}
+            contactName={header.name}
+            remoteJid={header.remoteJid}
+            onBack={() => setCara('senales')}
+            onUseSuggestion={(texto) => {
+              void navigator.clipboard.writeText(texto).then(
+                () => toast.success('Sugerencia copiada. Pegala en el chat.'),
+                () => toast.error('No se pudo copiar.'),
+              );
+            }}
+          />
+        </div>
+      ) : (
+        <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+          Este chat todavía no tiene ficha de contacto, así que no hay radar del cliente.
+        </p>
       )}
     </div>
   );

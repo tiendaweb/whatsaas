@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db/drizzle";
 import { landingContent, landingPages } from "@/lib/db/schema";
 import { defaultLandingContent } from "@/lib/landing/default-content";
@@ -45,24 +45,52 @@ function normalizeLandingPageRecord<
   };
 }
 
-export async function getLandingContent(): Promise<LandingContentRecord> {
+/**
+ * Cada tenant tiene sus propias landings. `resellerId` null = las de la plataforma;
+ * sin este filtro, el dominio principal mostraría la landing de cualquier reseller.
+ */
+function landingPageScope(resellerId?: number | null) {
+  return resellerId == null
+    ? isNull(landingPages.resellerId)
+    : eq(landingPages.resellerId, resellerId);
+}
+
+export async function getLandingContent(
+  resellerId?: number | null,
+): Promise<LandingContentRecord> {
   return withLandingStorageFallback(
     "getLandingContent",
     async () => {
-      const record = await db.query.landingContent.findFirst();
+      const record = await db.query.landingContent.findFirst({
+        where:
+          resellerId == null
+            ? isNull(landingContent.resellerId)
+            : eq(landingContent.resellerId, resellerId),
+      });
+
+      // Un reseller sin contenido propio cae al de la plataforma en vez de
+      // quedarse con una landing vacía.
+      if (!record && resellerId != null) {
+        const platformRecord = await db.query.landingContent.findFirst({
+          where: isNull(landingContent.resellerId),
+        });
+        return mergeLandingContent(platformRecord);
+      }
+
       return mergeLandingContent(record);
     },
     () => mergeLandingContent(),
   );
 }
 
-export async function getLandingPages() {
+export async function getLandingPages(resellerId?: number | null) {
   return withLandingStorageFallback(
     "getLandingPages",
     async () => {
       const pages = await db
         .select()
         .from(landingPages)
+        .where(landingPageScope(resellerId))
         .orderBy(asc(landingPages.createdAt));
       return pages.map(normalizeLandingPageRecord);
     },
@@ -70,14 +98,14 @@ export async function getLandingPages() {
   );
 }
 
-export async function getLandingPageById(id: number) {
+export async function getLandingPageById(id: number, resellerId?: number | null) {
   return withLandingStorageFallback(
     "getLandingPageById",
     async () => {
       const [page] = await db
         .select()
         .from(landingPages)
-        .where(eq(landingPages.id, id))
+        .where(and(eq(landingPages.id, id), landingPageScope(resellerId)))
         .limit(1);
 
       return page ? normalizeLandingPageRecord(page) : null;
@@ -86,14 +114,17 @@ export async function getLandingPageById(id: number) {
   );
 }
 
-export async function getLandingPageBySlug(slug: string) {
+export async function getLandingPageBySlug(
+  slug: string,
+  resellerId?: number | null,
+) {
   return withLandingStorageFallback(
     "getLandingPageBySlug",
     async () => {
       const [page] = await db
         .select()
         .from(landingPages)
-        .where(eq(landingPages.slug, slug))
+        .where(and(eq(landingPages.slug, slug), landingPageScope(resellerId)))
         .limit(1);
 
       return page ? normalizeLandingPageRecord(page) : null;

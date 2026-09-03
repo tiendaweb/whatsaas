@@ -4,6 +4,11 @@ import { getTeamForUser } from '@/lib/db/queries';
 import { chats, messages, evolutionInstances } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { formatMessageForFrontend } from '@/lib/db/messages';
+import {
+  getEvolutionErrorMessage,
+  getEvolutionRecipientNumber,
+  sendEvolutionRequestWithRetry,
+} from '@/lib/evolution';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
@@ -11,38 +16,6 @@ import { v4 as uuidv4 } from 'uuid';
 import ffmpeg from 'fluent-ffmpeg';
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "http://localhost:8080";
-
-async function parseEvolutionResponse(response: Response, instanceName: string) {
-  const responseText = await response.text();
-  if (!responseText) return { data: null, parseError: null };
-
-  try {
-    return { data: JSON.parse(responseText), parseError: null };
-  } catch {
-    const parseError = `Evolution API returned non-JSON for ${instanceName} (HTTP ${response.status}): ${responseText.slice(0, 300)}`;
-    console.error(parseError);
-    return { data: null, parseError };
-  }
-}
-
-function getEvolutionErrorMessage({
-  data,
-  parseError,
-  response,
-  instanceName,
-}: {
-  data: any;
-  parseError: string | null;
-  response: Response;
-  instanceName: string;
-}) {
-  if (parseError) return parseError;
-  const rawMessage = data?.message || data?.error || data?.response?.message || data?.data?.message;
-  const message = Array.isArray(rawMessage) ? rawMessage.join(', ') : rawMessage;
-  return message
-    ? `Evolution API error for ${instanceName} (HTTP ${response.status}): ${message}`
-    : `Evolution API error for ${instanceName} (HTTP ${response.status})`;
-}
 
 const convertToMp3 = async (inputBuffer: Buffer, inputMimeType: string): Promise<string> => {
   const tempId = uuidv4();
@@ -140,6 +113,11 @@ export async function POST(request: NextRequest) {
     }
 
     const { instanceName, accessToken, id: dbInstanceId } = activeInstance;
+    const evolutionNumber = getEvolutionRecipientNumber(recipientJid);
+
+    if (!evolutionNumber) {
+      return NextResponse.json({ error: 'Invalid recipient number.' }, { status: 400 });
+    }
 
     let finalAudioBase64 = audioBase64;
     let publicMediaUrl: string | null = null;
@@ -166,7 +144,7 @@ export async function POST(request: NextRequest) {
     }
 
     const evolutionPayload: any = {
-      number: recipientJid,
+      number: evolutionNumber,
       delay: 1200,
       presence: 'recording',
       quoted: quotedMessageData ? { 
@@ -182,26 +160,24 @@ export async function POST(request: NextRequest) {
         delete evolutionPayload.quoted;
     }
 
-    const evolutionResponse = await fetch(
-      `${EVOLUTION_API_URL}/message/sendWhatsAppAudio/${instanceName}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': accessToken,
-        },
-        body: JSON.stringify(evolutionPayload),
-        signal: AbortSignal.timeout(10000),
-      }
-    );
-
-    const { data: evolutionData, parseError } = await parseEvolutionResponse(evolutionResponse, instanceName);
+    const {
+      response: evolutionResponse,
+      data: evolutionData,
+      parseError,
+      retried,
+      connectionClosed,
+    } = await sendEvolutionRequestWithRetry({
+      url: `${EVOLUTION_API_URL}/message/sendWhatsAppAudio/${instanceName}`,
+      instanceName,
+      accessToken,
+      payload: evolutionPayload,
+    });
 
     const sendFailed = Boolean(parseError) || !evolutionResponse.ok || !evolutionData?.key?.id;
     let errorMsg: string | null = null;
 
     if (sendFailed) {
-      console.error(`Evolution API Error (sendAudio) for ${instanceName}:`, evolutionData);
+      console.error(`Evolution API Error (sendAudio) for ${instanceName}${retried ? ' after recovery retry' : ''}:`, evolutionData);
       errorMsg = getEvolutionErrorMessage({ data: evolutionData, parseError, response: evolutionResponse, instanceName });
     }
 
@@ -279,7 +255,10 @@ export async function POST(request: NextRequest) {
       savedMessage = insertedMessage || newMessageData;
     });
 
-    return NextResponse.json(formatMessageForFrontend(savedMessage));
+    return NextResponse.json(
+      formatMessageForFrontend(savedMessage),
+      { status: sendFailed && connectionClosed ? 503 : 200 },
+    );
 
   } catch (error: any) {
     const isTimeout = error?.name === 'TimeoutError' || error?.name === 'AbortError';

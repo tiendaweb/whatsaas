@@ -1,0 +1,306 @@
+.shell {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--border) 66%, transparent);
+  border-radius: 32px;
+  background: linear-gradient(135deg, color-mix(in oklab, var(--card) 82%, transparent), color-mix(in oklab, var(--background) 66%, transparent));
+  box-shadow: 0 28px 80px color-mix(in oklab, var(--foreground) 10%, transparent), inset 0 1px 0 color-mix(in oklab, white 70%, transparent);
+  backdrop-filter: blur(32px) saturate(165%);
+}
+
+.shell::before {
+  position: absolute;
+  z-index: -1;
+  top: -220px;
+  right: -150px;
+  width: 620px;
+  height: 480px;
+  border-radius: 999px;
+  content: '';
+  background:
+    radial-gradient(circle at 28% 34%, color-mix(in oklab, var(--primary) 34%, transparent), transparent 32%),
+    radial-gradient(circle at 68% 46%, color-mix(in oklab, var(--chart-2) 24%, transparent), transparent 42%),
+    radial-gradient(circle at 48% 80%, color-mix(in oklab, var(--chart-4) 16%, transparent), transparent 38%);
+  filter: blur(50px);
+  animation: plan-aurora 16s cubic-bezier(.22, 1, .36, 1) infinite alternate;
+  pointer-events: none;
+}
+
+.content {
+  position: relative;
+  z-index: 1;
+}
+
+.metricGrid {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.metric,
+.controls,
+.planCard,
+.state {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+  background: color-mix(in oklab, var(--card) 66%, transparent);
+  box-shadow: 0 16px 44px color-mix(in oklab, var(--foreground) 7%, transparent), inset 0 1px 0 color-mix(in oklab, white 54%, transparent);
+  backdrop-filter: blur(26px) saturate(155%);
+}
+
+.metric {
+  min-height: 120px;
+  border-radius: 22px;
+}
+
+.metric::after,
+.controls::after,
+.planCard::after {
+  position: absolute;
+  top: 0;
+  right: 18px;
+  left: 18px;
+  height: 1px;
+  content: '';
+  background: linear-gradient(90deg, transparent, color-mix(in oklab, white 82%, transparent), transparent);
+  pointer-events: none;
+}
+
+.metricIcon,
+.stateIcon,
+.visibilityOptionIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in oklab, var(--primary) 28%, transparent);
+  color: var(--primary);
+  background: color-mix(in oklab, var(--primary) 10%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, white 54%, transparent);
+}
+
+.metricIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 13px;
+}
+
+.controls {
+  margin: 0 16px 16px;
+  border-radius: 24px;
+}
+
+.segmentedControl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  min-height: 44px;
+  padding: 4px;
+  border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+  border-radius: 17px;
+  background: color-mix(in oklab, var(--background) 46%, transparent);
+}
+
+.segment,
+.segmentActive {
+  min-width: 76px;
+  padding: 7px 12px;
+  border-radius: 13px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: color 220ms ease, background 220ms ease, box-shadow 220ms ease;
+}
+
+.segment {
+  color: var(--muted-foreground);
+}
+
+.segment:hover {
+  color: var(--foreground);
+  background: color-mix(in oklab, var(--muted) 60%, transparent);
+}
+
+.segmentActive {
+  color: var(--primary-foreground);
+  background: var(--primary);
+  box-shadow: 0 8px 22px color-mix(in oklab, var(--primary) 24%, transparent), inset 0 1px 0 color-mix(in oklab, white 24%, transparent);
+}
+
+.planCard {
+  min-height: 420px;
+  border-radius: 26px;
+  background: linear-gradient(145deg, color-mix(in oklab, var(--card) 78%, transparent), color-mix(in oklab, var(--background) 52%, transparent));
+  transition: transform 420ms cubic-bezier(.22, 1, .36, 1), border-color 420ms ease, box-shadow 420ms ease;
+}
+
+.planCard::before {
+  position: absolute;
+  right: -90px;
+  bottom: -110px;
+  width: 250px;
+  height: 250px;
+  border-radius: 999px;
+  content: '';
+  background: radial-gradient(circle, color-mix(in oklab, var(--primary) 16%, transparent), color-mix(in oklab, var(--chart-2) 5%, transparent) 46%, transparent 72%);
+  filter: blur(14px);
+  transition: transform 520ms cubic-bezier(.22, 1, .36, 1);
+  pointer-events: none;
+}
+
+.privateCard::before {
+  background: radial-gradient(circle, color-mix(in oklab, var(--muted-foreground) 14%, transparent), transparent 68%);
+}
+
+.planCard:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in oklab, var(--primary) 34%, transparent);
+  box-shadow: 0 26px 62px color-mix(in oklab, var(--foreground) 12%, transparent), 0 0 38px color-mix(in oklab, var(--primary) 10%, transparent), inset 0 1px 0 color-mix(in oklab, white 60%, transparent);
+}
+
+.planCard:hover::before {
+  transform: translate(-22px, -12px) scale(1.12);
+}
+
+.publicBadge,
+.privateBadge,
+.archivedBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 4px 9px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+
+.publicBadge {
+  border-color: color-mix(in oklab, var(--primary) 34%, transparent);
+  color: color-mix(in oklab, var(--primary) 86%, var(--foreground));
+  background: color-mix(in oklab, var(--primary) 10%, transparent);
+}
+
+.privateBadge,
+.archivedBadge {
+  border-color: color-mix(in oklab, var(--border) 80%, transparent);
+  color: var(--muted-foreground);
+  background: color-mix(in oklab, var(--muted) 58%, transparent);
+}
+
+.featureIcon,
+.featureIconMuted {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+}
+
+.featureIcon {
+  color: var(--primary);
+  background: color-mix(in oklab, var(--primary) 10%, transparent);
+}
+
+.featureIconMuted {
+  color: var(--muted-foreground);
+  background: color-mix(in oklab, var(--muted) 68%, transparent);
+}
+
+.state {
+  display: flex;
+  min-height: 310px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  border-radius: 26px;
+  padding: 32px;
+}
+
+.stateIcon {
+  width: 46px;
+  height: 46px;
+  border-radius: 16px;
+}
+
+.visibilityOption {
+  display: flex;
+  min-height: 96px;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  border-radius: 18px;
+  background: color-mix(in oklab, var(--background) 38%, transparent);
+  transition: border-color 220ms ease, background 220ms ease, box-shadow 220ms ease, transform 220ms ease;
+}
+
+.visibilityOption:hover {
+  border-color: color-mix(in oklab, var(--primary) 30%, transparent);
+  transform: translateY(-1px);
+}
+
+.visibilityOptionActive {
+  border-color: color-mix(in oklab, var(--primary) 52%, transparent);
+  background: color-mix(in oklab, var(--primary) 8%, transparent);
+  box-shadow: 0 12px 34px color-mix(in oklab, var(--primary) 10%, transparent), inset 0 1px 0 color-mix(in oklab, white 42%, transparent);
+}
+
+.visibilityOptionIcon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 12px;
+}
+
+:global(.dark) .shell,
+:global(.dark) .metric,
+:global(.dark) .controls,
+:global(.dark) .planCard,
+:global(.dark) .state {
+  border-color: color-mix(in oklab, white 10%, transparent);
+  box-shadow: 0 28px 80px color-mix(in oklab, black 36%, transparent), inset 0 1px 0 color-mix(in oklab, white 11%, transparent);
+}
+
+:global(.dark) .shell {
+  background: linear-gradient(135deg, color-mix(in oklab, var(--card) 82%, transparent), color-mix(in oklab, var(--background) 72%, transparent));
+}
+
+:global(.dark) .metric,
+:global(.dark) .controls,
+:global(.dark) .planCard,
+:global(.dark) .state {
+  background: linear-gradient(145deg, color-mix(in oklab, white 8%, transparent), color-mix(in oklab, white 3%, transparent));
+}
+
+@media (min-width: 640px) {
+  .metricGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1280px) {
+  .metricGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell::before,
+  .planCard,
+  .planCard::before,
+  .visibilityOption {
+    animation: none;
+    transition: none;
+  }
+}
+
+@keyframes plan-aurora {
+  from { transform: translate3d(0, 0, 0) rotate(-4deg) scale(1); }
+  to { transform: translate3d(-72px, 44px, 0) rotate(7deg) scale(1.14); }
+}

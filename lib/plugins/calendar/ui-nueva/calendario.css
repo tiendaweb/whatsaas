@@ -1,0 +1,42 @@
+/**
+ * Tokens del Calendario. Mismo sistema visual que Tareas OS —para que las dos
+ * apps se sientan la misma— pero con su propio scope: usar `.tareas-ui` acá
+ * ataría el calendario a los cambios de la otra app.
+ */
+.calendario-ui {
+  --cal-accent: #6366f1;
+  --cal-accent-700: color-mix(in srgb, var(--cal-accent) 72%, #000);
+  --c-bg: #fafafa;
+  --c-surface: #ffffff;
+  --c-surface-2: #fafafa;
+  --c-text: #171717;
+  --c-text-secondary: #737373;
+  --c-muted: #a3a3a3;
+  --c-border: #f0f0f0;
+  --c-border-2: #e5e5e5;
+  --c-hover: #f5f5f5;
+  --c-chip: #f5f5f5;
+  --c-shadow-accent: 0 20px 25px -5px color-mix(in srgb, var(--cal-accent) 20%, transparent);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  color: var(--c-text);
+  background: var(--c-bg);
+}
+
+.calendario-ui[data-theme='dark'] {
+  --c-bg: #171717;
+  --c-surface: #262626;
+  --c-surface-2: #1f1f1f;
+  --c-text: #ffffff;
+  --c-text-secondary: #a3a3a3;
+  --c-muted: #737373;
+  --c-border: #333333;
+  --c-border-2: #404040;
+  --c-hover: rgba(255, 255, 255, 0.06);
+  --c-chip: #2f2f2f;
+  --c-shadow-accent: none;
+}
+
+/* Franja horaria de la vista semana: una línea cada hora, sin dibujar 24 bordes. */
+.calendario-horas {
+  background-image: repeating-linear-gradient(to bottom, var(--c-border) 0 1px, transparent 1px var(--cal-hora, 48px));
+}

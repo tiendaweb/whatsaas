@@ -10,13 +10,14 @@ export default async function AdminPaymentsPage() {
   const stripe = providers.find((p) => p.provider === 'stripe');
   const manual = providers.find((p) => p.provider === 'manual');
   const mp = providers.find((p) => p.provider === 'mercadopago');
+  const ls = providers.find((p) => p.provider === 'lemonsqueezy');
 
   const hasProviderRows = providers.length > 0;
 
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold">Payment Plugins</h1>
+        <h1 className="text-3xl font-bold">Plugins de pago</h1>
         <p className="text-muted-foreground">Configura proveedores desde admin sin tocar el core.</p>
         {!hasProviderRows && (
           <p className="text-sm text-amber-600 mt-2">
@@ -25,7 +26,7 @@ export default async function AdminPaymentsPage() {
         )}
       </div>
 
-      <ProviderConfigSections stripe={stripe} manual={manual} mp={mp} />
+      <ProviderConfigSections stripe={stripe} manual={manual} mp={mp} ls={ls} />
 
       <Card>
         <CardHeader>

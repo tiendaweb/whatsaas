@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { getTeamForUser } from '@/lib/db/queries';
+import { getTeamForUser, getUser } from '@/lib/db/queries';
 import { resolvePluginRouteForTeam } from '@/lib/plugins/core/dashboard-loader';
 
 type PluginPageProps = {
@@ -11,13 +11,13 @@ type PluginPageProps = {
 
 export default async function PluginPage({ params }: PluginPageProps) {
   const { pluginId, slug } = await params;
-  const team = await getTeamForUser();
+  const [team, user] = await Promise.all([getTeamForUser(), getUser()]);
 
   if (!team) {
     notFound();
   }
 
-  const resolved = await resolvePluginRouteForTeam(team.id, pluginId, slug);
+  const resolved = await resolvePluginRouteForTeam(team.id, pluginId, slug, user?.id);
 
   if (!resolved) {
     notFound();

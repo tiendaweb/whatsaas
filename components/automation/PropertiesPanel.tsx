@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import useSWR from 'swr';
+import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -7,21 +8,37 @@ import { Button } from '@/components/ui/button';
 import { DraftShortcutsModal } from '@/components/chat/DraftShortcutsModal';
 import type { DraftItem } from '@/components/drafts/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Badge } from '@/components/ui/badge';
-import { X, Save, Plus, Trash2, UploadCloud, Loader2 } from 'lucide-react';
+import { ArrowRight, X, Save, Plus, Trash2, UploadCloud, Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { createAutomation, saveAutomation } from '@/app/[locale]/(dashboard)/automation/actions';
 import type {
   AutomationCanvasNode,
   AutomationCanvasNodeData,
   AIControlNodeData,
   ButtonMessageButton,
   ConditionEntry,
+  FormField,
   ListMessageItem,
   MediaNodeData,
+  AutomationFlowNode,
+  MenuSimpleMarkerStyle,
+  MenuSimpleOption,
   StartNodeData,
 } from '@/lib/automation/flow-schema';
+import { MENU_SIMPLE_MARKER_STYLES } from '@/lib/automation/flow-schema';
+import { buildMenuSimpleMessage, getMenuMarker } from '@/lib/automation/menu-simple';
 import {
+  createAutomationCanvasNode,
   getAutomationNodeCatalogEntry,
   getEditableFieldDefinition,
   mergeAutomationNodeDataWithDefaults,
@@ -29,6 +46,7 @@ import {
 } from '@/lib/automation/node-catalog';
 
 const MAX_SELECT_LABEL_CHARS = 60;
+const FLOW_START_TARGET_VALUE = '__flow_start__';
 
 function truncateSelectLabel(label: string, maxChars = MAX_SELECT_LABEL_CHARS) {
   if (label.length <= maxChars) return label;
@@ -46,6 +64,9 @@ interface PropertiesPanelProps {
   onNavigateToAutomation: (automationId: number) => void;
   onUpdateNode: (id: string, data: Partial<AutomationCanvasNodeData>) => void;
   onClose: () => void;
+  variant?: 'sidebar' | 'modal';
+  currentInstanceId?: number | null;
+  onSelectNode?: (nodeId: string) => void;
 }
 
 export function PropertiesPanel({
@@ -57,6 +78,9 @@ export function PropertiesPanel({
   onNavigateToAutomation,
   onUpdateNode,
   onClose,
+  variant = 'sidebar',
+  currentInstanceId,
+  onSelectNode,
 }: PropertiesPanelProps) {
   const t = useTranslations('Automation');
   const [label, setLabel] = useState('');
@@ -100,11 +124,24 @@ export function PropertiesPanel({
   const [aiAction, setAiAction] = useState<AIControlNodeData['action']>('active');
 
   const [conditions, setConditions] = useState<ConditionEntry[]>([]);
+  const [menuMarkerStyle, setMenuMarkerStyle] = useState<MenuSimpleMarkerStyle>('emoji_number');
+  const [menuOptions, setMenuOptions] = useState<MenuSimpleOption[]>([]);
+  const [menuGlobalDelay, setMenuGlobalDelay] = useState<number>(0);
+  const [menuVariable, setMenuVariable] = useState('');
+  const [formFields, setFormFields] = useState<FormField[]>([]);
   const [goToMode, setGoToMode] = useState<'previous_node' | 'specific_node' | 'other_flow'>('previous_node');
   const [goToFallbackAction, setGoToFallbackAction] = useState<'stop' | 'node'>('stop');
   const [goToTargetNodeId, setGoToTargetNodeId] = useState('');
   const [goToTargetAutomationId, setGoToTargetAutomationId] = useState('');
   const [goToFallbackNodeId, setGoToFallbackNodeId] = useState('');
+
+  const [referenceName, setReferenceName] = useState('');
+
+  // Dirty tracking for unsaved changes prompt
+  const [isDirty, setIsDirty] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+
+  const markDirty = () => setIsDirty(true);
 
   const shouldFetchCRM = selectedNode?.type === 'start' || selectedNode?.type === 'save_contact';
   const { data: funnelStages } = useSWR<any[]>(shouldFetchCRM ? '/api/funnel-stages' : null, fetcher);
@@ -128,19 +165,43 @@ export function PropertiesPanel({
   const selectedNodeMeta = selectedNode ? getAutomationNodeCatalogEntry(selectedNode.type) : null;
   const nodeOrder = useMemo(
     () =>
-      [...nodes].sort(
-        (a, b) => a.position.x - b.position.x || a.position.y - b.position.y,
-      ),
+      // Use logical flow order if possible (ensures end nodes after chat/delay content,
+      // delays not before their triggers). Fallback to position sort.
+      // We compute a lightweight BFS here without full import to keep independent.
+      (() => {
+        const executableNodes = nodes.filter((n) => n.type !== "sticky_note");
+        const start = executableNodes.find((n) => n.type === "start");
+        if (!start || executableNodes.length <= 1) {
+          return [...executableNodes].sort((a, b) => a.position.x - b.position.x || a.position.y - b.position.y);
+        }
+        const adj = new Map<string, string[]>();
+        executableNodes.forEach((n) => adj.set(n.id, []));
+        // Note: edges not passed to this panel easily; use only nodes for fallback topo via positions + type rank
+        const rank = (n: any) => (n.type === "end" ? 100 : n.type === "delay" ? 40 : n.type === "start" ? -10 : 0);
+        return [...executableNodes].sort((a, b) => {
+          const r = rank(a) - rank(b);
+          if (r !== 0) return r;
+          return a.position.x - b.position.x || a.position.y - b.position.y;
+        });
+      })(),
     [nodes],
   );
   const currentFlowNodeOptions = useMemo(() => {
     if (!selectedNode) return [];
     return nodeOrder
-      .filter((node) => node.id !== selectedNode.id && node.type !== 'start' && node.type !== 'delay')
-      .map((node) => ({
-        value: node.id,
-        label: truncateSelectLabel(`${node.data.label || node.type} (${node.id})`),
-      }));
+      .filter(
+        (node) =>
+          node.id !== selectedNode.id &&
+          !['start', 'end', 'go_to_node', 'sticky_note'].includes(node.type),
+      )
+      .map((node) => {
+        const ref = (node.data as any)?.referenceName;
+        const display = ref ? `${ref} (${node.data.label || node.type})` : (node.data.label || node.type);
+        return {
+          value: node.id,
+          label: truncateSelectLabel(String(display)),
+        };
+      });
   }, [nodeOrder, selectedNode]);
   const flowAutomationOptions = useMemo(
     () =>
@@ -156,17 +217,39 @@ export function PropertiesPanel({
     const nodesInAutomation = targetAutomationData?.nodes ?? [];
     return [...nodesInAutomation]
       .sort((a, b) => a.position.x - b.position.x || a.position.y - b.position.y)
-      .filter((node) => node.type !== 'start')
-      .map((node) => ({
-        value: node.id,
-        label: truncateSelectLabel(`${node.data.label || node.type} (${node.id})`),
-      }));
+      .filter(
+        (node) =>
+          !['start', 'end', 'go_to_node', 'sticky_note'].includes(node.type),
+      )
+      .map((node) => {
+        const ref = (node.data as any)?.referenceName;
+        const display = ref ? `${ref} (${node.data.label || node.type})` : (node.data.label || node.type);
+        return {
+          value: node.id,
+          label: truncateSelectLabel(String(display)),
+        };
+      });
   }, [targetAutomationData]);
+  useEffect(() => {
+    if (
+      goToMode === 'other_flow' &&
+      goToTargetNodeId &&
+      goToTargetNodeId !== FLOW_START_TARGET_VALUE &&
+      targetAutomationData?.nodes?.some(
+        (node) => node.id === goToTargetNodeId && node.type === 'start',
+      )
+    ) {
+      setGoToTargetNodeId(FLOW_START_TARGET_VALUE);
+    }
+  }, [
+    goToMode,
+    goToTargetNodeId,
+    targetAutomationData,
+  ]);
   const optionsFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'options') : null;
   const buttonsFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'buttons') : null;
   const listItemsFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'items') : null;
   const conditionsFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'conditions') : null;
-  const delayFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'seconds') : null;
   const listButtonTextFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'buttonText') : null;
   const ctaUrlFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'url') : null;
   const mediaCaptionFieldMeta = selectedNode ? getEditableFieldDefinition(selectedNode.type, 'caption') : null;
@@ -174,6 +257,7 @@ export function PropertiesPanel({
   useEffect(() => {
     if (selectedNode) {
       const mergedData = mergeAutomationNodeDataWithDefaults(selectedNode.type, selectedNode.data);
+      setIsDirty(false);
 
       setLabel((mergedData.label as string) || '');
       setTitle((mergedData.title as string) || '');
@@ -234,9 +318,25 @@ export function PropertiesPanel({
         setConditions((mergedData.conditions as ConditionEntry[]) || []);
       }
 
+      if (selectedNode.type === 'menu_simple') {
+        setLabel((mergedData.label as string) || '');
+        setMenuMarkerStyle((mergedData.markerStyle as MenuSimpleMarkerStyle) || 'emoji_number');
+        setMenuOptions((mergedData.menuOptions as MenuSimpleOption[]) || []);
+        setMenuGlobalDelay(Number(mergedData.globalDelaySeconds) || 0);
+        setMenuVariable((mergedData.variable as string) || '');
+      }
+
+      if (selectedNode.type === 'form') {
+        setFormFields((mergedData.fields as FormField[]) || []);
+      }
+
       if (selectedNode.type === 'go_to_node') {
-        setGoToMode((mergedData.mode as 'previous_node' | 'specific_node' | 'other_flow') || 'previous_node');
-        setGoToTargetNodeId((mergedData.targetNodeId as string) || '');
+        const nextMode = (mergedData.mode as 'previous_node' | 'specific_node' | 'other_flow') || 'previous_node';
+        setGoToMode(nextMode);
+        setGoToTargetNodeId(
+          (mergedData.targetNodeId as string) ||
+            (nextMode === 'other_flow' ? FLOW_START_TARGET_VALUE : ''),
+        );
         setGoToTargetAutomationId(String(mergedData.targetAutomationId || ''));
         const fallbackNodeId = (mergedData.fallbackNodeId as string) || '';
         const fallbackAction = mergedData.fallbackAction === 'node' || mergedData.fallbackAction === 'stop'
@@ -245,19 +345,30 @@ export function PropertiesPanel({
         setGoToFallbackAction(fallbackAction);
         setGoToFallbackNodeId(fallbackNodeId);
       }
+
+      if (selectedNode.type === 'sticky_note') {
+        setTitle((mergedData.title as string) || '');
+        setBodyText((mergedData.bodyText as string) || '');
+      }
+
+      setReferenceName((mergedData.referenceName as string) || '');
     }
   }, [selectedNode]);
 
   if (!selectedNode) {
+    const isModal = variant === 'modal';
     return (
-      <aside className="flex w-[clamp(18rem,24vw,22rem)] min-w-[18rem] max-w-[22rem] min-h-0 shrink-0 resize-x flex-col items-center justify-center overflow-hidden border-l border-border bg-background p-6 text-center">
+      <aside className={cn(
+        'flex min-h-0 shrink-0 flex-col items-center justify-center overflow-hidden border-l border-border bg-background p-6 text-center',
+        isModal ? 'w-full border-0' : 'w-[clamp(18rem,24vw,22rem)] min-w-[18rem] max-w-[22rem] resize-x'
+      )}>
         <p className="text-sm text-muted-foreground">{t('select_node_to_edit')}</p>
       </aside>
     );
   }
 
-  const handleSave = () => {
-    let dataToSave: Partial<AutomationCanvasNodeData> = { label };
+  const handleSave = (): boolean => {
+    let dataToSave: Partial<AutomationCanvasNodeData> = { label, referenceName };
 
     if (selectedNode.type === 'message' || selectedNode.type === 'collect' || selectedNode.type === 'options') {
        dataToSave.label = label;
@@ -306,6 +417,11 @@ export function PropertiesPanel({
       dataToSave.buttonText = buttonText;
     }
 
+    if (selectedNode.type === 'sticky_note') {
+      dataToSave.title = title;
+      dataToSave.bodyText = bodyText;
+    }
+
     if (selectedNode.type === 'button_message') {
       dataToSave.buttons = buttons;
     }
@@ -326,32 +442,86 @@ export function PropertiesPanel({
       dataToSave.conditions = conditions;
     }
 
+    if (selectedNode.type === 'menu_simple') {
+      const cleanedOptions = menuOptions
+        .map((option) => ({
+          ...option,
+          text: option.text.trim(),
+          matchValue: option.matchValue?.trim() || undefined,
+          matchValue2: option.matchValue2?.trim() || undefined,
+        }))
+        .filter((option) => option.text.length > 0);
+
+      if (cleanedOptions.length === 0) {
+        toast.error(t('menu_simple_validation_options_required'));
+        return false;
+      }
+
+      dataToSave.label = label;
+      dataToSave.markerStyle = menuMarkerStyle;
+      dataToSave.menuOptions = cleanedOptions;
+      dataToSave.globalDelaySeconds = Number.isFinite(menuGlobalDelay) ? Math.max(0, menuGlobalDelay) : 0;
+      dataToSave.variable = menuVariable.trim() || undefined;
+    }
+
+    if (selectedNode.type === 'form') {
+      const cleanedFields = formFields.map((field, fieldIndex) => ({
+        ...field,
+        label: field.label.trim(),
+        variable: field.variable.trim(),
+        markerStyle: field.markerStyle || 'emoji_number',
+        menuOptions:
+          field.type === 'menu'
+            ? (field.menuOptions ?? [])
+                .map((option) => ({ ...option, text: option.text.trim() }))
+                .filter((option) => option.text.length > 0)
+            : undefined,
+      }));
+      const invalidField = cleanedFields.find(
+        (field) =>
+          !field.label ||
+          !field.variable ||
+          (field.type === 'menu' && (!field.menuOptions || field.menuOptions.length === 0)),
+      );
+      if (cleanedFields.length === 0 || invalidField) {
+        toast.error(t('form_validation_required'));
+        return false;
+      }
+      const variables = cleanedFields.map((field) => field.variable);
+      if (new Set(variables).size !== variables.length) {
+        toast.error(t('form_validation_unique_variables'));
+        return false;
+      }
+      dataToSave.fields = cleanedFields;
+    }
+
     if (selectedNode.type === 'go_to_node') {
       const trimmedTargetNodeId = goToTargetNodeId.trim();
       const trimmedTargetAutomationId = goToTargetAutomationId.trim();
+      const targetsFlowStart = trimmedTargetNodeId === FLOW_START_TARGET_VALUE;
       const isTargetNodeInSelectedAutomation = targetAutomationNodeOptions.some(
         (node) => node.value === trimmedTargetNodeId,
       );
 
       if (goToMode === 'specific_node' && !trimmedTargetNodeId) {
         toast.error(t('go_to_validation_target_node_required'));
-        return;
+        return false;
       }
 
       if (goToMode === 'other_flow') {
         if (!trimmedTargetAutomationId) {
           toast.error(t('go_to_validation_target_automation_required'));
-          return;
+          return false;
         }
 
-        if (!trimmedTargetNodeId || !isTargetNodeInSelectedAutomation) {
+        if (!targetsFlowStart && (!trimmedTargetNodeId || !isTargetNodeInSelectedAutomation)) {
           toast.error(t('go_to_validation_target_node_invalid_other_flow'));
-          return;
+          return false;
         }
       }
 
       dataToSave.mode = goToMode;
-      dataToSave.targetNodeId = trimmedTargetNodeId || undefined;
+      dataToSave.targetNodeId = targetsFlowStart ? undefined : (trimmedTargetNodeId || undefined);
       dataToSave.targetAutomationId = trimmedTargetAutomationId || undefined;
       dataToSave.fallbackAction = goToFallbackAction;
       dataToSave.fallbackNodeId = goToFallbackAction === 'node' ? (goToFallbackNodeId.trim() || undefined) : undefined;
@@ -362,10 +532,106 @@ export function PropertiesPanel({
 
     if (!validation.success) {
       toast.error(validation.errors[0] || 'Invalid node configuration.');
-      return;
+      return false;
     }
 
     onUpdateNode(selectedNode.id, validation.data);
+    setIsDirty(false);
+    return true;
+  };
+
+  // Apply the form to the node first (so "el elemento" is saved), aborting if
+  // validation fails. Returns whether it's safe to continue.
+  const applyChangesIfNeeded = (): boolean => {
+    if (!isDirty) return true;
+    return handleSave();
+  };
+
+  // "Ir al nodo destino" inside the current flow: apply + select it locally.
+  const handleGoToNodeInCurrentFlow = (nodeId: string) => {
+    if (!nodeId) return;
+    if (!applyChangesIfNeeded()) return;
+    if (onSelectNode) {
+      onSelectNode(nodeId);
+    } else {
+      toast.info('Nodo seleccionado en el flujo actual');
+    }
+  };
+
+  // Jump to another automation: apply the node, then navigate (the navigation
+  // handler in the builder persists the whole flow before leaving). We defer one
+  // frame so the applied change is committed before it gets saved.
+  const handleGoToTargetAutomation = () => {
+    if (!goToTargetAutomationId) return;
+    if (!applyChangesIfNeeded()) return;
+    const targetAutomationId = Number(goToTargetAutomationId);
+    if (!Number.isFinite(targetAutomationId)) return;
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => onNavigateToAutomation(targetAutomationId)),
+    );
+  };
+
+  const handleConvertStickyNote = async () => {
+    if (selectedNode?.type !== 'sticky_note') return;
+    if (!currentInstanceId) {
+      toast.error('No se pudo identificar la instancia conectada.');
+      return;
+    }
+
+    const noteTitle = title.trim() || 'Nota sticky';
+    const noteBody = bodyText.trim();
+    const flowName = noteTitle;
+
+    try {
+      const automation = await createAutomation(flowName, currentInstanceId);
+      const startNode = createAutomationCanvasNode({
+        type: 'start',
+        position: { x: 0, y: 0 },
+        data: {
+          label: 'Start',
+          triggerType: 'first_message',
+          keywords: [],
+          conditions: {},
+        },
+      }) as AutomationFlowNode;
+      const messageNode = createAutomationCanvasNode({
+        type: 'message',
+        position: { x: 340, y: 0 },
+        data: {
+          label: noteBody || noteTitle,
+        },
+      }) as AutomationFlowNode;
+
+      await saveAutomation(automation.id, [startNode, messageNode], [{
+        id: `edge-${Date.now()}`,
+        source: startNode.id,
+        target: messageNode.id,
+        sourceHandle: null,
+        targetHandle: null,
+      }]);
+
+      toast.success('La nota se convirtió en una automatización nueva.');
+      onNavigateToAutomation(automation.id);
+    } catch (error) {
+      toast.error('No se pudo convertir la nota en automatización.');
+    }
+  };
+
+  const handleCloseRequest = () => {
+    if (isDirty) {
+      setShowConfirmDialog(true);
+    } else {
+      onClose();
+    }
+  };
+
+  const confirmClose = (save: boolean) => {
+    if (save) {
+      handleSave();
+    }
+    setShowConfirmDialog(false);
+    onClose();
+    setIsDirty(false);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -430,10 +696,125 @@ export function PropertiesPanel({
   const addCondition = () => {
     if (typeof conditionsFieldMeta?.max === 'number' && conditions.length >= conditionsFieldMeta.max) return;
     setConditions([...conditions, { id: `cond-${Date.now()}`, type: 'text', operator: 'equals', value: '' }]);
+    markDirty();
   };
-  const removeCondition = (idx: number) => setConditions(conditions.filter((_, i) => i !== idx));
+  const removeCondition = (idx: number) => {
+    setConditions(conditions.filter((_, i) => i !== idx));
+    markDirty();
+  };
   const updateCondition = (idx: number, field: keyof ConditionEntry, val: string) => {
     setConditions((current) => current.map((condition, index) => index === idx ? { ...condition, [field]: val } : condition));
+    markDirty();
+  };
+
+  const addMenuOption = () => {
+    if (menuOptions.length >= 10) return;
+    setMenuOptions([...menuOptions, { id: `opt-${Date.now()}`, text: `Opción ${menuOptions.length + 1}` }]);
+    markDirty();
+  };
+  const removeMenuOption = (idx: number) => {
+    setMenuOptions(menuOptions.filter((_, i) => i !== idx));
+    markDirty();
+  };
+  const updateMenuOption = (idx: number, field: keyof MenuSimpleOption, val: string) => {
+    setMenuOptions((current) =>
+      current.map((option, index) => (index === idx ? { ...option, [field]: val } : option)),
+    );
+    markDirty();
+  };
+
+  const addFormField = (type: FormField['type']) => {
+    if (formFields.length >= 20) return;
+    const id = `field-${Date.now()}-${formFields.length + 1}`;
+    setFormFields((current) => [
+      ...current,
+      {
+        id,
+        type,
+        label:
+          type === 'menu'
+            ? t('form_default_menu_question')
+            : t('form_default_text_question'),
+        variable: `respuesta_${current.length + 1}`,
+        markerStyle: 'emoji_number',
+        menuOptions:
+          type === 'menu'
+            ? [
+                { id: `${id}-option-1`, text: t('form_default_option', { number: 1 }) },
+                { id: `${id}-option-2`, text: t('form_default_option', { number: 2 }) },
+              ]
+            : undefined,
+      },
+    ]);
+    markDirty();
+  };
+
+  const updateFormField = (index: number, patch: Partial<FormField>) => {
+    setFormFields((current) =>
+      current.map((field, fieldIndex) =>
+        fieldIndex === index
+          ? {
+              ...field,
+              ...patch,
+              menuOptions:
+                patch.type === 'menu' && !field.menuOptions?.length
+                  ? [
+                      { id: `${field.id}-option-1`, text: t('form_default_option', { number: 1 }) },
+                      { id: `${field.id}-option-2`, text: t('form_default_option', { number: 2 }) },
+                    ]
+                  : patch.type === 'text'
+                    ? undefined
+                    : patch.menuOptions ?? field.menuOptions,
+            }
+          : field,
+      ),
+    );
+    markDirty();
+  };
+
+  const removeFormField = (index: number) => {
+    if (formFields.length <= 1) return;
+    setFormFields((current) => current.filter((_, fieldIndex) => fieldIndex !== index));
+    markDirty();
+  };
+
+  const addFormMenuOption = (fieldIndex: number) => {
+    const field = formFields[fieldIndex];
+    if (!field || (field.menuOptions?.length ?? 0) >= 10) return;
+    const optionNumber = (field.menuOptions?.length ?? 0) + 1;
+    updateFormField(fieldIndex, {
+      menuOptions: [
+        ...(field.menuOptions ?? []),
+        {
+          id: `${field.id}-option-${Date.now()}`,
+          text: t('form_default_option', { number: optionNumber }),
+        },
+      ],
+    });
+  };
+
+  const updateFormMenuOption = (
+    fieldIndex: number,
+    optionIndex: number,
+    text: string,
+  ) => {
+    const field = formFields[fieldIndex];
+    if (!field) return;
+    updateFormField(fieldIndex, {
+      menuOptions: (field.menuOptions ?? []).map((option, index) =>
+        index === optionIndex ? { ...option, text } : option,
+      ),
+    });
+  };
+
+  const removeFormMenuOption = (fieldIndex: number, optionIndex: number) => {
+    const field = formFields[fieldIndex];
+    if (!field || (field.menuOptions?.length ?? 0) <= 1) return;
+    updateFormField(fieldIndex, {
+      menuOptions: (field.menuOptions ?? []).filter(
+        (_, index) => index !== optionIndex,
+      ),
+    });
   };
 
   const maybeOpenDraftShortcuts = (
@@ -462,18 +843,36 @@ export function PropertiesPanel({
     if (!open) setDraftInsertTarget(null);
   };
 
+  const isModal = variant === 'modal';
   return (
-    <aside className="flex w-[clamp(18rem,24vw,22rem)] min-w-[18rem] max-w-[22rem] min-h-0 shrink-0 resize-x flex-col overflow-hidden border-l border-border bg-background">
+    <aside className={cn(
+      'flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-border bg-background',
+      isModal ? 'w-full border-0' : 'w-[clamp(18rem,24vw,22rem)] min-w-[18rem] max-w-[22rem] resize-x'
+    )}>
       <div className="p-4 border-b border-border flex justify-between items-center bg-muted/30 shrink-0">
         <div>
           <h2 className="font-semibold text-sm">{t('properties_title')}</h2>
           {selectedNodeMeta ? <p className="text-[11px] text-muted-foreground">{t(selectedNodeMeta.labelKey)}</p> : null}
         </div>
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}><X className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleCloseRequest}><X className="h-4 w-4" /></Button>
       </div>
 
       <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-6 custom-scrollbar">
         
+        <div className="space-y-2">
+          <Label>Nombre de referencia interna (opcional)</Label>
+          <Input
+            value={referenceName}
+            onChange={(e) => {
+              setReferenceName(e.target.value);
+              markDirty();
+            }}
+            placeholder="Ej: bienvenida_cliente_vip"
+            className="h-8 text-xs"
+          />
+          <p className="text-[10px] text-muted-foreground">Usado para identificar el nodo internamente (GoTo, logs, etc).</p>
+        </div>
+
         {(selectedNode.type === 'message' || selectedNode.type === 'options' || selectedNode.type === 'collect') && (
           <div className="space-y-2">
             <Label>{selectedNode.type === 'collect' ? t('question_label') : t('message_text_label')}</Label>
@@ -483,11 +882,48 @@ export function PropertiesPanel({
               onChange={(e) => {
                 const nextValue = e.target.value;
                 setLabel(nextValue);
+                markDirty();
                 maybeOpenDraftShortcuts(nextValue, 'label');
               }}
               placeholder={t('type_placeholder')}
               className="resize-none"
             />
+          </div>
+        )}
+
+        {selectedNode.type === 'sticky_note' && (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Titulo de la nota</Label>
+              <Input
+                value={title}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  markDirty();
+                }}
+                placeholder="Ej: Pendiente de validacion"
+                className="h-8 text-xs"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Contenido de la nota</Label>
+              <Textarea
+                rows={5}
+                value={bodyText}
+                onChange={(e) => {
+                  setBodyText(e.target.value);
+                  markDirty();
+                }}
+                placeholder="Escribe una referencia, una decision o un plan de trabajo."
+                className="resize-none"
+              />
+            </div>
+
+            <Button type="button" variant="outline" className="w-full" onClick={handleConvertStickyNote}>
+              <ArrowRight className="mr-2 h-4 w-4" />
+              Convertir en automatizacion
+            </Button>
           </div>
         )}
 
@@ -524,6 +960,16 @@ export function PropertiesPanel({
                     <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => removeCondition(idx)}>
                       <Trash2 className="h-3 w-3" />
                     </Button>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-[10px]">Texto identificador (para referencia humana)</Label>
+                    <Input 
+                      value={cond.label || ''} 
+                      onChange={(e) => updateCondition(idx, 'label', e.target.value)} 
+                      className="h-8 text-xs"
+                      placeholder="Ej: Cliente VIP, Pago exitoso..."
+                    />
                   </div>
 
                   <div className="space-y-2">
@@ -600,24 +1046,366 @@ export function PropertiesPanel({
           </div>
         )}
 
-        {selectedNode.type === 'go_to_node' && (
+        {selectedNode.type === 'menu_simple' && (
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>{t('go_to_mode_label')}</Label>
-              <Select value={goToMode} onValueChange={(value) => setGoToMode(value as 'previous_node' | 'specific_node' | 'other_flow')}>
+              <Label>{t('message_text_label')} <span className="text-destructive">*</span></Label>
+              <Textarea
+                rows={3}
+                value={label}
+                onChange={(e) => { setLabel(e.target.value); markDirty(); }}
+                placeholder={t('type_placeholder')}
+                className="resize-none"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>{t('menu_simple_marker_style_label')}</Label>
+              <Select
+                value={menuMarkerStyle}
+                onValueChange={(v) => { setMenuMarkerStyle(v as MenuSimpleMarkerStyle); markDirty(); }}
+              >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="previous_node">{t('go_to_mode_previous')}</SelectItem>
-                  <SelectItem value="specific_node">{t('go_to_mode_specific')}</SelectItem>
-                  <SelectItem value="other_flow">{t('go_to_mode_other_automation')}</SelectItem>
+                  {MENU_SIMPLE_MARKER_STYLES.map((style) => (
+                    <SelectItem key={style} value={style}>
+                      {t(`menu_simple_marker.${style}`)} ({getMenuMarker(style, 0)} {getMenuMarker(style, 1)})
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
 
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <Label>{t('menu_simple_options_label')}</Label>
+                <Button variant="outline" size="sm" onClick={addMenuOption} disabled={menuOptions.length >= 10} className="h-7 text-xs">
+                  <Plus className="h-3 w-3 mr-1" /> {t('menu_simple_add_option_btn')}
+                </Button>
+              </div>
+
+              {menuOptions.map((option, idx) => (
+                <div key={option.id} className="p-3 bg-muted/40 rounded border border-border space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-muted-foreground w-7 shrink-0">{getMenuMarker(menuMarkerStyle, idx)}</span>
+                    <Input
+                      value={option.text}
+                      onChange={(e) => updateMenuOption(idx, 'text', e.target.value)}
+                      className="h-8 text-xs"
+                      placeholder={t('menu_simple_option_placeholder')}
+                    />
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive shrink-0" onClick={() => removeMenuOption(idx)}>
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+
+                  <details className="group">
+                    <summary className="cursor-pointer text-[10px] text-muted-foreground hover:text-foreground">
+                      {t('menu_simple_advanced_label')}
+                    </summary>
+                    <div className="mt-2 space-y-2 border-l-2 border-border pl-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <Select value={option.matchType || 'text'} onValueChange={(v) => updateMenuOption(idx, 'matchType', v)}>
+                          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="text">{t('ConditionProperties.types.text')}</SelectItem>
+                            <SelectItem value="number">{t('ConditionProperties.types.number')}</SelectItem>
+                            <SelectItem value="variable">{t('ConditionProperties.types.variable')}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Select value={option.matchOperator || 'equals'} onValueChange={(v) => updateMenuOption(idx, 'matchOperator', v)}>
+                          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {(option.matchType || 'text') === 'number' ? (
+                              <>
+                                <SelectItem value="equals">{t('ConditionProperties.operators.equals')}</SelectItem>
+                                <SelectItem value="greater_than">{t('ConditionProperties.operators.greater_than')}</SelectItem>
+                                <SelectItem value="less_than">{t('ConditionProperties.operators.less_than')}</SelectItem>
+                                <SelectItem value="gte">{t('ConditionProperties.operators.gte')}</SelectItem>
+                                <SelectItem value="lte">{t('ConditionProperties.operators.lte')}</SelectItem>
+                                <SelectItem value="between">{t('ConditionProperties.operators.between')}</SelectItem>
+                              </>
+                            ) : (
+                              <>
+                                <SelectItem value="equals">{t('ConditionProperties.operators.equals')}</SelectItem>
+                                <SelectItem value="not_equals">{t('ConditionProperties.operators.not_equals')}</SelectItem>
+                                <SelectItem value="contains">{t('ConditionProperties.operators.contains')}</SelectItem>
+                                <SelectItem value="starts_with">{t('ConditionProperties.operators.starts_with')}</SelectItem>
+                                <SelectItem value="ends_with">{t('ConditionProperties.operators.ends_with')}</SelectItem>
+                              </>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Input
+                        value={option.matchValue || ''}
+                        onChange={(e) => updateMenuOption(idx, 'matchValue', e.target.value)}
+                        className="h-8 text-xs"
+                        placeholder={t('menu_simple_match_value_placeholder')}
+                      />
+                      {option.matchOperator === 'between' && (
+                        <Input
+                          value={option.matchValue2 || ''}
+                          onChange={(e) => updateMenuOption(idx, 'matchValue2', e.target.value)}
+                          className="h-8 text-xs"
+                          placeholder={t('ConditionProperties.value2_label')}
+                        />
+                      )}
+                    </div>
+                  </details>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-2">
+              <Label>{t('menu_simple_global_delay_label')}</Label>
+              <Input
+                type="number"
+                min={0}
+                max={600}
+                value={menuGlobalDelay}
+                onChange={(e) => { setMenuGlobalDelay(Number(e.target.value)); markDirty(); }}
+              />
+              <p className="text-[10px] text-muted-foreground">{t('menu_simple_global_delay_helper')}</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>{t('menu_simple_variable_label')}</Label>
+              <Input
+                value={menuVariable}
+                onChange={(e) => { setMenuVariable(e.target.value); markDirty(); }}
+                placeholder={t('menu_simple_variable_placeholder')}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-[10px] uppercase text-muted-foreground">{t('menu_simple_preview_label')}</Label>
+              <pre className="whitespace-pre-wrap rounded border border-border bg-muted/30 p-3 text-xs text-foreground">
+                {buildMenuSimpleMessage({ label, markerStyle: menuMarkerStyle, menuOptions }) || '—'}
+              </pre>
+            </div>
+          </div>
+        )}
+
+        {selectedNode.type === 'form' && (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>{t('form_fields_label')}</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="justify-start gap-2"
+                  disabled={formFields.length >= 20}
+                  onClick={() => addFormField('text')}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {t('form_add_text_field')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="justify-start gap-2"
+                  disabled={formFields.length >= 20}
+                  onClick={() => addFormField('menu')}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {t('form_add_menu_field')}
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {formFields.map((field, fieldIndex) => (
+                <div
+                  key={field.id}
+                  className="space-y-3 rounded-lg border border-border bg-muted/20 p-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold">
+                      {t('form_field_number', { number: fieldIndex + 1 })}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-destructive"
+                      disabled={formFields.length <= 1}
+                      onClick={() => removeFormField(fieldIndex)}
+                      aria-label={t('form_remove_field')}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
+                    {(['text', 'menu'] as const).map((type) => (
+                      <Button
+                        key={type}
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className={cn(
+                          'h-8 text-xs',
+                          field.type === type && 'bg-background shadow-sm hover:bg-background',
+                        )}
+                        aria-pressed={field.type === type}
+                        onClick={() => updateFormField(fieldIndex, { type })}
+                      >
+                        {t(type === 'text' ? 'form_field_type_text' : 'form_field_type_menu')}
+                      </Button>
+                    ))}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-[10px]">{t('form_question_label')}</Label>
+                    <Textarea
+                      rows={3}
+                      className="resize-none text-xs"
+                      value={field.label}
+                      onChange={(event) =>
+                        updateFormField(fieldIndex, { label: event.target.value })
+                      }
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-[10px]">{t('form_variable_label')}</Label>
+                    <Input
+                      className="h-8 text-xs"
+                      value={field.variable}
+                      onChange={(event) =>
+                        updateFormField(fieldIndex, { variable: event.target.value })
+                      }
+                      placeholder="respuesta_1"
+                    />
+                  </div>
+
+                  {field.type === 'menu' && (
+                    <>
+                      <div className="space-y-2">
+                        <Label className="text-[10px]">
+                          {t('menu_simple_marker_style_label')}
+                        </Label>
+                        <Select
+                          value={field.markerStyle || 'emoji_number'}
+                          onValueChange={(value) =>
+                            updateFormField(fieldIndex, {
+                              markerStyle: value as MenuSimpleMarkerStyle,
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {MENU_SIMPLE_MARKER_STYLES.map((style) => (
+                              <SelectItem key={style} value={style}>
+                                {t(`menu_simple_marker.${style}`)} ({getMenuMarker(style, 0)}{' '}
+                                {getMenuMarker(style, 1)})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <Label className="text-[10px]">
+                            {t('form_menu_options_label')}
+                          </Label>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 gap-1 text-[10px]"
+                            disabled={(field.menuOptions?.length ?? 0) >= 10}
+                            onClick={() => addFormMenuOption(fieldIndex)}
+                          >
+                            <Plus className="h-3 w-3" />
+                            {t('menu_simple_add_option_btn')}
+                          </Button>
+                        </div>
+                        {(field.menuOptions ?? []).map((option, optionIndex) => (
+                          <div key={option.id} className="flex items-center gap-2">
+                            <span className="w-6 shrink-0 text-center text-xs font-semibold text-muted-foreground">
+                              {getMenuMarker(field.markerStyle || 'emoji_number', optionIndex)}
+                            </span>
+                            <Input
+                              className="h-8 text-xs"
+                              value={option.text}
+                              onChange={(event) =>
+                                updateFormMenuOption(
+                                  fieldIndex,
+                                  optionIndex,
+                                  event.target.value,
+                                )
+                              }
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 shrink-0 text-destructive"
+                              disabled={(field.menuOptions?.length ?? 0) <= 1}
+                              onClick={() =>
+                                removeFormMenuOption(fieldIndex, optionIndex)
+                              }
+                              aria-label={t('form_remove_option')}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {selectedNode.type === 'go_to_node' && (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>{t('go_to_mode_label')}</Label>
+              <div className="grid grid-cols-3 gap-1">
+                {([
+                  ['previous_node', t('go_to_mode_previous')],
+                  ['specific_node', t('go_to_mode_specific')],
+                  ['other_flow', t('go_to_mode_other_automation')],
+                ] as const).map(([value, label]) => (
+                  <Button
+                    key={value}
+                    type="button"
+                    size="sm"
+                    variant={goToMode === value ? 'default' : 'outline'}
+                    className="h-auto min-h-9 whitespace-normal px-2 py-1.5 text-[10px] leading-tight"
+                    aria-pressed={goToMode === value}
+                    onClick={() => {
+                      setGoToMode(value);
+                      markDirty();
+                    }}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
             {goToMode === 'specific_node' && (
               <div className="space-y-2">
-                <Label>{t('go_to_target_node_label')}</Label>
-                <Select value={goToTargetNodeId || undefined} onValueChange={setGoToTargetNodeId}>
+                <Label>2 · {t('go_to_target_node_label')}</Label>
+                <Select
+                  value={goToTargetNodeId || undefined}
+                  onValueChange={(value) => {
+                    setGoToTargetNodeId(value);
+                    markDirty();
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder={t('go_to_target_node_placeholder')} />
                   </SelectTrigger>
@@ -635,18 +1423,31 @@ export function PropertiesPanel({
                     )}
                   </SelectContent>
                 </Select>
+                {goToTargetNodeId && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full gap-1.5 text-xs"
+                    onClick={() => handleGoToNodeInCurrentFlow(goToTargetNodeId)}
+                  >
+                    <ArrowRight className="h-3.5 w-3.5" />
+                    Guardar e ir al nodo destino
+                  </Button>
+                )}
               </div>
             )}
 
             {goToMode === 'other_flow' && (
               <>
                 <div className="space-y-2">
-                  <Label>{t('go_to_target_automation_label')}</Label>
+                  <Label>2 · {t('go_to_target_automation_label')}</Label>
                   <Select
                     value={goToTargetAutomationId || undefined}
                     onValueChange={(value) => {
                       setGoToTargetAutomationId(value);
-                      setGoToTargetNodeId('');
+                      setGoToTargetNodeId(FLOW_START_TARGET_VALUE);
+                      markDirty();
                     }}
                   >
                     <SelectTrigger>
@@ -666,13 +1467,49 @@ export function PropertiesPanel({
                       )}
                     </SelectContent>
                   </Select>
+                  {!goToTargetAutomationId ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-1 w-full gap-1.5 text-xs"
+                      onClick={async () => {
+                        const title = prompt('Título para el nuevo flujo:', 'Nuevo flujo desde Ir a nodo');
+                        if (!title || !title.trim()) return;
+                        const inst = currentInstanceId ?? availableAutomations[0]?.instanceId;
+                        if (!inst) {
+                          toast.error('No se pudo determinar la instancia');
+                          return;
+                        }
+                        try {
+                          const res = await createAutomation(title.trim(), inst);
+                          if (res?.id) {
+                            setGoToTargetAutomationId(String(res.id));
+                            setGoToTargetNodeId(FLOW_START_TARGET_VALUE);
+                            markDirty();
+                            toast.success(t('go_to_flow_created_linked'));
+                            if (confirm('¿Ir ahora al nuevo flujo para configurarlo?')) {
+                              handleGoToTargetAutomation();
+                            }
+                          }
+                        } catch (e) {
+                          toast.error('Error al crear el flujo');
+                        }
+                      }}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Crear nuevo flujo y enlazar
+                    </Button>
+                  ) : null}
                 </div>
 
                 <div className="space-y-2">
-                  <Label>{t('go_to_target_node_label')}</Label>
+                  <Label>3 · {t('go_to_target_node_label')}</Label>
                   <Select
                     value={goToTargetNodeId || undefined}
-                    onValueChange={setGoToTargetNodeId}
+                    onValueChange={(value) => {
+                      setGoToTargetNodeId(value);
+                      markDirty();
+                    }}
                     disabled={!goToTargetAutomationId}
                   >
                     <SelectTrigger>
@@ -683,43 +1520,47 @@ export function PropertiesPanel({
                         <div className="px-2 py-1.5 text-xs text-muted-foreground">
                           {t('go_to_select_automation_first')}
                         </div>
-                      ) : targetAutomationNodeOptions.length === 0 ? (
-                        <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                          {t('go_to_no_nodes_in_target_automation')}
-                        </div>
                       ) : (
-                        targetAutomationNodeOptions.map((node) => (
-                          <SelectItem key={node.value} value={node.value}>
-                            {node.label}
+                        <>
+                          <SelectItem value={FLOW_START_TARGET_VALUE}>
+                            {t('go_to_flow_start')}
                           </SelectItem>
-                        ))
+                          {targetAutomationNodeOptions.map((node) => (
+                            <SelectItem key={node.value} value={node.value}>
+                              {node.label}
+                            </SelectItem>
+                          ))}
+                        </>
                       )}
                     </SelectContent>
                   </Select>
                 </div>
 
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="flex-1"
-                    disabled={!goToTargetAutomationId}
-                    onClick={() => onNavigateToAutomation(Number(goToTargetAutomationId))}
-                  >
-                    {t('go_to_open_automation_btn')}
-                  </Button>
-                </div>
-                {hasUnsavedChanges && (
-                  <p className="text-xs text-amber-500">
-                    {t('save_before_redirect_warning')}
-                  </p>
-                )}
+                <Button
+                  type="button"
+                  className="w-full gap-1.5 bg-violet-600 text-white hover:bg-violet-700"
+                  disabled={!goToTargetAutomationId}
+                  onClick={handleGoToTargetAutomation}
+                >
+                  <ArrowRight className="h-4 w-4" />
+                  Guardar e ir a la automatización destino
+                </Button>
+                <p className="text-[11px] text-muted-foreground">
+                  Se guardan el nodo y el flujo automáticamente antes de abrir la otra automatización.
+                </p>
               </>
             )}
 
-            <div className="space-y-2">
-              <Label>{t('go_to_fallback_action_label')}</Label>
-              <Select value={goToFallbackAction} onValueChange={(value) => setGoToFallbackAction(value as 'stop' | 'node')}>
+            {/* Fallback — what to do if the destination is missing */}
+            <div className="space-y-2 border-t pt-4">
+              <Label>{goToMode === 'previous_node' ? '2' : goToMode === 'specific_node' ? '3' : '4'} · {t('go_to_fallback_action_label')}</Label>
+              <Select
+                value={goToFallbackAction}
+                onValueChange={(value) => {
+                  setGoToFallbackAction(value as 'stop' | 'node');
+                  markDirty();
+                }}
+              >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="stop">{t('go_to_fallback_action_stop')}</SelectItem>
@@ -731,11 +1572,24 @@ export function PropertiesPanel({
             {goToFallbackAction === 'node' && (
               <div className="space-y-2">
                 <Label>{t('go_to_fallback_node_label')}</Label>
-                <Input
-                  value={goToFallbackNodeId}
-                  onChange={(e) => setGoToFallbackNodeId(e.target.value)}
-                  placeholder={t('go_to_fallback_node_placeholder')}
-                />
+                <Select
+                  value={goToFallbackNodeId || undefined}
+                  onValueChange={(value) => {
+                    setGoToFallbackNodeId(value);
+                    markDirty();
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('go_to_fallback_node_placeholder')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currentFlowNodeOptions.map((node) => (
+                      <SelectItem key={node.value} value={node.value}>
+                        {node.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
           </div>
@@ -749,7 +1603,7 @@ export function PropertiesPanel({
                 value={title}
                 onChange={(e) => {
                   const nextValue = e.target.value;
-                  setTitle(nextValue);
+                  setTitle(nextValue); markDirty();
                   maybeOpenDraftShortcuts(nextValue, 'title');
                 }}
                 placeholder={t('header_text_placeholder')}
@@ -762,7 +1616,7 @@ export function PropertiesPanel({
                 value={bodyText}
                 onChange={(e) => {
                   const nextValue = e.target.value;
-                  setBodyText(nextValue);
+                  setBodyText(nextValue); markDirty();
                   maybeOpenDraftShortcuts(nextValue, 'bodyText');
                 }}
                 placeholder={t('body_text_placeholder')}
@@ -826,7 +1680,7 @@ export function PropertiesPanel({
                 value={title}
                 onChange={(e) => {
                   const nextValue = e.target.value;
-                  setTitle(nextValue);
+                  setTitle(nextValue); markDirty();
                   maybeOpenDraftShortcuts(nextValue, 'title');
                 }}
                 placeholder={t('enter_header_text_placeholder')}
@@ -839,7 +1693,7 @@ export function PropertiesPanel({
                 value={bodyText}
                 onChange={(e) => {
                   const nextValue = e.target.value;
-                  setBodyText(nextValue);
+                  setBodyText(nextValue); markDirty();
                   maybeOpenDraftShortcuts(nextValue, 'bodyText');
                 }}
                 placeholder={t('enter_value_text_placeholder')}
@@ -887,7 +1741,7 @@ export function PropertiesPanel({
                 value={bodyText}
                 onChange={(e) => {
                   const nextValue = e.target.value;
-                  setBodyText(nextValue);
+                  setBodyText(nextValue); markDirty();
                   maybeOpenDraftShortcuts(nextValue, 'bodyText');
                 }}
                 placeholder={t('enter_message_text_placeholder')}
@@ -979,7 +1833,10 @@ export function PropertiesPanel({
             <Label>{t('variable_name_label')}</Label>
             <Input 
               value={variable} 
-              onChange={(e) => setVariable(e.target.value)} 
+              onChange={(e) => {
+                setVariable(e.target.value);
+                markDirty();
+              }}
               placeholder={t('variable_name_placeholder')}
             />
             <p className="text-xs text-muted-foreground">{t('save_user_answer_desc')}</p>
@@ -992,8 +1849,11 @@ export function PropertiesPanel({
               <Label>{t('name_variable_label')}</Label>
               <Input 
                 value={saveNameVar} 
-                onChange={(e) => setSaveNameVar(e.target.value)} 
-                placeholder="Name or {{variable}}"
+                onChange={(e) => {
+                  setSaveNameVar(e.target.value);
+                  markDirty();
+                }}
+                placeholder={t('contact_name_placeholder')}
               />
               <p className="text-xs text-muted-foreground">{t('variable_to_use_contact_name_desc')}</p>
             </div>
@@ -1035,7 +1895,10 @@ export function PropertiesPanel({
                                 <Label className="text-xs font-normal">{cf.name}</Label>
                                 <Input 
                                     value={saveCustomFields[cf.key] || ''} 
-                                    onChange={(e) => setSaveCustomFields(prev => ({ ...prev, [cf.key]: e.target.value }))}
+                                    onChange={(e) => {
+                                      setSaveCustomFields(prev => ({ ...prev, [cf.key]: e.target.value }));
+                                      markDirty();
+                                    }}
                                     placeholder={cf.type === 'boolean' ? "true/false or {{var}}" : "Value or {{var}}"}
                                     className="h-8 text-xs"
                                 />
@@ -1044,16 +1907,6 @@ export function PropertiesPanel({
                     </div>
                 </div>
             )}
-          </div>
-        )}
-
-        {selectedNode.type === 'delay' && (
-          <div className="space-y-3">
-            <Label>{t('wait_duration_label')}</Label>
-            <div className="flex items-center gap-2">
-              <Input type="number" min={delayFieldMeta?.min} max={delayFieldMeta?.max} value={seconds} onChange={(e) => setSeconds(Number(e.target.value))} />
-              <span className="text-sm text-muted-foreground">{t('sec_label')}</span>
-            </div>
           </div>
         )}
 
@@ -1082,6 +1935,29 @@ export function PropertiesPanel({
       <div className="p-4 border-t border-border bg-muted/30 shrink-0">
         <Button className="w-full" onClick={handleSave}><Save className="h-4 w-4 mr-2" /> {t('save_changes_btn')}</Button>
       </div>
+
+      {/* Confirmation dialog when exiting with unsaved edits */}
+      <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Guardar los cambios?</DialogTitle>
+            <DialogDescription>
+              Tienes cambios sin guardar en este nodo. ¿Quieres guardarlos antes de salir?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => confirmClose(false)}>
+              Descartar
+            </Button>
+            <Button variant="outline" onClick={() => setShowConfirmDialog(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={() => confirmClose(true)}>
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <DraftShortcutsModal
         open={draftShortcutsOpen}
         onOpenChange={handleDraftModalOpenChange}

@@ -7,7 +7,7 @@ export const defaultLandingContent: LandingContentRecord = {
       eyebrow: 'Automatización que vende por ti',
       title: 'Construye flujos que persiguen oportunidades, responden al instante y empujan cada chat hacia una venta real.',
       description:
-        'Deja de contestar tarde, improvisar seguimientos y perder prospectos tibios. WhatSaaS convierte cada conversación en un proceso de cierre claro, rápido y repetible para tu equipo.',
+        'Deja de contestar tarde, improvisar seguimientos y perder prospectos tibios. {brand} convierte cada conversación en un proceso de cierre claro, rápido y repetible para tu equipo.',
       bullets: [
         'Responde de inmediato aunque tu equipo esté ocupado.',
         'Filtra curiosos, detecta compradores y manda cada lead al asesor correcto.',
@@ -42,7 +42,7 @@ export const defaultLandingContent: LandingContentRecord = {
   faqItems: [
     {
       id: 'faq-1',
-      question: '¿Qué gana mi negocio con WhatSaaS desde el primer día?',
+      question: '¿Qué gana mi negocio con {brand} desde el primer día?',
       answer:
         'Ganas velocidad, orden y ventas mejor atendidas. En vez de perseguir chats sueltos y apagar incendios, empiezas a responder más rápido, dar seguimiento serio y convertir más conversaciones en dinero.',
     },
@@ -56,7 +56,7 @@ export const defaultLandingContent: LandingContentRecord = {
       id: 'faq-3',
       question: '¿Sí me ayuda a dejar de perder mensajes y oportunidades?',
       answer:
-        'Totalmente. WhatSaaS pone orden en el caos: centraliza conversaciones, marca prioridades y te ayuda a actuar antes de que ese prospecto que preguntó hoy termine comprándole a la competencia.',
+        'Totalmente. {brand} pone orden en el caos: centraliza conversaciones, marca prioridades y te ayuda a actuar antes de que ese prospecto que preguntó hoy termine comprándole a la competencia.',
     },
     {
       id: 'faq-4',
@@ -102,7 +102,7 @@ export const defaultLandingContent: LandingContentRecord = {
     },
     {
       id: 'faq-11',
-      question: '¿Qué áreas importantes puedo resolver con WhatSaaS además de responder mensajes?',
+      question: '¿Qué áreas importantes puedo resolver con {brand} además de responder mensajes?',
       answer:
         'Puedes resolver ventas, soporte, seguimiento, reactivación de leads, cobranza operativa y coordinación interna desde un mismo sistema. No es solo para contestar: es para mover tu operación completa sin perder control.',
     },
@@ -116,7 +116,7 @@ export const defaultLandingContent: LandingContentRecord = {
       id: 'faq-13',
       question: '¿Qué pasa si mi equipo no se da abasto cuando entran muchos mensajes?',
       answer:
-        'WhatSaaS te ayuda a absorber más demanda sin colapsar. Automatiza lo repetitivo, organiza lo urgente y reparte la carga para que tu negocio siga respondiendo incluso en picos de trabajo.',
+        '{brand} te ayuda a absorber más demanda sin colapsar. Automatiza lo repetitivo, organiza lo urgente y reparte la carga para que tu negocio siga respondiendo incluso en picos de trabajo.',
     },
     {
       id: 'faq-14',

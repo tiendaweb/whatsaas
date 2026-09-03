@@ -120,9 +120,32 @@ export class OpenAIProvider implements AIProvider {
 
   async transcribeAudio(audioUrl: string): Promise<string> {
     try {
-        const response = await fetch(audioUrl);
-        const blob = await response.blob();
-        const file = new File([blob], "audio.mp3", { type: blob.type });
+        // Las rutas internas (`/uploads/audio/xxx.ogg`) se leen del disco: no
+        // son URLs que fetch acepte, y servirlas por /api/media exige la sesión
+        // del usuario, que desde un cron no existe.
+        const file = audioUrl.startsWith('http')
+            ? await (async () => {
+                const response = await fetch(audioUrl);
+                const blob = await response.blob();
+                return new File([blob], "audio.mp3", { type: blob.type });
+            })()
+            : await (async () => {
+                const clean = audioUrl.replace(/\\/g, '/');
+                const filePath = path.join(process.cwd(), 'public', clean.startsWith('/') ? clean.slice(1) : clean);
+                const buffer = await fs.readFile(filePath);
+                const extension = path.extname(filePath).toLowerCase();
+                // whisper-1 decide el decodificador por la extensión del nombre,
+                // así que el nombre tiene que conservar la real: los audios de
+                // WhatsApp son .ogg y mandarlos como "audio.mp3" los rechaza.
+                const mimeTypes: Record<string, string> = {
+                    '.ogg': 'audio/ogg', '.oga': 'audio/ogg', '.opus': 'audio/ogg',
+                    '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.mp4': 'audio/mp4',
+                    '.wav': 'audio/wav', '.webm': 'audio/webm', '.flac': 'audio/flac',
+                };
+                return new File([new Uint8Array(buffer)], `audio${extension || '.ogg'}`, {
+                    type: mimeTypes[extension] || 'audio/ogg',
+                });
+            })();
 
         const transcription = await this.client.audio.transcriptions.create({
             file: file, 

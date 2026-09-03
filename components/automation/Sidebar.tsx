@@ -2,8 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Bot,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Clock,
+  ClipboardList,
   ExternalLink,
   GitBranchPlus,
   Image,
@@ -11,9 +13,11 @@ import {
   ListChecks,
   MessageSquare,
   MousePointerClick,
+  ListOrdered,
   PenLine,
   Save,
   Split,
+  StickyNote,
   XCircle,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -23,12 +27,19 @@ import {
   getSidebarNodesByCategory,
   type AutomationSidebarIconKey,
 } from '@/lib/automation/node-catalog';
+import type { AutomationFlowChannel } from '@/lib/automation/flow-schema';
 
 interface SidebarSectionProps {
   title: string;
   children: React.ReactNode;
   defaultOpen?: boolean;
   compact?: boolean;
+}
+
+export interface AutomationNodesSidebarProps {
+  collapsed?: boolean;
+  onToggle?: () => void;
+  channel?: AutomationFlowChannel;
 }
 
 const ICONS_BY_KEY: Record<AutomationSidebarIconKey, React.ElementType> = {
@@ -45,6 +56,9 @@ const ICONS_BY_KEY: Record<AutomationSidebarIconKey, React.ElementType> = {
   save: Save,
   bot: Bot,
   'git-branch-plus': GitBranchPlus,
+  'sticky-note': StickyNote,
+  'list-ordered': ListOrdered,
+  'clipboard-list': ClipboardList,
 };
 
 function SidebarSection({ title, children, defaultOpen = true, compact = false }: SidebarSectionProps) {
@@ -104,15 +118,17 @@ function DraggableNode({ type, label, icon: Icon, colorClass, iconColorClass, co
   );
 }
 
-export function Sidebar() {
+export function Sidebar({ collapsed = false, onToggle, channel }: AutomationNodesSidebarProps) {
   const t = useTranslations('Automation');
   const asideRef = useRef<HTMLElement>(null);
   const [isCompact, setIsCompact] = useState(false);
 
+  const isCollapsed = collapsed;
+
   useEffect(() => {
     const element = asideRef.current;
 
-    if (!element || typeof ResizeObserver === 'undefined') {
+    if (!element || typeof ResizeObserver === 'undefined' || isCollapsed) {
       return;
     }
 
@@ -129,27 +145,60 @@ export function Sidebar() {
     observer.observe(element);
 
     return () => observer.disconnect();
-  }, []);
+  }, [isCollapsed]);
 
   const onDragStart = (event: React.DragEvent, nodeType: string) => {
     event.dataTransfer.setData('application/reactflow', nodeType);
+    event.dataTransfer.setData('text/plain', nodeType);
     event.dataTransfer.effectAllowed = 'move';
   };
+
+  if (isCollapsed) {
+    return (
+      <aside className="flex h-full w-12 shrink-0 flex-col items-center border-r border-border bg-background py-2">
+        <button
+          onClick={onToggle}
+          className="mt-1 rounded p-1.5 hover:bg-muted"
+          title={t('show_components') ?? 'Mostrar componentes'}
+          aria-label={t('show_components') ?? 'Mostrar componentes'}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+        <div className="mt-3 flex flex-col gap-2">
+          {AUTOMATION_SIDEBAR_CATEGORIES.slice(0, 3).map((cat, idx) => (
+            <div key={idx} className="h-2 w-2 rounded-full bg-muted-foreground/40" />
+          ))}
+        </div>
+      </aside>
+    );
+  }
 
   return (
     <aside
       ref={asideRef}
       className="flex min-h-0 w-[clamp(15rem,18vw,18rem)] min-w-[4.75rem] max-w-[18rem] shrink-0 resize-x flex-col overflow-hidden border-r border-border bg-background"
     >
-      <div className={cn('z-10 shrink-0 border-b border-border bg-background p-3', isCompact && 'px-2 text-center')}>
-        <h2 className={cn('text-sm font-semibold', isCompact && 'sr-only')}>{t('sidebar_title')}</h2>
-        <p className={cn('text-[10px] text-muted-foreground', isCompact && 'hidden')}>{t('sidebar_desc')}</p>
+      <div className={cn('z-10 shrink-0 border-b border-border bg-background p-3 flex items-center justify-between', isCompact && 'px-2 text-center')}>
+        <div>
+          <h2 className={cn('text-sm font-semibold', isCompact && 'sr-only')}>{t('sidebar_title')}</h2>
+          <p className={cn('text-[10px] text-muted-foreground', isCompact && 'hidden')}>{t('sidebar_desc')}</p>
+        </div>
+        {onToggle && (
+          <button
+            onClick={onToggle}
+            className="rounded p-1 hover:bg-muted"
+            title={t('hide_components') ?? 'Ocultar'}
+            aria-label={t('hide_components') ?? 'Ocultar'}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto pb-4">
         {AUTOMATION_SIDEBAR_CATEGORIES.map((category) => (
           <SidebarSection key={category} title={t(`groups.${category}`)} compact={isCompact}>
-            {getSidebarNodesByCategory(category).map((node) => {
+            {getSidebarNodesByCategory(category, channel).map((node) => {
               const Icon = ICONS_BY_KEY[node.sidebar!.icon];
 
               return (

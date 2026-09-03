@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,6 +26,8 @@ type PlanData = {
   isFlowBuilderEnabled: boolean;
   isCampaignsEnabled: boolean;
   isTemplatesEnabled: boolean;
+  isSocialPublisherEnabled: boolean;
+  isHidden: boolean;
 };
 
 const initialState: ActionState = {};
@@ -33,6 +35,13 @@ const initialState: ActionState = {};
 export function PlanForm({ initialData }: { initialData?: PlanData }) {
   const t = useTranslations('Admin');
   const [state, formAction, isPending] = useActionState(upsertPlan, initialState);
+
+  const [isAiEnabled, setIsAiEnabled] = useState(initialData?.isAiEnabled ?? false);
+  const [isFlowBuilderEnabled, setIsFlowBuilderEnabled] = useState(initialData?.isFlowBuilderEnabled ?? false);
+  const [isCampaignsEnabled, setIsCampaignsEnabled] = useState(initialData?.isCampaignsEnabled ?? false);
+  const [isTemplatesEnabled, setIsTemplatesEnabled] = useState(initialData?.isTemplatesEnabled ?? false);
+  const [isSocialPublisherEnabled, setIsSocialPublisherEnabled] = useState(initialData?.isSocialPublisherEnabled ?? false);
+  const [isHidden, setIsHidden] = useState(initialData?.isHidden ?? false);
 
   const defaultPrice = initialData ? (initialData.amount / 100).toFixed(2) : '';
 
@@ -138,7 +147,10 @@ export function PlanForm({ initialData }: { initialData?: PlanData }) {
                   <Label htmlFor="isAiEnabled">{t('ai_agent_label')}</Label>
                   <p className="text-xs text-muted-foreground">{t('ai_agent_desc')}</p>
                 </div>
-                <Switch name="isAiEnabled" id="isAiEnabled" defaultChecked={initialData?.isAiEnabled} />
+                <div className="flex items-center gap-2">
+                  <input type="hidden" name="isAiEnabled" value={isAiEnabled ? 'on' : 'off'} />
+                  <Switch id="isAiEnabled" checked={isAiEnabled} onCheckedChange={setIsAiEnabled} />
+                </div>
               </div>
 
               <div className="flex items-center justify-between">
@@ -146,7 +158,10 @@ export function PlanForm({ initialData }: { initialData?: PlanData }) {
                   <Label htmlFor="isFlowBuilderEnabled">{t('flow_builder_label')}</Label>
                   <p className="text-xs text-muted-foreground">{t('flow_builder_desc')}</p>
                 </div>
-                <Switch name="isFlowBuilderEnabled" id="isFlowBuilderEnabled" defaultChecked={initialData?.isFlowBuilderEnabled} />
+                <div className="flex items-center gap-2">
+                  <input type="hidden" name="isFlowBuilderEnabled" value={isFlowBuilderEnabled ? 'on' : 'off'} />
+                  <Switch id="isFlowBuilderEnabled" checked={isFlowBuilderEnabled} onCheckedChange={setIsFlowBuilderEnabled} />
+                </div>
               </div>
 
               <div className="flex items-center justify-between">
@@ -154,7 +169,10 @@ export function PlanForm({ initialData }: { initialData?: PlanData }) {
                   <Label htmlFor="isCampaignsEnabled">{t('campaigns_label')}</Label>
                   <p className="text-xs text-muted-foreground">{t('campaigns_desc')}</p>
                 </div>
-                <Switch name="isCampaignsEnabled" id="isCampaignsEnabled" defaultChecked={initialData?.isCampaignsEnabled} />
+                <div className="flex items-center gap-2">
+                  <input type="hidden" name="isCampaignsEnabled" value={isCampaignsEnabled ? 'on' : 'off'} />
+                  <Switch id="isCampaignsEnabled" checked={isCampaignsEnabled} onCheckedChange={setIsCampaignsEnabled} />
+                </div>
               </div>
 
               <div className="flex items-center justify-between">
@@ -162,10 +180,37 @@ export function PlanForm({ initialData }: { initialData?: PlanData }) {
                   <Label htmlFor="isTemplatesEnabled">{t('templates_label')}</Label>
                   <p className="text-xs text-muted-foreground">{t('templates_desc')}</p>
                 </div>
-                <Switch name="isTemplatesEnabled" id="isTemplatesEnabled" defaultChecked={initialData?.isTemplatesEnabled} />
+                <div className="flex items-center gap-2">
+                  <input type="hidden" name="isTemplatesEnabled" value={isTemplatesEnabled ? 'on' : 'off'} />
+                  <Switch id="isTemplatesEnabled" checked={isTemplatesEnabled} onCheckedChange={setIsTemplatesEnabled} />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="isSocialPublisherEnabled">Publicaciones Sociales</Label>
+                  <p className="text-xs text-muted-foreground">Publicar y programar contenido en Facebook e Instagram</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input type="hidden" name="isSocialPublisherEnabled" value={isSocialPublisherEnabled ? 'on' : 'off'} />
+                  <Switch id="isSocialPublisherEnabled" checked={isSocialPublisherEnabled} onCheckedChange={setIsSocialPublisherEnabled} />
+                </div>
+              </div>
+
+              <div className="pt-4 border-t">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="isHidden">Ocultar plan</Label>
+                    <p className="text-xs text-muted-foreground">No aparecerá en la landing ni para contratarse</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input type="hidden" name="isHidden" value={isHidden ? 'on' : 'off'} />
+                    <Switch id="isHidden" checked={isHidden} onCheckedChange={setIsHidden} />
+                  </div>
+                </div>
               </div>
             </CardContent>
-            
+
             <CardFooter className="border-t bg-muted/50 px-6 py-4">
               <Button type="submit" disabled={isPending} className="ml-auto">
                 {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}

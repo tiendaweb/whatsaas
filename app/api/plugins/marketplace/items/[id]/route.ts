@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/lib/db/drizzle';
-import { marketplaceItems } from '@/lib/db/schema';
+import { marketplaceItemPrices, marketplaceItems } from '@/lib/db/schema';
 import { getMarketplaceAdminContext, getMarketplaceContext } from '../../_lib/context';
+import { getBranding } from '@/lib/db/queries/branding';
+import { getTenant } from '@/lib/tenant/context';
+import { buildBrandIdentity, renderTenantCopy } from '@/lib/branding/constants';
 
 const updateItemSchema = z.object({
   title: z.string().min(1).max(180).optional(),
@@ -35,12 +38,23 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     return NextResponse.json({ error: 'Invalid item id.' }, { status: 400 });
   }
 
-  const item = await db.query.marketplaceItems.findFirst({ where: eq(marketplaceItems.id, itemId) });
+  const [item, branding, tenant] = await Promise.all([
+    db.query.marketplaceItems.findFirst({ where: eq(marketplaceItems.id, itemId) }),
+    getBranding(),
+    getTenant(),
+  ]);
   if (!item) {
     return NextResponse.json({ error: 'Not found.' }, { status: 404 });
   }
 
-  return NextResponse.json(item);
+  const prices = await db
+    .select()
+    .from(marketplaceItemPrices)
+    .where(eq(marketplaceItemPrices.itemId, itemId))
+    .orderBy(asc(marketplaceItemPrices.amount));
+
+  const identity = buildBrandIdentity(branding, tenant?.hostname);
+  return NextResponse.json(renderTenantCopy({ ...item, prices }, identity));
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {

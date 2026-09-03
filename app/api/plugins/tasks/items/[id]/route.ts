@@ -13,8 +13,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const result = await patchTaskItem({ teamId: ctx.team.id, taskId: Number(id), patch });
   if ('error' in result) {
-    const message = result.error === 'column_not_found' ? 'Column not found' : 'Not found';
-    return NextResponse.json({ error: message }, { status: 404 });
+    if (result.error === 'column_not_found') {
+      return NextResponse.json({ error: 'Column not found' }, { status: 404 });
+    }
+    if (result.error === 'column_project_mismatch') {
+      return NextResponse.json({ error: 'Column does not belong to project' }, { status: 400 });
+    }
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
   return NextResponse.json(result.item);

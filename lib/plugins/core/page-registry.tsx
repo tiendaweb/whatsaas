@@ -45,8 +45,10 @@ const pluginRouteRegistry: Record<string, PluginRouteRenderer[]> = {
     {
       routeMatcher: (slug) => !slug?.length,
       loadRenderer: async () => {
-        const { CalendarDashboard } = await import('@/lib/plugins/calendar/ui/CalendarDashboard');
-        return () => <CalendarDashboard />;
+        // La app nueva es la que abre por defecto; el tablero viejo (calendario
+        // de tareas + gantt) queda en `/plugins/calendar?ui=clasico`.
+        const { CalendarSurface } = await import('@/lib/plugins/calendar/ui/CalendarSurface');
+        return () => <CalendarSurface />;
       },
     },
   ],
@@ -410,8 +412,9 @@ const pluginRouteRegistry: Record<string, PluginRouteRenderer[]> = {
     {
       routeMatcher: (slug) => !slug?.length,
       loadRenderer: async () => {
-        const { FinanceDashboard } = await import('@/lib/plugins/finance/ui/FinanceDashboard');
-        return () => <FinanceDashboard />;
+        // Finanzas OS (pantalla completa); `?ui=clasico` sirve el tablero anterior.
+        const { FinancePluginSurface } = await import('@/lib/plugins/finance/ui-os/FinancePluginSurface');
+        return () => <FinancePluginSurface />;
       },
     },
   ],

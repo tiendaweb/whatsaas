@@ -5,6 +5,9 @@ import { getTeamForUser } from '@/lib/db/queries';
 import { chats, messages } from '@/lib/db/schema';
 import { eq, and, desc, like, ilike, or } from 'drizzle-orm';
 import { resolveMediaUrl } from '@/lib/media-url';
+import { extractLinksAndEmails } from '@/lib/extract-links';
+
+const TEXT_MESSAGE_TYPES = ['conversation', 'extendedTextMessage', 'text'] as const;
 
 export const dynamic = 'force-dynamic';
 
@@ -25,9 +28,39 @@ export async function GET(request: NextRequest) {
       columns: { id: true }
     });
 
-    if (!chat) return NextResponse.json([]); 
+    if (!chat) return NextResponse.json([]);
 
-    
+    if (type === 'links') {
+      const candidateMessages = await db.query.messages.findMany({
+        where: and(
+          eq(messages.chatId, chat.id),
+          or(...TEXT_MESSAGE_TYPES.map((messageType) => eq(messages.messageType, messageType))),
+          or(
+            ilike(messages.text, '%http://%'),
+            ilike(messages.text, '%https://%'),
+            ilike(messages.text, '%www.%'),
+            ilike(messages.text, '%@%'),
+          ),
+        ),
+        orderBy: [desc(messages.timestamp)],
+        limit: 150,
+      });
+
+      const linkItems = candidateMessages.flatMap((message) =>
+        extractLinksAndEmails(message.text).map((link, index) => ({
+          id: `${message.id}-${link.kind}-${index}`,
+          kind: link.kind,
+          value: link.value,
+          timestamp: message.timestamp,
+          fromMe: message.fromMe,
+          messageText: message.text,
+        })),
+      ).slice(0, 50);
+
+      return NextResponse.json(linkItems);
+    }
+
+
     let typeFilter;
     switch (type) {
       case 'images':

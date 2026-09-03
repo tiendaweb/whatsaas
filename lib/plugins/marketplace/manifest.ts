@@ -9,14 +9,12 @@ const manifest: AppPluginManifest<typeof marketplaceSettingsSchema> = {
   id: 'marketplace',
   displayName:  'Marketplace',
   activationMode: 'system',
-  scopes: ['dashboard.nav', 'dashboard.page'],
+  scopes: ['dashboard.page'],
   routes: [
     { path: '/plugins/marketplace', title: 'Marketplace', scope: 'dashboard.page' },
     { path: '/plugins/marketplace/app', title: 'Detalle de mejora', scope: 'dashboard.page' },
   ],
-  navItems: [
-    { label: 'Mejoras', href: '/plugins/marketplace', icon: 'Rocket', order: 47 },
-  ],
+  navItems: [],
   settingsSchema: marketplaceSettingsSchema,
   featureFlags: [],
 };

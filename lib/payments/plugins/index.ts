@@ -1,47 +1,40 @@
 import Stripe from 'stripe';
-import { PaymentPlugin } from './types';
+import { PaymentPlugin } from '@/lib/payments/plugin-types';
 import { manualPaymentPlugin } from './manual';
 import { mercadoPagoPlugin } from './mercadopago';
-import { handleSubscriptionChange, createCheckoutSession, createCustomerPortalSession, getStripeClient } from '@/lib/payments/stripe';
+import { lemonSqueezyPlugin } from './lemonsqueezy';
+import {
+  cancelStripeSubscription,
+  handleSubscriptionChange,
+  createCheckoutSession,
+  createCustomerPortalSession,
+  getStripeClientFor,
+} from '@/lib/payments/stripe';
 import { getActivePaymentProvider, PaymentProviderId } from '@/lib/payments/provider-settings';
 import { NextResponse } from 'next/server';
 import { consolePaymentAuditLogger } from './audit';
+import { db } from '@/lib/db/drizzle';
+import { paymentWebhookEvents } from '@/lib/db/schema';
+import { eq } from 'drizzle-orm';
+import { normalizeStripeStatus } from '@/lib/payments/statuses';
 
 const stripePlugin: PaymentPlugin = {
   id: 'stripe',
-  validateConfig() {
-    if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET) {
+  validateConfig(context) {
+    if (!context.providerConfig.secretKey || !context.providerConfig.webhookSecret) {
       throw new Error('Stripe no está configurado correctamente. Faltan STRIPE_SECRET_KEY o STRIPE_WEBHOOK_SECRET.');
     }
   },
-  createCheckout: async ({ team, priceId, planId }) => createCheckoutSession({ team, priceId, planId }),
-  createCustomerPortal: async (team) => {
-    const portal = await createCustomerPortalSession(team);
+  createCheckout: async ({ team, priceId, planId, context }) =>
+    createCheckoutSession({ team, priceId, planId, context }),
+  createCustomerPortal: async (team, context) => {
+    const portal = await createCustomerPortalSession(team, context);
     return portal.url;
   },
-  normalizePaymentStatus(providerStatus) {
-    const normalized = providerStatus.toLowerCase();
-
-    if (normalized === 'active' || normalized === 'trialing' || normalized === 'paid') {
-      return 'paid';
-    }
-
-    if (normalized === 'incomplete' || normalized === 'past_due' || normalized === 'pending') {
-      return 'pending';
-    }
-
-    if (normalized === 'canceled') {
-      return 'canceled';
-    }
-
-    if (normalized === 'unpaid' || normalized === 'incomplete_expired') {
-      return 'failed';
-    }
-
-    return 'failed';
-  },
-  async handleWebhook(request) {
-    stripePlugin.validateConfig();
+  cancelSubscription: cancelStripeSubscription,
+  normalizePaymentStatus: normalizeStripeStatus,
+  async handleWebhook(request, context) {
+    stripePlugin.validateConfig(context);
 
     const payload = await request.text();
     const signature = request.headers.get('stripe-signature');
@@ -53,8 +46,12 @@ const stripePlugin: PaymentPlugin = {
     let event: Stripe.Event;
 
     try {
-      const stripe = getStripeClient();
-      event = stripe.webhooks.constructEvent(payload, signature, process.env.STRIPE_WEBHOOK_SECRET!);
+      const stripe = await getStripeClientFor(context.resellerId, context.providerConfig);
+      event = stripe.webhooks.constructEvent(
+        payload,
+        signature,
+        context.providerConfig.webhookSecret!,
+      );
     } catch (error) {
       console.error({
         scope: 'payments.plugins.stripe',
@@ -66,19 +63,42 @@ const stripePlugin: PaymentPlugin = {
       return NextResponse.json({ received: false, message: 'Webhook signature verification failed.' }, { status: 400 });
     }
 
-    switch (event.type) {
+    const [claimedEvent] = await db
+      .insert(paymentWebhookEvents)
+      .values({
+        resellerId: context.resellerId,
+        provider: 'stripe',
+        topic: event.type,
+        eventId: event.id,
+        paymentId: typeof event.data.object === 'object' && event.data.object && 'id' in event.data.object
+          ? String(event.data.object.id)
+          : null,
+        status: 'processing',
+        payload: event as unknown as Record<string, unknown>,
+      })
+      .onConflictDoNothing()
+      .returning({ id: paymentWebhookEvents.id });
+    if (!claimedEvent) {
+      return NextResponse.json({ received: true, ignored: true, message: 'Duplicated webhook event.' });
+    }
+
+    try {
+      switch (event.type) {
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted': {
         const subscription = event.data.object as Stripe.Subscription;
         const canonicalStatus = stripePlugin.normalizePaymentStatus(subscription.status);
-        await handleSubscriptionChange(subscription);
+        await handleSubscriptionChange(subscription, context.resellerId);
         await stripePlugin.audit.recordStatusChange({
           provider: 'stripe',
           paymentReference: subscription.id,
           previousStatus: null,
           nextStatus: canonicalStatus,
           actor: 'webhook',
-          metadata: { eventType: event.type },
+          metadata: {
+            eventType: event.type,
+            resellerId: context.resellerId,
+          },
         });
         break;
       }
@@ -88,14 +108,27 @@ const stripePlugin: PaymentPlugin = {
           action: 'unhandled_event_type',
           eventType: event.type,
         });
+      }
+      await db.update(paymentWebhookEvents).set({
+        status: 'processed',
+        processedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(paymentWebhookEvents.id, claimedEvent.id));
+    } catch (error) {
+      await db.update(paymentWebhookEvents).set({
+        status: 'failed',
+        errorMessage: error instanceof Error ? error.message : String(error),
+        updatedAt: new Date(),
+      }).where(eq(paymentWebhookEvents.id, claimedEvent.id));
+      throw error;
     }
 
     return NextResponse.json({ received: true });
   },
-  getPublicConfig() {
+  getPublicConfig(context) {
     return {
       provider: 'stripe',
-      publishableKeyConfigured: Boolean(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY),
+      publishableKeyConfigured: Boolean(context.providerConfig.publishableKey),
     };
   },
   audit: consolePaymentAuditLogger,
@@ -105,13 +138,20 @@ const registry: Record<PaymentProviderId, PaymentPlugin> = {
   stripe: stripePlugin,
   manual: manualPaymentPlugin,
   mercadopago: mercadoPagoPlugin,
+  lemonsqueezy: lemonSqueezyPlugin,
 };
 
 export function getPluginById(provider: PaymentProviderId): PaymentPlugin {
   return registry[provider] ?? stripePlugin;
 }
 
-export async function getActivePlugin(): Promise<PaymentPlugin> {
-  const activeProvider = await getActivePaymentProvider();
+/**
+ * El proveedor activo del tenant. Para un reseller es el que él configuró: cobra con
+ * sus credenciales, no con las de la plataforma.
+ */
+export async function getActivePlugin(
+  resellerId?: number | null,
+): Promise<PaymentPlugin> {
+  const activeProvider = await getActivePaymentProvider(resellerId);
   return getPluginById(activeProvider);
 }

@@ -3,8 +3,11 @@
 import { useState } from 'react';
 import { ChevronDown, HelpCircle } from 'lucide-react';
 import type { LandingFaqItem } from '@/lib/landing/types';
+import { useBranding } from '@/providers/branding-provider';
+import { renderTenantText } from '@/lib/branding/constants';
 
 export function LandingFaqSection({ items }: { items: LandingFaqItem[] }) {
+  const { identity } = useBranding();
   const [openItems, setOpenItems] = useState<string[]>(items.slice(0, 2).map((item) => item.id));
 
   function toggleItem(id: string) {
@@ -19,7 +22,7 @@ export function LandingFaqSection({ items }: { items: LandingFaqItem[] }) {
         <div className="mx-auto max-w-3xl text-center">
           <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">Preguntas frecuentes</p>
           <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
-            Resuelve tus dudas y entiende por qué WhatSaaS te deja vender más sin quemar a tu equipo.
+            Resuelve tus dudas y entiende por qué {identity.name} te deja vender más sin quemar a tu equipo.
           </h2>
           <p className="mt-4 text-lg text-muted-foreground">
             Abre solo lo que quieras ver. Puedes publicar tantas preguntas como necesites y mantener la sección limpia, clara y lista para convertir visitas en clientes.
@@ -42,7 +45,7 @@ export function LandingFaqSection({ items }: { items: LandingFaqItem[] }) {
                       <HelpCircle className="h-4 w-4" />
                     </div>
                     <div>
-                      <h3 className="text-base font-semibold md:text-lg">{item.question}</h3>
+                      <h3 className="text-base font-semibold md:text-lg">{renderTenantText(item.question, identity)}</h3>
                       <p className="mt-1 text-sm text-muted-foreground">
                         {isOpen ? 'Toca para ocultar la respuesta.' : 'Toca para ver la respuesta completa.'}
                       </p>
@@ -53,7 +56,7 @@ export function LandingFaqSection({ items }: { items: LandingFaqItem[] }) {
                 <div className={`grid transition-all duration-300 ${isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
                   <div className="overflow-hidden">
                     <div className="border-t border-border/50 px-6 pb-6 pt-4 text-sm leading-7 text-muted-foreground md:text-base">
-                      {item.answer}
+                      {renderTenantText(item.answer, identity)}
                     </div>
                   </div>
                 </div>

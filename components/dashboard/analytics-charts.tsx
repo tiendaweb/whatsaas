@@ -26,6 +26,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Filter } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 const RoundedBar = (props: any) => {
   const { x, y, width, height, fill } = props;
@@ -45,6 +46,7 @@ type TrafficData = {
 };
 
 export function TrafficHeatmap({ data }: { data: TrafficData[] }) {
+  const t = useTranslations('Analytics');
   const getIntensityClass = (count: number) => {
     if (count === 0) return 'bg-muted/40'; 
     if (count < 5) return 'bg-primary/30';
@@ -79,15 +81,15 @@ export function TrafficHeatmap({ data }: { data: TrafficData[] }) {
   return (
     <Card className="col-span-4 lg:col-span-3 h-full flex flex-col shadow-sm">
       <CardHeader className="pb-4">
-        <CardTitle>Conversation Traffic</CardTitle>
+        <CardTitle>{t('traffic_title')}</CardTitle>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col justify-center overflow-hidden pb-6">
         <div className="flex flex-col gap-6 w-full overflow-x-auto scrollbar-hide">
           <div className="flex gap-2 min-w-max mx-auto px-4">
             <div className="flex flex-col justify-between text-xs text-muted-foreground pt-1 pb-1 pr-2 h-[260px]">
-                <span>Mon</span>
-                <span>Wed</span>
-                <span>Fri</span>
+                <span>{t('weekday_mon')}</span>
+                <span>{t('weekday_wed')}</span>
+                <span>{t('weekday_fri')}</span>
             </div>
             
             <div className="flex gap-2">
@@ -104,7 +106,7 @@ export function TrafficHeatmap({ data }: { data: TrafficData[] }) {
                             "w-8 h-8 rounded-md transition-all cursor-pointer hover:scale-110 hover:shadow-md",
                             getIntensityClass(day.count)
                             )}
-                            title={`${day.date}: ${day.count} messages`}
+                            title={`${day.date}: ${t('messages_count', { count: day.count })}`}
                         />
                         );
                     })}
@@ -114,7 +116,7 @@ export function TrafficHeatmap({ data }: { data: TrafficData[] }) {
           </div>
           
           <div className="flex items-center justify-center gap-3 text-sm text-muted-foreground mt-2">
-            <span>Less</span>
+            <span>{t('less')}</span>
             <div className="flex gap-1.5">
                 <div className="w-4 h-4 rounded-[2px] bg-muted/40" />
                 <div className="w-4 h-4 rounded-[2px] bg-primary/30" />
@@ -122,7 +124,7 @@ export function TrafficHeatmap({ data }: { data: TrafficData[] }) {
                 <div className="w-4 h-4 rounded-[2px] bg-primary/75" />
                 <div className="w-4 h-4 rounded-[2px] bg-primary" />
             </div>
-            <span>More</span>
+            <span>{t('more')}</span>
           </div>
         </div>
       </CardContent>
@@ -131,10 +133,11 @@ export function TrafficHeatmap({ data }: { data: TrafficData[] }) {
 }
 
 export function FunnelLineChart({ data }: { data: any[] }) {
+  const t = useTranslations('Analytics');
   return (
     <Card className="col-span-4 lg:col-span-4 shadow-sm">
       <CardHeader>
-        <CardTitle>Conversations by Funnel (Trend)</CardTitle>
+        <CardTitle>{t('funnel_trend_title')}</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="h-[300px] w-full">
@@ -181,6 +184,7 @@ export function FunnelLineChart({ data }: { data: any[] }) {
 }
 
 export function FunnelRadarChart({ data }: { data: any[] }) {
+  const t = useTranslations('Analytics');
   const chartData = data.map(item => ({
     subject: item.name,
     A: item.value,
@@ -190,7 +194,7 @@ export function FunnelRadarChart({ data }: { data: any[] }) {
   return (
     <Card className="col-span-4 lg:col-span-2 h-full shadow-sm">
       <CardHeader>
-        <CardTitle>Funnel Distribution</CardTitle>
+        <CardTitle>{t('funnel_distribution_title')}</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="h-[300px] w-full flex justify-center items-center">
@@ -204,7 +208,7 @@ export function FunnelRadarChart({ data }: { data: any[] }) {
                     />
                     <PolarRadiusAxis angle={30} domain={[0, 'auto']} tick={false} axisLine={false} />
                     <Radar
-                        name="Conversations"
+                        name={t('conversations_label')}
                         dataKey="A"
                         stroke="#49b653"
                         strokeWidth={2}
@@ -223,7 +227,7 @@ export function FunnelRadarChart({ data }: { data: any[] }) {
                 </ResponsiveContainer>
             ) : (
                 <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                    No data available
+                    {t('no_data')}
                 </div>
             )}
         </div>
@@ -233,19 +237,20 @@ export function FunnelRadarChart({ data }: { data: any[] }) {
 }
 
 export function AgentList({ data }: { data: any[] }) {
+  const t = useTranslations('Analytics');
   return (
     <Card className="col-span-4 lg:col-span-3 shadow-sm">
       <CardHeader>
-        <CardTitle>Conversations by Agent</CardTitle>
+        <CardTitle>{t('conversations_by_agent_title')}</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="max-h-[300px] overflow-auto pr-2">
             <Table>
             <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[180px]">Agent</TableHead>
-                <TableHead>Funnel Breakdown</TableHead>
-                <TableHead className="text-right w-[80px]">Total</TableHead>
+                <TableHead className="w-[180px]">{t('agent')}</TableHead>
+                <TableHead>{t('funnel_breakdown')}</TableHead>
+                <TableHead className="text-right w-[80px]">{t('total')}</TableHead>
                 </TableRow>
             </TableHeader>
             <TableBody>
@@ -278,7 +283,7 @@ export function AgentList({ data }: { data: any[] }) {
                 {data.length === 0 && (
                     <TableRow>
                         <TableCell colSpan={3} className="text-center text-muted-foreground h-32">
-                            No agents found
+                            {t('no_agents')}
                         </TableCell>
                     </TableRow>
                 )}

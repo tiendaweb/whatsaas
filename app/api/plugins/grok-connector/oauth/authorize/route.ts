@@ -49,12 +49,13 @@ function html(body: string, status = 200, formActionOrigins: string[] = []) {
 }
 
 function renderPage(input: AuthorizationRequest, clientName: string, message?: string) {
-  const allowsWrite = scopesForResource(input.resource).some((scope) => scope === 'whatspro:write')
-    && input.scope.split(/\s+/).includes('whatspro:write');
+  const requestedScopes = input.scope.split(/\s+/);
+  const allowsWrite = requestedScopes.some((scope) => ['whatspro:write', 'appmaker:write', 'appmaker:publish'].includes(scope));
+  const allowsAppMakerMedia = requestedScopes.includes('appmaker:media');
   const eyebrow = allowsWrite ? 'WhatsPro · MCP con acciones' : 'WhatsPro · MCP de solo lectura';
   const description = allowsWrite
-    ? 'Esta conexión permite consultar WhatsPro y ejecutar las acciones de CRM, agendas, membresías, Tareas OS, documentos y mensajes programados que solicites al asistente.'
-    : 'Esta conexión permite consultar datos de WhatsPro sin crear, editar ni eliminar información.';
+    ? `Esta conexión permite consultar y operar CRM, recursos de WhatsPro y App Maker: crear apps y registros${requestedScopes.includes('appmaker:publish') ? ', publicar versiones' : ''}${allowsAppMakerMedia ? ' y usar archivos privados' : ''}, únicamente cuando se lo solicites al asistente.`
+    : `Esta conexión permite consultar datos de WhatsPro y App Maker${allowsAppMakerMedia ? ', incluido contenido privado autorizado' : ''}, sin crear, editar ni eliminar información.`;
   const button = allowsWrite ? 'Autorizar lectura y acciones' : 'Autorizar acceso de lectura';
   const hidden = Object.entries(input)
     .map(([name, value]) => `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}">`)

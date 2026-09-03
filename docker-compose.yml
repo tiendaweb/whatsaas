@@ -1,4 +1,3 @@
-
 services:
   postgres:
     image: postgres:16.4-alpine
@@ -11,6 +10,47 @@ services:
       - "54322:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
+  app:
+    image: node:20-alpine
+    container_name: whatsaas-app
+    working_dir: /app
+    env_file:
+      - .env
+    command:
+      - sh
+      - -c
+      - apk add --no-cache ffmpeg && npm run start
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      POSTGRES_URL: postgres://postgres:postgres@postgres:5432/postgres
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - /root/whatsaas:/app
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=whatsaas_default
+      - traefik.http.routers.whatspro.rule=Host(`whatspro.uno`) || Host(`www.whatspro.uno`) || Host(`chatpro.uno`)
+      - traefik.http.routers.whatspro.entrypoints=websecure
+      - traefik.http.routers.whatspro.tls=true
+      - traefik.http.routers.whatspro.tls.certresolver=letsencrypt
+      - traefik.http.services.whatspro.loadbalancer.server.port=3000
+      # Typo domain: whatsapro.uno → whatspro.uno
+      - traefik.http.routers.whatsapro-redirect.rule=Host(`whatsapro.uno`) || Host(`www.whatsapro.uno`)
+      - traefik.http.routers.whatsapro-redirect.entrypoints=websecure
+      - traefik.http.routers.whatsapro-redirect.tls=true
+      - traefik.http.routers.whatsapro-redirect.tls.certresolver=letsencrypt
+      - traefik.http.routers.whatsapro-redirect.priority=100
+      - traefik.http.routers.whatsapro-redirect.middlewares=whatsapro-to-whatspro
+      - traefik.http.routers.whatsapro-redirect.service=whatspro
+      - traefik.http.middlewares.whatsapro-to-whatspro.redirectregex.regex=^https?://(?:www\.)?whatsapro\.uno(?:/(.*))?
+      - traefik.http.middlewares.whatsapro-to-whatspro.redirectregex.replacement=https://whatspro.uno/$${1}
+      - traefik.http.middlewares.whatsapro-to-whatspro.redirectregex.permanent=true
 
 volumes:
   postgres_data:

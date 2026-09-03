@@ -1,10 +1,11 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
-import { Check, Copy, Variable, MessageSquare } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Check, Copy, Variable } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { extractEditorPlaceholders, renderDraftContent } from '@/lib/drafts/utils';
 
 type Props = {
   content: string;
@@ -12,9 +13,12 @@ type Props = {
   className?: string;
   showVariableInputs?: boolean;
   predefinedVariables?: string[];
+  /** Controlled variables (for modals) */
+  variables?: Record<string, string>;
+  onVariablesChange?: (vars: Record<string, string>) => void;
+  /** Preview style: card (default library) or bubble (modal chat-like) */
+  variant?: 'card' | 'bubble';
 };
-
-const PLACEHOLDER_REGEX = /\[\[([\w\-. ]+)\]\]/g;
 
 export function DraftContentPreview({
   content,
@@ -22,18 +26,24 @@ export function DraftContentPreview({
   className,
   showVariableInputs,
   predefinedVariables,
+  variables: controlledVariables,
+  onVariablesChange,
+  variant = 'card',
 }: Props) {
-  const [variables, setVariables] = useState<Record<string, string>>({});
+  const isControlled = controlledVariables !== undefined;
+  const [internalVars, setInternalVars] = useState<Record<string, string>>({});
+  const variables = isControlled ? controlledVariables : internalVars;
+  const setVariables = (next: Record<string, string>) => {
+    if (isControlled) {
+      onVariablesChange?.(next);
+    } else {
+      setInternalVars(next);
+    }
+  };
+
   const [copied, setCopied] = useState(false);
 
-  const placeholders = useMemo(() => {
-    const set = new Set<string>();
-    for (const match of content.matchAll(PLACEHOLDER_REGEX)) {
-      const key = match[1]?.trim();
-      if (key) set.add(key);
-    }
-    return Array.from(set);
-  }, [content]);
+  const placeholders = useMemo(() => extractEditorPlaceholders(content), [content]);
 
   const variableFields = useMemo(() => {
     if (placeholders.length > 0) return placeholders;
@@ -43,102 +53,111 @@ export function DraftContentPreview({
     return [];
   }, [placeholders, predefinedVariables, showVariableInputs]);
 
-  const showVariableSection = showVariableInputs === true || placeholders.length > 0;
+  const showVariableSection = (showVariableInputs === true || placeholders.length > 0) && variant === 'card';
 
   const renderedPreview = useMemo(() => {
-    return content.replace(PLACEHOLDER_REGEX, (_, rawKey: string) => {
-      const key = rawKey.trim();
-      // Si la variable está vacía, resaltamos el placeholder para que el usuario sepa que falta
-      return variables[key] || `[[${key}]]`;
-    });
+    return renderDraftContent(content, variables);
   }, [content, variables]);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(renderedPreview);
     setCopied(true);
-    window.setTimeout(() => setCopied(false), 2000);
+    window.setTimeout(() => setCopied(false), 1600);
   };
 
+  const setVar = (key: string, val: string) => {
+    setVariables({ ...variables, [key]: val });
+  };
+
+  // Ultra clean modern minimal OS-style bubble preview
+  if (variant === 'bubble') {
+    const hasPlaceholders = placeholders.length > 0;
+    return (
+      <div className={cn("w-full max-w-full", className)}>
+        <div className={cn(
+          "bg-[#0A0A0A] dark:bg-[#F8F8F8] text-[#F8F8F8] dark:text-[#0A0A0A] rounded-3xl px-5 py-4 text-[15px] leading-[1.45] shadow-sm border border-white/10 dark:border-black/5",
+          "whitespace-pre-wrap break-words"
+        )}>
+          {renderedPreview.split(/(\[\[.*?\]\])/g).map((part, i) => {
+            if (part.startsWith('[[')) {
+              return (
+                <span key={i} className="font-medium text-[#3B82F6] dark:text-[#2563EB] bg-white/10 dark:bg-black/5 px-1 rounded">
+                  {part}
+                </span>
+              );
+            }
+            return part;
+          })}
+        </div>
+        {hasPlaceholders && (
+          <div className="mt-2 text-[10px] text-muted-foreground/70 tracking-[0.5px] uppercase">Vista previa • variables sin rellenar se muestran como [[ ]]</div>
+        )}
+      </div>
+    );
+  }
+
+  // Default card variant — ultra minimalist OS library card preview
   return (
-    <div className={cn("space-y-4", className)}>
-      {/* SECCIÓN DE VARIABLES: Diseño en grilla compacta */}
-      {showVariableSection && (
-        <section className="bg-secondary/30 rounded-xl p-4 border border-border/50">
-          <div className="flex items-center gap-2 mb-3">
-            <Variable className="h-3.5 w-3.5 text-primary" />
-            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Completar Variables
-            </span>
+    <div className={cn("space-y-3", className)}>
+      {showVariableSection && variableFields.length > 0 && (
+        <div className="rounded-2xl border bg-muted/30 p-3">
+          <div className="flex items-center gap-1.5 mb-2.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+            <Variable className="h-3.5 w-3.5" />
+            Variables
           </div>
-          
-          {variableFields.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
-              {variableFields.map((placeholder) => (
-                <div key={placeholder} className="group flex flex-col gap-1">
-                  <label className="text-[11px] font-medium text-muted-foreground ml-1">
-                    {placeholder.replace(/_/g, ' ')}
-                  </label>
-                  <Input
-                    value={variables[placeholder] ?? ''}
-                    onChange={(e) =>
-                      setVariables((prev) => ({ ...prev, [placeholder]: e.target.value }))
-                    }
-                    placeholder="..."
-                    className="h-8 text-xs bg-background border-none shadow-sm focus-visible:ring-1 focus-visible:ring-primary/50"
-                  />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-[11px] text-muted-foreground italic">
-              No se detectaron variables dinámicas.
-            </p>
-          )}
-        </section>
+          <div className="grid grid-cols-1 gap-2.5">
+            {variableFields.map((ph) => (
+              <div key={ph} className="flex flex-col gap-1">
+                <label className="text-[10px] font-medium text-muted-foreground tracking-tight pl-0.5">
+                  {ph.replace(/_/g, ' ')}
+                </label>
+                <Input
+                  value={variables[ph] ?? ''}
+                  onChange={(e) => setVar(ph, e.target.value)}
+                  placeholder="…"
+                  className="h-9 text-sm rounded-2xl bg-background border-border/70 focus-visible:ring-primary/30"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
-      {/* BURBUJA DE MENSAJE (PREVIEW FINAL) */}
       <div className="relative group">
         <div className={cn(
-          "bg-background border rounded-2xl p-4 shadow-sm transition-all",
-          "hover:border-primary/30",
-          copied && "ring-2 ring-green-500/20 border-green-500/50"
+          "rounded-3xl border bg-background/95 p-4 text-[14px] leading-relaxed text-foreground shadow-sm transition-all",
+          "border-border/60 hover:border-primary/20",
+          copied && "border-green-500/40"
         )}>
-          <div className="flex items-center gap-2 mb-2 opacity-50">
-            <MessageSquare className="h-3 w-3" />
-            <span className="text-[10px] font-medium uppercase">Vista Previa del Mensaje</span>
-          </div>
+          <div className="text-[10px] font-medium uppercase tracking-[1px] text-muted-foreground/70 mb-1.5 select-none">Mensaje</div>
 
           <p className={cn(
-            'text-[13px] md:text-sm whitespace-pre-wrap leading-relaxed text-foreground/90',
+            'whitespace-pre-wrap break-words',
             clampLines && `line-clamp-${clampLines}`
           )}>
-            {/* Resaltado visual de lo que falta completar */}
             {renderedPreview.split(/(\[\[.*?\]\])/g).map((part, i) => (
               part.startsWith('[[') ? (
-                <span key={i} className="text-primary font-bold bg-primary/5 px-1 rounded">
+                <span key={i} className="font-medium text-primary bg-primary/5 px-1 py-px rounded">
                   {part}
                 </span>
               ) : part
             ))}
           </p>
 
-          {/* BOTÓN DE COPIAR FLOTANTE/INTEGRADO */}
           <div className="mt-4 flex justify-end">
-            <Button 
-              onClick={handleCopy} 
+            <Button
+              onClick={handleCopy}
               size="sm"
+              variant="ghost"
               className={cn(
-                "h-9 px-4 rounded-full transition-all duration-300",
-                copied 
-                  ? "bg-green-600 hover:bg-green-700 text-white" 
-                  : "bg-primary text-primary-foreground hover:scale-105"
+                "h-8 rounded-2xl px-3 text-xs text-muted-foreground hover:text-foreground transition-all",
+                copied && "text-green-600 dark:text-green-500"
               )}
             >
               {copied ? (
-                <><Check className="h-3.5 w-3.5 mr-2" /> ¡Copiado!</>
+                <><Check className="h-3.5 w-3.5 mr-1.5" /> Copiado</>
               ) : (
-                <><Copy className="h-3.5 w-3.5 mr-2" /> Copiar para enviar</>
+                <><Copy className="h-3.5 w-3.5 mr-1.5" /> Copiar</>
               )}
             </Button>
           </div>

@@ -1,0 +1,167 @@
+.tareas-ui {
+  --tareas-accent: #6366f1;
+  --tareas-accent-700: color-mix(in srgb, var(--tareas-accent) 72%, #000);
+  --t-bg: #fafafa;
+  --t-surface: #ffffff;
+  --t-surface-2: #fafafa;
+  --t-text: #171717;
+  --t-text-secondary: #737373;
+  --t-muted: #a3a3a3;
+  --t-border: #f5f5f5;
+  --t-border-2: #e5e5e5;
+  --t-hover: #f5f5f5;
+  --t-chip: #f5f5f5;
+  --t-icon: #d4d4d4;
+  --t-shadow-accent: 0 20px 25px -5px color-mix(in srgb, var(--tareas-accent) 20%, transparent);
+  --t-shadow-dock: 0 25px 50px -12px color-mix(in srgb, var(--tareas-accent) 10%, transparent);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  color: var(--t-text);
+  background: var(--t-bg);
+}
+
+.tareas-ui[data-theme='dark'] {
+  --t-bg: #171717;
+  --t-surface: #262626;
+  --t-surface-2: #171717;
+  --t-text: #ffffff;
+  --t-text-secondary: #a3a3a3;
+  --t-muted: #737373;
+  --t-border: #404040;
+  --t-border-2: #404040;
+  --t-hover: rgba(38, 38, 38, 0.5);
+  --t-chip: #262626;
+  --t-icon: #525252;
+  --t-shadow-accent: none;
+  --t-shadow-dock: none;
+}
+
+/**
+ * Zona sobre el fondo oscuro fijo de Espacios (la pantalla de "todos los
+ * proyectos"). Ahí no hay ninguna superficie con tema debajo: las columnas de
+ * miembros dejaron de ser cajas y las tarjetas quedaron sobre el gradiente.
+ *
+ * En vez de reescribir el color de cada texto y cada chip anidado, se
+ * redefinen los tokens a su versión oscura para todo el subárbol. Así
+ * `ChipProyecto`, los contadores y las subtareas siguen leyéndose bien tanto
+ * en tema claro como oscuro, sin tocar esos componentes.
+ */
+.tareas-sobre-oscuro {
+  --t-surface: rgba(0, 0, 0, 0.22);
+  --t-surface-2: rgba(0, 0, 0, 0.22);
+  --t-text: #ffffff;
+  --t-text-secondary: rgba(255, 255, 255, 0.72);
+  --t-muted: rgba(255, 255, 255, 0.5);
+  --t-border: rgba(255, 255, 255, 0.12);
+  --t-border-2: rgba(255, 255, 255, 0.18);
+  --t-hover: rgba(255, 255, 255, 0.08);
+  --t-chip: rgba(255, 255, 255, 0.12);
+}
+
+.tareas-ui input[type='range'].t-range {
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--tareas-accent) 0%,
+    var(--tareas-accent) var(--t-range, 25%),
+    #e5e5e5 var(--t-range, 25%),
+    #e5e5e5 100%
+  );
+}
+
+.tareas-ui[data-theme='dark'] input[type='range'].t-range {
+  background: linear-gradient(
+    to right,
+    var(--tareas-accent) 0%,
+    var(--tareas-accent) var(--t-range, 25%),
+    #404040 var(--t-range, 25%),
+    #404040 100%
+  );
+}
+
+.tareas-ui input[type='range'].t-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--tareas-accent);
+  border: 2px solid white;
+  cursor: pointer;
+}
+
+.tareas-ui kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.tareas-ui .tareas-md {
+  color: var(--t-text);
+}
+
+.tareas-ui .tareas-md p {
+  margin: 0 0 0.6em;
+}
+
+.tareas-ui .tareas-md h1,
+.tareas-ui .tareas-md h2,
+.tareas-ui .tareas-md h3 {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0.8em 0 0.4em;
+}
+
+.tareas-ui .tareas-md h1 { font-size: 1.4rem; }
+.tareas-ui .tareas-md h2 { font-size: 1.15rem; }
+.tareas-ui .tareas-md h3 { font-size: 1rem; }
+
+.tareas-ui .tareas-md ul,
+.tareas-ui .tareas-md ol {
+  margin: 0 0 0.8em;
+  padding-left: 1.2em;
+}
+
+.tareas-ui .tareas-md ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.tareas-ui .tareas-md ul[data-type='taskList'] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.tareas-ui .tareas-md ul[data-type='taskList'] li label {
+  margin-top: 0.2em;
+}
+
+.tareas-ui .tareas-md table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.6em 0 1em;
+  font-size: 0.875rem;
+}
+
+.tareas-ui .tareas-md th,
+.tareas-ui .tareas-md td {
+  border: 1px solid var(--t-border-2);
+  padding: 0.45rem 0.7rem;
+  text-align: left;
+}
+
+.tareas-ui .tareas-md th {
+  background: var(--t-chip);
+  font-weight: 700;
+}
+
+.tareas-ui .tareas-md .selectedCell {
+  background: color-mix(in srgb, var(--tareas-accent) 12%, transparent);
+}
+
+.tareas-ui .tareas-md p.is-editor-empty:first-child::before {
+  color: var(--t-muted);
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}

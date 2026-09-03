@@ -2,7 +2,7 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { db } from '@/lib/db/drizzle';
 import { getTeamForUser } from '@/lib/db/queries';
-import { tags, contactTags } from '@/lib/db/schema';
+import { tags, contactTags, contacts } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 
 
@@ -20,6 +20,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     if (isNaN(contactId) || !tagId) {
       return NextResponse.json({ error: 'Contact IDs and tags are required.' }, { status: 400 });
     }
+
+    const contact = await db.query.contacts.findFirst({
+      where: and(eq(contacts.id, contactId), eq(contacts.teamId, team.id)),
+      columns: { id: true },
+    });
+    if (!contact) return NextResponse.json({ error: 'Contact not found' }, { status: 404 });
 
     
     const tag = await db.query.tags.findFirst({

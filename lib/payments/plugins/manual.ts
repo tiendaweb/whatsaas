@@ -1,18 +1,19 @@
 import { redirect } from 'next/navigation';
 import { db } from '@/lib/db/drizzle';
-import { manualPayments, plans } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { manualPayments, plans, resellerPlanPrices } from '@/lib/db/schema';
+import { and, eq } from 'drizzle-orm';
 import { getUser } from '@/lib/db/queries';
 import { PaymentPlugin } from './types';
 import { NextResponse } from 'next/server';
 import { consolePaymentAuditLogger } from './audit';
+import { normalizeManualPaymentStatus } from '@/lib/payments/statuses';
 
 export const manualPaymentPlugin: PaymentPlugin = {
   id: 'manual',
   validateConfig() {
     return;
   },
-  async createCheckout({ team, priceId, planId }) {
+  async createCheckout({ team, priceId, planId, context }) {
     const user = await getUser();
     const redirectQuery = new URLSearchParams({
       redirect: 'checkout',
@@ -30,18 +31,33 @@ export const manualPaymentPlugin: PaymentPlugin = {
       throw new Error('Plano não encontrado para pagamento manual.');
     }
 
+    const resellerPrice = context.resellerId
+      ? await db.query.resellerPlanPrices.findFirst({
+          where: and(
+            eq(resellerPlanPrices.resellerId, context.resellerId),
+            eq(resellerPlanPrices.planId, plan.id),
+            eq(resellerPlanPrices.isPublished, true),
+          ),
+        })
+      : null;
+
+    if (context.resellerId && !resellerPrice) {
+      throw new Error('Este plan no está publicado por el revendedor.');
+    }
+
     const reference = `MANUAL-${team.id}-${Date.now()}`;
 
-    await db.insert(manualPayments).values({
+    const [payment] = await db.insert(manualPayments).values({
+      resellerId: context.resellerId,
       teamId: team.id,
       planId: plan.id,
-      amount: plan.amount,
-      currency: plan.currency,
+      amount: resellerPrice?.retailAmount ?? plan.amount,
+      currency: resellerPrice?.currency ?? plan.currency,
       status: 'pending_manual_review',
       reference,
       createdAt: new Date(),
       updatedAt: new Date(),
-    });
+    }).returning({ id: manualPayments.id });
 
     await manualPaymentPlugin.audit.recordStatusChange({
       provider: 'manual',
@@ -49,9 +65,10 @@ export const manualPaymentPlugin: PaymentPlugin = {
       previousStatus: null,
       nextStatus: 'pending_manual_review',
       actor: 'system',
+      metadata: { teamId: team.id, resellerId: context.resellerId, planId: plan.id },
     });
 
-    redirect('/pricing?manualPayment=pending');
+    redirect(`/pricing?manualPayment=pending&paymentId=${payment.id}`);
   },
   async handleWebhook() {
     return NextResponse.json({
@@ -60,31 +77,7 @@ export const manualPaymentPlugin: PaymentPlugin = {
       message: 'Manual payment plugin does not process webhooks.',
     });
   },
-  normalizePaymentStatus(providerStatus) {
-    const normalized = providerStatus.toLowerCase();
-
-    if (normalized === 'approved' || normalized === 'paid') {
-      return 'paid';
-    }
-
-    if (normalized === 'pending_manual_review') {
-      return 'pending_manual_review';
-    }
-
-    if (normalized === 'rejected') {
-      return 'rejected';
-    }
-
-    if (normalized === 'canceled') {
-      return 'canceled';
-    }
-
-    if (normalized === 'pending') {
-      return 'pending';
-    }
-
-    return 'failed';
-  },
+  normalizePaymentStatus: normalizeManualPaymentStatus,
   getPublicConfig() {
     return { provider: 'manual' };
   },

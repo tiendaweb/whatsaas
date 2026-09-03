@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
+import { getTeamForUser } from "@/lib/db/queries";
 import {
   createFeatureRequest,
   getAllFeatureRequests,
@@ -8,6 +9,10 @@ import {
 export async function GET(request: Request) {
   const session = await getSession();
   if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const team = await getTeamForUser();
+  if (!team) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -22,10 +27,13 @@ export async function GET(request: Request) {
       { status: 400 }
     );
   }
+  if (parseInt(teamId) !== team.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   try {
     const requests = await getAllFeatureRequests({
-      teamId: parseInt(teamId),
+      teamId: team.id,
       category: category || undefined,
       status: status || undefined,
     });
@@ -45,6 +53,10 @@ export async function POST(request: Request) {
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const team = await getTeamForUser();
+  if (!team) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   try {
     const body = await request.json();
@@ -56,9 +68,12 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+    if (Number(teamId) !== team.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const newRequest = await createFeatureRequest({
-      teamId,
+      teamId: team.id,
       requestedBy: session.user.id,
       title,
       description,

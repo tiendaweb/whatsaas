@@ -1,8 +1,77 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { db } from '@/lib/db/drizzle';
 import { getTeamForUser } from '@/lib/db/queries';
-import { contacts, contactTags } from '@/lib/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { checkRoutePermission } from '@/lib/auth/permissions-guard';
+import { contacts, contactTags, teamCustomerContacts, teamCustomers } from '@/lib/db/schema';
+import { eq, and, desc, sql } from 'drizzle-orm';
+
+export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { error } = await checkRoutePermission('contacts');
+    if (error) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
+    const team = await getTeamForUser();
+    if (!team) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const { id } = await params;
+    const contactId = parseInt(id, 10);
+    if (Number.isNaN(contactId)) {
+      return NextResponse.json({ error: 'Invalid contact ID' }, { status: 400 });
+    }
+
+    const contact = await db.query.contacts.findFirst({
+      where: and(eq(contacts.id, contactId), eq(contacts.teamId, team.id)),
+      with: {
+        assignedUser: { columns: { id: true, name: true, email: true } },
+        assignedDepartment: { columns: { id: true, name: true } },
+        funnelStage: true,
+        chat: {
+          columns: { remoteJid: true, profilePicUrl: true, instanceId: true },
+          with: { instance: { columns: { id: true, instanceName: true } } },
+        },
+        contactTags: { with: { tag: true } },
+      },
+    });
+
+    if (!contact) return NextResponse.json({ error: 'Contact not found' }, { status: 404 });
+
+    const [customerLink] = await db
+      .select({ customerId: teamCustomerContacts.customerId })
+      .from(teamCustomerContacts)
+      .where(and(
+        eq(teamCustomerContacts.teamId, team.id),
+        eq(teamCustomerContacts.contactId, contactId),
+      ))
+      .orderBy(desc(teamCustomerContacts.createdAt))
+      .limit(1);
+    const phoneDigits = contact.chat?.remoteJid?.split('@')[0].replace(/\D/g, '') ?? '';
+    const [customerByPhone] = !customerLink && phoneDigits
+      ? await db
+          .select({ customerId: teamCustomers.id })
+          .from(teamCustomers)
+          .where(and(
+            eq(teamCustomers.teamId, team.id),
+            sql`regexp_replace(coalesce(${teamCustomers.phone}, ''), '[^0-9]', '', 'g') = ${phoneDigits}`,
+          ))
+          .orderBy(desc(teamCustomers.updatedAt))
+          .limit(1)
+      : [];
+
+    return NextResponse.json({
+      ...contact,
+      tags: contact.contactTags?.map((ct) => ct.tag) ?? [],
+      profilePicUrl: contact.chat?.profilePicUrl ?? null,
+      phone: contact.chat?.remoteJid ? contact.chat.remoteJid.split('@')[0] : null,
+      remoteJid: contact.chat?.remoteJid ?? null,
+      instanceId: contact.chat?.instanceId ?? null,
+      instanceName: contact.chat?.instance?.instanceName ?? null,
+      customerId: customerLink?.customerId ?? customerByPhone?.customerId ?? null,
+    });
+  } catch (err: unknown) {
+    console.error('Error fetching contact:', err);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {

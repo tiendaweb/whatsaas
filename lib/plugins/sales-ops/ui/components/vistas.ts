@@ -1,5 +1,24 @@
-export const VISTAS = ['hoy', 'dinero', 'oportunidades', 'barrido', 'limpieza', 'respuestas', 'cola', 'todos', 'clientes', 'experimentos', 'prompts', 'metricas'] as const;
+export const VISTAS = ['hoy', 'dinero', 'oportunidades', 'barrido', 'limpieza', 'respuestas', 'cola', 'audios', 'programados', 'produccion', 'todos', 'clientes', 'experimentos', 'prompts', 'metricas', 'ayuda'] as const;
 export type Vista = (typeof VISTAS)[number];
+
+/**
+ * Vistas que NO aparecen en el rail.
+ *
+ * Experimentos es una herramienta de medición que se usa una vez cada tanto,
+ * no un lugar al que se entra todos los días: ocupaba un renglón fijo del menú
+ * compitiendo con las listas de trabajo. Sigue existiendo como vista y se llega
+ * desde el Prompt Studio, que es donde uno está cuando piensa en probar dos
+ * textos distintos.
+ */
+/**
+ * `ayuda` tampoco: vive en el pie del menú, junto a Plegar y Volver a WhatsPro.
+ * `clientes` (Contactos) se llega desde un botón dentro de Todos: es un corte de
+ * la misma lista, no otro lugar.
+ */
+export const VISTAS_OCULTAS: readonly Vista[] = ['experimentos', 'ayuda', 'clientes'];
+
+/** Las que se dibujan en el rail y en la barra inferior. */
+export const VISTAS_VISIBLES = VISTAS.filter((v) => !VISTAS_OCULTAS.includes(v));
 
 export const VISTA_LABELS: Record<Vista, string> = {
   hoy: 'Hoy',
@@ -9,11 +28,15 @@ export const VISTA_LABELS: Record<Vista, string> = {
   limpieza: 'Limpieza',
   respuestas: 'Respuestas',
   cola: 'Cola',
+  audios: 'Audios',
+  programados: 'Programados',
+  produccion: 'Producción',
   todos: 'Todos',
-  clientes: 'Clientes',
+  clientes: 'Contactos',
   experimentos: 'Experimentos',
   prompts: 'Prompt Studio',
   metricas: 'Métricas',
+  ayuda: 'Ayuda',
 };
 
 export function isVista(v: unknown): v is Vista {

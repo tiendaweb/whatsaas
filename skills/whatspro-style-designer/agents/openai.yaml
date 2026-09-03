@@ -1,0 +1,14 @@
+interface:
+  display_name: WhatsPro Style Designer
+  short_description: Diseña interfaces SaaS con estética WhatsPro
+  default_prompt: Use $whatspro-style-designer to design a polished WhatsApp CRM screen
+    in this visual system.
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true

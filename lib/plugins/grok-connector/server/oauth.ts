@@ -17,6 +17,11 @@ export const CHATGPT_CONNECTOR_PLUGIN_ID = 'chatgpt-connector';
 export const CLAUDE_CONNECTOR_PLUGIN_ID = 'claude-code-connector';
 export const GROK_READ_SCOPE = 'whatspro:read';
 export const GROK_WRITE_SCOPE = 'whatspro:write';
+export const APP_MAKER_READ_SCOPE = 'appmaker:read';
+export const APP_MAKER_WRITE_SCOPE = 'appmaker:write';
+export const APP_MAKER_PUBLISH_SCOPE = 'appmaker:publish';
+export const APP_MAKER_MEDIA_SCOPE = 'appmaker:media';
+export const APP_MAKER_SCOPES = [APP_MAKER_READ_SCOPE, APP_MAKER_WRITE_SCOPE, APP_MAKER_PUBLISH_SCOPE, APP_MAKER_MEDIA_SCOPE] as const;
 export const GROK_SCOPE = GROK_READ_SCOPE;
 export const GROK_TARGET_EMAIL = 'noelia@whatspro.uno';
 const ACCESS_TOKEN_TTL_MS = 60 * 60_000;
@@ -44,7 +49,7 @@ export function mcpResource(origin: string, connectorId: OAuthConnectorId = GROK
 }
 
 export function scopesForResource(resource: string) {
-  return [GROK_READ_SCOPE, GROK_WRITE_SCOPE];
+  return [GROK_READ_SCOPE, GROK_WRITE_SCOPE, ...APP_MAKER_SCOPES];
 }
 
 function connectorIdForResource(resource: string) {

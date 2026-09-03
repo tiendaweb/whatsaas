@@ -56,6 +56,16 @@ Un proveedor nuevo está completo cuando:
 - Tiene manejo de errores y logging.
 - Documenta variables de entorno en README.
 
+## Despliegue y reinicio en whatspro.uno
+
+- El dominio publico `whatspro.uno` se sirve desde el contenedor Docker `whatsaas-app`, montando este repo en `/app` desde `/root/whatsaas`.
+- Despues de cambios de frontend o build de Next, ejecutar `pnpm build` y reiniciar `whatsaas-app` para que el dominio publico tome el bundle actualizado.
+- El contenedor también publica `127.0.0.1:3000` para verificaciones y cron locales. No se debe ejecutar una segunda instancia de la aplicación con PM2.
+- `pnpm build` genera un artefacto aislado en `.next-build`; nunca reemplaza el `.next` servido.
+- Para construir, intercambiar el bundle de forma atómica, reiniciar el contenedor y verificar rutas usar `pnpm run deploy:saasfy`.
+- No reiniciar `whatsaas-app` si `.next/BUILD_ID` no existe.
+- Verificar despues del reinicio con `curl -I https://whatspro.uno/es` y confirmar respuesta 200 o redireccion esperada.
+
 ## Skills del repositorio
 
 ### Creación de features y componentes
@@ -75,3 +85,5 @@ Para tareas guiadas usar:
 - `skills/manual-payment/SKILL.md` — Plugin de pagos manual
 - `skills/mercadopago/SKILL.md` — Plugin de Mercado Pago
 
+### Diseño visual
+- `skills/whatspro-style-designer/SKILL.md` — Diseñar/auditar landings, dashboards, CRM, inbox y flow builders con el lenguaje visual tipo WhatsPro (tokens, tipografía, patrones por pantalla); no reutilizar marca ni copy propietario

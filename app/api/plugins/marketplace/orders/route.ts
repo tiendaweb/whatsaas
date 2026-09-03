@@ -8,6 +8,8 @@ import {
   marketplaceOrderLines,
   marketplaceOrders,
   marketplaceOrderStatusEvents,
+  teamMembers,
+  teamNotifications,
 } from '@/lib/db/schema';
 import { getMarketplaceContext } from '../_lib/context';
 
@@ -130,6 +132,32 @@ export async function POST(request: Request) {
       },
       createdAt: new Date(),
     });
+
+    // Notify team admins/owners about the new order
+    const admins = await tx
+      .select({ userId: teamMembers.userId })
+      .from(teamMembers)
+      .where(
+        and(
+          eq(teamMembers.teamId, context.team.id),
+          inArray(teamMembers.role, ['owner', 'admin']),
+        ),
+      );
+
+    if (admins.length > 0) {
+      await tx.insert(teamNotifications).values(
+        admins.map((admin) => ({
+          teamId: context.team.id,
+          userId: admin.userId,
+          type: 'marketplace.order.created',
+          title: 'Nueva solicitud en el Marketplace',
+          body: `"${item.title}" fue solicitado por ${context.user.name ?? context.user.email}.`,
+          entityType: 'marketplace_order',
+          entityId: createdOrder.id,
+          createdAt: new Date(),
+        })),
+      );
+    }
 
     return [createdOrder];
   });

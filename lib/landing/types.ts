@@ -17,7 +17,8 @@ export type LandingContentRecord = {
   faqItems: LandingFaqItem[];
 };
 
-export type LandingPageContentMode = "builder" | "react";
+/** "html" guarda HTML crudo en `content`; se sanea en el render, nunca al guardar. */
+export type LandingPageContentMode = "builder" | "react" | "html";
 export type LandingSectionUiPlacement = "left" | "right" | "bottom";
 
 export type LandingPageSectionStatsItem = {

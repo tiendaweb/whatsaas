@@ -67,6 +67,25 @@ export type AnalysisRow = {
   analyzedBy: AnalyzedBy | null;
   version: number;
   source: Source;
+  /**
+   * Programados vivos apuntados a su teléfono. Ausente si no se calculó (sólo
+   * lo trae el listado); `nextRunAt` es el más próximo de los activos.
+   */
+  scheduled?: { count: number; nextRunAt: string | null };
+  /**
+   * Último seguimiento hecho DESPUÉS del análisis (envío ejecutado o prompt
+   * cerrado). `null` = auditado pero todavía sin tocar. Ausente si no se
+   * calculó (sólo lo trae el listado).
+   */
+  followUp?: { at: string; kind: string } | null;
+  /** Última acción del Command Center que le salió, sin importar el análisis. */
+  lastExecution?: { at: string; kind: string } | null;
+  /** Cliente vinculado al contacto (registro de Clientes), para abrir su ficha. */
+  customerId?: number | null;
+  /** Pospuesto hasta esta fecha (ISO); ausente si no está pospuesto. */
+  snoozedUntil?: string | null;
+  /** Señales del radar sin atender de este chat (nuevas o vistas). Ausente si no se calculó. */
+  radar?: { kinds: SignalKind[]; count: number; urgent: boolean; lastAt: string } | null;
 };
 
 export type AnalysisDetail = AnalysisRow & {
@@ -148,6 +167,8 @@ export type BatchSummary = {
   total: number;
   byStatus: Partial<Record<ActionStatus, number>>;
   createdAt: string;
+  /** Último movimiento de cualquier fila (aprobación, ejecución, rechazo): sirve para archivar lo viejo. */
+  lastActivityAt: string;
   approvedBy: number | null;
   responded: number;
   recovered: number;
@@ -251,6 +272,20 @@ export type ListQuery = {
   automationActive?: boolean;
   stale?: boolean;
   toReview?: boolean;
+  /** `con` = tiene mensajes programados vivos; `sin` = no tiene. */
+  scheduled?: 'con' | 'sin';
+  /** `con` = ya se le hizo algo después del análisis; `sin` = auditado y sin tocar. */
+  followUp?: 'con' | 'sin';
+  /** `con` = alguna acción del Command Center le salió alguna vez (executed/resulted); `sin` = nunca. */
+  executed?: 'con' | 'sin';
+  /** `con` = sólo los pospuestos. Por defecto los pospuestos no aparecen en las listas. */
+  snoozed?: 'con' | 'sin';
+  /**
+   * `con` = ya tiene algo esperando salir (acción del Command Center sin
+   * ejecutar, prompt encolado o mensaje programado activo); `sin` = nadie le
+   * puso nada en marcha todavía, así que espera que una persona lo verifique.
+   */
+  queued?: 'con' | 'sin';
   q?: string;
   sort?: 'priority' | 'age' | 'lastFollowup' | 'name';
   cursor?: string;
@@ -295,4 +330,44 @@ export type SignalsPayload = {
   rows: SignalRow[];
   counts: Record<SignalKind, number>;
   lastCutAt: string | null;
+  /** Chats excluidos de Respuestas (no se les crean señales ni se listan). */
+  muted?: Array<{ chatId: number; name: string }>;
 };
+
+/** Una línea del historial de cambios de la ficha (auditoría `SALES_OPS_*`). */
+export type HistoryEntry = {
+  id: number;
+  action: string;
+  label: string;
+  /** Familia del evento: la ficha elige ícono y color con esto. */
+  kind: 'analisis' | 'manual' | 'radar' | 'prompt' | 'cola' | 'envio' | 'crm' | 'skill' | 'limpieza' | 'otro';
+  detail: string;
+  at: string;
+  /** null = lo hizo el cron o un conector, no una persona. */
+  by: string | null;
+};
+
+export type HistoryPayload = { entries: HistoryEntry[] };
+
+
+/**
+ * Una publicación del muro: la misma auditoría del historial, pero leída por
+ * momento en vez de por contacto, así que además trae sobre quién fue y quién
+ * la ejecutó.
+ *
+ * Vive acá y no en `server/history.ts` porque la lee el cliente: importar el
+ * módulo del servidor para sacar un tipo se arrastra drizzle al bundle.
+ */
+export type WallActor = { kind: 'persona' | 'servidor' | 'conector'; name: string };
+
+export type WallEntry = HistoryEntry & {
+  /** Contacto sobre el que se hizo, si el evento apunta a un chat. */
+  chatId: number | null;
+  contactName: string | null;
+  /** Quién lo ejecutó: una persona, el servidor, o un conector con nombre. */
+  actor: WallActor;
+  /** Proveedor y modelo cuando lo hizo una IA. */
+  ai: { provider: string | null; model: string | null } | null;
+};
+
+export type WallPayload = { entries: WallEntry[]; nextCursor: string | null };

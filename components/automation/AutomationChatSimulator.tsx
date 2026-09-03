@@ -21,10 +21,17 @@ import {
   getMenuMarker,
   matchMenuSimpleReplyByMarker,
 } from "@/lib/automation/menu-simple";
+import {
+  findSimulatorChoiceIndex,
+  getSimulatorBranchTarget as getChoiceTarget,
+  getSimulatorLinearTarget as getDefaultTarget,
+  replaceSimulatorVariables,
+} from "@/lib/automation/simulator-runtime";
 import type {
   AutomationFlowEdge,
   AutomationFlowNode,
   ConditionEntry,
+  FormField,
   MenuSimpleMarkerStyle,
   MenuSimpleOption,
 } from "@/lib/automation/flow-schema";
@@ -45,6 +52,7 @@ type SimulatorEvent = {
 
 type PendingChoice = {
   label: string;
+  aliases?: string[];
   targetId?: string | null;
   handle?: string | null;
   automationId?: number | null;
@@ -64,8 +72,10 @@ type AwaitingInput = {
   nodeId: string;
   prompt: string;
   variable?: string;
-  mode: "collect" | "menu_simple";
+  mode: "collect" | "menu_simple" | "form";
   choices?: PendingChoice[];
+  formFields?: FormField[];
+  formFieldIndex?: number;
 };
 
 type NodeDataRecord = Record<string, unknown>;
@@ -82,7 +92,7 @@ type AutomationContext = {
 };
 type VisitCounts = Map<string, number>;
 
-const STEP_DELAY_MS = 800;
+const STEP_DELAY_MS = 1000;
 const MAX_SIMULATION_STEPS = 240;
 const MAX_NODE_REVISITS = 48;
 // Delays reales (delay nodes / globalDelaySeconds) se respetan pero acotados
@@ -95,7 +105,8 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   media: "Multimedia",
   options: "Opciones",
   delay: "Espera",
-  collect: "Recolectar dato",
+  collect: "Recolectar entrada",
+  form: "Formulario",
   save_contact: "Guardar contacto",
   end: "Fin",
   button_message: "Botones",
@@ -133,15 +144,51 @@ function getMainText(node: AutomationFlowNode) {
   return candidates.find((value) => typeof value === "string" && value.trim()) as string | undefined;
 }
 
-function getDefaultTarget(nodeId: string, edges: AutomationFlowEdge[]) {
-  return edges.find((edge) => edge.source === nodeId && !edge.sourceHandle)?.target
-    ?? edges.find((edge) => edge.source === nodeId)?.target
-    ?? null;
+function getRenderedMainText(
+  node: AutomationFlowNode,
+  variables: Record<string, string>,
+) {
+  const text = getMainText(node);
+  return text ? replaceSimulatorVariables(text, variables) : undefined;
 }
 
-function getChoiceTarget(nodeId: string, handle: string | null, edges: AutomationFlowEdge[]) {
-  return edges.find((edge) => edge.source === nodeId && edge.sourceHandle === handle)?.target
-    ?? getDefaultTarget(nodeId, edges);
+function getFormFieldPrompt(
+  field: FormField,
+  variables: Record<string, string>,
+) {
+  const label = replaceSimulatorVariables(field.label, variables);
+  if (field.type !== "menu") return label;
+  return buildMenuSimpleMessage({
+    label,
+    markerStyle: field.markerStyle,
+    menuOptions: field.menuOptions ?? [],
+  });
+}
+
+function matchesFormMenuReply(
+  field: FormField,
+  text: string,
+  variables: Record<string, string>,
+) {
+  const options = field.menuOptions ?? [];
+  for (const option of options) {
+    if (!option.matchValue?.trim()) continue;
+    if (
+      evaluateSimulatorCondition(
+        {
+          type: option.matchType || "text",
+          operator: option.matchOperator || "equals",
+          value: option.matchValue,
+          value2: option.matchValue2,
+        },
+        text,
+        variables,
+      )
+    ) {
+      return true;
+    }
+  }
+  return matchMenuSimpleReplyByMarker(options, text) !== -1;
 }
 
 function getFirstExecutableNode(nodes: AutomationFlowNode[]) {
@@ -262,6 +309,7 @@ export function AutomationChatSimulator({
   const [stepCount, setStepCount] = useState(0);
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const awaitingInputRef = useRef<AwaitingInput | null>(null);
   const visitedRef = useRef<VisitCounts>(new Map());
   const variablesRef = useRef<Record<string, string>>({});
   // Espejo del __nodeHistory del motor: nodos visitados en la corrida actual
@@ -276,6 +324,11 @@ export function AutomationChatSimulator({
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+  };
+
+  const updateAwaitingInput = (value: AwaitingInput | null) => {
+    awaitingInputRef.current = value;
+    setAwaitingInput(value);
   };
 
   useEffect(() => () => clearTimer(), []);
@@ -319,7 +372,7 @@ export function AutomationChatSimulator({
     setCurrentNode(null);
     setEvents([]);
     setPendingChoices([]);
-    setAwaitingInput(null);
+    updateAwaitingInput(null);
     setInputValue("");
     setIsRunning(false);
     setStepCount(0);
@@ -333,20 +386,28 @@ export function AutomationChatSimulator({
     delayMs: number = STEP_DELAY_MS,
   ) => {
     clearTimer();
-    setAwaitingInput(null);
+    // A collect/menu node owns the runtime until the user answers. A stale
+    // automatic transition must never be able to clear or bypass that wait.
+    if (awaitingInputRef.current) {
+      setIsRunning(false);
+      return;
+    }
     setPendingChoices([]);
     setIsRunning(true);
+    const effectiveDelayMs = Number.isFinite(delayMs)
+      ? Math.max(STEP_DELAY_MS, Math.min(delayMs, MAX_SIMULATED_DELAY_MS))
+      : STEP_DELAY_MS;
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
       runNode(automationId, nodeId, visited);
-    }, Math.max(delayMs, STEP_DELAY_MS));
+    }, effectiveDelayMs);
   };
 
   // Pause the run and wait for the user to pick a branch.
   const waitForChoice = (choices: PendingChoice[]) => {
     clearTimer();
     setIsRunning(false);
-    setAwaitingInput(null);
+    updateAwaitingInput(null);
     setPendingChoices(choices);
   };
 
@@ -354,7 +415,7 @@ export function AutomationChatSimulator({
   const stop = () => {
     clearTimer();
     setIsRunning(false);
-    setAwaitingInput(null);
+    updateAwaitingInput(null);
     setPendingChoices([]);
   };
 
@@ -425,7 +486,13 @@ export function AutomationChatSimulator({
     }
 
     if (node.type === "message") {
-      nodeEvents.push(nextEvent("bot", getMainText(node) ?? "Mensaje sin texto configurado."));
+      nodeEvents.push(
+        nextEvent(
+          "bot",
+          getRenderedMainText(node, variablesRef.current) ??
+            "Mensaje sin texto configurado.",
+        ),
+      );
       append(nodeEvents);
       advance(automationId, getDefaultTarget(node.id, context.edges), nextVisited);
       return;
@@ -433,7 +500,7 @@ export function AutomationChatSimulator({
 
     if (node.type === "media") {
       const mediaType = data.mediaType ? String(data.mediaType) : "archivo";
-      const caption = getMainText(node);
+      const caption = getRenderedMainText(node, variablesRef.current);
       nodeEvents.push(nextEvent("bot", caption ? `[${mediaType}] ${caption}` : `Envia ${mediaType}.`));
       append(nodeEvents);
       advance(automationId, getDefaultTarget(node.id, context.edges), nextVisited);
@@ -453,14 +520,42 @@ export function AutomationChatSimulator({
     }
 
     if (node.type === "collect") {
-      const prompt = getMainText(node) ?? "Solicita un dato al contacto.";
+      const prompt = getRenderedMainText(node, variablesRef.current) ?? "Solicita un dato al contacto.";
       const variable = typeof data.variable === "string" && data.variable.trim() ? data.variable.trim() : undefined;
       nodeEvents.push(nextEvent("bot", prompt));
       append(nodeEvents);
       clearTimer();
       setIsRunning(false);
       setPendingChoices([]);
-      setAwaitingInput({ automationId, nodeId: node.id, prompt, variable, mode: "collect" });
+      updateAwaitingInput({ automationId, nodeId: node.id, prompt, variable, mode: "collect" });
+      return;
+    }
+
+    if (node.type === "form") {
+      const fields = Array.isArray(data.fields) ? (data.fields as FormField[]) : [];
+      const firstField = fields[0];
+      if (!firstField) {
+        nodeEvents.push(nextEvent("system", "El formulario no tiene campos configurados."));
+        append(nodeEvents);
+        advance(automationId, getDefaultTarget(node.id, context.edges), nextVisited);
+        return;
+      }
+      const prompt = getFormFieldPrompt(firstField, variablesRef.current);
+      nodeEvents.push(nextEvent("bot", prompt));
+      nodeEvents.push(nextEvent("action", `Campo 1 de ${fields.length}: ${firstField.variable}.`));
+      append(nodeEvents);
+      clearTimer();
+      setIsRunning(false);
+      setPendingChoices([]);
+      updateAwaitingInput({
+        automationId,
+        nodeId: node.id,
+        prompt,
+        variable: firstField.variable,
+        mode: "form",
+        formFields: fields,
+        formFieldIndex: 0,
+      });
       return;
     }
 
@@ -479,7 +574,13 @@ export function AutomationChatSimulator({
     }
 
     if (node.type === "call_to_action") {
-      nodeEvents.push(nextEvent("bot", getMainText(node) ?? "Mensaje con llamada a la accion."));
+      nodeEvents.push(
+        nextEvent(
+          "bot",
+          getRenderedMainText(node, variablesRef.current) ??
+            "Mensaje con llamada a la accion.",
+        ),
+      );
       nodeEvents.push(nextEvent("action", `Boton: ${String(data.buttonText ?? "Abrir enlace")}`));
       append(nodeEvents);
       advance(automationId, getDefaultTarget(node.id, context.edges), nextVisited);
@@ -487,7 +588,13 @@ export function AutomationChatSimulator({
     }
 
     if (node.type === "options") {
-      nodeEvents.push(nextEvent("bot", getMainText(node) ?? "Elige una opcion."));
+      nodeEvents.push(
+        nextEvent(
+          "bot",
+          getRenderedMainText(node, variablesRef.current) ??
+            "Elige una opcion.",
+        ),
+      );
       const choices = Array.isArray(data.options)
         ? data.options.map((option, index) => ({
             label: String(option),
@@ -502,14 +609,35 @@ export function AutomationChatSimulator({
     }
 
     if (node.type === "button_message") {
-      nodeEvents.push(nextEvent("bot", getMainText(node) ?? "Mensaje con botones."));
+      nodeEvents.push(
+        nextEvent(
+          "bot",
+          getRenderedMainText(node, variablesRef.current) ??
+            "Mensaje con botones.",
+        ),
+      );
       const choices = Array.isArray(data.buttons)
-        ? data.buttons.map((button: { id?: string; text?: string }) => ({
-            label: String(button.text ?? "Boton"),
-            handle: `btn-${button.id}`,
-            targetId: getChoiceTarget(node.id, `btn-${button.id}`, context.edges),
-            automationId,
-          }))
+        ? data.buttons.map(
+            (
+              button: { id?: string; text?: string; value?: string },
+              index,
+            ) => {
+              const buttonId = button.id || String(index);
+              return {
+                label: String(button.text ?? "Boton"),
+                aliases: [button.id, button.value].filter(
+                  (value): value is string => Boolean(value),
+                ),
+                handle: `btn-${buttonId}`,
+                targetId: getChoiceTarget(
+                  node.id,
+                  `btn-${buttonId}`,
+                  context.edges,
+                ),
+                automationId,
+              };
+            },
+          )
         : [];
       append(nodeEvents);
       waitForChoice(choices.length > 0 ? choices : [{ label: "Continuar", targetId: getDefaultTarget(node.id, context.edges), automationId }]);
@@ -517,14 +645,35 @@ export function AutomationChatSimulator({
     }
 
     if (node.type === "list_message") {
-      nodeEvents.push(nextEvent("bot", getMainText(node) ?? "Mensaje con lista."));
+      nodeEvents.push(
+        nextEvent(
+          "bot",
+          getRenderedMainText(node, variablesRef.current) ??
+            "Mensaje con lista.",
+        ),
+      );
       const choices = Array.isArray(data.items)
-        ? data.items.map((item: { id?: string; title?: string }) => ({
-            label: String(item.title ?? "Item"),
-            handle: `list-${item.id}`,
-            targetId: getChoiceTarget(node.id, `list-${item.id}`, context.edges),
-            automationId,
-          }))
+        ? data.items.map(
+            (
+              item: { id?: string; title?: string; rowId?: string },
+              index,
+            ) => {
+              const itemId = item.id || String(index);
+              return {
+                label: String(item.title ?? "Item"),
+                aliases: [item.id, item.rowId].filter(
+                  (value): value is string => Boolean(value),
+                ),
+                handle: `list-${itemId}`,
+                targetId: getChoiceTarget(
+                  node.id,
+                  `list-${itemId}`,
+                  context.edges,
+                ),
+                automationId,
+              };
+            },
+          )
         : [];
       append(nodeEvents);
       waitForChoice(choices.length > 0 ? choices : [{ label: "Continuar", targetId: getDefaultTarget(node.id, context.edges), automationId }]);
@@ -535,7 +684,10 @@ export function AutomationChatSimulator({
       const menuOptions = Array.isArray(data.menuOptions) ? (data.menuOptions as MenuSimpleOption[]) : [];
       const markerStyle = (typeof data.markerStyle === "string" ? data.markerStyle : "emoji_number") as MenuSimpleMarkerStyle;
       const promptText = buildMenuSimpleMessage({
-        label: typeof data.label === "string" ? data.label : "Elige una opcion:",
+        label:
+          typeof data.label === "string"
+            ? replaceSimulatorVariables(data.label, variablesRef.current)
+            : "Elige una opcion:",
         markerStyle,
         menuOptions,
       });
@@ -589,7 +741,7 @@ export function AutomationChatSimulator({
 
       append(nodeEvents);
       waitForChoice(menuChoiceList);
-      setAwaitingInput({
+      updateAwaitingInput({
         automationId,
         nodeId: node.id,
         prompt: promptText,
@@ -665,11 +817,11 @@ export function AutomationChatSimulator({
         const configuredTargetNode = data.targetNodeId
           ? targetContext?.nodeById.get(String(data.targetNodeId))
           : undefined;
-        const targetNode = configuredTargetNode ?? (targetContext ? getFirstExecutableNode(targetContext.nodes) : null);
+        const targetNode = configuredTargetNode ?? targetContext?.startNode ?? null;
         nodeEvents.push(nextEvent("action", `Cambia a automatizacion: ${targetContext?.automation.name ?? targetId}.`));
         append(nodeEvents);
         if (!targetContext || !targetNode) {
-          runFallback("La automatizacion destino no tiene un nodo ejecutable.");
+          runFallback("La automatizacion destino no tiene un comienzo de flujo valido.");
           return;
         }
         // El motor arranca una sesión nueva con historial vacío en el flujo destino.
@@ -728,9 +880,18 @@ export function AutomationChatSimulator({
       return;
     }
 
-    // Unknown node type: continue along the default edge so the run does not stall.
+    // Do not silently skip data from a future/legacy node type.
+    const unsupportedType = String(
+      (node as unknown as { type?: unknown }).type ?? "desconocido",
+    );
+    nodeEvents.push(
+      nextEvent(
+        "system",
+        `El tipo de nodo "${unsupportedType}" no es compatible con esta version del simulador.`,
+      ),
+    );
     append(nodeEvents);
-    advance(automationId, getDefaultTarget(nodeId, context.edges), nextVisited);
+    stop();
   };
 
   const start = () => {
@@ -741,7 +902,7 @@ export function AutomationChatSimulator({
     lastInputRef.current = "";
     setEvents([]);
     setPendingChoices([]);
-    setAwaitingInput(null);
+    updateAwaitingInput(null);
     setInputValue("");
     setStepCount(0);
     runNode(selectedAutomation?.id ?? null, startNode?.id ?? null);
@@ -761,14 +922,18 @@ export function AutomationChatSimulator({
         ?? null;
     const nextEvents = [nextEvent("user", userText)];
 
-    if (choice.kind === "menu_simple" && !resolvedTarget) {
+    if (!resolvedTarget) {
       nextEvents.push(
-        nextEvent("system", "La opcion no tiene una salida conectada. El menu sigue esperando una respuesta valida."),
+        nextEvent(
+          "system",
+          "La opcion no tiene una salida conectada. El simulador sigue esperando una respuesta valida.",
+        ),
       );
-      if (choice.promptText) {
+      if (choice.kind === "menu_simple" && choice.promptText) {
         nextEvents.push(nextEvent("bot", choice.promptText));
       }
       append(nextEvents);
+      setIsRunning(false);
       return;
     }
 
@@ -789,6 +954,7 @@ export function AutomationChatSimulator({
     }
 
     append(nextEvents);
+    updateAwaitingInput(null);
     advance(choice.automationId ?? fallbackAutomationId, resolvedTarget, visitedRef.current, delayMs);
   };
 
@@ -827,12 +993,8 @@ export function AutomationChatSimulator({
       return pendingChoices.find((choice) => choice.kind === "menu_simple" && choice.fallback) ?? null;
     }
 
-    const index = Number(text);
-    if (Number.isInteger(index) && index >= 1 && index <= pendingChoices.length) {
-      return pendingChoices[index - 1];
-    }
-    const lc = text.toLowerCase();
-    return pendingChoices.find((choice) => choice.label.toLowerCase() === lc) ?? null;
+    const index = findSimulatorChoiceIndex(pendingChoices, text);
+    return index >= 0 ? pendingChoices[index] ?? null : null;
   };
 
   // Single entry point for the persistent chat input.
@@ -843,6 +1005,69 @@ export function AutomationChatSimulator({
     lastInputRef.current = text;
 
     if (awaitingInput) {
+      if (awaitingInput.mode === "form") {
+        const fields = awaitingInput.formFields ?? [];
+        const fieldIndex = awaitingInput.formFieldIndex ?? 0;
+        const field = fields[fieldIndex];
+        if (!field) {
+          updateAwaitingInput(null);
+          return;
+        }
+
+        if (
+          field.type === "menu" &&
+          !matchesFormMenuReply(field, text, variablesRef.current)
+        ) {
+          append([
+            nextEvent("user", text),
+            nextEvent("system", "Opcion invalida. Responde con el numero, marcador o texto de una opcion."),
+            nextEvent("bot", awaitingInput.prompt),
+          ]);
+          return;
+        }
+
+        variablesRef.current = {
+          ...variablesRef.current,
+          [field.variable]: text,
+        };
+        const nextEvents = [
+          nextEvent("user", text),
+          nextEvent("action", `${field.variable} = ${text}`),
+        ];
+        const nextFieldIndex = fieldIndex + 1;
+        const nextField = fields[nextFieldIndex];
+        if (nextField) {
+          const nextPrompt = getFormFieldPrompt(nextField, variablesRef.current);
+          nextEvents.push(nextEvent("bot", nextPrompt));
+          nextEvents.push(
+            nextEvent(
+              "action",
+              `Campo ${nextFieldIndex + 1} de ${fields.length}: ${nextField.variable}.`,
+            ),
+          );
+          append(nextEvents);
+          updateAwaitingInput({
+            ...awaitingInput,
+            prompt: nextPrompt,
+            variable: nextField.variable,
+            formFieldIndex: nextFieldIndex,
+          });
+          return;
+        }
+
+        append(nextEvents);
+        updateAwaitingInput(null);
+        const awaitingContext = automationContexts.get(awaitingInput.automationId);
+        advance(
+          awaitingInput.automationId,
+          awaitingContext
+            ? getDefaultTarget(awaitingInput.nodeId, awaitingContext.edges)
+            : null,
+          visitedRef.current,
+        );
+        return;
+      }
+
       if (awaitingInput.mode === "menu_simple") {
         const awaitingChoices = awaitingInput.choices ?? pendingChoices;
         const match = (() => {
@@ -898,6 +1123,7 @@ export function AutomationChatSimulator({
         nextEvents.push(nextEvent("action", `${awaitingInput.variable} = ${text}`));
       }
       append(nextEvents);
+      updateAwaitingInput(null);
       advance(
         awaitingInput.automationId,
         awaitingContext ? getDefaultTarget(nodeId, awaitingContext.edges) : null,
@@ -938,90 +1164,159 @@ export function AutomationChatSimulator({
   const menuPrompt = menuInputMode ? (awaitingInput?.prompt ?? "Elige una opcion:") : null;
 
   return (
-    <section className={["flex min-h-0 flex-col bg-[#f7f8fb] text-slate-950", className].join(" ")}>
-      <div className="flex shrink-0 flex-col gap-4 border-b border-slate-200 bg-white px-4 py-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-white shadow-sm">
-            <Bot className="h-5 w-5" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold text-slate-950">{title}</h2>
-            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-              <span className="truncate">{selectedAutomation?.name ?? description}</span>
-              <span className="inline-flex items-center gap-1">
-                <Activity className="h-3 w-3" />
-                {stepCount} pasos
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <Clock className="h-3 w-3" />
-                0.8s por paso
-              </span>
-              {isRunning ? <span className="font-medium text-emerald-700">Simulando...</span> : null}
-            </div>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {automations.length > 1 && (
-            <Select
-              value={selectedAutomation?.id ? String(selectedAutomation.id) : ""}
-              onValueChange={(value) => {
-                setSelectedAutomationId(Number(value));
-                reset();
-              }}
-            >
-              <SelectTrigger className="h-10 w-full min-w-[220px] rounded-lg border-slate-200 bg-white sm:w-[300px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {automations.map((automation) => (
-                  <SelectItem key={automation.id} value={String(automation.id)}>
-                    {automation.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          <Button size="sm" variant="outline" className="h-10 rounded-lg border-slate-200 bg-white" onClick={reset}>
-            <RotateCcw className="h-3.5 w-3.5" />
-            Reiniciar
-          </Button>
-          <Button size="sm" className="h-10 rounded-lg bg-slate-950 text-white hover:bg-slate-800" onClick={start} disabled={!startNode || isRunning}>
-            <Play className="h-3.5 w-3.5" />
-            {isRunning ? "Simulando..." : "Simular"}
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:overflow-hidden">
-        <div className="flex min-h-[620px] w-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm xl:h-full xl:min-h-0">
-          <div className="flex shrink-0 flex-col gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
-                <Smartphone className="h-4 w-4" />
+    <section className={["min-h-0 bg-background text-foreground", className].join(" ")}>
+      <div className="grid h-full min-h-0 overflow-y-auto rounded-xl border border-border bg-background xl:grid-cols-2 xl:overflow-hidden">
+        <aside className="flex min-h-[420px] flex-col border-b border-border bg-card xl:min-h-0 xl:border-b-0 xl:border-r">
+          <div className="shrink-0 border-b border-border p-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/50 text-foreground">
+                <Bot className="h-4 w-4" />
               </div>
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-slate-950">{activeAutomationName}</div>
-                <div className="truncate text-xs text-slate-500">{activeNodeLabel}</div>
+                <h2 className="truncate text-sm font-semibold">{title}</h2>
+                <p className="mt-1 line-clamp-2 text-[10px] text-muted-foreground">{description}</p>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">
-                {pendingChoices.length > 0 ? "Esperando respuesta" : isRunning ? "Ejecutando" : "Listo"}
+            <div className="mt-3 grid gap-2">
+              {automations.length > 1 && (
+                <Select
+                  value={selectedAutomation?.id ? String(selectedAutomation.id) : ""}
+                  onValueChange={(value) => {
+                    setSelectedAutomationId(Number(value));
+                    reset();
+                  }}
+                >
+                  <SelectTrigger className="h-9 w-full rounded-lg border-border bg-background text-xs text-foreground">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {automations.map((automation) => (
+                      <SelectItem key={automation.id} value={String(automation.id)}>
+                        {automation.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-9 flex-1 rounded-lg border-border bg-transparent text-xs"
+                  onClick={reset}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Reiniciar
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-9 flex-1 rounded-lg bg-foreground text-xs text-background hover:bg-foreground/90"
+                  onClick={start}
+                  disabled={!startNode || isRunning}
+                >
+                  <Play className="h-3.5 w-3.5" />
+                  {isRunning ? "Simulando..." : "Simular"}
+                </Button>
+              </div>
+              <div className="flex items-center gap-4 rounded-lg border border-border bg-muted/30 px-3 py-2 text-[10px] text-muted-foreground">
+                <span className="inline-flex items-center gap-1">
+                  <Activity className="h-3 w-3" />
+                  {stepCount} pasos
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  1s por paso
+                </span>
+                <span className={isRunning ? "ml-auto text-foreground" : "ml-auto"}>
+                  {isRunning ? "Ejecutando" : "Listo"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-3">
+            <GitBranchPlus className="h-4 w-4 text-foreground" />
+            <div className="min-w-0">
+              <div className="truncate text-xs font-semibold">Trazabilidad</div>
+              <div className="text-[10px] text-muted-foreground">{stepCount} pasos recorridos</div>
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-3">
+            {nodes.map((node) => {
+              const isCurrent = Boolean(
+                currentNode &&
+                  selectedAutomation &&
+                  currentNode.automationId === selectedAutomation.id &&
+                  currentNode.nodeId === node.id,
+              );
+              const outgoing = edges.filter((edge) => edge.source === node.id).length;
+              return (
+                <div
+                  key={node.id}
+                  className={[
+                    "rounded-lg border p-2.5 text-xs transition",
+                    isCurrent
+                      ? "border-foreground/40 bg-muted ring-1 ring-foreground/10"
+                      : "border-border bg-background",
+                  ].join(" ")}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{getNodeLabel(node)}</div>
+                      <div className="truncate text-[10px] text-muted-foreground">
+                        {NODE_TYPE_LABELS[node.type] ?? node.type}
+                      </div>
+                    </div>
+                    {isCurrent ? (
+                      <CheckCircle2 className="h-4 w-4 text-foreground" />
+                    ) : (
+                      <GitBranchPlus className="h-4 w-4 text-muted-foreground/40" />
+                    )}
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-2 text-[10px] text-muted-foreground">
+                    <Clock className="h-3 w-3" />
+                    {outgoing} salidas
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </aside>
+
+        <div className="flex min-h-[620px] w-full flex-col overflow-hidden bg-background xl:h-full xl:min-h-0">
+          <div className="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border px-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <Smartphone className="h-4 w-4 shrink-0 text-foreground" />
+              <div className="min-w-0">
+                <div className="truncate text-xs font-semibold">{activeAutomationName}</div>
+                <div className="truncate text-[9px] text-muted-foreground">{activeNodeLabel}</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
+              <span className="rounded-md border border-border bg-muted/30 px-2 py-1">
+                {pendingChoices.length > 0
+                  ? "Esperando respuesta"
+                  : isRunning
+                    ? "Ejecutando"
+                    : "Listo"}
               </span>
               {menuInputMode ? (
-                <span className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 font-medium text-indigo-700">
-                  Menu simple
+                <span className="rounded-md border border-foreground/20 bg-muted px-2 py-1 text-foreground">
+                  Menú simple
                 </span>
               ) : null}
             </div>
           </div>
 
-          <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-[#eef2f4] px-4 py-5 sm:px-6">
+          <div
+            ref={scrollRef}
+            className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-muted/25 px-4 py-4"
+          >
             {events.length === 0 ? (
-              <div className="mx-auto mt-24 max-w-md rounded-xl border border-slate-200 bg-white/90 p-6 text-center text-sm text-slate-600 shadow-sm">
-                <MessageCircle className="mx-auto mb-3 h-7 w-7 text-slate-400" />
-                <div className="font-medium text-slate-900">Simulacion lista</div>
-                <div className="mt-1">Inicia el flujo para ver mensajes, saltos, menus y variables paso a paso.</div>
+              <div className="mx-auto mt-24 max-w-md rounded-xl border border-border bg-card p-5 text-center text-xs text-muted-foreground shadow-sm">
+                <MessageCircle className="mx-auto mb-3 h-6 w-6 text-muted-foreground/60" />
+                <div className="font-medium text-foreground">Simulación lista</div>
+                <div className="mt-1">Inicia el flujo para visualizar cada paso.</div>
               </div>
             ) : (
               events.map((event) => {
@@ -1031,27 +1326,39 @@ export function AutomationChatSimulator({
                     key={event.id}
                     className={[
                       "flex",
-                      event.kind === "user" ? "justify-end" : event.kind === "bot" ? "justify-start" : "justify-center",
+                      event.kind === "user"
+                        ? "justify-end"
+                        : event.kind === "bot"
+                          ? "justify-start"
+                          : "justify-center",
                     ].join(" ")}
                   >
                     <div
                       className={[
                         isMetaEvent
-                          ? "max-w-[92%] rounded-full border border-slate-200 bg-white/70 px-3 py-1 text-[11px] leading-snug text-slate-500 shadow-none"
-                          : "max-w-[92%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm sm:max-w-[78%]",
+                          ? "max-w-[92%] rounded-lg border border-border bg-background/80 px-3 py-1 text-[10px] leading-snug text-muted-foreground"
+                          : "max-w-[86%] border px-3 py-2 text-xs leading-relaxed shadow-sm sm:max-w-[78%]",
                         event.kind === "user"
-                          ? "bg-emerald-100 text-slate-950"
+                          ? "rounded-2xl rounded-br-sm border-foreground bg-foreground text-background"
                           : event.kind === "bot"
-                            ? "bg-white text-slate-900"
+                            ? "rounded-2xl rounded-bl-sm border-border bg-card text-card-foreground"
                             : "",
                       ].join(" ")}
                     >
                       {event.title && (
-                        <div className={isMetaEvent ? "mr-1 inline text-[10px] font-semibold opacity-60" : "mb-1 text-[10px] font-semibold opacity-70"}>
+                        <div
+                          className={
+                            isMetaEvent
+                              ? "mr-1 inline text-[9px] font-semibold opacity-60"
+                              : "mb-1 text-[9px] font-semibold opacity-70"
+                          }
+                        >
                           {event.title}
                         </div>
                       )}
-                      <div className={isMetaEvent ? "inline whitespace-pre-wrap break-words" : "whitespace-pre-wrap break-words"}>{event.text}</div>
+                      <div className={isMetaEvent ? "inline whitespace-pre-wrap break-words" : "whitespace-pre-wrap break-words"}>
+                        {event.text}
+                      </div>
                     </div>
                   </div>
                 );
@@ -1060,81 +1367,45 @@ export function AutomationChatSimulator({
           </div>
 
           {menuInputMode ? (
-            <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3">
-              <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
-                Responde con el numero, marcador o texto de la opcion.
-              </div>
+            <div className="shrink-0 border-t border-border bg-background px-3 py-2 text-[10px] text-foreground">
+              Responde con el número, marcador o texto de la opción.
             </div>
           ) : null}
 
           <form
-            className="relative z-10 flex shrink-0 items-center gap-2 border-t border-slate-200 bg-white p-4 shadow-[0_-8px_18px_rgba(15,23,42,0.08)]"
-            onSubmit={(e) => {
-              e.preventDefault();
+            className="flex shrink-0 items-center gap-2 border-t border-border bg-background p-3"
+            onSubmit={(event) => {
+              event.preventDefault();
               handleSend();
             }}
           >
             <Input
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
+              onChange={(event) => setInputValue(event.target.value)}
               placeholder={
                 menuInputMode
-                  ? "Escribe la opcion..."
+                  ? "Escribe la opción..."
                   : awaitingInput
-                  ? "Escribe la respuesta del contacto..."
-                  : pendingChoices.length > 0
-                    ? "Numero o texto de una opcion..."
-                    : events.length === 0
-                      ? "Escribe un mensaje para iniciar..."
-                      : "Escribe un mensaje..."
+                    ? "Escribe la respuesta del contacto..."
+                    : pendingChoices.length > 0
+                      ? "Número o texto de una opción..."
+                      : events.length === 0
+                        ? "Escribe un mensaje para iniciar..."
+                        : "Escribe un mensaje..."
               }
-              className="h-11 flex-1 rounded-lg border-slate-200 bg-white text-slate-950"
+              className="h-10 flex-1 rounded-lg border-border bg-card text-xs text-foreground"
               disabled={isRunning}
             />
-            <Button type="submit" size="icon" className="h-11 w-11 shrink-0 rounded-lg bg-slate-950 text-white hover:bg-slate-800" disabled={isRunning || !inputValue.trim()}>
+            <Button
+              type="submit"
+              size="icon"
+              className="h-10 w-10 shrink-0 rounded-lg bg-foreground text-background hover:bg-foreground/90"
+              disabled={isRunning || !inputValue.trim()}
+            >
               <SendHorizonal className="h-4 w-4" />
             </Button>
           </form>
         </div>
-
-        <aside className="flex min-h-[360px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm xl:h-full xl:min-h-0">
-          <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 px-4 py-3">
-            <GitBranchPlus className="h-4 w-4 text-slate-700" />
-            <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-slate-950">Trazabilidad</div>
-              <div className="text-xs text-slate-500">{stepCount} pasos recorridos</div>
-            </div>
-          </div>
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
-            {nodes.map((node) => {
-              const isCurrent = Boolean(
-                currentNode && selectedAutomation && currentNode.automationId === selectedAutomation.id && currentNode.nodeId === node.id,
-              );
-              const outgoing = edges.filter((edge) => edge.source === node.id).length;
-              return (
-                <div
-                  key={node.id}
-                  className={[
-                    "rounded-lg border bg-white p-3 text-sm transition",
-                    isCurrent ? "border-emerald-300 bg-emerald-50 ring-2 ring-emerald-100" : "border-slate-200",
-                  ].join(" ")}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="truncate font-medium text-slate-900">{getNodeLabel(node)}</div>
-                      <div className="truncate text-xs text-slate-500">{NODE_TYPE_LABELS[node.type] ?? node.type}</div>
-                    </div>
-                    {isCurrent ? <CheckCircle2 className="h-4 w-4 text-emerald-700" /> : <GitBranchPlus className="h-4 w-4 text-slate-300" />}
-                  </div>
-                  <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
-                    <Clock className="h-3 w-3" />
-                    {outgoing} salidas
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </aside>
       </div>
     </section>
   );

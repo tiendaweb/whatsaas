@@ -1,4 +1,5 @@
 import 'server-only';
+import { condicionDeChatMarcado, jidsInternos } from '@/lib/chats/internos';
 
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
@@ -783,10 +784,20 @@ export async function listPendingChats(teamId: number, opts: { source?: PendingS
   const source = opts.source ?? 'prefiltro';
   const limit = Math.min(Math.max(1, opts.limit ?? 50), 500);
 
+  // Internos del equipo y pruebas: la misma lista que usan el radar y la cola de
+  // audios. Sin esto el prefiltro proponía clasificar el chat interno del
+  // equipo y gastaba una llamada de IA en él.
+  const jidsInternosLista = jidsInternos();
+  const excluirInternos = jidsInternosLista.length
+    ? sql` and lower(c.remote_jid) not in (${sql.join(jidsInternosLista.map((jid) => sql`${jid}`), sql`, `)})`
+    : sql``;
+  // Y los que el equipo marcó a mano en Limpieza (personal / equipo / otros).
+  const excluirMarcados = sql` and ${condicionDeChatMarcado(sql`c.id`)}`;
+
   const rows = (await db.execute(sql`
     with team_chats as (
       select c.id, c.remote_jid, c.name, c.push_name, c.last_customer_interaction, c.last_message_from_me
-      from chats c where c.team_id = ${teamId} and c.remote_jid not like '%@g.us'
+      from chats c where c.team_id = ${teamId} and c.remote_jid not like '%@g.us'${excluirInternos}${excluirMarcados}
     ),
     ct as (select id as contact_id, chat_id, custom_data from contacts where team_id = ${teamId}),
     linked as (select distinct contact_id from team_customer_contacts where team_id = ${teamId}),

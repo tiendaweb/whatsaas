@@ -1,6 +1,6 @@
 'use client';
 
-import type { PatchTaskInput, TaskComment } from '@/lib/plugins/tasks/client/types';
+import type { PatchTaskInput, TaskComment, TaskProject } from '@/lib/plugins/tasks/client/types';
 
 /** Client bound to a single embed token. All calls hit the public /api/task-embed surface. */
 export function createEmbedApi(token: string) {
@@ -32,6 +32,11 @@ export function createEmbedApi(token: string) {
     patchColumn: (columnId: number, patch: { title?: string; order?: number; color?: string | null; icon?: string | null }) =>
       req(`/columns/${columnId}`, { method: 'PATCH', body: JSON.stringify(patch) }),
     deleteColumn: (columnId: number) => req(`/columns/${columnId}`, { method: 'DELETE' }),
+    createProject: (name: string): Promise<TaskProject> =>
+      req('/projects', { method: 'POST', body: JSON.stringify({ name }) }),
+    patchProject: (projectId: number, patch: { name?: string; order?: number; labels?: unknown[]; color?: string | null; icon?: string | null }) =>
+      req(`/projects/${projectId}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    deleteProject: (projectId: number) => req(`/projects/${projectId}`, { method: 'DELETE' }),
   };
 }
 

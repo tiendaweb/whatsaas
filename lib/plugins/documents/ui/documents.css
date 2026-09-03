@@ -1,4 +1,24 @@
 /* Lenguaje visual ToDoS, aislado a este plugin (mismo patrón que ui-nueva/tareas.css). */
 .documentos-ui {
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-manrope), "Manrope", Arial, Helvetica, sans-serif;
+}
+
+.documentos-ui button:focus-visible,
+.documentos-ui a:focus-visible,
+.documentos-ui input:focus-visible,
+.documentos-ui select:focus-visible,
+.documentos-ui textarea:focus-visible {
+  outline: 2px solid #10b981;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .documentos-ui *,
+  .documentos-ui *::before,
+  .documentos-ui *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

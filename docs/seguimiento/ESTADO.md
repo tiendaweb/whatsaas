@@ -44,7 +44,7 @@ Quedan a criterio de implementación: grupo por defecto (el primero por `order`,
 | 0 Reconocimiento | ✅ 2026-08-29 |
 | 1 Cimientos | ✅ 2026-08-29 — `/seguimiento` funcionando con la base real (1.057 chats en 12 secciones del grupo Ventas, segmentos Todos 1.057 · Leads 782 · Clientes 136, sección Sin ficha 138 con su orden propio); build y smoke con puppeteer sin errores; sin commitear |
 | 2 Chat lateral | ⏳ |
-| 3 Drag & drop y acciones | ⏳ |
+| 3 Drag & drop y acciones | 🟡 2026-08-31 — arrastre entre secciones y menú `⋯` → **Mover a etapa** (único camino en móvil, donde el arrastre queda deshabilitado); soltar en "Sin ficha" no se acepta y arrastrar desde ahí tampoco (el menú sí: crea la ficha con `POST /api/contacts`). Falta el resto del menú (Etiquetas, Programar, Convertir) y las secciones plegadas no reciben drops |
 | 4 Panel configurable (migración 0095) | ⏳ |
 | 5 Programados | ⏳ |
 | 6 Pulido, móvil, QA, deploy | ⏳ |

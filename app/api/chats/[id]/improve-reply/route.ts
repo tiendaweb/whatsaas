@@ -6,10 +6,11 @@ import { db } from '@/lib/db/drizzle';
 import { aiConfigs, chats, departmentMembers, messages } from '@/lib/db/schema';
 import { getAIProviderForConfig } from '@/lib/plugins/ai-chat/service';
 import type { AIMessage } from '@/lib/plugins/ai-chat/types';
+import { buildConversationExcerpt, buildSavedContext } from '@/lib/chats/reply-context';
 
 export const dynamic = 'force-dynamic';
 
-type ImproveReplyMode = 'improve' | 'orthography' | 'stylize';
+type ImproveReplyMode = 'improve' | 'orthography' | 'stylize' | 'suggest';
 
 type ImproveReplyRequest = {
   composerText?: string;
@@ -73,25 +74,6 @@ async function userCanAccessChat(chatId: number, permCtx: NonNullable<Awaited<Re
   return { chat, allowed: false as const };
 }
 
-function buildSavedContext(params: {
-  teamPrompt?: string | null;
-  contactName?: string | null;
-  contactNotes?: string | null;
-  chatName?: string | null;
-  remoteJid?: string | null;
-}) {
-  const sections = [
-    params.teamPrompt?.trim() ? `Team prompt:\n${params.teamPrompt.trim()}` : null,
-    params.contactName?.trim() ? `Contact name:\n${params.contactName.trim()}` : null,
-    params.chatName?.trim() ? `Chat label:\n${params.chatName.trim()}` : null,
-    params.remoteJid?.trim() ? `WhatsApp ID:\n${params.remoteJid.trim()}` : null,
-    params.contactNotes?.trim() ? `Saved notes:\n${params.contactNotes.trim()}` : null,
-  ].filter(Boolean);
-
-  return sections.join('\n\n');
-}
-
-
 function buildTaskInstructions(mode: ImproveReplyMode) {
   switch (mode) {
     case 'orthography':
@@ -118,6 +100,18 @@ function buildTaskInstructions(mode: ImproveReplyMode) {
         '- Do not mention that the text was rewritten by AI.',
         '- Return only the final WhatsApp-ready message with no markdown fences or explanations.',
       ].join('\n');
+    case 'suggest':
+      return [
+        'Task: draft a brand-new reply to the customer, written as the human agent, based on the recent conversation and saved context below. There may be no existing draft — write the reply from scratch.',
+        'Rules:',
+        '- Read the recent conversation and respond to the customer\'s most recent message(s) in a helpful, relevant way.',
+        '- Keep it brief, natural, and conversational, matching how a human agent would reply on WhatsApp.',
+        '- Use the saved context (team instructions, contact notes) only when relevant.',
+        '- Do not invent discounts, promises, dates, or unavailable information.',
+        '- Do not mention that the reply was written by AI.',
+        '- If the conversation gives no clear opening for a reply, propose a short, reasonable follow-up message instead of refusing.',
+        '- Return only the final WhatsApp-ready message with no markdown fences or explanations.',
+      ].join('\n');
     case 'improve':
     default:
       return [
@@ -131,18 +125,6 @@ function buildTaskInstructions(mode: ImproveReplyMode) {
         '- Return only the final WhatsApp-ready message with no markdown fences or explanations.',
       ].join('\n');
   }
-}
-
-function buildConversationExcerpt(
-  recentMessages: Array<{ fromMe: boolean; text: string | null; mediaCaption: string | null; messageType: string | null }>
-) {
-  return recentMessages
-    .map((message) => {
-      const speaker = message.fromMe ? 'Agent' : 'Customer';
-      const content = message.text?.trim() || message.mediaCaption?.trim() || `[${message.messageType || 'message'}]`;
-      return `${speaker}: ${content}`;
-    })
-    .join('\n');
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -163,9 +145,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const composerText = body.composerText?.trim() || '';
     const additionalContext = body.additionalContext?.trim() || '';
     const savedContextOverride = body.savedContext?.trim();
-    const mode: ImproveReplyMode = body.mode === 'orthography' || body.mode === 'stylize' ? body.mode : 'improve';
+    const mode: ImproveReplyMode =
+      body.mode === 'orthography' || body.mode === 'stylize' || body.mode === 'suggest' ? body.mode : 'improve';
 
-    if (!composerText) {
+    if (!composerText && mode !== 'suggest') {
       return NextResponse.json({ error: 'Composer text is required' }, { status: 400 });
     }
 
@@ -226,7 +209,7 @@ ${config.systemPrompt.trim()}` : null,
     });
 
     const promptPayload = [
-      `Current draft:\n${composerText}`,
+      composerText ? `Current draft:\n${composerText}` : null,
       additionalContext ? `Additional context from agent:\n${additionalContext}` : null,
       savedContext ? `Saved context:\n${savedContext}` : null,
       conversationExcerpt ? `Recent conversation:\n${conversationExcerpt}` : null,

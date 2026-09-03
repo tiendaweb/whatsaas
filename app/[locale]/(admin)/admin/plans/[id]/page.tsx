@@ -22,6 +22,11 @@ export default async function EditPlanPage({ params }: { params: Promise<{ id: s
     return notFound();
   }
 
+  const planData = {
+    ...plan,
+    isHidden: plan.isHidden ?? false,
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -30,9 +35,9 @@ export default async function EditPlanPage({ params }: { params: Promise<{ id: s
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <h1 className="text-2xl font-bold">Edit Plan</h1>
+        <h1 className="text-2xl font-bold">Editar plan</h1>
       </div>
-      <PlanForm initialData={plan} />
+      <PlanForm initialData={planData} />
     </div>
   );
 }

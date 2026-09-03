@@ -36,6 +36,12 @@ Guías automatizadas para crear y mantener funcionalidades en la app siguiendo l
 | `manual-payment/SKILL.md` | Plugin pagos manual | Pagos por revisión manual |
 | `mercadopago/SKILL.md` | Plugin Mercado Pago | Pagos vía Mercado Pago |
 
+### 🎨 Sistema visual tipo WhatsPro
+
+| Skill | Descripción | Cuándo usar |
+|-------|-------------|-------------|
+| `whatspro-style-designer/SKILL.md` | Diseña/audita landings, dashboards, CRM, inbox y flow builders con tokens y patrones tipo WhatsPro | Piezas nuevas que buscan esa estética verde de SaaS de automatización de WhatsApp; nunca copiar marca/copy propietario |
+
 ---
 
 ## 🚀 Flujo recomendado para una feature nueva

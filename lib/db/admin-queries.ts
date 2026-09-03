@@ -1,20 +1,24 @@
 import { db } from '@/lib/db/drizzle';
-import { users, teams, teamMembers, activityLogs, plans } from '@/lib/db/schema';
+import { users, teams, teamMembers, activityLogs, plans, resellers } from '@/lib/db/schema';
 import { count, eq, desc, sql, ilike, and, or, type SQL } from 'drizzle-orm';
 
 
 export async function getAdminStats() {
-  const [userCount] = await db.select({ count: count() }).from(users);
-  const [teamCount] = await db.select({ count: count() }).from(teams);
-  const [activeSubs] = await db
-    .select({ count: count() })
-    .from(teams)
-    .where(eq(teams.subscriptionStatus, 'active'));
+  const [[userCount], [teamCount], [activeSubs], [resellerCount]] = await Promise.all([
+    db.select({ count: count() }).from(users),
+    db.select({ count: count() }).from(teams),
+    db
+      .select({ count: count() })
+      .from(teams)
+      .where(eq(teams.subscriptionStatus, 'active')),
+    db.select({ count: count() }).from(resellers),
+  ]);
 
   return {
     users: userCount.count,
     teams: teamCount.count,
     activeSubscriptions: activeSubs.count,
+    resellers: resellerCount.count,
   };
 }
 

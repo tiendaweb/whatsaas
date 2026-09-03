@@ -8,8 +8,13 @@ export const RADAR_REPORTS_ROOT_FOLDER = 'Radar · Informes';
 export const RADAR_REPORTS_CLIENTS_FOLDER = 'Clientes';
 export const RADAR_REPORTS_TEAM_FOLDER = 'Equipo';
 export const RADAR_REPORTS_GENERAL_FOLDER = 'Generales';
+export const RADAR_REPORTS_IMPROVEMENTS_FOLDER = 'Mejoras';
+export const RADAR_REPORTS_WORK_FOLDER = 'Trabajos';
 
 export type RadarReportCategory = 'clientes' | 'equipo' | 'generales';
+
+/** Categorías que viven en carpetas hermanas de Clientes/Equipo/Generales. */
+export type RadarReportExtraCategory = 'mejoras' | 'trabajos';
 
 async function findFolderByName(teamId: number, name: string, parentId: number | null) {
   const [row] = await db
@@ -50,6 +55,27 @@ export async function ensureRadarReportFolders(teamId: number, userId: number) {
   return { root, clientes, equipo, generales };
 }
 
+/**
+ * Carpeta hermana de Clientes/Equipo/Generales para las secciones "Análisis de
+ * mejora" y "Reportes de trabajo". Se agrega acá (y no dentro de
+ * `ensureRadarReportFolders`) para no cambiar la firma de esa función ni
+ * crear carpetas que la lista de informes clásicos no usa.
+ */
+export async function ensureRadarExtraReportFolder(input: {
+  teamId: number;
+  userId: number;
+  category: RadarReportExtraCategory;
+}) {
+  const root = await getOrCreateFolder({
+    teamId: input.teamId,
+    userId: input.userId,
+    name: RADAR_REPORTS_ROOT_FOLDER,
+    parentId: null,
+  });
+  const name = input.category === 'mejoras' ? RADAR_REPORTS_IMPROVEMENTS_FOLDER : RADAR_REPORTS_WORK_FOLDER;
+  return getOrCreateFolder({ teamId: input.teamId, userId: input.userId, name, parentId: root.id });
+}
+
 /** Subcarpeta de un contacto puntual dentro de "Clientes", get-or-create. */
 export async function ensureContactReportFolder(input: {
   teamId: number;
@@ -70,11 +96,21 @@ export async function ensureContactReportFolder(input: {
 export async function listRadarReports(input: {
   teamId: number;
   userId: number;
-  category: RadarReportCategory;
+  category: RadarReportCategory | RadarReportExtraCategory;
   contactId?: number;
   contactName?: string;
 }): Promise<DocumentSummary[]> {
-  const { root, clientes, equipo, generales } = await ensureRadarReportFolders(input.teamId, input.userId);
+  if (input.category === 'mejoras' || input.category === 'trabajos') {
+    const folder = await ensureRadarExtraReportFolder({
+      teamId: input.teamId,
+      userId: input.userId,
+      category: input.category,
+    });
+    const documents = await listDocuments(input.teamId);
+    return documents.filter((doc) => doc.folderId === folder.id);
+  }
+
+  const { clientes, equipo, generales } = await ensureRadarReportFolders(input.teamId, input.userId);
 
   let folderId: number | null = null;
   if (input.category === 'equipo') folderId = equipo.id;

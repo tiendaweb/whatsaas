@@ -1,24 +1,65 @@
 'use client';
 
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Loader2, Trash2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { surfaceCardHover } from '@/components/escritorio/tokens';
 import type { BatchSummary } from '../../shared/api-types';
-import { KIND_LABELS, PHASE_LABELS, ROLE_LABELS, batchPhase, formatDate } from './api';
+import { useState } from 'react';
+import { toast } from 'sonner';
+import { KIND_LABELS, PHASE_LABELS, QUEUE_ENDPOINT, ROLE_LABELS, batchPhase, formatDate, postJson, type ApiError } from './api';
 
 /** Fila de lote (doc 05 §5): nombre · N contactos · tipo · rol — estado — [Revisar]. */
-export function BatchCard({ batch, onOpen }: { batch: BatchSummary; onOpen: (batchId: string) => void }) {
+export function BatchCard({ batch, onOpen, onDiscarded, onDeleted }: { batch: BatchSummary; onOpen: (batchId: string) => void; onDiscarded?: () => void; onDeleted?: () => void }) {
+  const [descartando, setDescartando] = useState(false);
+  const [eliminando, setEliminando] = useState(false);
   const phase = batchPhase(batch.byStatus);
   const pending = (batch.byStatus.proposed ?? 0) + (batch.byStatus.pending_approval ?? 0);
   const approved = (batch.byStatus.approved ?? 0) + (batch.byStatus.executing ?? 0);
   const sent = (batch.byStatus.executed ?? 0) + (batch.byStatus.resulted ?? 0);
   const kindLabel = batch.kind === 'send_message' && batch.experimentId ? 'mensaje A/B' : KIND_LABELS[batch.kind]?.toLowerCase() ?? batch.kind;
 
+  /** Descartar = rechazar todo lo pendiente y lo aprobado sin ejecutar. No borra: queda el rastro del lote. */
+  const descartar = async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    const vivas = pending + approved;
+    if (!window.confirm(`¿Descartar "${batch.batchLabel}"? Se rechazan ${vivas} fila${vivas === 1 ? '' : 's'}${approved ? ` (${approved} ya aprobadas, todavía sin salir)` : ''}.`)) return;
+    setDescartando(true);
+    try {
+      await postJson(`${QUEUE_ENDPOINT}/${encodeURIComponent(batch.batchId)}/reject`, { reason: 'descartado desde la cola' });
+      toast.success('Lote descartado.');
+      onDiscarded?.();
+    } catch (err) {
+      toast.error((err as ApiError).message);
+    } finally {
+      setDescartando(false);
+    }
+  };
+
+  /** Eliminar = borrar el lote de verdad. Sólo para descartados sin envíos que hayan salido. */
+  const eliminar = async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (!window.confirm(`¿Eliminar "${batch.batchLabel}" por completo? No se puede deshacer.`)) return;
+    setEliminando(true);
+    try {
+      const res = await fetch(`${QUEUE_ENDPOINT}/${encodeURIComponent(batch.batchId)}`, { method: 'DELETE' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(body?.error ?? `Error ${res.status}`));
+      toast.success('Lote eliminado.');
+      onDeleted?.();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'No se pudo eliminar.');
+    } finally {
+      setEliminando(false);
+    }
+  };
+
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => onOpen(batch.batchId)}
-      className={cn('flex w-full items-center gap-3 rounded-xl border p-3 text-left', surfaceCardHover)}
+      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onOpen(batch.batchId)}
+      className={cn('flex w-full cursor-pointer items-center gap-3 rounded-xl border p-3 text-left', surfaceCardHover)}
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -52,7 +93,33 @@ export function BatchCard({ batch, onOpen }: { batch: BatchSummary; onOpen: (bat
           {(batch.byStatus.expired ?? 0) > 0 && <span className="text-muted-foreground">{batch.byStatus.expired} vencidos</span>}
         </div>
       </div>
+      {/* Descartar desde la tarjeta: rechazar un lote entero era entrar a
+          revisarlo, bajar hasta el pie y recién ahí encontrar el botón. */}
+      {onDeleted && phase === 'closed' && (
+        <button
+          type="button"
+          onClick={eliminar}
+          disabled={eliminando}
+          aria-label={`Eliminar ${batch.batchLabel}`}
+          title="Eliminar por completo"
+          className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+        >
+          {eliminando ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Trash2 className="size-4" aria-hidden />}
+        </button>
+      )}
+      {onDiscarded && (phase === 'proposed' || phase === 'approved') && (
+        <button
+          type="button"
+          onClick={descartar}
+          disabled={descartando}
+          aria-label={`Descartar ${batch.batchLabel}`}
+          title="Descartar el lote"
+          className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+        >
+          {descartando ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <X className="size-4" aria-hidden />}
+        </button>
+      )}
       <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-    </button>
+    </div>
   );
 }

@@ -13,8 +13,15 @@ import { Badge } from '@/components/ui/badge';
 import { X } from 'lucide-react';
 import type { MarketplaceItem } from '@/lib/db/schema';
 
+type AppPrice = {
+  amount: number;
+  currency: string;
+  billingType: string;
+  enabled: boolean;
+};
+
 interface AppDetailModalProps {
-  app: MarketplaceItem | null;
+  app: (MarketplaceItem & { prices?: AppPrice[] }) | null;
   isOpen: boolean;
   onClose: () => void;
   isInstalled?: boolean;
@@ -58,6 +65,8 @@ export function AppDetailModal({
 
   if (!app) return null;
 
+  const activePrice = app.prices?.find((price) => price.enabled && price.amount > 0) ?? app.prices?.find((price) => price.enabled) ?? app.prices?.[0];
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -78,6 +87,15 @@ export function AppDetailModal({
                 </DialogDescription>
                 <div className="flex gap-2 mt-3">
                   <Badge variant="outline">{app.category}</Badge>
+                  {activePrice ? (
+                    <Badge variant="secondary">
+                      {new Intl.NumberFormat('es-ES', {
+                        style: 'currency',
+                        currency: activePrice.currency.toUpperCase(),
+                        minimumFractionDigits: 0,
+                      }).format(activePrice.amount / 100)} / {activePrice.billingType === 'monthly' ? 'mensual' : activePrice.billingType === 'yearly' ? 'anual' : activePrice.billingType === 'setup' ? 'setup' : activePrice.billingType === 'one_time' ? 'pago único' : activePrice.billingType}
+                    </Badge>
+                  ) : null}
                   {isDefault && (
                     <Badge variant="secondary" className="bg-green-100 text-green-800">
                       Por Defecto

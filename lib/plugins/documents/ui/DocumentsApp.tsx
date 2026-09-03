@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import useSWR from 'swr';
-import { FilePlus2, FolderPlus, Loader2, PanelLeftOpen, Search, X } from 'lucide-react';
+import { FilePlus2, FolderPlus, Home, Library, Loader2, PanelLeftOpen, Search, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { useRouter } from '@/i18n/routing';
@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import './documents.css';
 import { FolderTree } from './FolderTree';
 import { FolderGrid } from './FolderGrid';
+import { DocumentsPortal } from './DocumentsPortal';
 import {
   buildTree,
   findFolderNode,
@@ -34,6 +35,7 @@ const DocumentEditor = dynamic(() => import('./DocumentEditor').then((mod) => mo
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 const EXPANDED_KEY = 'documents:expanded';
+type DocumentsSurface = 'portal' | 'library';
 
 export function DocumentsApp({ documentId }: { documentId?: number }) {
   const t = useTranslations('Documents');
@@ -43,6 +45,7 @@ export function DocumentsApp({ documentId }: { documentId?: number }) {
   const [query, setQuery] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [currentFolderId, setCurrentFolderId] = useState<number | null>(null);
+  const [surface, setSurface] = useState<DocumentsSurface>('portal');
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [isMovingDocument, setIsMovingDocument] = useState(false);
   const creatingDocumentRef = useRef(false);
@@ -88,6 +91,13 @@ export function DocumentsApp({ documentId }: { documentId?: number }) {
 
   const openFolder = useCallback((folderId: number | null) => {
     setCurrentFolderId(folderId);
+    setSurface('library');
+    setDrawerOpen(false);
+  }, []);
+
+  const openPortal = useCallback(() => {
+    setCurrentFolderId(null);
+    setSurface('portal');
     setDrawerOpen(false);
   }, []);
 
@@ -326,6 +336,34 @@ export function DocumentsApp({ documentId }: { documentId?: number }) {
       </div>
 
       <nav className="min-h-0 flex-1 overflow-y-auto p-2">
+        {!query ? (
+          <div className="mb-2 grid grid-cols-2 gap-1 border-b border-neutral-100 pb-2 dark:border-neutral-800">
+            <button
+              type="button"
+              onClick={openPortal}
+              className={cn(
+                'flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-bold transition-colors',
+                surface === 'portal' && !documentId
+                  ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                  : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800',
+              )}
+            >
+              <Home className="h-3.5 w-3.5" /> Portal
+            </button>
+            <button
+              type="button"
+              onClick={() => openFolder(null)}
+              className={cn(
+                'flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-bold transition-colors',
+                surface === 'library' && !documentId
+                  ? 'bg-neutral-900 text-white dark:bg-white dark:text-neutral-900'
+                  : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800',
+              )}
+            >
+              <Library className="h-3.5 w-3.5" /> Biblioteca
+            </button>
+          </div>
+        ) : null}
         {isLoading ? (
           <div className="space-y-2 p-2">
             {Array.from({ length: 5 }).map((_, index) => (
@@ -427,6 +465,14 @@ export function DocumentsApp({ documentId }: { documentId?: number }) {
             documentId={documentId}
             onSaved={() => void mutate()}
             onOpenDocument={openDocument}
+          />
+        ) : surface === 'portal' ? (
+          <DocumentsPortal
+            documents={documents}
+            folders={data?.folders ?? []}
+            onOpenDocument={openDocument}
+            onCreateDocument={() => void createDocument(null)}
+            onOpenLibrary={() => openFolder(null)}
           />
         ) : (
           <FolderGrid

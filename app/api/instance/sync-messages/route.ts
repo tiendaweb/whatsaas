@@ -3,6 +3,15 @@ import { db } from '@/lib/db/drizzle';
 import { getTeamForUser } from '@/lib/db/queries';
 import { evolutionInstances, chats, messages } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
+import {
+  extractEvolutionMediaParts,
+  getAlbumMessagePreview,
+  getEvolutionMediaMimetype,
+  getMediaCaption,
+  getMediaTextFallback,
+  saveEvolutionMediaPart,
+  type SavedEvolutionMediaDetails,
+} from '@/lib/evolution-message-media';
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "http://localhost:8080";
 
@@ -19,6 +28,9 @@ function normalizeJid(jid: string): string {
 
 function extractMessageText(msg: any): string | null {
   if (!msg) return null;
+  const albumParts = extractEvolutionMediaParts(msg, 'albumMessage');
+  if (albumParts.length > 1) return getAlbumMessagePreview(albumParts);
+
   return (
     msg.conversation ||
     msg.extendedTextMessage?.text ||
@@ -152,25 +164,37 @@ export async function POST(request: NextRequest) {
         }
 
         const msg = evoMsg.message || {};
-        let mediaMimetype = null;
-        let mediaCaption = null;
-        let mediaSeconds = null;
-        let mediaIsPtt = null;
+        const mediaParts = extractEvolutionMediaParts(msg, msgType);
+        const savedMediaMessages: Array<{
+          id: string;
+          messageType: string;
+          mediaDetails: SavedEvolutionMediaDetails;
+          text: string | null;
+        }> = [];
 
-        if (msg.imageMessage) {
-          mediaMimetype = msg.imageMessage.mimetype || 'image/jpeg';
-          mediaCaption = msg.imageMessage.caption || null;
-        } else if (msg.videoMessage) {
-          mediaMimetype = msg.videoMessage.mimetype || 'video/mp4';
-          mediaCaption = msg.videoMessage.caption || null;
-          mediaSeconds = msg.videoMessage.seconds || null;
-        } else if (msg.audioMessage) {
-          mediaMimetype = msg.audioMessage.mimetype || 'audio/ogg';
-          mediaSeconds = msg.audioMessage.seconds || null;
-          mediaIsPtt = msg.audioMessage.ptt || false;
-        } else if (msg.documentMessage) {
-          mediaMimetype = msg.documentMessage.mimetype || 'application/octet-stream';
-          mediaCaption = msg.documentMessage.fileName || null;
+        for (let mediaIndex = 0; mediaIndex < mediaParts.length; mediaIndex++) {
+          const part = mediaParts[mediaIndex];
+          try {
+            const mediaDetails = await saveEvolutionMediaPart(part, { metaToken: (instance as any).metaToken });
+            savedMediaMessages.push({
+              id: mediaParts.length > 1 && mediaIndex > 0 ? `${messageId}:album:${mediaIndex}` : messageId,
+              messageType: part.messageType,
+              mediaDetails,
+              text: mediaDetails.text ?? getMediaTextFallback(part),
+            });
+          } catch (mediaError) {
+            console.error('Error saving synced media:', mediaError);
+            savedMediaMessages.push({
+              id: mediaParts.length > 1 && mediaIndex > 0 ? `${messageId}:album:${mediaIndex}` : messageId,
+              messageType: part.messageType,
+              mediaDetails: {
+                mediaUrl: null,
+                mediaMimetype: getEvolutionMediaMimetype(part.mediaContent, part.messageType),
+                mediaCaption: getMediaCaption(part),
+              },
+              text: getMediaTextFallback(part),
+            });
+          }
         }
 
         const contextInfo = msg.extendedTextMessage?.contextInfo ||
@@ -184,20 +208,7 @@ export async function POST(request: NextRequest) {
 
         const contactMsg = msg.contactMessage;
 
-        messagesToInsert.push({
-          id: messageId,
-          chatId: chat.id,
-          fromMe,
-          messageType: msgType,
-          text: text || (mediaMimetype ? null : 'Message'),
-          timestamp,
-          status,
-          mediaUrl: null, // Media URLs from Evo are temporary, not stored
-          mediaMimetype,
-          mediaCaption,
-          mediaFileLength: null,
-          mediaSeconds,
-          mediaIsPtt,
+        const baseMessage = {
           contactName: contactMsg?.displayName || null,
           contactVcard: contactMsg?.vcard || null,
           locationLatitude: locationMsg?.degreesLatitude?.toString() || null,
@@ -209,13 +220,71 @@ export async function POST(request: NextRequest) {
           participant,
           participantName,
           isInternal: false,
-        });
+        };
+
+        if (savedMediaMessages.length > 0) {
+          savedMediaMessages.forEach((mediaMessage, mediaIndex) => {
+            messagesToInsert.push({
+              ...baseMessage,
+              id: mediaMessage.id,
+              chatId: chat.id,
+              fromMe,
+              messageType: mediaMessage.messageType,
+              text: mediaMessage.text,
+              timestamp: new Date(timestamp.getTime() + mediaIndex),
+              status,
+              ...mediaMessage.mediaDetails,
+            });
+          });
+        } else {
+          messagesToInsert.push({
+            ...baseMessage,
+            id: messageId,
+            chatId: chat.id,
+            fromMe,
+            messageType: msgType,
+            text: text || 'Message',
+            timestamp,
+            status,
+            mediaUrl: null,
+            mediaMimetype: null,
+            mediaCaption: null,
+            mediaFileLength: null,
+            mediaSeconds: null,
+            mediaIsPtt: null,
+          });
+        }
       }
 
       if (messagesToInsert.length > 0) {
         await db.insert(messages).values(messagesToInsert).onConflictDoNothing();
         imported += messagesToInsert.length;
       }
+    }
+
+    // Update chat last message info based on the most recent imported (if any new)
+    if (imported > 0 && evoMessages.length > 0) {
+      try {
+        // The evoMessages may not be sorted; find the latest by timestamp
+        let latest = evoMessages[0];
+        for (const m of evoMessages) {
+          const t1 = latest.messageTimestamp || 0;
+          const t2 = m.messageTimestamp || 0;
+          if (t2 > t1) latest = m;
+        }
+        const latestText = extractMessageText(latest.message) || 'Message';
+        const latestTs = latest.messageTimestamp ? new Date(latest.messageTimestamp * 1000) : new Date();
+        const latestFromMe = latest.key?.fromMe || false;
+
+        await db.update(chats)
+          .set({
+            lastMessageText: latestText,
+            lastMessageTimestamp: latestTs,
+            lastMessageFromMe: latestFromMe,
+            lastMessageStatus: latestFromMe ? 'sent' : 'delivered'
+          })
+          .where(eq(chats.id, chat.id));
+      } catch (e) { /* non fatal */ }
     }
 
     return NextResponse.json({

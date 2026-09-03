@@ -6,7 +6,7 @@ import {
   automationNodeDataSchemaByType,
 } from '@/lib/automation/flow-schema';
 
-export type AutomationNodeCategory = 'trigger' | 'messages' | 'logic' | 'integrations';
+export type AutomationNodeCategory = 'trigger' | 'messages' | 'logic' | 'integrations' | 'utility';
 export type AutomationSidebarIconKey =
   | 'message-square'
   | 'image'
@@ -20,7 +20,10 @@ export type AutomationSidebarIconKey =
   | 'pen-line'
   | 'save'
   | 'bot'
-  | 'git-branch-plus';
+  | 'git-branch-plus'
+  | 'sticky-note'
+  | 'list-ordered'
+  | 'clipboard-list';
 
 export type AutomationEditableFieldDefinition = {
   key: string;
@@ -34,6 +37,8 @@ export type AutomationEditableFieldDefinition = {
     | 'button-list'
     | 'list-items'
     | 'conditions'
+    | 'menu-options'
+    | 'form-fields'
     | 'file'
     | 'crm-mapping';
   required?: boolean;
@@ -41,6 +46,14 @@ export type AutomationEditableFieldDefinition = {
   helperTextKey?: string;
   min?: number;
   max?: number;
+};
+
+const REFERENCE_NAME_FIELD: AutomationEditableFieldDefinition = {
+  key: 'referenceName',
+  labelKey: 'reference_name',
+  input: 'text',
+  placeholderKey: 'reference_name_placeholder',
+  helperTextKey: 'reference_name_helper',
 };
 
 export type AutomationConnectionRules = {
@@ -84,6 +97,7 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     category: 'trigger',
     channels: ['qr', 'api'],
     editableFields: [
+      REFERENCE_NAME_FIELD,
       { key: 'triggerType', labelKey: 'trigger_type_label', input: 'select', required: true },
       { key: 'keywords', labelKey: 'keywords_label', input: 'multi-text', max: 20 },
       { key: 'conditions', labelKey: 'conditions_title', input: 'crm-mapping' },
@@ -113,6 +127,7 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     category: 'messages',
     channels: ['qr'],
     editableFields: [
+      REFERENCE_NAME_FIELD,
       {
         key: 'label',
         labelKey: 'message_text_label',
@@ -144,6 +159,7 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     category: 'messages',
     channels: ['qr'],
     editableFields: [
+      REFERENCE_NAME_FIELD,
       { key: 'mediaType', labelKey: 'media_type_label', input: 'select', required: true },
       { key: 'mediaUrl', labelKey: 'file_upload_label', input: 'file' },
       {
@@ -166,16 +182,17 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     aiExamples: ['Share a product image with caption New arrivals this week.', 'Send a PDF brochure document without caption.'],
     sidebar: {
       icon: 'image',
-      colorClass: 'bg-pink-500/10',
-      iconColorClass: 'text-pink-500',
+      colorClass: 'bg-primary/10',
+      iconColorClass: 'text-primary',
     },
   },
   {
     type: 'options',
     labelKey: 'nodes.options',
     category: 'messages',
-    channels: ['qr', 'api'],
+    channels: ['api'],
     editableFields: [
+      REFERENCE_NAME_FIELD,
       {
         key: 'label',
         labelKey: 'message_text_label',
@@ -205,8 +222,55 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     aiExamples: ['Question: What do you need? Options: Sales, Billing, Support.', 'Question: Pick a plan. Options: Basic, Pro, Enterprise.'],
     sidebar: {
       icon: 'list',
-      colorClass: 'bg-orange-500/10',
-      iconColorClass: 'text-orange-500',
+      colorClass: 'bg-primary/10',
+      iconColorClass: 'text-primary',
+    },
+  },
+  {
+    type: 'menu_simple',
+    labelKey: 'nodes.menu_simple',
+    category: 'messages',
+    channels: ['qr', 'api'],
+    editableFields: [
+      REFERENCE_NAME_FIELD,
+      {
+        key: 'label',
+        labelKey: 'message_text_label',
+        input: 'textarea',
+        required: true,
+        placeholderKey: 'type_placeholder',
+        max: AUTOMATION_TEXT_LIMITS.qr.text,
+      },
+      { key: 'markerStyle', labelKey: 'menu_simple_marker_style_label', input: 'select' },
+      { key: 'menuOptions', labelKey: 'menu_simple_options_label', input: 'menu-options', required: true, min: 1, max: 10 },
+      { key: 'globalDelaySeconds', labelKey: 'menu_simple_global_delay_label', input: 'number', min: 0, max: 600 },
+      { key: 'variable', labelKey: 'menu_simple_variable_label', input: 'text' },
+    ],
+    defaults: {
+      label: 'Podés elegir entre las siguientes opciones',
+      markerStyle: 'emoji_number',
+      menuOptions: [
+        { id: 'opt-1', text: 'Opción 1' },
+        { id: 'opt-2', text: 'Opción 2' },
+      ],
+      globalDelaySeconds: 0,
+    },
+    connectionRules: {
+      maxIncoming: 'many',
+      maxOutgoing: 'many',
+      sourceHandles: 'per-option',
+      targetHandles: 'single',
+      notes: [
+        'Each option exposes a sourceHandle "menu-<optionId>"; connect one outgoing edge per option.',
+        'You may also connect the "fallback" handle for unrecognised replies.',
+      ],
+    },
+    aiDescription: 'Send a single text menu with auto-numbered options and branch to a different node per option. Works on both qr and api channels.',
+    aiExamples: ['Menu: choose a service. Options: Website, Online store, Custom solution, Advertising.'],
+    sidebar: {
+      icon: 'list-ordered',
+      colorClass: 'bg-primary/10',
+      iconColorClass: 'text-primary',
     },
   },
   {
@@ -215,6 +279,7 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     category: 'logic',
     channels: ['qr', 'api'],
     editableFields: [
+      REFERENCE_NAME_FIELD,
       { key: 'seconds', labelKey: 'wait_duration_label', input: 'number', required: true, min: 1, max: 86400 },
     ],
     defaults: { label: 'Wait', seconds: 2 },
@@ -229,8 +294,8 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     aiExamples: ['Wait 2 seconds before the follow-up message.', 'Delay 30 seconds before checking for more input.'],
     sidebar: {
       icon: 'clock',
-      colorClass: 'bg-blue-500/10',
-      iconColorClass: 'text-blue-500',
+      colorClass: 'bg-indigo-500/10',
+      iconColorClass: 'text-indigo-500',
     },
   },
   {
@@ -239,6 +304,7 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     category: 'integrations',
     channels: ['qr', 'api'],
     editableFields: [
+      REFERENCE_NAME_FIELD,
       {
         key: 'label',
         labelKey: 'question_label',
@@ -267,8 +333,52 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     aiExamples: ['Ask for email and store it as customer_email.', 'Ask for order number and store it as order_id.'],
     sidebar: {
       icon: 'pen-line',
-      colorClass: 'bg-purple-500/10',
-      iconColorClass: 'text-purple-500',
+      colorClass: 'bg-violet-500/10',
+      iconColorClass: 'text-violet-500',
+    },
+  },
+  {
+    type: 'form',
+    labelKey: 'nodes.form',
+    category: 'integrations',
+    channels: ['qr', 'api'],
+    editableFields: [
+      REFERENCE_NAME_FIELD,
+      {
+        key: 'fields',
+        labelKey: 'form_fields_label',
+        input: 'form-fields',
+        required: true,
+        min: 1,
+        max: 20,
+      },
+    ],
+    defaults: {
+      fields: [
+        {
+          id: 'field-1',
+          type: 'text',
+          label: '¿Cuál es tu nombre?',
+          variable: 'nombre',
+        },
+      ],
+    },
+    connectionRules: {
+      maxIncoming: 'many',
+      maxOutgoing: 1,
+      sourceHandles: 'single',
+      targetHandles: 'single',
+      notes: [
+        'Collects each field in order and continues after the last answer.',
+        'Each field stores its answer in a unique variable.',
+      ],
+    },
+    aiDescription: 'Collect several answers in sequence from one compact form node. Fields can accept free text or a numbered text menu.',
+    aiExamples: ['Ask for name, email, and preferred service in sequence.'],
+    sidebar: {
+      icon: 'clipboard-list',
+      colorClass: 'bg-violet-500/10',
+      iconColorClass: 'text-violet-500',
     },
   },
   {
@@ -277,6 +387,7 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     category: 'integrations',
     channels: ['qr', 'api'],
     editableFields: [
+      REFERENCE_NAME_FIELD,
       { key: 'nameVariable', labelKey: 'name_variable_label', input: 'text', placeholderKey: 'variable_name_placeholder' },
       { key: 'agentId', labelKey: 'assign_to_agent_label', input: 'select' },
       { key: 'departmentId', labelKey: 'assign_to_department_label', input: 'select' },
@@ -303,8 +414,8 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     aiExamples: ['Assign the lead to sales and set funnel stage Qualified.', 'Save {{user_name}} as the contact name and add a VIP tag.'],
     sidebar: {
       icon: 'save',
-      colorClass: 'bg-green-500/10',
-      iconColorClass: 'text-green-500',
+      colorClass: 'bg-violet-500/10',
+      iconColorClass: 'text-violet-500',
     },
   },
   {
@@ -312,7 +423,9 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     labelKey: 'nodes.end',
     category: 'logic',
     channels: ['qr', 'api'],
-    editableFields: [],
+    editableFields: [
+      REFERENCE_NAME_FIELD,
+    ],
     defaults: {},
     connectionRules: {
       maxIncoming: 'many',
@@ -336,6 +449,7 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     category: 'messages',
     channels: ['api'],
     editableFields: [
+      REFERENCE_NAME_FIELD,
       { key: 'bodyText', labelKey: 'message_text_required_label', input: 'textarea', required: true, placeholderKey: 'enter_message_text_placeholder', max: AUTOMATION_TEXT_LIMITS.api.body },
       { key: 'footerText', labelKey: 'footer_optional_label', input: 'text', placeholderKey: 'enter_footer_text_placeholder', max: AUTOMATION_TEXT_LIMITS.api.footer },
       { key: 'buttons', labelKey: 'buttons_label', input: 'button-list', required: true, min: 1, max: 3 },
@@ -357,8 +471,8 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     aiExamples: ['Ask if the user wants Demo or Pricing with two buttons.', 'Offer Yes and No confirmation buttons.'],
     sidebar: {
       icon: 'mouse-pointer-click',
-      colorClass: 'bg-indigo-500/10',
-      iconColorClass: 'text-indigo-500',
+      colorClass: 'bg-primary/10',
+      iconColorClass: 'text-primary',
     },
   },
   {
@@ -367,6 +481,7 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     category: 'messages',
     channels: ['api'],
     editableFields: [
+      REFERENCE_NAME_FIELD,
       { key: 'title', labelKey: 'header_text_optional_label', input: 'text', placeholderKey: 'header_text_placeholder', max: AUTOMATION_TEXT_LIMITS.api.title },
       { key: 'bodyText', labelKey: 'body_text_label', input: 'textarea', required: true, placeholderKey: 'body_text_placeholder', max: AUTOMATION_TEXT_LIMITS.api.body },
       { key: 'footerText', labelKey: 'footer_text_optional_label', input: 'text', placeholderKey: 'footer_text_placeholder', max: AUTOMATION_TEXT_LIMITS.api.footer },
@@ -391,8 +506,8 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     aiExamples: ['List plans Basic, Pro, and Enterprise.', 'Show departments Sales, Billing, and Support.'],
     sidebar: {
       icon: 'list-checks',
-      colorClass: 'bg-teal-500/10',
-      iconColorClass: 'text-teal-500',
+      colorClass: 'bg-primary/10',
+      iconColorClass: 'text-primary',
     },
   },
   {
@@ -401,6 +516,7 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     category: 'messages',
     channels: ['api'],
     editableFields: [
+      REFERENCE_NAME_FIELD,
       { key: 'title', labelKey: 'header_optional_label', input: 'text', placeholderKey: 'enter_header_text_placeholder', max: AUTOMATION_TEXT_LIMITS.api.title },
       { key: 'bodyText', labelKey: 'value_text_label', input: 'textarea', required: true, placeholderKey: 'enter_value_text_placeholder', max: AUTOMATION_TEXT_LIMITS.api.body },
       { key: 'buttonText', labelKey: 'button_text_label', input: 'text', required: true, placeholderKey: 'click_here_placeholder', max: AUTOMATION_TEXT_LIMITS.api.buttonText },
@@ -425,8 +541,8 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     aiExamples: ['Share the checkout link with button text Pay now.', 'Send a scheduling link with button text Book a call.'],
     sidebar: {
       icon: 'external-link',
-      colorClass: 'bg-sky-500/10',
-      iconColorClass: 'text-sky-500',
+      colorClass: 'bg-primary/10',
+      iconColorClass: 'text-primary',
     },
   },
   {
@@ -435,6 +551,7 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     category: 'integrations',
     channels: ['qr', 'api'],
     editableFields: [
+      REFERENCE_NAME_FIELD,
       { key: 'action', labelKey: 'action_label', input: 'select', required: true },
     ],
     defaults: { action: 'active' },
@@ -449,8 +566,8 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     aiExamples: ['Pause AI before assigning to a human.', 'Re-enable AI after the handoff window ends.'],
     sidebar: {
       icon: 'bot',
-      colorClass: 'bg-violet-600/10',
-      iconColorClass: 'text-violet-600',
+      colorClass: 'bg-violet-500/10',
+      iconColorClass: 'text-violet-500',
     },
   },
   {
@@ -459,6 +576,7 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     category: 'logic',
     channels: ['qr', 'api'],
     editableFields: [
+      REFERENCE_NAME_FIELD,
       { key: 'conditions', labelKey: 'ConditionProperties.title', input: 'conditions', required: true, min: 1, max: 10 },
     ],
     defaults: {
@@ -476,8 +594,8 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     aiExamples: ['Branch when amount is greater than 100.', 'Branch when variable lead_stage equals enterprise.'],
     sidebar: {
       icon: 'split',
-      colorClass: 'bg-yellow-500/10',
-      iconColorClass: 'text-yellow-600',
+      colorClass: 'bg-indigo-500/10',
+      iconColorClass: 'text-indigo-500',
     },
   },
   {
@@ -486,6 +604,7 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     category: 'logic',
     channels: ['qr', 'api'],
     editableFields: [
+      REFERENCE_NAME_FIELD,
       { key: 'mode', labelKey: 'go_to_mode_label', input: 'select', required: true },
       { key: 'targetNodeId', labelKey: 'go_to_target_node_label', input: 'select' },
       { key: 'targetAutomationId', labelKey: 'go_to_target_automation_label', input: 'select' },
@@ -510,13 +629,48 @@ export const AUTOMATION_NODE_CATALOG: AutomationNodeCatalogEntry[] = [
     aiExamples: ['Return to the previous question when validation fails.', 'Jump to payment flow after user confirms intent.'],
     sidebar: {
       icon: 'git-branch-plus',
-      colorClass: 'bg-amber-500/10',
+      colorClass: 'bg-indigo-500/10',
+      iconColorClass: 'text-indigo-500',
+    },
+  },
+  {
+    type: 'sticky_note',
+    labelKey: 'nodes.sticky_note',
+    category: 'utility',
+    channels: ['qr', 'api'],
+    editableFields: [
+      { key: 'title', labelKey: 'sticky_note_title_label', input: 'text', placeholderKey: 'sticky_note_title_placeholder' },
+      { key: 'bodyText', labelKey: 'sticky_note_body_label', input: 'textarea', placeholderKey: 'sticky_note_body_placeholder' },
+      REFERENCE_NAME_FIELD,
+    ],
+    defaults: {
+      title: 'Nota sticky',
+      bodyText: 'Escribe una idea, una regla o una referencia para planificar este flujo.',
+    },
+    connectionRules: {
+      maxIncoming: 0,
+      maxOutgoing: 0,
+      sourceHandles: 'single',
+      targetHandles: 'single',
+      notes: [
+        'Bloque de planificación visual.',
+        'No participa en la ejecución del flujo.',
+      ],
+    },
+    aiDescription: 'Internal planning note for the canvas. Not used to execute the conversation.',
+    aiExamples: [
+      'Record that this branch must be reviewed with the sales team.',
+      'Note that payment handoff depends on approval from finance.',
+    ],
+    sidebar: {
+      icon: 'sticky-note',
+      colorClass: 'bg-amber-400/10',
       iconColorClass: 'text-amber-600',
     },
   },
 ] satisfies AutomationNodeCatalogEntry[];
 
-export const AUTOMATION_SIDEBAR_CATEGORIES: AutomationNodeCategory[] = ['messages', 'logic', 'integrations'];
+export const AUTOMATION_SIDEBAR_CATEGORIES: AutomationNodeCategory[] = ['messages', 'logic', 'integrations', 'utility'];
 
 export function getAutomationNodeCatalogEntry(type: AutomationFlowNodeType) {
   return AUTOMATION_NODE_CATALOG.find((entry) => entry.type === type) ?? null;
@@ -540,8 +694,16 @@ export function getEditableFieldDefinition(type: AutomationFlowNodeType, key: st
   return getAutomationNodeCatalogEntry(type)?.editableFields.find((field) => field.key === key) ?? null;
 }
 
-export function getSidebarNodesByCategory(category: AutomationNodeCategory) {
-  return AUTOMATION_NODE_CATALOG.filter((entry) => entry.category === category && entry.sidebar);
+export function getSidebarNodesByCategory(
+  category: AutomationNodeCategory,
+  channel?: AutomationFlowChannel,
+) {
+  return AUTOMATION_NODE_CATALOG.filter(
+    (entry) =>
+      entry.category === category &&
+      entry.sidebar &&
+      (channel ? entry.channels.includes(channel) : true),
+  );
 }
 
 export function getAllowedAutomationNodeCatalog(channel: AutomationFlowChannel, allowedTypes?: readonly AutomationFlowNodeType[]) {
@@ -552,11 +714,13 @@ export function getAllowedAutomationNodeCatalog(channel: AutomationFlowChannel, 
 }
 
 export function getAllowedAutomationNodeTypesForChannel(channel: AutomationFlowChannel) {
-  return getAllowedAutomationNodeCatalog(channel).map((entry) => entry.type);
+  return getAllowedAutomationNodeCatalog(channel)
+    .filter((entry) => entry.category !== 'utility')
+    .map((entry) => entry.type);
 }
 
 export function getNodeContentConstraintsForChannel(channel: AutomationFlowChannel) {
-  const entries = getAllowedAutomationNodeCatalog(channel);
+  const entries = getAllowedAutomationNodeCatalog(channel).filter((entry) => entry.category !== 'utility');
   return Object.fromEntries(
     entries.map((entry) => {
       const fieldSummary = entry.editableFields.length > 0

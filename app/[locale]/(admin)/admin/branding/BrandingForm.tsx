@@ -21,7 +21,7 @@ import Image from 'next/image';
 
 const brandingFormSchema = z.object({
   name: z.string().min(2, {
-    message: 'Name must be at least 2 characters.',
+    message: 'El nombre debe tener al menos 2 caracteres.',
   }),
   logo: z.any(),
   favicon: z.any(),
@@ -56,8 +56,8 @@ export function BrandingForm({ branding }: BrandingFormProps) {
     const result = await updateBranding(formData);
 
     if (result.success) {
-      toast.success('Branding updated', {
-        description: 'Your branding has been updated successfully.',
+      toast.success('Marca actualizada', {
+        description: 'La configuración de marca se actualizó correctamente.',
       });
     } else {
       toast.error('Error', {
@@ -74,12 +74,12 @@ export function BrandingForm({ branding }: BrandingFormProps) {
           name="name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>SaaS Name</FormLabel>
+              <FormLabel>Nombre del SaaS</FormLabel>
               <FormControl>
-                <Input placeholder="Your SaaS Name" {...field} />
+                <Input placeholder="Nombre de tu SaaS" {...field} />
               </FormControl>
               <FormDescription>
-                This is the name of your SaaS that will be displayed throughout the application.
+                Este es el nombre que se mostrará en toda la aplicación.
               </FormDescription>
               <FormMessage />
             </FormItem>
@@ -95,7 +95,7 @@ export function BrandingForm({ branding }: BrandingFormProps) {
                 <div className="my-4">
                   <Image
                     src={branding.logoUrl}
-                    alt="Current Logo"
+                    alt="Logo actual"
                     width={100}
                     height={100}
                     className="rounded-md"
@@ -109,7 +109,7 @@ export function BrandingForm({ branding }: BrandingFormProps) {
                 />
               </FormControl>
               <FormDescription>
-                Upload a logo for your SaaS.
+                Sube un logo para tu SaaS.
               </FormDescription>
               <FormMessage />
             </FormItem>
@@ -125,7 +125,7 @@ export function BrandingForm({ branding }: BrandingFormProps) {
                 <div className="my-4">
                   <Image
                     src={branding.faviconUrl}
-                    alt="Current Favicon"
+                    alt="Favicon actual"
                     width={32}
                     height={32}
                     className="rounded-md"
@@ -139,13 +139,13 @@ export function BrandingForm({ branding }: BrandingFormProps) {
                 />
               </FormControl>
               <FormDescription>
-                Upload a favicon for your SaaS.
+                Sube un favicon para tu SaaS.
               </FormDescription>
               <FormMessage />
             </FormItem>
           )}
         />
-        <Button type="submit">Update Branding</Button>
+        <Button type="submit">Actualizar marca</Button>
       </form>
     </Form>
   );

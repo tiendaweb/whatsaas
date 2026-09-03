@@ -1,6 +1,7 @@
 import React, { useCallback } from 'react';
 import { Edge, Handle, Position, useReactFlow } from '@xyflow/react';
 import { toast } from 'sonner';
+import { useTranslations } from 'next-intl';
 
 interface DisconnectableTargetHandleProps {
   nodeId: string;
@@ -17,6 +18,7 @@ export function DisconnectableTargetHandle({
   style,
   position = Position.Left,
 }: DisconnectableTargetHandleProps) {
+  const t = useTranslations('Automation');
   const { setEdges } = useReactFlow();
 
   const handleClick = useCallback(
@@ -46,10 +48,10 @@ export function DisconnectableTargetHandle({
       });
 
       if (removedConnections > 0) {
-        toast.success('Incoming connection removed');
+        toast.success(t('incoming_connection_removed_toast'));
       }
     },
-    [handleId, nodeId, setEdges],
+    [handleId, nodeId, setEdges, t],
   );
 
   return (
@@ -60,7 +62,7 @@ export function DisconnectableTargetHandle({
       className={className}
       style={style}
       onClick={handleClick}
-      title="Triple click to disconnect"
+      title={t('disconnect_handle_title')}
     />
   );
 }

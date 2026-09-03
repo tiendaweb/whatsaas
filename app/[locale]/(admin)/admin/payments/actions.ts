@@ -1,11 +1,13 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull, ne } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { getUser } from '@/lib/db/queries';
 import { manualPayments, paymentProviderSettings, plans, teams } from '@/lib/db/schema';
 import { ensurePaymentProviderDefaults, PaymentProviderId } from '@/lib/payments/provider-settings';
+import { chargePlanActivation } from '@/lib/resellers/billing';
+import { encryptProviderConfig } from '@/lib/payments/secrets';
 
 async function assertAdmin() {
   const user = await getUser();
@@ -26,7 +28,10 @@ export async function getPaymentAdminData() {
     await ensurePaymentProviderDefaults();
 
     const [providers, pendingManualPayments] = await Promise.all([
-      db.select().from(paymentProviderSettings),
+      db
+        .select()
+        .from(paymentProviderSettings)
+        .where(isNull(paymentProviderSettings.resellerId)),
       db
         .select({
           payment: manualPayments,
@@ -42,7 +47,10 @@ export async function getPaymentAdminData() {
         .from(manualPayments)
         .innerJoin(teams, eq(manualPayments.teamId, teams.id))
         .innerJoin(plans, eq(manualPayments.planId, plans.id))
-        .where(eq(manualPayments.status, 'pending_manual_review'))
+        .where(and(
+          eq(manualPayments.status, 'pending_manual_review'),
+          isNull(teams.resellerId),
+        ))
         .orderBy(desc(manualPayments.createdAt))
         .limit(50),
     ]);
@@ -58,7 +66,7 @@ async function persistProviderConfig(formData: FormData): Promise<SaveProviderCo
   await assertAdmin();
 
   const provider = formData.get('provider');
-  const allowedProviders: PaymentProviderId[] = ['stripe', 'manual', 'mercadopago'];
+  const allowedProviders: PaymentProviderId[] = ['stripe', 'manual', 'mercadopago', 'lemonsqueezy'];
 
   if (!provider || typeof provider !== 'string' || !allowedProviders.includes(provider as PaymentProviderId)) {
     return { error: 'Proveedor de pago inválido.' };
@@ -68,18 +76,28 @@ async function persistProviderConfig(formData: FormData): Promise<SaveProviderCo
   const isDefault = formData.get('isDefault') === 'on';
   const enabled = isDefault ? true : requestedEnabled;
 
-  const config: Record<string, string> = {};
+  const existingSetting = await db.query.paymentProviderSettings.findFirst({
+    where: and(
+      isNull(paymentProviderSettings.resellerId),
+      eq(paymentProviderSettings.provider, provider),
+    ),
+  });
+  const config: Record<string, string | undefined> = { ...(existingSetting?.config ?? {}) };
+  const preserveSecret = (key: string) => {
+    const value = String(formData.get(key) ?? '').trim();
+    if (value) config[key] = value;
+  };
 
   if (provider === 'stripe') {
-    config.secretKey = (formData.get('secretKey') as string) || '';
+    preserveSecret('secretKey');
     config.publishableKey = (formData.get('publishableKey') as string) || '';
-    config.webhookSecret = (formData.get('webhookSecret') as string) || '';
+    preserveSecret('webhookSecret');
   }
 
   if (provider === 'mercadopago') {
-    config.accessToken = (formData.get('accessToken') as string) || '';
+    preserveSecret('accessToken');
     config.publicKey = (formData.get('publicKey') as string) || '';
-    config.webhookSecret = (formData.get('webhookSecret') as string) || '';
+    preserveSecret('webhookSecret');
     config.successUrl = (formData.get('successUrl') as string) || '';
     config.failureUrl = (formData.get('failureUrl') as string) || '';
     config.pendingUrl = (formData.get('pendingUrl') as string) || '';
@@ -87,20 +105,35 @@ async function persistProviderConfig(formData: FormData): Promise<SaveProviderCo
     config.subscriptionReason = (formData.get('subscriptionReason') as string) || '';
   }
 
+  if (provider === 'lemonsqueezy') {
+    preserveSecret('apiKey');
+    config.storeId = (formData.get('storeId') as string) || '';
+    preserveSecret('webhookSecret');
+    config.successUrl = (formData.get('successUrl') as string) || '';
+  }
+  const protectedConfig = encryptProviderConfig(provider, config);
+
+  // Este admin gestiona SOLO las credenciales de la plataforma. La tabla también
+  // contiene una fila por proveedor de cada reseller, así que toda lectura y
+  // escritura tiene que acotarse a reseller_id IS NULL: sin esto, guardar aquí
+  // apagaría el proveedor por defecto de todos los resellers.
+  const platformScope = isNull(paymentProviderSettings.resellerId);
+
   try {
     await db.transaction(async (tx) => {
-      let providers = await tx.select().from(paymentProviderSettings);
+      let providers = await tx.select().from(paymentProviderSettings).where(platformScope);
       let currentProvider = providers.find((item) => item.provider === provider);
 
       if (!currentProvider) {
         await tx.insert(paymentProviderSettings).values({
           provider,
+          resellerId: null,
           enabled: false,
           isDefault: false,
           config: {},
         }).onConflictDoNothing();
 
-        providers = await tx.select().from(paymentProviderSettings);
+        providers = await tx.select().from(paymentProviderSettings).where(platformScope);
         currentProvider = providers.find((item) => item.provider === provider);
         if (!currentProvider) {
           throw new Error('No se pudo crear la configuración del proveedor de pago.');
@@ -124,7 +157,10 @@ async function persistProviderConfig(formData: FormData): Promise<SaveProviderCo
       }
 
       if (isDefault) {
-        await tx.update(paymentProviderSettings).set({ isDefault: false, updatedAt: new Date() });
+        await tx
+          .update(paymentProviderSettings)
+          .set({ isDefault: false, updatedAt: new Date() })
+          .where(and(platformScope, ne(paymentProviderSettings.provider, provider)));
       }
 
       await tx
@@ -132,10 +168,10 @@ async function persistProviderConfig(formData: FormData): Promise<SaveProviderCo
         .set({
           enabled,
           isDefault,
-          config,
+          config: protectedConfig,
           updatedAt: new Date(),
         })
-        .where(eq(paymentProviderSettings.provider, provider));
+        .where(and(platformScope, eq(paymentProviderSettings.provider, provider)));
     });
   } catch (error) {
     console.error('Error saving provider config:', error);
@@ -169,6 +205,10 @@ export async function approveManualPayment(formData: FormData) {
   if (!payment || payment.status !== 'pending_manual_review') {
     throw new Error('Pago manual não encontrado ou já processado.');
   }
+  const paymentTeam = await db.query.teams.findFirst({ where: eq(teams.id, payment.teamId) });
+  if (!paymentTeam || paymentTeam.resellerId != null) {
+    throw new Error('Los pagos de revendedores deben ser procesados por su revendedor.');
+  }
   const plan = await db.query.plans.findFirst({ where: eq(plans.id, payment.planId) });
 
   await db.update(manualPayments).set({
@@ -186,12 +226,31 @@ export async function approveManualPayment(formData: FormData) {
     updatedAt: new Date(),
   }).where(eq(teams.id, payment.teamId));
 
+  // El pago manual ya está aprobado y el cliente activado: el débito al reseller no
+  // puede rechazarse. La clave es el id del pago, que solo se aprueba una vez.
+  await chargePlanActivation({
+    teamId: payment.teamId,
+    planId: payment.planId,
+    idempotencyKey: `manual:${payment.id}`,
+    allowDebt: true,
+    provider: 'manual',
+    providerRef: payment.reference,
+  });
+
   revalidatePath('/admin/payments');
 }
 
 export async function rejectManualPayment(formData: FormData) {
   const admin = await assertAdmin();
   const paymentId = Number(formData.get('paymentId'));
+
+  const payment = await db.query.manualPayments.findFirst({ where: eq(manualPayments.id, paymentId) });
+  const paymentTeam = payment
+    ? await db.query.teams.findFirst({ where: eq(teams.id, payment.teamId) })
+    : null;
+  if (!payment || !paymentTeam || paymentTeam.resellerId != null) {
+    throw new Error('Pago manual no encontrado en el ámbito de la plataforma.');
+  }
 
   await db.update(manualPayments).set({
     status: 'rejected',

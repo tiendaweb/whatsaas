@@ -1174,6 +1174,23 @@ export const aiTools = pgTable(
   }),
 );
 
+export const aiBuiltinTools = pgTable(
+  "ai_builtin_tools",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    toolName: varchar("tool_name", { length: 60 }).notNull(),
+    enabled: boolean("enabled").default(true).notNull(),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    uniqueTeamTool: unique("ai_builtin_tools_team_tool_idx").on(t.teamId, t.toolName),
+  }),
+);
+
 export const apiKeys = pgTable(
   "api_keys",
   {
@@ -2574,6 +2591,18 @@ export const teamEvents = pgTable(
     subtype: varchar("subtype", { length: 40 }),
     outcome: text("outcome").notNull().default(""),
     nextAction: text("next_action").notNull().default(""),
+    /** Todo el día: la hora se ignora y se muestra como franja completa. */
+    allDay: boolean("all_day").notNull().default(false),
+    location: varchar("location", { length: 300 }),
+    color: varchar("color", { length: 20 }),
+    /** none | daily | weekly | monthly. Se expande al leer, no se materializa. */
+    recurrence: varchar("recurrence", { length: 20 }).notNull().default("none"),
+    recurrenceUntil: date("recurrence_until"),
+    /** Minutos antes del evento para avisar (p. ej. [10, 1440]). */
+    reminderMinutes: jsonb("reminder_minutes").$type<number[]>().notNull().default([]),
+    /** Origen externo del evento (google, ics…) y su id allá. */
+    externalSource: varchar("external_source", { length: 40 }),
+    externalId: varchar("external_id", { length: 255 }),
     departmentId: integer("department_id").references(() => departments.id, {
       onDelete: "set null",
     }),
@@ -2639,10 +2668,83 @@ export const teamNotifications = pgTable(
     entityType: varchar("entity_type", { length: 50 }),
     entityId: integer("entity_id"),
     readAt: timestamp("read_at"),
+    /** pending | sent | failed | cancelled. `pending` + `scheduledFor` = la toma el cron. */
+    status: varchar("status", { length: 16 }).notNull().default("pending"),
+    /** Por dónde sale: inapp | push | whatsapp | group. */
+    channels: jsonb("channels").$type<string[]>().notNull().default(["inapp"]),
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    url: varchar("url", { length: 400 }),
+    /** system | ui | connector | cron. */
+    source: varchar("source", { length: 24 }).notNull().default("system"),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    /** Grupo de WhatsApp destino cuando el canal es `group`. */
+    groupJid: varchar("group_jid", { length: 64 }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    /** Evita duplicados del mismo aviso (p. ej. `event:12:reminder:60`). */
+    dedupeKey: varchar("dedupe_key", { length: 160 }),
+    /** Sector (departamento) al que iba dirigido, cuando el aviso es sectorizado. */
+    departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => ({
     teamUnreadIdx: index("team_notifications_team_unread_idx").on(table.teamId, table.readAt),
+    pendingIdx: index("team_notifications_pending_idx").on(table.status, table.scheduledFor),
+    departmentIdx: index("team_notifications_department_idx").on(table.teamId, table.departmentId),
+  }),
+);
+
+/**
+ * A quién y por dónde se le avisa. Una fila por persona y equipo.
+ *
+ * El teléfono vive acá y no en `users` a propósito: es el número al que esta
+ * persona quiere que le lleguen los avisos de ESTE equipo, que no tiene por qué
+ * ser el de su cuenta ni el mismo en dos equipos.
+ */
+export const teamNotificationPrefs = pgTable(
+  "team_notification_prefs",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    whatsappPhone: varchar("whatsapp_phone", { length: 40 }),
+    whatsappEnabled: boolean("whatsapp_enabled").notNull().default(false),
+    pushEnabled: boolean("push_enabled").notNull().default(true),
+    inappEnabled: boolean("inapp_enabled").notNull().default(true),
+    /** Horas (0-23) en las que no se manda nada por WhatsApp ni push. */
+    quietFrom: smallint("quiet_from"),
+    quietTo: smallint("quiet_to"),
+    /** Por tipo de aviso: { "calendar.reminder": ["push","whatsapp"] }. Vacío = todos por los canales activos. */
+    kinds: jsonb("kinds").$type<Record<string, string[]>>().notNull().default({}),
+    /** Grupo de WhatsApp del equipo para los avisos generales. */
+    groupJid: varchar("group_jid", { length: 64 }),
+    /** De qué chats querés que te avisen: todos | sector | mios | ninguno. */
+    chatAlerts: varchar("chat_alerts", { length: 12 }).notNull().default("sector"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamUserUidx: unique("team_notification_prefs_team_user_uidx").on(table.teamId, table.userId),
+  }),
+);
+
+/** Suscripción de push del navegador: una por dispositivo. */
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    userAgent: varchar("user_agent", { length: 300 }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at"),
+  },
+  (table) => ({
+    endpointUidx: unique("push_subscriptions_endpoint_uidx").on(table.endpoint),
+    userIdx: index("push_subscriptions_user_idx").on(table.teamId, table.userId),
   }),
 );
 
@@ -4577,6 +4679,8 @@ export const teamScheduledMessages = pgTable("team_scheduled_messages", {
   // Por qué falló la última corrida. Sin esto un programado queda en "fallido"
   // sin ninguna pista: el motivo sólo vivía en los logs del cron.
   lastError: text("last_error"),
+  /** Prompt guardado con el que se reescribe este mensaje (Command Center → ficha → Programados). */
+  aiPrompt: text("ai_prompt"),
   createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -5744,6 +5848,9 @@ export const teamCommercialAnalysis = pgTable(
     notesForHuman: text("notes_for_human"),
     crmToFix: text("crm_to_fix"),
     priorRadar: jsonb("prior_radar").$type<Record<string, unknown>>(),
+    /** Siguientes acciones que la IA propuso para ESTE cliente (ver server/suggestions.ts). */
+    aiSuggestions: jsonb("ai_suggestions").$type<Record<string, unknown>[]>().notNull().default([]),
+    aiSuggestionsAt: timestamp("ai_suggestions_at"),
     analyzedAt: timestamp("analyzed_at", { withTimezone: true }),
     analyzedBy: varchar("analyzed_by", { length: 16 }),
     provider: varchar("provider", { length: 40 }),
@@ -5896,6 +6003,34 @@ export const teamCommercialExperimentMembers = pgTable(
 );
 
 /** Prompt Studio: prompts versionados por equipo. Un solo `active` por key (índice parcial en SQL). */
+/**
+ * Chats que el equipo marcó como "no comerciales" desde la vista Limpieza.
+ *
+ * Reemplaza a las variables de entorno (`CHATS_INTERNOS_JIDS`): marcar el chat
+ * de la familia ya no exige editar el `.env` y desplegar. Un chat con fila acá
+ * no se clasifica, no entra al radar, no se le transcriben audios y no aparece
+ * en las listas comerciales.
+ */
+export const teamChatExclusions = pgTable(
+  "team_chat_exclusions",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    chatId: integer("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
+    /** `personal` | `equipo` | `otros`. */
+    kind: varchar("kind", { length: 12 }).notNull().default("otros"),
+    reason: text("reason"),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    chatUnique: uniqueIndex("team_chat_exclusions_chat_idx").on(table.teamId, table.chatId),
+    kindIdx: index("team_chat_exclusions_kind_idx").on(table.teamId, table.kind),
+  }),
+);
+
+export type TeamChatExclusion = typeof teamChatExclusions.$inferSelect;
+
 export const teamPrompts = pgTable(
   "team_prompts",
   {
@@ -5912,12 +6047,30 @@ export const teamPrompts = pgTable(
     outputSchema: jsonb("output_schema").$type<Record<string, unknown>>(),
     toolChain: jsonb("tool_chain").$type<string[]>().notNull().default([]),
     notes: text("notes"),
+    /** Prompt Studio v2: una línea de qué hace, para la tarjeta y para el conector. */
+    description: text("description"),
+    category: varchar("category", { length: 24 }).notNull().default("general"),
+    icon: varchar("icon", { length: 24 }).notNull().default("sparkles"),
+    /** `on_demand` (puntual) | `daily` | `weekly` | `monthly`: separa rutinas de acciones de una vez. */
+    recurrence: varchar("recurrence", { length: 12 }).notNull().default("on_demand"),
+    /** `connector` (cola) | `api` (servidor con la IA del equipo) | `both` (elige la persona). */
+    execution: varchar("execution", { length: 12 }).notNull().default("connector"),
+    /** `team` | `chat` | `both`: dónde se puede lanzar. */
+    scope: varchar("scope", { length: 12 }).notNull().default("team"),
+    /** Formulario de datos dinámicos: [{ name, label, type, required, options… }]. */
+    variables: jsonb("variables").$type<Record<string, unknown>[]>().notNull().default([]),
+    /** { gates: [], statuses: [], signals: [] }: dónde aparece como siguiente acción. */
+    recommendFor: jsonb("recommend_for").$type<Record<string, unknown>>().notNull().default({}),
+    pinned: boolean("pinned").notNull().default(false),
+    usageCount: integer("usage_count").notNull().default(0),
+    lastUsedAt: timestamp("last_used_at"),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => ({
     keyVersionUnique: uniqueIndex("team_prompts_key_version_idx").on(table.teamId, table.key, table.version),
+    catalogIdx: index("team_prompts_catalog_idx").on(table.teamId, table.status, table.category),
   }),
 );
 
@@ -5939,6 +6092,13 @@ export const teamPromptRuns = pgTable(
     inputTokens: integer("input_tokens"),
     outputTokens: integer("output_tokens"),
     summary: text("summary"),
+    /** Valores con los que se llenó el formulario de la skill. */
+    variables: jsonb("variables").$type<Record<string, string>>().notNull().default({}),
+    /** `queue` (la toma un conector) | `api` (la corrió el servidor). */
+    mode: varchar("mode", { length: 12 }).notNull().default("queue"),
+    /** Texto que devolvió la corrida en modo `api`. */
+    output: text("output"),
+    completedAt: timestamp("completed_at"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -5946,6 +6106,7 @@ export const teamPromptRuns = pgTable(
   (table) => ({
     targetIdx: index("team_prompt_runs_target_idx").on(table.teamId, table.targetKind, table.targetId),
     keyIdx: index("team_prompt_runs_key_idx").on(table.teamId, table.promptKey, table.createdAt),
+    statusIdx: index("team_prompt_runs_status_idx").on(table.teamId, table.status, table.createdAt),
   }),
 );
 

@@ -4,6 +4,9 @@ import { z } from 'zod';
 import { db } from '@/lib/db/drizzle';
 import { marketplaceItemPrices, marketplaceItems } from '@/lib/db/schema';
 import { getMarketplaceAdminContext, getMarketplaceContext } from '../_lib/context';
+import { getBranding } from '@/lib/db/queries/branding';
+import { getTenant } from '@/lib/tenant/context';
+import { buildBrandIdentity, renderTenantCopy } from '@/lib/branding/constants';
 
 const createItemSchema = z.object({
   title: z.string().min(1).max(180),
@@ -24,10 +27,16 @@ export async function GET() {
     return NextResponse.json({ error: context.message }, { status: context.status });
   }
 
-  const items = await db
-    .select()
-    .from(marketplaceItems)
-    .orderBy(desc(marketplaceItems.updatedAt));
+  const [items, branding, tenant] = await Promise.all([
+    db
+      .select()
+      .from(marketplaceItems)
+      .where(eq(marketplaceItems.status, 'active'))
+      .orderBy(desc(marketplaceItems.updatedAt)),
+    getBranding(),
+    getTenant(),
+  ]);
+  const identity = buildBrandIdentity(branding, tenant?.hostname);
 
   const itemIds = items.map((item) => item.id);
   const prices = itemIds.length
@@ -45,7 +54,11 @@ export async function GET() {
     pricesByItem.set(price.itemId, arr);
   }
 
-  return NextResponse.json(items.map((item) => ({ ...item, prices: pricesByItem.get(item.id) ?? [] })));
+  return NextResponse.json(
+    items.map((item) =>
+      renderTenantCopy({ ...item, prices: pricesByItem.get(item.id) ?? [] }, identity),
+    ),
+  );
 }
 
 export async function POST(request: Request) {

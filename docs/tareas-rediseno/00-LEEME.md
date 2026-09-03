@@ -28,6 +28,7 @@ No se crea un plugin nuevo. No se migra la base. No se pierde una sola tarea.
 | 06 — Checklist de QA | Verificación final contra el sitio de referencia, punto por punto. |
 | 07 — Prompt corto | Versión condensada de una pantalla, para arrancar rápido o re-encarrilar. |
 | 08 — Anexo standalone | La versión suelta de la primera iteración. Referencia histórica. |
+| 09 — Conectores | Cómo usar relaciones, tareas compartidas y vínculo con clientes desde Grok/Claude/ChatGPT/MCP. |
 
 ## Cómo lanzarlo
 

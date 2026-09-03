@@ -1,6 +1,7 @@
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { Split } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { BaseNode } from './BaseNode';
 import { Badge } from '@/components/ui/badge';
 
@@ -10,6 +11,7 @@ interface Condition {
   operator: string;
   value: string;
   value2?: string;
+  label?: string;
 }
 
 interface ConditionNodeData {
@@ -18,24 +20,31 @@ interface ConditionNodeData {
 }
 
 export function ConditionNode({ id, data, selected }: { id: string; data: ConditionNodeData, selected?: boolean }) {
+  const t = useTranslations('Automation');
   const conditions = data.conditions || [];
 
   return (
     <BaseNode 
       nodeId={id}
-      title="Condition Split" 
+      title={t('nodes.condition')} 
       icon={Split} 
       selected={selected} 
       disableSource={true} 
+      referenceName={(data as any).referenceName}
     >
       <div className="flex flex-col gap-2">
         <div className="text-sm text-muted-foreground mb-1">
-          Check rules:
+          {t('check_rules_label')}
         </div>
 
         {conditions.map((condition, index) => (
           <div key={condition.id} className="relative flex items-center justify-between bg-muted/40 p-2 rounded border border-border text-xs group">
             <div className="flex flex-col truncate max-w-[180px]">
+              {condition.label && (
+                <span className="font-medium text-[10px] text-foreground truncate mb-0.5" title={condition.label}>
+                  {condition.label}
+                </span>
+              )}
               <span className="font-semibold capitalize text-[10px] text-primary">
                 {condition.type} • {condition.operator.replace('_', ' ')}
               </span>
@@ -52,13 +61,13 @@ export function ConditionNode({ id, data, selected }: { id: string; data: Condit
               type="source"
               position={Position.Right}
               id={condition.id}
-              className="!bg-blue-500 !w-3 !h-3 !-mr-[22px]" 
+              className="!bg-indigo-500 !w-3 !h-3 !-mr-[22px]"
             />
           </div>
         ))}
 
         <div className="relative flex items-center justify-between bg-destructive/10 p-2 rounded border border-destructive/20 text-xs mt-1">
-          <span className="font-medium text-destructive">Else (Fallback)</span>
+          <span className="font-medium text-destructive">{t('else_fallback_label')}</span>
           <Handle
             type="source"
             position={Position.Right}

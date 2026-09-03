@@ -1,14 +1,17 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db/drizzle';
 import { chats, messages, evolutionInstances, webhookEvents, messageReactions } from '@/lib/db/schema';
-import { eq, and, sql, desc } from 'drizzle-orm';
+import { eq, and, gt, sql, desc } from 'drizzle-orm';
 import { pusherServer } from '@/lib/pusher-server';
-import fs from 'fs/promises';
-import path from 'path';
-import { Buffer } from 'buffer';
-import { v4 as uuidv4 } from 'uuid';
 import { processAutomation } from '@/lib/automation/engine';
 import { scheduleAIProcessing } from '@/lib/plugins/ai-chat/service';
+import {
+    extractEvolutionMediaParts,
+    getAlbumMessagePreview,
+    getMediaTextFallback,
+    saveEvolutionMediaPart,
+    type SavedEvolutionMediaDetails,
+} from '@/lib/evolution-message-media';
 
 async function safePusherTrigger(channel: string, event: string, data: any): Promise<void> {
     try {
@@ -139,37 +142,6 @@ function getMessagePreview(messageData: any): string {
   return 'New message';
 }
 
-function getExtensionFromMimetype(mimetype: string | null): string | null {
-    if (!mimetype) return null;
-    const mimeMap: { [key: string]: string } = {
-        'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
-        'video/mp4': 'mp4', 'video/3gpp': '3gp', 'video/quicktime': 'mov', 'video/webm': 'webm',
-        'audio/aac': 'aac', 'audio/mp4': 'm4a', 'audio/mpeg': 'mp3', 'audio/amr': 'amr',
-        'audio/ogg': 'ogg', 'audio/webm': 'webm', 'audio/opus': 'ogg',
-        'application/pdf': 'pdf', 'text/plain': 'txt', 'text/csv': 'csv',
-        'application/msword': 'doc',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-        'application/vnd.ms-excel': 'xls',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
-        'application/vnd.ms-powerpoint': 'ppt',
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
-        'application/zip': 'zip', 'application/vnd.rar': 'rar', 'application/x-7z-compressed': '7z',
-        'application/json': 'json', 'text/html': 'html', 'text/xml': 'xml',
-        'text/vcard': 'vcf', 'model/stl': 'stl', 'application/sla': 'stl',
-        'application/vnd.ms-pki.stl': 'stl',
-    };
-    if (mimeMap[mimetype]) return mimeMap[mimetype];
-    const cleanMime = mimetype.split(';')[0].trim();
-    if (mimeMap[cleanMime]) return mimeMap[cleanMime];
-    const subtype = cleanMime.split('/')[1];
-    if (subtype && /^[a-z0-9]+$/.test(subtype)) {
-        if (!['octet-stream', 'vnd.oasis.opendocument.text'].includes(subtype)) {
-             return subtype;
-        }
-    }
-    return null;
-}
-
 function getStatusWeight(status: string | null): number {
     if (!status) return 0;
     const s = status.toLowerCase();
@@ -184,7 +156,7 @@ function getStatusWeight(status: string | null): number {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const instanceName = body.instance;
+    const instanceName = body.instance || body.instanceName;
     
     if (!instanceName) {
       return NextResponse.json({ error: 'Instance name missing' }, { status: 400 });
@@ -209,7 +181,8 @@ export async function POST(request: Request) {
     const metaToken = instance.metaToken;
     const pusherChannel = `team-${teamId}`;
 
-    if (body.event === 'messages.upsert' && body.data) {
+    const eventName = String(body.event || '').toLowerCase().replace(/_/g, '.');
+    if (eventName === 'messages.upsert' && body.data) {
       const messageData = body.data;
       if (!messageData.key) {
           return NextResponse.json({ received_with_error: 'invalid message structure' });
@@ -308,100 +281,44 @@ export async function POST(request: Request) {
 
       let chatIdForAutomation: number | null = null;
       let textForAutomation: string | null = null;
-      let mediaDetails: any = {};
-      let newMessageData: any = null;
+      let newMessageData: any[] = [];
       let chatUpdateData: any = null;
 
       const messagePayload = messageData.message;
+      const mediaParts = extractEvolutionMediaParts(messagePayload, messageType);
+      const savedMediaMessages: Array<{
+        id: string;
+        messageType: string;
+        mediaDetails: SavedEvolutionMediaDetails;
+        text: string | null;
+      }> = [];
 
-      const mediaContent = messagePayload.imageMessage ||
-                           messagePayload.audioMessage ||
-                           messagePayload.videoMessage ||
-                           messagePayload.documentMessage ||
-                           messagePayload.stickerMessage;
-
-      const rawBase64 = messagePayload.base64 || mediaContent?.base64;
-      const mediaUrl = mediaContent?.url;
-
-      if ((rawBase64 || mediaUrl) && mediaContent) {
+      for (let i = 0; i < mediaParts.length; i++) {
+          const part = mediaParts[i];
           try {
-              let buffer: Buffer | null = null;
-
-              if (rawBase64) {
-                  const base64String = rawBase64.startsWith('data:') ? rawBase64.split(',')[1] || rawBase64 : rawBase64;
-                  buffer = Buffer.from(base64String, 'base64');
-              }
-              else if (mediaUrl) {
-                  const headers: HeadersInit = {
-                      'User-Agent': 'Evolution-Client/1.0'
-                  };
-
-                  if (metaToken) {
-                      headers['Authorization'] = `Bearer ${metaToken}`;
-                  }
-
-                  const response = await fetch(mediaUrl, { headers, signal: AbortSignal.timeout(15000) });
-
-                  if (response.ok) {
-                      const contentLength = response.headers.get('content-length');
-                      if (contentLength && parseInt(contentLength, 10) > 50 * 1024 * 1024) {
-                          buffer = null;
-                      } else {
-                          const arrayBuffer = await response.arrayBuffer();
-                          buffer = Buffer.from(arrayBuffer);
-                      }
-                  }
-              }
-
-              if (buffer) {
-                  const mimetype = mediaContent.mimetype || mediaContent.mime_type;
-                  const extension = getExtensionFromMimetype(mimetype);
-
-                  if (extension) {
-                      const timestamp = Date.now();
-                      const uniqueId = uuidv4();
-                      const filename = `${timestamp}-${uniqueId}.${extension}`;
-                      const subDir = messageType.replace('Message', '').toLowerCase();
-                      const relativeDirPath = path.join('uploads', subDir);
-                      const absoluteDirPath = path.join(process.cwd(), 'public', relativeDirPath);
-                      const absoluteFilePath = path.join(absoluteDirPath, filename);
-
-                      await fs.mkdir(absoluteDirPath, { recursive: true });
-                      await fs.writeFile(absoluteFilePath, buffer);
-
-                      mediaDetails.mediaUrl = `/${relativeDirPath}/${filename}`;
-                      mediaDetails.mediaMimetype = mimetype;
-
-                      if (messageType === 'imageMessage') {
-                          mediaDetails.mediaCaption = mediaContent.caption || messagePayload.caption || null;
-                          mediaDetails.mediaFileLength = mediaContent.fileLength?.toString();
-                      } else if (messageType === 'audioMessage') {
-                          mediaDetails.mediaSeconds = mediaContent.seconds;
-                          mediaDetails.mediaIsPtt = mediaContent.ptt || mediaContent.voice;
-                          mediaDetails.mediaFileLength = mediaContent.fileLength?.toString();
-                      } else if (messageType === 'videoMessage') {
-                          mediaDetails.mediaCaption = mediaContent.caption || messagePayload.caption || null;
-                          mediaDetails.mediaSeconds = mediaContent.seconds;
-                          mediaDetails.mediaFileLength = mediaContent.fileLength?.toString();
-                      } else if (messageType === 'documentMessage') {
-                          mediaDetails.mediaCaption = mediaContent.caption || messagePayload.caption || null;
-                          const originalName = mediaContent.fileName || mediaContent.filename || 'document';
-                          mediaDetails.text = originalName;
-                          mediaDetails.mediaFileLength = mediaContent.fileLength?.toString();
-                      }
-                  }
-              }
+              const mediaDetails = await saveEvolutionMediaPart(part, { metaToken });
+              savedMediaMessages.push({
+                  id: mediaParts.length > 1 && i > 0 ? `${messageData.key.id}:album:${i}` : messageData.key.id,
+                  messageType: part.messageType,
+                  mediaDetails,
+                  text: mediaDetails.text ?? getMediaTextFallback(part),
+              });
           } catch (fileError: any) {
               console.error('Error saving media:', fileError);
-              mediaDetails.mediaUrl = null;
+              savedMediaMessages.push({
+                  id: mediaParts.length > 1 && i > 0 ? `${messageData.key.id}:album:${i}` : messageData.key.id,
+                  messageType: part.messageType,
+                  mediaDetails: { mediaUrl: null },
+                  text: getMediaTextFallback(part),
+              });
           }
       }
 
       await db.transaction(async (tx) => {
-        const incrementValue = messageData.key.fromMe ? 0 : 1;
         const isFromMe = messageData.key.fromMe;
+        const incrementValue = isFromMe ? 0 : 1;
         const messageTimestamp = messageData.messageTimestamp ? new Date(messageData.messageTimestamp * 1000) : new Date();
-        const rawMessagePreview = getMessagePreview(messageData);
+        const rawMessagePreview = savedMediaMessages.length > 1 ? getAlbumMessagePreview(mediaParts) : getMessagePreview(messageData);
         const messagePreview = isGroup && !isFromMe && messageData.pushName
             ? `${messageData.pushName}: ${rawMessagePreview}`
             : rawMessagePreview;
@@ -492,10 +409,15 @@ export async function POST(request: Request) {
         }
 
         if (!mainTextContent) {
-            if (messageType === 'documentMessage') {
-                 mainTextContent = mediaDetails.text || mediaDetails.mediaCaption;
+            const primaryMedia = savedMediaMessages[0];
+            if (primaryMedia?.messageType === 'documentMessage') {
+                 mainTextContent = primaryMedia.text || primaryMedia.mediaDetails.mediaCaption || null;
+            } else if (primaryMedia) {
+                 mainTextContent = primaryMedia.text || primaryMedia.mediaDetails.mediaCaption || null;
+            } else if (messageType === 'documentMessage') {
+                 mainTextContent = null;
             } else {
-                 mainTextContent = mediaDetails.mediaCaption || null;
+                 mainTextContent = null;
             }
         }
 
@@ -505,34 +427,88 @@ export async function POST(request: Request) {
             ? JSON.stringify(messagePayload?.templateMessage) 
             : (messageData.quotedMessage ? JSON.stringify(messageData.quotedMessage) : null);
 
-        const newMessage = {
-          id: messageData.key.id,
-          chatId: chat.id,
-          fromMe: isFromMe,
-          messageType: messageType,
-          text: mainTextContent,
-          timestamp: messageTimestamp,
-          status: isFromMe ? (isGroup ? 'delivered' : 'sent') : 'delivered',
-          quotedMessageText: quotedMessageText,
-          quotedMessageId: messageData.quotedMessage ? 'quoted' : null,
-          participant: participantJid,
-          participantName: isGroup ? (messageData.pushName || null) : null,
-          ...mediaDetails, ...contactData, ...locationData,
+        const baseMessage = {
+            chatId: chat.id,
+            fromMe: isFromMe,
+            status: isFromMe ? (isGroup ? 'delivered' : 'sent') : 'delivered',
+            participant: participantJid,
+            participantName: isGroup ? (messageData.pushName || null) : null,
+            ...contactData,
+            ...locationData,
         };
 
-        const [insertedMessage] = await tx.insert(messages).values(newMessage).onConflictDoNothing().returning({ id: messages.id });
+        const messagesToInsert = savedMediaMessages.length > 0
+          ? savedMediaMessages.map((mediaMessage, index) => ({
+              ...baseMessage,
+              id: mediaMessage.id,
+              messageType: mediaMessage.messageType,
+              text: mediaMessage.text,
+              timestamp: new Date(messageTimestamp.getTime() + index),
+              quotedMessageText: index === 0 ? quotedMessageText : null,
+              quotedMessageId: index === 0 && messageData.quotedMessage ? 'quoted' : null,
+              ...mediaMessage.mediaDetails,
+            }))
+          : [{
+              ...baseMessage,
+              id: messageData.key.id,
+              messageType: messageType,
+              text: mainTextContent,
+              timestamp: messageTimestamp,
+              quotedMessageText,
+              quotedMessageId: messageData.quotedMessage ? 'quoted' : null,
+            }];
 
-        if (!insertedMessage) {
+        const insertedMessages = await tx
+          .insert(messages)
+          .values(messagesToInsert)
+          .onConflictDoNothing()
+          .returning({ id: messages.id });
+
+        if (insertedMessages.length === 0) {
             return;
         }
 
-        newMessageData = { ...newMessage, remoteJid: remoteJid, instance: instanceName, instanceId: instanceId, lastMessageTextPreview: messagePreview };
+        /**
+         * Contestar desde el celular marca el chat como leído.
+         *
+         * El síntoma era este: el cliente escribía tres veces, el agente le
+         * respondía desde WhatsApp en el teléfono, y WhatsPro seguía mostrando
+         * el chat con 3 sin leer para siempre — porque un mensaje `fromMe`
+         * sumaba 0 al contador pero nunca lo bajaba.
+         *
+         * La distinción que importa: sólo se limpia si el mensaje es NUEVO en
+         * la base. Todo lo que manda WhatsPro (envío manual, automatización,
+         * campaña, programado, conector) inserta su fila ANTES de que llegue el
+         * eco de Evolution, así que ahí `insertedMessages` viene vacío y no se
+         * toca nada. Sin ese filtro, una automatización que contesta sola
+         * escondería un chat que ningún humano leyó — peor que el bug original.
+         */
+        let unreadAfterInsert: number | null = null;
+        if (isFromMe && insertedMessages.length > 0) {
+            const [reset] = await tx.update(chats)
+                .set({ unreadCount: 0 })
+                .where(and(eq(chats.id, chat.id), gt(chats.unreadCount, 0)))
+                .returning({ id: chats.id });
+            if (reset) unreadAfterInsert = 0;
+        }
+
+        const insertedIds = new Set(insertedMessages.map((message) => message.id));
+        newMessageData = messagesToInsert
+          .filter((message) => insertedIds.has(message.id))
+          .map((message) => ({
+            ...message,
+            remoteJid: remoteJid,
+            instance: instanceName,
+            instanceId: instanceId,
+            lastMessageTextPreview: messagePreview,
+            timestamp: message.timestamp.toISOString(),
+          }));
 
         chatUpdateData = {
             id: chat.id, 
             lastMessageStatus: chat.lastMessageStatus,
             lastMessageFromMe: chat.lastMessageFromMe, 
-            unreadCount: chat.unreadCount,
+            unreadCount: unreadAfterInsert ?? chat.unreadCount,
             remoteJid: chat.remoteJid, 
             lastMessageText: messagePreview,
             lastMessageTimestamp: messageTimestamp.toISOString(),
@@ -542,15 +518,17 @@ export async function POST(request: Request) {
         };
       });
 
-      if (newMessageData) {
-          await safePusherTrigger(pusherChannel, 'new-message', newMessageData);
+      if (newMessageData.length > 0) {
+          for (const message of newMessageData) {
+              await safePusherTrigger(pusherChannel, 'new-message', message);
+          }
       }
 
       if (chatUpdateData) {
           await safePusherTrigger(pusherChannel, 'chat-list-update', chatUpdateData);
       }
 
-      if (newMessageData) {
+      if (newMessageData.length > 0) {
           await logWebhookEvent(teamId, instanceName, 'messages.upsert', messageData.key.id, remoteJid, 'processed');
       } else {
           await logWebhookEvent(teamId, instanceName, 'messages.upsert', messageData.key.id, remoteJid, 'duplicate');
@@ -586,7 +564,7 @@ export async function POST(request: Request) {
         }
       }
 
-    } else if (body.event === 'messages.update' && body.data) {
+    } else if (eventName === 'messages.update' && body.data) {
       const updates = Array.isArray(body.data) ? body.data : [body.data];
 
       for (const updateData of updates) {
@@ -703,7 +681,7 @@ export async function POST(request: Request) {
           }
       }
 
-    } else if (body.event === 'contacts.update') {
+    } else if (eventName === 'contacts.update') {
         const contactsData = Array.isArray(body.data) ? body.data : [body.data];
         
         for (const contact of contactsData) {
@@ -733,10 +711,52 @@ export async function POST(request: Request) {
                 }
             }
         }
-    } else if (body.event === 'chats.update') {
+    } else if (eventName === 'chats.update') {
         const chatsData = Array.isArray(body.data) ? body.data : [body.data];
         for (const chatData of chatsData) {
              const rawId = chatData.remoteJid || chatData.id;
+
+             /**
+              * El teléfono avisa cuándo se leyó un chat.
+              *
+              * Baileys manda `chats.update` con `unreadCount: 0` cuando alguien
+              * abre la conversación en el celular, aunque no conteste nada. Este
+              * handler sólo miraba la foto de perfil, así que ese aviso se
+              * tiraba a la basura y el chat quedaba marcado como no leído en
+              * WhatsPro.
+              *
+              * Se honra SÓLO el 0. Un número positivo del teléfono no se copia:
+              * si el equipo ya leyó esos mensajes desde WhatsPro, resucitarlos
+              * porque el celular todavía no se sincronizó sería peor que el
+              * problema que arregla. La sincronía es en un sentido:
+              * leído en el teléfono ⇒ leído acá.
+              */
+             const unreadFromDevice = chatData.unreadCount ?? chatData.unread ?? null;
+             if (rawId && unreadFromDevice === 0) {
+                 const remoteJid = normalizeJid(rawId);
+                 if (!remoteJid.includes('@lid')) {
+                     const leidos = await db.update(chats)
+                        .set({ unreadCount: 0 })
+                        .where(and(
+                            eq(chats.remoteJid, remoteJid),
+                            eq(chats.teamId, teamId),
+                            eq(chats.instanceId, instanceId),
+                            gt(chats.unreadCount, 0)
+                        ))
+                        .returning({ id: chats.id });
+
+                     if (leidos.length > 0) {
+                         await safePusherTrigger(pusherChannel, 'chat-list-update', {
+                             id: leidos[0].id,
+                             remoteJid: remoteJid,
+                             instanceId: instanceId,
+                             unreadCount: 0
+                         });
+                         await logWebhookEvent(teamId, instanceName, 'chats.update', null, remoteJid, 'processed');
+                     }
+                 }
+             }
+
              if(rawId && (chatData.profilePicUrl || chatData.image)) {
                  const remoteJid = normalizeJid(rawId);
                  const newPicUrl = chatData.profilePicUrl || chatData.image;
@@ -762,9 +782,9 @@ export async function POST(request: Request) {
              }
         }
 
-    } else if (body.event === 'qrcode.updated' && body.data?.qrcode?.base64) {
+    } else if (eventName === 'qrcode.updated' && body.data?.qrcode?.base64) {
       await safePusherTrigger(pusherChannel, 'qr-update-needed', { instance: instanceName });
-    } else if (body.event === 'connection.update' && body.data?.state) {
+    } else if (eventName === 'connection.update' && body.data?.state) {
       await safePusherTrigger(pusherChannel, 'connection-status', { status: body.data.state, instance: instanceName });
     }
 

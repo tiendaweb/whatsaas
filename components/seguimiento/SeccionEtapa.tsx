@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Droppable, Draggable } from '@hello-pangea/dnd';
 import { ChevronDown } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
@@ -20,9 +21,20 @@ type Props = {
   seleccionadoJid: string | null;
   onAbrirChat: (c: ContactoCard) => void;
   renderMenu?: (c: ContactoCard) => React.ReactNode;
+  /** Falso en móvil o sin permiso de contactos: la tarjeta no se arrastra. */
+  arrastrable?: boolean;
 };
 
-export function SeccionEtapa({ seccion, densidad, plegada, onTogglePlegada, seleccionadoJid, onAbrirChat, renderMenu }: Props) {
+export function SeccionEtapa({
+  seccion,
+  densidad,
+  plegada,
+  onTogglePlegada,
+  seleccionadoJid,
+  onAbrirChat,
+  renderMenu,
+  arrastrable = false,
+}: Props) {
   const t = useTranslations('Seguimiento');
   const [expandida, setExpandida] = useState(false);
   const [ordenSinFicha, setOrdenSinFicha] = useState<OrdenSinFicha>('ultimo');
@@ -31,6 +43,10 @@ export function SeccionEtapa({ seccion, densidad, plegada, onTogglePlegada, sele
   const lista = esSinFicha ? ordenarSinFicha(seccion.contactos, ordenSinFicha) : seccion.contactos;
   const visibles = expandida ? lista : lista.slice(0, LIMITE_VISIBLE);
   const restantes = lista.length - visibles.length;
+
+  // "Sin ficha" no recibe: el contacto no existe en `contacts` y volver a ese
+  // estado significaría borrarle la ficha, no moverlo.
+  const aceptaDrop = arrastrable && !esSinFicha;
 
   const titulo =
     seccion.tipo === 'etapa' && seccion.etapa
@@ -70,22 +86,54 @@ export function SeccionEtapa({ seccion, densidad, plegada, onTogglePlegada, sele
       {!plegada && (
         <div className="px-4 pb-4">
           {esSinFicha && <p className="mb-2 text-xs text-muted-foreground">{t('section.noContactHint')}</p>}
-          {lista.length === 0 ? (
-            <div className="min-h-14 rounded-lg border border-dashed border-border/70" />
-          ) : (
-            <div className={densidad === 'lista' ? 'flex flex-col' : 'grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2'}>
-              {visibles.map((c) => (
-                <TarjetaContacto
-                  key={c.chatId}
-                  contacto={c}
-                  densidad={densidad}
-                  seleccionada={seleccionadoJid === c.remoteJid}
-                  onAbrirChat={onAbrirChat}
-                  menu={renderMenu?.(c)}
-                />
-              ))}
-            </div>
-          )}
+          <Droppable droppableId={seccion.key} type="CARD" isDropDisabled={!aceptaDrop}>
+            {(provided, snapshot) => (
+              <div
+                ref={provided.innerRef}
+                {...provided.droppableProps}
+                className={cn(
+                  'rounded-lg transition-colors',
+                  // Único feedback de drop (spec §3): fondo tenue y borde punteado.
+                  snapshot.isDraggingOver && 'bg-muted/60 outline outline-1 outline-dashed outline-foreground/30',
+                  lista.length === 0
+                    ? 'min-h-14 border border-dashed border-border/70'
+                    : densidad === 'lista'
+                      ? 'flex flex-col'
+                      : 'grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2',
+                )}
+              >
+                {visibles.map((c, index) => (
+                  <Draggable
+                    key={c.chatId}
+                    draggableId={`c${c.chatId}`}
+                    index={index}
+                    isDragDisabled={!arrastrable || c.contactId === null}
+                  >
+                    {(dragProvided, dragSnapshot) => (
+                      <div
+                        ref={dragProvided.innerRef}
+                        {...dragProvided.draggableProps}
+                        {...dragProvided.dragHandleProps}
+                        className={cn(
+                          arrastrable && c.contactId !== null && 'cursor-grab active:cursor-grabbing',
+                          dragSnapshot.isDragging && 'opacity-90',
+                        )}
+                      >
+                        <TarjetaContacto
+                          contacto={c}
+                          densidad={densidad}
+                          seleccionada={seleccionadoJid === c.remoteJid}
+                          onAbrirChat={onAbrirChat}
+                          menu={renderMenu?.(c)}
+                        />
+                      </div>
+                    )}
+                  </Draggable>
+                ))}
+                {provided.placeholder}
+              </div>
+            )}
+          </Droppable>
           {lista.length > LIMITE_VISIBLE && (
             <div className="mt-2 flex justify-center">
               <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setExpandida((v) => !v)}>

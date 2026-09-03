@@ -10,11 +10,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     if (!team) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { id } = await params;
-    const { name, emoji } = await request.json();
+    const { name, emoji, groupId } = await request.json();
     const stageId = parseInt(id);
 
     await db.update(funnelStages)
-      .set({ name, emoji })
+      .set({ name, emoji, ...(groupId !== undefined && { groupId: groupId || null }) })
       .where(and(eq(funnelStages.id, stageId), eq(funnelStages.teamId, team.id)));
 
     return NextResponse.json({ success: true });

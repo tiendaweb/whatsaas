@@ -56,6 +56,12 @@ export function SaveDraftModal({
       return;
     }
 
+    // Auto-suggest title from content (first ~6 words)
+    if (messageContent) {
+      const words = messageContent.trim().split(/\s+/).slice(0, 6).join(' ');
+      setTitle(words.length > 4 ? words : '');
+    }
+
     // Load categories
     const loadCategories = async () => {
       setIsLoadingCategories(true);
@@ -73,7 +79,7 @@ export function SaveDraftModal({
     };
 
     loadCategories();
-  }, [open]);
+  }, [open, messageContent]);
 
   const handleSave = async () => {
     if (!title.trim()) {

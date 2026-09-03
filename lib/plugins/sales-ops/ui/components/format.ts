@@ -47,7 +47,9 @@ export const SIGNAL_LABELS: Record<SignalKind, string> = {
 
 export const ACTION_KIND_LABELS: Record<ActionKind, string> = {
   send_message: 'Enviar mensaje',
+  schedule_message: 'Programar mensaje',
   create_task: 'Crear tarea',
+  request_demo: 'Pedir demo web',
   register_sale: 'Registrar cobro',
   mark_pre_descarte: 'Marcar pre-descarte',
   mark_descarte: 'Marcar descarte',
@@ -108,6 +110,18 @@ export function fmtMoney(amount: number | null | undefined, currency: string): s
   if (amount == null || !Number.isFinite(amount)) return '—';
   const prefix = currency === 'PYG' ? 'Gs ' : currency === 'ARS' ? 'ARS ' : currency === 'USD' ? 'USD ' : `${currency} `;
   return `${prefix}${fmtInt(amount)}`;
+}
+
+/** Sólo la hora: en una lista agrupada por día, repetir la fecha es ruido. */
+export function fmtHora(value: string | null | undefined): string {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (!Number.isFinite(d.getTime())) return '—';
+  try {
+    return new Intl.DateTimeFormat('es-AR', { hour: '2-digit', minute: '2-digit' }).format(d);
+  } catch {
+    return d.toISOString().slice(11, 16);
+  }
 }
 
 export function fmtPct(n: number | null | undefined): string {

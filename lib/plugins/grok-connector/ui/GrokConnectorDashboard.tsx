@@ -141,7 +141,7 @@ export function GrokConnectorDashboard() {
           <AlertDescription>{t('subscription_description')}</AlertDescription>
         </Alert>
 
-        {status?.connections.some((connection) => !connection.scopes?.includes('whatspro:write')) && (
+        {status?.connections.some((connection) => ['whatspro:write', 'appmaker:read', 'appmaker:write', 'appmaker:publish', 'appmaker:media'].some((scope) => !connection.scopes?.includes(scope))) && (
           <Alert>
             <RefreshCw />
             <AlertTitle>{t('reconnect_title')}</AlertTitle>

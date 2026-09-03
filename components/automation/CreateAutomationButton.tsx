@@ -6,16 +6,22 @@ import { Plus } from 'lucide-react';
 import { NewAutomationDialog } from './NewAutomationDialog';
 import { useTranslations } from 'next-intl';
 
-export function CreateAutomationButton() {
+export function CreateAutomationButton({
+    folderId,
+    className,
+}: {
+    folderId?: number | null;
+    className?: string;
+}) {
     const t = useTranslations('Automation');
     const [open, setOpen] = useState(false);
 
     return (
         <>
-            <Button onClick={() => setOpen(true)} className="bg-primary hover:bg-primary/90 text-primary-foreground">
+            <Button onClick={() => setOpen(true)} className={className ?? "bg-primary hover:bg-primary/90 text-primary-foreground"}>
                 <Plus className="h-4 w-4 mr-2" /> {t('new_automation_btn')}
             </Button>
-            <NewAutomationDialog open={open} onOpenChange={setOpen} />
+            <NewAutomationDialog open={open} onOpenChange={setOpen} folderId={folderId} />
         </>
     );
 }

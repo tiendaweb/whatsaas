@@ -10,7 +10,7 @@ import {
   CardFooter
 } from '@/components/ui/card';
 import { customerPortalAction } from '@/lib/payments/actions';
-import { useActionState, useState } from 'react';
+import { useActionState, useState, useEffect } from 'react';
 import { TeamDataWithMembers, User, Invitation, Department } from '@/lib/db/schema';
 import { removeTeamMember, inviteTeamMember, revokeInvitation, resendInvitation } from '@/app/[locale]/(login)/actions';
 import useSWR from 'swr';
@@ -274,6 +274,29 @@ function PermissionsDialog({
     { key: 'notesWrite', label: 'Notes: escritura' },
     { key: 'calendarRead', label: 'Calendar: lectura' },
     { key: 'calendarWrite', label: 'Calendar: escritura' },
+    { key: 'dealsRead', label: 'Oportunidades: lectura' },
+    { key: 'dealsWrite', label: 'Oportunidades: escritura' },
+    { key: 'customersRead', label: 'Clientes: lectura' },
+    { key: 'customersWrite', label: 'Clientes: escritura' },
+    { key: 'membershipsRead', label: 'Membresías: lectura' },
+    { key: 'membershipsWrite', label: 'Membresías: escritura' },
+    { key: 'formBuilderRead', label: 'Formularios: lectura' },
+    { key: 'formBuilderWrite', label: 'Formularios: escritura' },
+    { key: 'hostingerRead', label: 'Hostinger: lectura' },
+    { key: 'hostingerWrite', label: 'Hostinger: escritura' },
+    { key: 'metaAdsRead', label: 'Meta Ads: lectura' },
+    { key: 'metaAdsWrite', label: 'Meta Ads: escritura' },
+    { key: 'documentsRead', label: 'Documentos: lectura' },
+    { key: 'documentsWrite', label: 'Documentos: escritura' },
+    { key: 'filesRead', label: 'Archivos de chats: lectura' },
+    { key: 'sitesRead', label: 'Sitios: lectura' },
+    { key: 'sitesWrite', label: 'Sitios: escritura' },
+    { key: 'financeRead', label: 'Financiero: lectura' },
+    { key: 'financeWrite', label: 'Financiero: escritura' },
+    { key: 'messagesRead', label: 'Conversaciones: lectura' },
+    { key: 'messagesSend', label: 'Conversaciones: enviar mensajes' },
+    { key: 'intelligenceRead', label: 'Inteligencia/Radar: lectura' },
+    { key: 'intelligenceWrite', label: 'Inteligencia/Radar: escritura' },
   ];
 
   return (
@@ -814,10 +837,10 @@ function DepartmentFormDialog({
   const [description, setDescription] = useState(department?.description || '');
   const [isSaving, setIsSaving] = useState(false);
 
-  useState(() => {
+  useEffect(() => {
     setName(department?.name || '');
     setDescription(department?.description || '');
-  });
+  }, [department]);
 
   const handleSubmit = async () => {
     if (!name.trim()) return;

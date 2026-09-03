@@ -4,10 +4,14 @@ import { ArrowLeft } from "lucide-react";
 import Logo from "@/components/interface/Logo";
 import { PublicLandingPageBuilder } from "@/components/landing/public-page-builder";
 import { RuntimeLandingPageRenderer } from "@/components/landing/runtime-page-renderer";
+import { HtmlLandingRenderer } from "@/components/landing/html-page-renderer";
+import { sanitizeLandingCss, sanitizeLandingHtml } from "@/lib/landing/sanitize";
 import { Button } from "@/components/ui/button";
 import { getBranding } from "@/lib/db/queries/branding";
 import { getLandingPageBySlug } from "@/lib/db/queries/landing";
 import { compileLandingPageComponent } from "@/lib/landing/runtime";
+import { brandName } from '@/lib/branding/constants';
+import { getTenantId } from "@/lib/tenant/context";
 
 export default async function PublicLandingPage({
   params,
@@ -15,14 +19,28 @@ export default async function PublicLandingPage({
   params: Promise<{ slug: string; locale: string }>;
 }) {
   const { slug } = await params;
-  const page = await getLandingPageBySlug(slug);
+  const resellerId = await getTenantId();
+  const page = await getLandingPageBySlug(slug, resellerId);
 
   if (!page) {
     notFound();
   }
 
   const branding = await getBranding();
-  const siteName = branding?.name || "WhatSaaS";
+  const siteName = brandName(branding);
+
+  // Igual que en la home: la rama HTML va antes, o el markup se imprimiría como texto.
+  if (page.contentMode === "html") {
+    return (
+      <main className="min-h-screen bg-background">
+        <HtmlLandingRenderer
+          html={sanitizeLandingHtml(page.content)}
+          customCss={sanitizeLandingCss(page.customCss)}
+        />
+      </main>
+    );
+  }
+
   const shouldRenderReact =
     page.contentMode === "react" && page.content.trim().length > 0;
   const compiledCode = shouldRenderReact

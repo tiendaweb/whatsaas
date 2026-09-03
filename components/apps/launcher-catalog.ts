@@ -29,6 +29,7 @@ import {
   Receipt,
   Server,
   ShoppingCart,
+  Sparkles,
   Store,
   UserCheck,
   UserCog,
@@ -38,7 +39,13 @@ import {
   Zap,
   type LucideIcon, Target,
 } from 'lucide-react';
-import { CORE_NAV_ITEMS, type MenuOverride } from '@/lib/menu/core-nav-items';
+import {
+  APPS_LAUNCHER_PREFIXES,
+  CORE_NAV_ITEMS,
+  isAppsOnlyItem,
+  isMainNavOnlyItem,
+  type MenuOverride,
+} from '@/lib/menu/core-nav-items';
 
 export type PluginNavItem = { href: string; label: string; icon?: string; order?: number };
 export type InstalledMiniApp = { slug: string; installedAt: string };
@@ -100,45 +107,11 @@ const PLUGIN_NAV_ICON_MAP: Record<string, LucideIcon> = {
   Blocks,
   Radar,
   Handshake,
+  Sparkles,
 };
 
-const APPS_LAUNCHER_PREFIXES = [
-  '/plugins/notes',
-  '/plugins/calendar',
-  '/plugins/domains',
-  '/plugins/articles',
-  '/plugins/sales',
-  '/plugins/deals',
-  '/plugins/sales-ops',
-  '/plugins/customers',
-  '/plugins/memberships',
-  '/plugins/aapp-space',
-  '/plugins/tasks',
-  '/plugins/scheduled-messages',
-  '/plugins/mini-apps',
-  '/plugins/app-maker',
-  '/plugins/form-builder',
-  '/plugins/hostinger',
-  '/plugins/meta-ads',
-  '/plugins/documents',
-  '/plugins/files',
-  '/plugins/sites',
-  '/plugins/finance',
-  '/plugins/purchases',
-  '/plugins/hr',
-  '/plugins/support',
-  '/plugins/contracts',
-  '/plugins/intelligence',
-  '/plugins/radar',
-  '/plugins/grok-connector',
-  '/plugins/claude-code-connector',
-  '/plugins/chatgpt-connector',
-  '/escritorio',
-  '/escritorio/bandeja',
-  '/seguimiento',
-];
-
 const APP_VISUAL: Record<string, LauncherApp['visual']> = {
+  '/dashboard?view=tasks': { gradient: 'from-slate-600 to-slate-800', iconColor: 'text-white' },
   '/plugins/notes': { gradient: 'from-violet-500 to-purple-600', iconColor: 'text-white' },
   '/plugins/calendar': { gradient: 'from-blue-500 to-cyan-500', iconColor: 'text-white' },
   '/plugins/domains': { gradient: 'from-emerald-500 to-teal-600', iconColor: 'text-white' },
@@ -171,6 +144,7 @@ const APP_VISUAL: Record<string, LauncherApp['visual']> = {
   '/plugins/support': { gradient: 'from-rose-600 to-red-700', iconColor: 'text-white' },
   '/plugins/contracts': { gradient: 'from-sky-600 to-blue-700', iconColor: 'text-white' },
   '/plugins/intelligence': { gradient: 'from-indigo-600 to-violet-700', iconColor: 'text-white' },
+  '/plugins/gemini': { gradient: 'from-blue-500 to-violet-600', iconColor: 'text-white' },
   '/plugins/radar': { gradient: 'from-indigo-500 to-violet-600', iconColor: 'text-white' },
   '/plugins/deals': { gradient: 'from-green-600 to-emerald-500', iconColor: 'text-white' },
   '/plugins/sales-ops': { gradient: 'from-slate-800 to-emerald-600', iconColor: 'text-white' },
@@ -200,6 +174,7 @@ const APP_VISUAL: Record<string, LauncherApp['visual']> = {
 };
 
 const APP_LABEL_OVERRIDE: Record<string, string> = {
+  '/dashboard?view=tasks': 'Tareas',
   '/plugins/notes': 'Tareas',
   '/plugins/calendar': 'Calendario',
   '/plugins/domains': 'Dominios',
@@ -227,6 +202,7 @@ const APP_LABEL_OVERRIDE: Record<string, string> = {
   '/plugins/support': 'Soporte',
   '/plugins/contracts': 'Contratos',
   '/plugins/intelligence': 'Inteligencia',
+  '/plugins/gemini': 'Gemini',
   '/plugins/grok-connector': 'Grok',
   '/plugins/claude-code-connector': 'Claude Code',
   '/plugins/chatgpt-connector': 'ChatGPT',
@@ -236,6 +212,7 @@ const APP_LABEL_OVERRIDE: Record<string, string> = {
 };
 
 const APP_DESCRIPTION: Record<string, string> = {
+  '/dashboard?view=tasks': 'Vista clásica de tareas vinculadas a la bandeja.',
   '/plugins/notes': 'Notas, tareas rapidas y seguimiento diario.',
   '/plugins/calendar': 'Vista de calendario para organizar trabajo y entregas.',
   '/plugins/domains': 'Gestion de dominios y activos web.',
@@ -263,6 +240,7 @@ const APP_DESCRIPTION: Record<string, string> = {
   '/plugins/support': 'Tickets de soporte y postventa por cliente.',
   '/plugins/contracts': 'Contratos comerciales por cliente, vencimientos y renovación.',
   '/plugins/intelligence': 'Panel de dirección: finanzas, ventas, compras, soporte y contratos en un vistazo.',
+  '/plugins/gemini': 'Claves y capacidad de Gemini disponibles para las funciones de IA del equipo.',
   '/plugins/radar': 'Inteligencia comercial viva: clientes analizados, informes y widgets que generan las IA.',
   '/plugins/grok-connector': 'Conector MCP de solo lectura para consultar WhatsPro desde Grok.',
   '/plugins/claude-code-connector': 'Conector MCP de solo lectura para trabajar con WhatsPro desde Claude Code.',
@@ -346,7 +324,9 @@ export function buildLauncherApps(
   const pluginApps = pluginNavItems
     .filter((item) => !item.href.startsWith('/plugins/marketplace'))
     .filter((item) => item.href !== '/escritorio')
+    .filter((item) => !isMainNavOnlyItem(item.href))
     .filter((item) => {
+      if (isAppsOnlyItem(item.href)) return true;
       const override = overrideMap.get(item.href);
       if (override !== undefined) return override === false;
       return item.href.startsWith('/plugins/') || APPS_LAUNCHER_PREFIXES.some((prefix) => item.href.startsWith(prefix));
@@ -361,7 +341,7 @@ export function buildLauncherApps(
 
   // Core menu items (Chats, Contactos, etc.) only show here once removed from the main nav via the menu editor.
   const coreApps = CORE_NAV_ITEMS
-    .filter((item) => overrideMap.get(item.key) === false)
+    .filter((item) => isAppsOnlyItem(item.href) || overrideMap.get(item.key) === false)
     .map((item) => ({
       href: item.href,
       icon: PLUGIN_NAV_ICON_MAP[item.icon] ?? Plug,

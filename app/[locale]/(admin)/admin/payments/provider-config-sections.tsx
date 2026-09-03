@@ -18,22 +18,25 @@ type Props = {
   stripe?: ProviderSettings;
   manual?: ProviderSettings;
   mp?: ProviderSettings;
+  ls?: ProviderSettings;
 };
 
 const initialState: SaveProviderConfigResult = {};
 
-export function ProviderConfigSections({ stripe, manual, mp }: Props) {
+export function ProviderConfigSections({ stripe, manual, mp, ls }: Props) {
   const [stripeState, stripeAction] = useActionState(saveProviderConfigAction, initialState);
   const [manualState, manualAction] = useActionState(saveProviderConfigAction, initialState);
   const [mpState, mpAction] = useActionState(saveProviderConfigAction, initialState);
+  const [lsState, lsAction] = useActionState(saveProviderConfigAction, initialState);
 
   const mpConfig = (mp?.config ?? {}) as Record<string, string>;
+  const lsConfig = (ls?.config ?? {}) as Record<string, string>;
 
   return (
     <>
-      {(stripeState.error || manualState.error || mpState.error) && (
+      {(stripeState.error || manualState.error || mpState.error || lsState.error) && (
         <p className="text-sm text-destructive">
-          {stripeState.error || manualState.error || mpState.error}
+          {stripeState.error || manualState.error || mpState.error || lsState.error}
         </p>
       )}
 
@@ -62,7 +65,7 @@ export function ProviderConfigSections({ stripe, manual, mp }: Props) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Manual Payment Plugin</CardTitle>
+          <CardTitle>Plugin de pago manual</CardTitle>
           <CardDescription>Permite pagos manuales con revisión del administrador.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -78,14 +81,14 @@ export function ProviderConfigSections({ stripe, manual, mp }: Props) {
                 Predeterminado
               </label>
             </div>
-            <Button type="submit">Guardar Manual Payment</Button>
+            <Button type="submit">Guardar pago manual</Button>
           </form>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Mercado Pago Plugin</CardTitle>
+          <CardTitle>Plugin de Mercado Pago</CardTitle>
           <CardDescription>Configura keys y URLs del checkout.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -93,43 +96,51 @@ export function ProviderConfigSections({ stripe, manual, mp }: Props) {
             <input type="hidden" name="provider" value="mercadopago" />
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label>Access Token</Label>
-                <Input name="accessToken" defaultValue={mpConfig.accessToken || ''} />
+                <Label>Token de acceso</Label>
+                <Input
+                  name="accessToken"
+                  type="password"
+                  placeholder={mpConfig.accessToken ? 'Configurado; deja vacío para conservarlo' : ''}
+                />
               </div>
               <div className="space-y-2">
-                <Label>Public Key</Label>
+                <Label>Clave pública</Label>
                 <Input name="publicKey" defaultValue={mpConfig.publicKey || ''} />
               </div>
               <div className="space-y-2">
-                <Label>Webhook Secret</Label>
-                <Input name="webhookSecret" defaultValue={mpConfig.webhookSecret || ''} />
+                <Label>Secreto del webhook</Label>
+                <Input
+                  name="webhookSecret"
+                  type="password"
+                  placeholder={mpConfig.webhookSecret ? 'Configurado; deja vacío para conservarlo' : ''}
+                />
               </div>
               <div className="space-y-2">
-                <Label>Success URL</Label>
+                <Label>URL de éxito</Label>
                 <Input name="successUrl" defaultValue={mpConfig.successUrl || ''} />
               </div>
               <div className="space-y-2">
-                <Label>Failure URL</Label>
+                <Label>URL de error</Label>
                 <Input name="failureUrl" defaultValue={mpConfig.failureUrl || ''} />
               </div>
               <div className="space-y-2">
-                <Label>Pending URL</Label>
+                <Label>URL pendiente</Label>
                 <Input name="pendingUrl" defaultValue={mpConfig.pendingUrl || ''} />
               </div>
               <div className="space-y-2">
-                <Label>Checkout Mode</Label>
+                <Label>Modo de checkout</Label>
                 <select
                   name="checkoutMode"
                   defaultValue={mpConfig.checkoutMode || 'payment'}
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
-                  <option value="payment">Payment (Checkout Pro)</option>
-                  <option value="subscription">Subscription (Preapproval)</option>
+                  <option value="payment">Pago (Checkout Pro)</option>
+                  <option value="subscription">Suscripción (Preapproval)</option>
                 </select>
               </div>
               <div className="space-y-2">
-                <Label>Subscription Reason</Label>
-                <Input name="subscriptionReason" defaultValue={mpConfig.subscriptionReason || ''} placeholder="Plan subscription" />
+                <Label>Motivo de suscripción</Label>
+                <Input name="subscriptionReason" defaultValue={mpConfig.subscriptionReason || ''} placeholder="Suscripción del plan" />
               </div>
             </div>
             <div className="flex items-center gap-6">
@@ -143,6 +154,55 @@ export function ProviderConfigSections({ stripe, manual, mp }: Props) {
               </label>
             </div>
             <Button type="submit">Guardar Mercado Pago</Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Plugin de Lemon Squeezy</CardTitle>
+          <CardDescription>Configura la API key, la tienda y el webhook.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={lsAction} className="space-y-4">
+            <input type="hidden" name="provider" value="lemonsqueezy" />
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>API key</Label>
+                <Input
+                  name="apiKey"
+                  type="password"
+                  placeholder={lsConfig.apiKey ? 'Configurada; deja vacío para conservarla' : ''}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Store ID</Label>
+                <Input name="storeId" defaultValue={lsConfig.storeId || ''} />
+              </div>
+              <div className="space-y-2">
+                <Label>Secreto del webhook</Label>
+                <Input
+                  name="webhookSecret"
+                  type="password"
+                  placeholder={lsConfig.webhookSecret ? 'Configurado; deja vacío para conservarlo' : ''}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>URL de éxito</Label>
+                <Input name="successUrl" defaultValue={lsConfig.successUrl || ''} />
+              </div>
+            </div>
+            <div className="flex items-center gap-6">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="enabled" defaultChecked={Boolean(ls?.enabled)} />
+                Habilitado
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="isDefault" defaultChecked={Boolean(ls?.isDefault)} />
+                Predeterminado
+              </label>
+            </div>
+            <Button type="submit">Guardar Lemon Squeezy</Button>
           </form>
         </CardContent>
       </Card>

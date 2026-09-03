@@ -5,7 +5,7 @@ import useSWR, { mutate } from 'swr';
 import * as XLSX from 'xlsx';
 import {
     Search, User as UserIcon, Filter, MoreVertical,
-    Edit, Trash2, Phone, Save, X, Loader2, Plus, Settings2, FileSpreadsheet, Upload, Download, ArrowRightLeft
+    Edit, Trash2, Phone, Save, X, Loader2, Plus, Settings2, FileSpreadsheet, Upload, Download, ArrowRightLeft, GripVertical, Pencil, Check
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -40,6 +40,7 @@ type CustomField = {
     name: string;
     key: string;
     type: 'text' | 'boolean';
+    position: number;
 };
 
 type Contact = {
@@ -119,6 +120,11 @@ export default function ContactsPage() {
 
     const [newFieldName, setNewFieldName] = useState('');
     const [newFieldType, setNewFieldType] = useState<'text' | 'boolean'>('text');
+    const [orderedFields, setOrderedFields] = useState<CustomField[]>([]);
+    const [editingFieldId, setEditingFieldId] = useState<number | null>(null);
+    const [editingFieldName, setEditingFieldName] = useState('');
+    const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+    const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [importFile, setImportFile] = useState<File | null>(null);
     const [importInstanceId, setImportInstanceId] = useState<string>('');
@@ -131,6 +137,10 @@ export default function ContactsPage() {
         { id: 'department', label: 'Department', visible: true, width: 150, type: 'system' },
         { id: 'tags', label: 'Tags', visible: true, width: 200, type: 'system' },
     ]);
+
+    useEffect(() => {
+        setOrderedFields([...customFields].sort((a, b) => (a.position ?? 0) - (b.position ?? 0)));
+    }, [customFields]);
 
     useEffect(() => {
         if (customFields) {
@@ -249,7 +259,7 @@ export default function ContactsPage() {
             if (customFields) {
                 customFields.forEach(cf => {
                     let val = c.customData?.[cf.key];
-                    if (cf.type === 'boolean') val = val ? 'Yes' : 'No';
+                    if (cf.type === 'boolean') val = val ? t('yes') : t('no');
                     row[cf.name] = val || '';
                 });
             }
@@ -275,7 +285,7 @@ export default function ContactsPage() {
 
         if (customFields) {
             customFields.forEach(cf => {
-                headers[cf.name] = cf.type === 'boolean' ? 'Yes' : 'Example Value';
+                headers[cf.name] = cf.type === 'boolean' ? t('yes') : t('example_value');
             });
         }
 
@@ -500,6 +510,60 @@ export default function ContactsPage() {
         } catch(e) { toast.error("Error"); }
     };
 
+    const handleDragStart = (index: number) => setDraggingIndex(index);
+
+    const handleDragOver = (e: React.DragEvent, index: number) => {
+        e.preventDefault();
+        setDragOverIndex(index);
+    };
+
+    const handleDrop = async (dropIndex: number) => {
+        if (draggingIndex === null || draggingIndex === dropIndex) {
+            setDraggingIndex(null);
+            setDragOverIndex(null);
+            return;
+        }
+        const reordered = Array.from(orderedFields);
+        const [moved] = reordered.splice(draggingIndex, 1);
+        reordered.splice(dropIndex, 0, moved);
+        setOrderedFields(reordered);
+        setDraggingIndex(null);
+        setDragOverIndex(null);
+        try {
+            await fetch('/api/custom-fields', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reorder: reordered.map((f, i) => ({ id: f.id, position: i })) })
+            });
+            mutate('/api/custom-fields');
+        } catch {
+            toast.error(t('toasts.field_reorder_error'));
+            setOrderedFields([...customFields]);
+        }
+    };
+
+    const handleDragEnd = () => { setDraggingIndex(null); setDragOverIndex(null); };
+
+    const handleRenameField = async (id: number) => {
+        const original = orderedFields.find(f => f.id === id)?.name ?? '';
+        const trimmed = editingFieldName.trim();
+        setEditingFieldId(null);
+        if (!trimmed || trimmed === original) return;
+        try {
+            const res = await fetch('/api/custom-fields', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, name: trimmed })
+            });
+            const data = await res.json().catch(() => null);
+            if (!res.ok) throw new Error(data?.error || 'Error');
+            mutate('/api/custom-fields');
+            toast.success(t('toasts.field_renamed'));
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : t('toasts.field_rename_error'));
+        }
+    };
+
     const handleMouseDown = (e: React.MouseEvent, colId: string) => {
         const startX = e.pageX;
         const currentWidth = columns.find(c => c.id === colId)?.width || 150;
@@ -530,7 +594,7 @@ export default function ContactsPage() {
                 <div className="flex gap-2">
                      <Button variant="outline" onClick={() => setIsFieldsManagerOpen(true)}>
                         <Settings2 className="h-4 w-4 mr-2"/>
-                        Custom Fields
+                        {t('custom_fields.button')}
                      </Button>
                      <Button onClick={() => setIsImportOpen(true)}>
                         <Upload className="h-4 w-4 mr-2"/>
@@ -559,7 +623,7 @@ export default function ContactsPage() {
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-56">
-                                <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
+                                <DropdownMenuLabel>{t('toggle_columns')}</DropdownMenuLabel>
                                 <DropdownMenuSeparator />
                                 {columns.map(col => (
                                     <DropdownMenuCheckboxItem
@@ -779,7 +843,7 @@ export default function ContactsPage() {
                                                 {col.isCustom && contact.customData && (
                                                     <span className="text-sm text-foreground truncate">
                                                         {col.type === 'boolean' 
-                                                            ? (contact.customData[col.fieldKey!] ? 'Yes' : 'No')
+                                                            ? (contact.customData[col.fieldKey!] ? t('yes') : t('no'))
                                                             : contact.customData[col.fieldKey!]
                                                         }
                                                     </span>
@@ -811,25 +875,26 @@ export default function ContactsPage() {
                 </div>
             </div>
 
-            <Dialog open={isFieldsManagerOpen} onOpenChange={setIsFieldsManagerOpen}>
+            <Dialog open={isFieldsManagerOpen} onOpenChange={(open) => { setIsFieldsManagerOpen(open); if (!open) setEditingFieldId(null); }}>
                 <DialogContent className="sm:max-w-[600px]">
                     <DialogHeader>
-                        <DialogTitle>Manage Custom Fields</DialogTitle>
-                        <DialogDescription>Add or remove custom fields for your contacts.</DialogDescription>
+                        <DialogTitle>{t('custom_fields.title')}</DialogTitle>
+                        <DialogDescription>{t('custom_fields.description')}</DialogDescription>
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
                         <div className="flex gap-2 items-end">
                             <div className="grid gap-2 flex-1">
-                                <Label>Field Name</Label>
-                                <Input value={newFieldName} onChange={e => setNewFieldName(e.target.value)} placeholder="e.g. CPF, Birthday" />
+                                <Label>{t('custom_fields.field_name')}</Label>
+                                <Input value={newFieldName} onChange={e => setNewFieldName(e.target.value)} placeholder={t('custom_fields.field_placeholder')}
+                                    onKeyDown={e => { if (e.key === 'Enter') handleCreateField(); }} />
                             </div>
                             <div className="grid gap-2 w-[140px]">
-                                <Label>Type</Label>
+                                <Label>{t('custom_fields.type')}</Label>
                                 <Select value={newFieldType} onValueChange={(v: any) => setNewFieldType(v)}>
                                     <SelectTrigger><SelectValue /></SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="text">Text</SelectItem>
-                                        <SelectItem value="boolean">Boolean</SelectItem>
+                                        <SelectItem value="text">{t('custom_fields.type_text')}</SelectItem>
+                                        <SelectItem value="boolean">{t('custom_fields.type_boolean')}</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -837,18 +902,63 @@ export default function ContactsPage() {
                                 <Plus className="h-4 w-4" />
                             </Button>
                         </div>
-                        
+
                         <div className="border rounded-md mt-4">
                             <div className="bg-muted p-2 text-xs font-semibold grid grid-cols-12 gap-2">
-                                <div className="col-span-6">Name</div>
-                                <div className="col-span-4">Type</div>
-                                <div className="col-span-2 text-right">Action</div>
+                                <div className="col-span-1"></div>
+                                <div className="col-span-5">{t('custom_fields.col_name')}</div>
+                                <div className="col-span-4">{t('custom_fields.col_type')}</div>
+                                <div className="col-span-2 text-right">{t('custom_fields.col_action')}</div>
                             </div>
                             <div className="max-h-[300px] overflow-y-auto">
-                                {customFields?.map(field => (
-                                    <div key={field.id} className="p-2 border-t grid grid-cols-12 gap-2 items-center text-sm">
-                                        <div className="col-span-6 font-medium">{field.name}</div>
-                                        <div className="col-span-4 text-muted-foreground capitalize">{field.type}</div>
+                                {orderedFields.map((field, index) => (
+                                    <div
+                                        key={field.id}
+                                        draggable
+                                        onDragStart={() => handleDragStart(index)}
+                                        onDragOver={(e) => handleDragOver(e, index)}
+                                        onDrop={() => handleDrop(index)}
+                                        onDragEnd={handleDragEnd}
+                                        className={`p-2 border-t grid grid-cols-12 gap-2 items-center text-sm transition-colors
+                                            ${draggingIndex === index ? 'opacity-40' : ''}
+                                            ${dragOverIndex === index && draggingIndex !== index ? 'bg-primary/10 border-t-2 border-t-primary' : ''}
+                                        `}
+                                    >
+                                        <div className="col-span-1 flex items-center cursor-grab">
+                                            <GripVertical className="h-4 w-4 text-muted-foreground" />
+                                        </div>
+                                        <div className="col-span-5">
+                                            {editingFieldId === field.id ? (
+                                                <div className="flex items-center gap-1">
+                                                    <Input
+                                                        value={editingFieldName}
+                                                        onChange={e => setEditingFieldName(e.target.value)}
+                                                        onBlur={() => handleRenameField(field.id)}
+                                                        onKeyDown={e => {
+                                                            if (e.key === 'Enter') handleRenameField(field.id);
+                                                            if (e.key === 'Escape') setEditingFieldId(null);
+                                                        }}
+                                                        className="h-6 text-sm px-1"
+                                                        autoFocus
+                                                    />
+                                                    <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => handleRenameField(field.id)}>
+                                                        <Check className="h-3 w-3" />
+                                                    </Button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-1 group">
+                                                    <span className="font-medium truncate">{field.name}</span>
+                                                    <Button
+                                                        variant="ghost" size="icon"
+                                                        className="h-5 w-5 opacity-0 group-hover:opacity-100 shrink-0"
+                                                        onClick={() => { setEditingFieldId(field.id); setEditingFieldName(field.name); }}
+                                                    >
+                                                        <Pencil className="h-3 w-3" />
+                                                    </Button>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="col-span-4 text-muted-foreground capitalize">{field.type === 'boolean' ? t('custom_fields.type_boolean') : t('custom_fields.type_text')}</div>
                                         <div className="col-span-2 text-right">
                                             <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleDeleteField(field.id)}>
                                                 <Trash2 className="h-3 w-3" />
@@ -856,8 +966,8 @@ export default function ContactsPage() {
                                         </div>
                                     </div>
                                 ))}
-                                {(!customFields || customFields.length === 0) && (
-                                    <div className="p-4 text-center text-muted-foreground text-sm">No custom fields created.</div>
+                                {orderedFields.length === 0 && (
+                                    <div className="p-4 text-center text-muted-foreground text-sm">{t('custom_fields.empty')}</div>
                                 )}
                             </div>
                         </div>
@@ -990,7 +1100,7 @@ export default function ContactsPage() {
                         {customFields && customFields.length > 0 && (
                             <>
                                 <div className="border-t my-2" />
-                                <Label className="text-xs font-semibold text-muted-foreground uppercase">Custom Fields</Label>
+                                <Label className="text-xs font-semibold text-muted-foreground uppercase">{t('custom_fields.button')}</Label>
                                 <div className="grid gap-3">
                                     {customFields.map(cf => (
                                         <div key={cf.id} className="grid gap-1.5">
@@ -1001,7 +1111,7 @@ export default function ContactsPage() {
                                                         checked={!!editCustomData[cf.key]} 
                                                         onCheckedChange={(checked) => setEditCustomData(prev => ({ ...prev, [cf.key]: checked }))} 
                                                     />
-                                                    <span className="text-sm text-muted-foreground">{editCustomData[cf.key] ? 'Yes' : 'No'}</span>
+                                                    <span className="text-sm text-muted-foreground">{editCustomData[cf.key] ? t('yes') : t('no')}</span>
                                                 </div>
                                             ) : (
                                                 <Input 

@@ -5,11 +5,19 @@ import { getUserPermissionContext } from '@/lib/auth/permissions-guard';
 import { db } from '@/lib/db/drizzle';
 import { contacts } from '@/lib/db/schema';
 import { getRadarTarget } from '@/lib/plugins/radar/server/access';
-import { listRadarReports, type RadarReportCategory } from '@/lib/plugins/radar/server/reports';
+import {
+  listRadarReports,
+  type RadarReportCategory,
+  type RadarReportExtraCategory,
+} from '@/lib/plugins/radar/server/reports';
 
 export const dynamic = 'force-dynamic';
 
-const VALID_CATEGORIES: RadarReportCategory[] = ['clientes', 'equipo', 'generales'];
+type ReportCategory = RadarReportCategory | RadarReportExtraCategory;
+
+// "Mejoras" y "Trabajos" son carpetas hermanas de las tres originales: el
+// análisis de mejora y los reportes de trabajo también son informes de Radar.
+const VALID_CATEGORIES: ReportCategory[] = ['clientes', 'equipo', 'generales', 'mejoras', 'trabajos'];
 
 export async function GET(request: NextRequest) {
   try {
@@ -23,10 +31,10 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const categoryParam = searchParams.get('category') ?? 'generales';
-    if (!VALID_CATEGORIES.includes(categoryParam as RadarReportCategory)) {
+    if (!VALID_CATEGORIES.includes(categoryParam as ReportCategory)) {
       return NextResponse.json({ error: 'Categoría inválida' }, { status: 400 });
     }
-    const category = categoryParam as RadarReportCategory;
+    const category = categoryParam as ReportCategory;
 
     const contactIdParam = searchParams.get('contactId');
     let contactId: number | undefined;

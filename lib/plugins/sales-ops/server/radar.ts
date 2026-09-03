@@ -21,8 +21,10 @@ import {
   teamCommercialExperimentMembers,
   teamCommercialSignals,
 } from '@/lib/db/schema';
-import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, notInArray, sql, type SQL } from 'drizzle-orm';
 import { maskJid } from '@/lib/desktop/command-center/types';
+import { condicionesDeChatIgnorado } from '@/lib/chats/internos';
+import { getSalesOpsSettings, patchSalesOpsSettings } from './settings';
 import { generateStructuredObjectForTeam } from '@/lib/plugins/ai-chat/server/structured-output';
 import { signalClassificationSchema, type SignalClassification } from '../shared/contract';
 import {
@@ -195,7 +197,15 @@ async function audit(teamId: number, userId: number | null, action: string, meta
   }
 }
 
-/** Condiciones de chat que nunca son un cliente (copiadas de `condicionesDeChatExcluido` en lib/audio-insights.ts). */
+/**
+ * Condiciones de chat que nunca son un cliente: grupos, difusiones, nuestros
+ * propios números y los internos del equipo.
+ *
+ * Los internos salen de `lib/chats/internos.ts`, la misma lista que usa la cola
+ * de audios. Antes esta función era una copia que no miraba esa config, y por
+ * eso el chat interno AAPP.SPACE terminó clasificado en G9 —lista Dinero— y
+ * Martin Dev encabezando el radar de respuestas.
+ */
 function excludedChatConditions(): SQL[] {
   return [
     sql`${chats.remoteJid} not like '%@g.us'`,
@@ -205,6 +215,14 @@ function excludedChatConditions(): SQL[] {
       select regexp_replace(instance_number, '[^0-9]', '', 'g')
         from evolution_instances
        where instance_number is not null and instance_number <> ''
+    )`,
+    ...condicionesDeChatIgnorado(),
+    // Excluidos de Respuestas desde la bandeja (settings del plugin): el radar
+    // no les crea señales aunque escriban.
+    sql`not exists (
+      select 1 from team_plugins tp
+       where tp.team_id = ${chats.teamId} and tp.plugin_id = 'sales-ops'
+         and coalesce(tp.settings -> 'radarMutedChatIds', '[]'::jsonb) @> to_jsonb(${chats.id})
     )`,
   ];
 }
@@ -690,6 +708,8 @@ export async function listSignals(teamId: number, opts: ListSignalsOptions = {})
   const cursorId = opts.cursor ? Number(opts.cursor) : null;
 
   const where: SQL[] = [eq(teamCommercialSignals.teamId, teamId)];
+  const muted = (await getSalesOpsSettings(teamId)).radarMutedChatIds;
+  if (muted.length) where.push(notInArray(teamCommercialSignals.chatId, muted));
   if (status !== 'all') where.push(eq(teamCommercialSignals.status, status));
   if (opts.kind) where.push(eq(teamCommercialSignals.kind, opts.kind));
   if (cursorId && Number.isFinite(cursorId)) where.push(lt(teamCommercialSignals.id, cursorId));
@@ -725,6 +745,70 @@ export async function listSignals(teamId: number, opts: ListSignalsOptions = {})
     counts,
     lastCutAt: toIso(cut),
   };
+}
+
+/**
+ * Atiende varias señales de un saque.
+ *
+ * La bandeja agrupa por contacto, y ahí una persona que escribió cinco veces
+ * son cinco señales: marcarlas de a una es un request y una auditoría por cada
+ * una para un solo trabajo real, y si el tercero falla el contacto queda medio
+ * atendido y vuelve a aparecer al refrescar. Acá el UPDATE es uno solo: o
+ * quedan todas o no queda ninguna.
+ */
+export async function markSignals(
+  teamId: number,
+  userId: number,
+  signalIds: number[],
+  status: 'seen' | 'handled' | 'dismissed',
+): Promise<SignalRow[]> {
+  const ids = [...new Set(signalIds.filter((id) => Number.isInteger(id) && id > 0))].slice(0, 200);
+  if (!ids.length) return [];
+
+  const now = new Date();
+  const updated = await db
+    .update(teamCommercialSignals)
+    .set(status === 'seen' ? { status } : { status, handledBy: userId, handledAt: now })
+    .where(and(eq(teamCommercialSignals.teamId, teamId), inArray(teamCommercialSignals.id, ids)))
+    .returning();
+  if (!updated.length) return [];
+
+  const chatIds = [...new Set(updated.map((row) => row.chatId))];
+
+  if (status === 'handled') {
+    // Mismo cierre de experimento que `markSignal`, pero por los chats tocados.
+    try {
+      await db
+        .update(teamCommercialExperimentMembers)
+        .set({ respondedAt: now })
+        .where(and(
+          eq(teamCommercialExperimentMembers.teamId, teamId),
+          inArray(teamCommercialExperimentMembers.chatId, chatIds),
+          sql`${teamCommercialExperimentMembers.sentAt} is not null`,
+          isNull(teamCommercialExperimentMembers.respondedAt),
+        ));
+    } catch (error) {
+      console.error('[sales-ops/radar] responded_at (bulk) falló', error);
+    }
+  }
+
+  await audit(teamId, userId, 'SALES_OPS_SIGNAL_MARK', {
+    signalIds: updated.map((row) => row.id),
+    chatIds,
+    status,
+    bulk: true,
+  });
+
+  const chatRows = await db
+    .select({ id: chats.id, remoteJid: chats.remoteJid, chatName: chats.name, pushName: chats.pushName, contactName: contacts.name })
+    .from(chats)
+    .leftJoin(contacts, and(eq(contacts.chatId, chats.id), eq(contacts.teamId, teamId)))
+    .where(inArray(chats.id, chatIds));
+  const nombres = new Map(
+    chatRows.map((row) => [row.id, row.contactName || row.chatName || row.pushName || maskJid(row.remoteJid)] as const),
+  );
+
+  return updated.map((row) => rowFromRecord(row, nombres.get(row.chatId) ?? '—'));
 }
 
 /** Cambia el estado de una señal. `handled`/`dismissed` registran quién y cuándo. */
@@ -763,4 +847,32 @@ export async function markSignal(teamId: number, userId: number, signalId: numbe
     .where(eq(chats.id, updated.chatId))
     .limit(1);
   return rowFromRecord(updated, chat?.contactName || chat?.chatName || chat?.pushName || (chat ? maskJid(chat.remoteJid) : '—'));
+}
+
+/** Excluir (o volver a incluir) un chat de Respuestas. Al excluir se descartan sus señales abiertas. */
+export async function setRadarMuted(teamId: number, userId: number, chatId: number, muted: boolean): Promise<{ radarMutedChatIds: number[]; dismissed: number }> {
+  const actual = (await getSalesOpsSettings(teamId)).radarMutedChatIds;
+  const next = muted ? Array.from(new Set([...actual, chatId])) : actual.filter((id) => id !== chatId);
+  const settings = await patchSalesOpsSettings(teamId, userId, { radarMutedChatIds: next });
+  let dismissed = 0;
+  if (muted) {
+    const rows = await db
+      .update(teamCommercialSignals)
+      .set({ status: 'dismissed', handledAt: new Date() })
+      .where(and(eq(teamCommercialSignals.teamId, teamId), eq(teamCommercialSignals.chatId, chatId), inArray(teamCommercialSignals.status, ['new', 'seen'])))
+      .returning({ id: teamCommercialSignals.id });
+    dismissed = rows.length;
+  }
+  return { radarMutedChatIds: settings.radarMutedChatIds, dismissed };
+}
+
+/** Los excluidos de Respuestas, con nombre, para poder revertir. */
+export async function listRadarMuted(teamId: number): Promise<Array<{ chatId: number; name: string }>> {
+  const ids = (await getSalesOpsSettings(teamId)).radarMutedChatIds;
+  if (!ids.length) return [];
+  const rows = await db
+    .select({ chatId: chats.id, chatName: chats.name, pushName: chats.pushName, remoteJid: chats.remoteJid })
+    .from(chats)
+    .where(and(eq(chats.teamId, teamId), inArray(chats.id, ids)));
+  return rows.map((r) => ({ chatId: r.chatId, name: r.chatName?.trim() || r.pushName?.trim() || `…${(r.remoteJid || '').replace(/\D/g, '').slice(-4)}` }));
 }

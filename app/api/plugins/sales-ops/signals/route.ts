@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSalesOpsContext } from '@/lib/plugins/sales-ops/server/access';
-import { listSignals, scanNewMessages } from '@/lib/plugins/sales-ops/server/radar';
+import { listSignals, markSignals, scanNewMessages, listRadarMuted, setRadarMuted } from '@/lib/plugins/sales-ops/server/radar';
 import { SIGNAL_KINDS, SIGNAL_STATUSES, type SignalKind, type SignalStatus } from '@/lib/plugins/sales-ops/shared/taxonomy';
 
 export const dynamic = 'force-dynamic';
@@ -24,24 +24,56 @@ export async function GET(request: Request) {
       limit: Number.isFinite(limitParam) && limitParam > 0 ? limitParam : undefined,
       cursor: url.searchParams.get('cursor'),
     });
-    return NextResponse.json(payload);
+    const muted = await listRadarMuted(ctx.team.id);
+    return NextResponse.json({ ...payload, muted });
   } catch (error) {
     console.error('[sales-ops/signals] GET', error);
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Error inesperado' }, { status: 500 });
   }
 }
 
-/** POST `{action:'scan', limit?, engine?}`: fuerza un barrido del radar. */
+const MARK_STATUSES = ['seen', 'handled', 'dismissed'] as const;
+
+/**
+ * POST `{action:'scan', limit?, engine?}`: fuerza un barrido del radar.
+ * POST `{action:'mark', signalIds:[…], status}`: atiende varias señales de una
+ * (la bandeja agrupa por contacto y ahí un contacto son N señales).
+ */
 export async function POST(request: Request) {
   const ctx = await getSalesOpsContext('salesOpsWrite');
   if (!ctx.ok) return NextResponse.json({ error: ctx.message }, { status: ctx.status });
 
-  let body: { action?: string; limit?: number; engine?: string } = {};
+  let body: { action?: string; limit?: number; engine?: string; signalIds?: unknown; status?: string; chatId?: unknown; muted?: unknown } = {};
   try {
     body = await request.json();
   } catch {
     body = {};
   }
+
+  if (body.action === 'mute') {
+    const chatId = Number(body.chatId);
+    if (!Number.isInteger(chatId) || chatId <= 0) return NextResponse.json({ error: 'chatId inválido.' }, { status: 400 });
+    try {
+      return NextResponse.json(await setRadarMuted(ctx.team.id, ctx.user.id, chatId, body.muted !== false));
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : 'Error inesperado' }, { status: 500 });
+    }
+  }
+
+  if (body.action === 'mark') {
+    const ids = Array.isArray(body.signalIds) ? body.signalIds.map(Number).filter((id) => Number.isInteger(id) && id > 0) : [];
+    if (!ids.length) return NextResponse.json({ error: 'signalIds vacío.' }, { status: 400 });
+    const status = MARK_STATUSES.find((s) => s === body.status);
+    if (!status) return NextResponse.json({ error: 'status debe ser seen, handled o dismissed.' }, { status: 400 });
+    try {
+      const signals = await markSignals(ctx.team.id, ctx.user.id, ids, status);
+      return NextResponse.json({ signals, marked: signals.length });
+    } catch (error) {
+      console.error('[sales-ops/signals] POST mark', error);
+      return NextResponse.json({ error: error instanceof Error ? error.message : 'Error inesperado' }, { status: 500 });
+    }
+  }
+
   if (body.action !== 'scan') return NextResponse.json({ error: 'Acción desconocida.' }, { status: 400 });
 
   try {

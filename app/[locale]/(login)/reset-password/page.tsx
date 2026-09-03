@@ -14,6 +14,7 @@ import Logo from '@/components/interface/Logo';
 import { useBranding } from '@/providers/branding-provider';
 import { useTranslations } from 'next-intl';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { brandName } from '@/lib/branding/constants';
 
 function ResetPasswordForm() {
   const t = useTranslations('PasswordReset');
@@ -25,7 +26,7 @@ function ResetPasswordForm() {
   );
 
   const { branding } = useBranding();
-  const siteName = branding?.name || 'WhatsPro';
+  const siteName = brandName(branding);
 
   return (
     <main className="relative min-h-screen flex flex-col items-center justify-center bg-background p-4 overflow-hidden font-sans">

@@ -11,6 +11,9 @@
 
 # next.js
 /.next/
+/.next-*/
+/.next-deploy/
+/.next-previous/
 /out/
 
 # production
@@ -44,4 +47,13 @@ postgres_data/
 # Public
 /public/uploads/
 
+# Private APP MAKER binary storage (served only through authenticated routes)
+/.data/
 
+
+
+# build logs
+.build.log
+
+# local operational backups (may contain customer workflow data)
+/.backups/

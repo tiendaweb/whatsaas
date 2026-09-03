@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSWRConfig } from 'swr';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -29,6 +30,7 @@ import { Button } from '@/components/ui/button';
 import { Check, CheckCheck, Smartphone, BadgeCheck, Users, ChevronDown, Tag, UserPlus, Loader2, Save, BellOff, Bell } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { fetcher } from '@/components/chat/utils';
 
 export type Chat = {
   id: number;
@@ -96,6 +98,8 @@ interface ChatListItemProps {
   isSelectionMode: boolean;
   isSelected: boolean;
   onSelect: (id: number) => void;
+  onOpen?: (chat: Chat) => boolean | void;
+  selectionEnabled?: boolean;
   agents?: Agent[];
   funnelStages?: FunnelStage[];
   tags?: TagData[];
@@ -111,6 +115,8 @@ export function ChatListItem({
   isSelectionMode,
   isSelected,
   onSelect,
+  onOpen,
+  selectionEnabled = true,
   agents = [],
   funnelStages = [],
   tags = [],
@@ -121,8 +127,16 @@ export function ChatListItem({
   const t = useTranslations('Dashboard');
   const tChat = useTranslations('Chat');
   const router = useRouter();
+  const { mutate } = useSWRConfig();
+  const prefetchedRouteRef = useRef(false);
+  const prefetchedChatDataRef = useRef(false);
+  const [hasMounted, setHasMounted] = useState(false);
   const displayName = chat.contact?.name || chat.name || chat.pushName || chat.remoteJid.split('@')[0];
-  const time = formatMessageTimestamp(chat.lastMessageTimestamp);
+  const time = hasMounted ? formatMessageTimestamp(chat.lastMessageTimestamp) : '';
+
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
 
   const hasContact = !!chat.contact;
   const contactId = chat.contact?.id;
@@ -250,6 +264,14 @@ export function ChatListItem({
   const isGroupChat = chat.remoteJid.endsWith('@g.us');
   const chatNumber = chat.remoteJid.split('@')[0];
   const chatRouteParam = isGroupChat ? chat.remoteJid : chatNumber;
+  const query = chat.instanceId ? `?instanceId=${chat.instanceId}` : '';
+  const chatHref = `/dashboard/chat/${chatRouteParam}${query}`;
+  const chatQuery = new URLSearchParams({ jid: chat.remoteJid });
+  if (chat.instanceId) chatQuery.set('instanceId', String(chat.instanceId));
+  const currentChatKey = `/api/chats?${chatQuery.toString()}`;
+  const messagesKey = chat.instanceId
+    ? `/api/messages?jid=${encodeURIComponent(chat.remoteJid)}&instanceId=${encodeURIComponent(String(chat.instanceId))}&limit=100`
+    : `/api/messages?chatId=${chat.id}&limit=100`;
 
   const funnelName = chat.contact?.funnelStage?.name;
   const funnelEmoji = chat.contact?.funnelStage?.emoji;
@@ -267,19 +289,45 @@ export function ChatListItem({
     if (isSelectionMode) {
       onSelect(chat.id);
     } else {
-      const query = chat.instanceId ? `?instanceId=${chat.instanceId}` : '';
-      router.push(`/dashboard/chat/${chatRouteParam}${query}`);
+      if (onOpen?.(chat) === true) return;
+      prefetchChatData();
+      router.push(chatHref);
     }
+  };
+
+  const prefetchRoute = () => {
+    if (!selectionEnabled || isSelectionMode || prefetchedRouteRef.current) return;
+    prefetchedRouteRef.current = true;
+    router.prefetch(chatHref);
+  };
+
+  const prefetchChatData = () => {
+    if (!selectionEnabled || isSelectionMode || prefetchedChatDataRef.current) return;
+    prefetchedChatDataRef.current = true;
+    prefetchRoute();
+    void mutate(currentChatKey, [chat], { revalidate: false });
+    void mutate(messagesKey, fetcher(messagesKey), { revalidate: false }).catch(() => undefined);
   };
 
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <div className="w-full px-2 py-0.5">
+        <div className="w-full min-w-0 overflow-hidden px-2 py-0.5">
           <div
             onClick={handleClick}
+            onPointerEnter={prefetchRoute}
+            onPointerDown={prefetchChatData}
+            onFocus={prefetchRoute}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                handleClick();
+              }
+            }}
+            role={selectionEnabled ? 'link' : 'button'}
+            tabIndex={0}
             className={`
-              group relative flex items-start p-3 gap-3 cursor-pointer
+              group relative flex min-w-0 items-start p-3 gap-3 cursor-pointer overflow-hidden
               rounded-xl border border-transparent transition-all duration-200 ease-in-out
               hover:bg-accent/50
               ${isActive || isSelected ? 'bg-accent/50' : 'bg-transparent'}
@@ -293,21 +341,23 @@ export function ChatListItem({
                 </AvatarFallback>
               </Avatar>
 
-              <div
-                className={`absolute inset-0 flex items-center justify-center rounded-full z-20 transition-all duration-300 cursor-pointer
-                  ${isSelected ? 'bg-primary opacity-90' : 'bg-black/40 opacity-0 group-hover:opacity-100'}
-                `}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelect(chat.id);
-                }}
-              >
-                 {isSelected ? (
-                   <Check className="h-6 w-6 text-primary-foreground animate-in zoom-in-50 duration-200" />
-                 ) : (
-                   <div className="h-5 w-5 border-2 border-white rounded-md" />
-                 )}
-              </div>
+              {selectionEnabled && (
+                <div
+                  className={`absolute inset-0 flex items-center justify-center rounded-full z-20 transition-all duration-300 cursor-pointer
+                    ${isSelected ? 'bg-primary opacity-90' : 'bg-black/40 opacity-0 group-hover:opacity-100'}
+                  `}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelect(chat.id);
+                  }}
+                >
+                   {isSelected ? (
+                     <Check className="h-6 w-6 text-primary-foreground animate-in zoom-in-50 duration-200" />
+                   ) : (
+                     <div className="h-5 w-5 border-2 border-white rounded-md" />
+                   )}
+                </div>
+              )}
 
               <div className="absolute -bottom-1 -right-1 bg-background rounded-full p-0.5 shadow-sm z-10">
                   {isGroupChat ? (
@@ -325,8 +375,8 @@ export function ChatListItem({
             </div>
 
             <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-              <div className="flex justify-between items-start">
-                <span className="font-semibold truncate text-base text-foreground leading-tight" title={displayName}>
+              <div className="flex min-w-0 justify-between items-start">
+                <span className="min-w-0 flex-1 font-semibold truncate text-base text-foreground leading-tight" title={displayName}>
                   {displayName}
                 </span>
                 <div className="flex items-center gap-1 ml-2 shrink-0">
@@ -337,15 +387,15 @@ export function ChatListItem({
                 </div>
               </div>
 
-              <div className="flex justify-between items-center h-5">
-                <div className="flex items-center gap-1.5 text-sm truncate flex-1">
+              <div className="flex min-w-0 justify-between items-center h-5">
+                <div className="flex min-w-0 items-center gap-1.5 text-sm truncate flex-1">
                   {chat.lastMessageFromMe !== undefined && chat.lastMessageFromMe !== null && (
                     chat.lastMessageFromMe
                       ? <ReadReceipt status={chat.lastMessageStatus} />
                       : null
                   )}
 
-                  <span className="truncate block text-muted-foreground/90 text-[13px]">
+                  <span className="block min-w-0 truncate text-muted-foreground/90 text-[13px]">
                     {formatPreviewText(lastMessageText)}
                   </span>
                 </div>
@@ -358,10 +408,10 @@ export function ChatListItem({
               </div>
 
               {funnelName && (
-                <div className="flex items-center gap-2 pt-1 animate-in fade-in slide-in-from-top-1 duration-300">
+                <div className="flex min-w-0 items-center gap-2 pt-1 animate-in fade-in slide-in-from-top-1 duration-300">
                   <Badge
                     variant="secondary"
-                    className="text-[10px] h-5 px-2 font-semibold rounded-sm bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors border-0"
+                    className="h-5 max-w-full truncate rounded-sm border-0 bg-zinc-200 px-2 text-[10px] font-semibold text-zinc-900 transition-colors hover:bg-zinc-300 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
                   >
                     {funnelEmoji && <span className="mr-1.1 text-[11px]">{funnelEmoji}</span>}
                     {funnelName}

@@ -5,6 +5,7 @@ import { ActivityType, contacts, funnelStages } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { logActivity } from '@/lib/db/activity';
 import { createSystemMessage } from '@/lib/db/system-messages';
+import { pusherServer } from '@/lib/pusher-server';
 
 export async function PUT(
   request: NextRequest, 
@@ -59,6 +60,11 @@ export async function PUT(
         const logText = `@@syslog_moved_to_stage|name=${currentUser.name || currentUser.email}|stage=${stageName}`;
         await createSystemMessage(team.id, updatedContact.chatId, logText);
     }
+
+    await pusherServer.trigger(`team-${team.id}`, 'kanban-stage-update', {
+      contactId: updatedContact.id,
+      funnelStageId: newStageId,
+    });
 
     return NextResponse.json(updatedContact);
   } catch (error: any) {

@@ -1,29 +1,26 @@
 'use client';
 
 import { useState } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { CalendarRange, Columns3, LayoutGrid, ListChecks, Menu, MessageCircle, Plus, Users } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { LayoutGrid, ListChecks, Menu, MessageCircle, Plus, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
 import { MobileMenuSheet } from './MobileMenuSheet';
+import { useNavegacion } from './use-navigation';
 
 /**
  * Barra inferior del móvil. Es la MISMA en todas las pantallas del panel:
  * cuatro accesos y, siempre en el mismo lugar, el botón de menú.
  *
- * Antes cambiaba de forma según dónde estuvieras — en /dashboard era una barra
- * de cinco pestañas, y en el resto desaparecía y quedaba un botón flotante con
- * otra hoja distinta. Lo único que cambia ahora son los cuatro accesos de la
- * izquierda: dentro de la bandeja son las vistas (Chats/Kanban/Agenda/Tareas),
- * que es lo que se usa ahí; fuera son los destinos principales.
+ * Los cuatro accesos de la izquierda son estables. Las vistas internas de la
+ * bandeja tienen su propio selector responsive dentro de /dashboard.
  */
 export function MobileBottomNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [menuAbierto, setMenuAbierto] = useState(false);
   const t = useTranslations('Sidebar');
-  const dashboardT = useTranslations('DashboardViews');
+  const { mainNav } = useNavegacion();
 
   const pathWithoutLocale = pathname.replace(/^\/(pt|en|es)(?=\/|$)/, '') || '/';
 
@@ -36,74 +33,37 @@ export function MobileBottomNav() {
   const enChat = pathWithoutLocale.startsWith('/dashboard/chat/');
   if (!enPanel || enChat) return null;
 
-  const enBandeja = pathWithoutLocale === '/dashboard';
-
-  const abrirVista = (tab: 'chats' | 'kanban' | 'bookmarks' | 'tasks') => {
-    if (tab === 'tasks') {
-      router.push('/plugins/tasks');
-      return;
-    }
-    const nextParams = new URLSearchParams(searchParams.toString());
-    if (tab === 'chats') {
-      nextParams.delete('view');
-      nextParams.delete('contactId');
-      window.dispatchEvent(new Event('dashboard:show-chat-list'));
-    } else {
-      nextParams.set('view', tab);
-      nextParams.delete('contactId');
-      localStorage.setItem('dashboardActiveView', tab);
-      window.dispatchEvent(new CustomEvent('dashboard:show-board', { detail: { view: tab } }));
-    }
-    const query = nextParams.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  };
-
-  const vistaActiva = searchParams.get('view');
-  const tabBandeja = vistaActiva === 'desktop'
-    ? 'tasks'
-    : vistaActiva === 'kanban' || vistaActiva === 'bookmarks' || vistaActiva === 'tasks'
-      ? vistaActiva
-      : 'chats';
-
   const esRutaActiva = (href: string) =>
     href === '/dashboard' ? pathWithoutLocale === '/dashboard' : pathWithoutLocale.startsWith(href);
 
   type Slot = { key: string; label: string; icon: typeof MessageCircle; activo: boolean; onClick: () => void };
 
-  const slots: Slot[] = enBandeja
-    ? ([
-        ['chats', dashboardT('chats_label'), MessageCircle],
-        ['kanban', dashboardT('kanban_label'), Columns3],
-        ['bookmarks', dashboardT('bookmarks_label'), CalendarRange],
-        ['tasks', dashboardT('tasks_label'), ListChecks],
-      ] as const).map(([id, label, icon]) => ({
-        key: id,
-        label,
-        icon,
-        activo: tabBandeja === id,
-        onClick: () => abrirVista(id),
-      }))
-    : ([
-        ['/dashboard', t('chats'), MessageCircle],
-        ['/plugins/tasks', t('tasks'), ListChecks],
-        ['/contacts', t('contacts'), Users],
-        ['/apps', 'Apps', LayoutGrid],
-      ] as const).map(([href, label, icon]) => ({
-        key: href,
-        label,
-        icon,
-        activo: esRutaActiva(href),
-        onClick: () => router.push(href),
-      }));
+  const commandCenter = mainNav.find((item) => item.href === '/plugins/sales-ops');
+  const secondary = commandCenter
+    ? [commandCenter.href, commandCenter.label, commandCenter.icon] as const
+    : ['/contacts', t('contacts'), Users] as const;
+
+  const slots: Slot[] = ([
+    ['/dashboard', t('chats'), MessageCircle],
+    secondary,
+    ['/plugins/tasks', 'Tareas OS', ListChecks],
+    ['/apps', 'Apps', LayoutGrid],
+  ] as const).map(([href, label, icon]) => ({
+    key: href,
+    label,
+    icon,
+    activo: esRutaActiva(href),
+    onClick: () => router.push(href),
+  }));
 
   return (
     <>
-      {enBandeja && tabBandeja === 'chats' && (
+      {pathWithoutLocale === '/dashboard' && (
         <button
           type="button"
           onClick={() => window.dispatchEvent(new Event('dashboard:open-new-chat'))}
           className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] right-4 z-50 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg transition-transform active:scale-95 md:hidden"
-          aria-label={dashboardT('new_chat_button')}
+          aria-label="Nuevo chat"
         >
           <Plus className="h-6 w-6" />
         </button>

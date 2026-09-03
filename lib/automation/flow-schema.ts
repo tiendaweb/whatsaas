@@ -14,6 +14,7 @@ export const AUTOMATION_FLOW_NODE_TYPES = [
   "options",
   "delay",
   "collect",
+  "form",
   "save_contact",
   "end",
   "button_message",
@@ -22,10 +23,37 @@ export const AUTOMATION_FLOW_NODE_TYPES = [
   "ai_control",
   "condition",
   "go_to_node",
+  "sticky_note",
+  "menu_simple",
 ] as const;
 
 export type AutomationFlowNodeType =
   (typeof AUTOMATION_FLOW_NODE_TYPES)[number];
+
+// Marker styles for the Menu Simple node. Each value pairs a prefix kind with a
+// separator so options can be auto-numbered/lettered consistently.
+export const MENU_SIMPLE_MARKER_STYLES = [
+  "number_dot", // 1.
+  "number_dash", // 1-
+  "number_paren", // 1)
+  "emoji_number", // 1️⃣
+  "letter_lower_paren", // a)
+  "letter_upper_dash", // A -
+] as const;
+
+export type MenuSimpleMarkerStyle =
+  (typeof MENU_SIMPLE_MARKER_STYLES)[number];
+
+export const AUTOMATION_EDGE_STYLE_VARIANTS = [
+  "default",
+  "dashed",
+  "dotted",
+  "bold",
+  "subtle",
+] as const;
+
+export type AutomationEdgeStyleVariant =
+  (typeof AUTOMATION_EDGE_STYLE_VARIANTS)[number];
 
 export const AUTOMATION_TEXT_LIMITS = {
   qr: {
@@ -71,6 +99,7 @@ export const automationAIDraftMetadataSchema = z.object({
 
 export const startNodeDataSchema = z.object({
   label: z.string().optional(),
+  referenceName: z.string().optional(),
   triggerType: z
     .enum(["exact_match", "contains", "first_message", "fallback"])
     .optional(),
@@ -81,6 +110,7 @@ export const startNodeDataSchema = z.object({
 
 export const messageNodeDataSchema = z.object({
   label: z.string().min(1).max(AUTOMATION_TEXT_LIMITS.qr.text),
+  referenceName: z.string().optional(),
 });
 
 export const mediaNodeDataSchema = z.object({
@@ -89,10 +119,12 @@ export const mediaNodeDataSchema = z.object({
   caption: z.string().max(AUTOMATION_TEXT_LIMITS.qr.mediaCaption).optional(),
   fileName: z.string().optional(),
   mediaMimetype: z.string().optional(),
+  referenceName: z.string().optional(),
 });
 
 export const optionsNodeDataSchema = z.object({
   label: z.string().min(1).max(AUTOMATION_TEXT_LIMITS.qr.text),
+  referenceName: z.string().optional(),
   options: z
     .array(z.string().min(1).max(AUTOMATION_TEXT_LIMITS.qr.option))
     .min(1)
@@ -102,10 +134,12 @@ export const optionsNodeDataSchema = z.object({
 export const delayNodeDataSchema = z.object({
   seconds: z.number().int().positive().max(86400),
   label: z.string().optional(),
+  referenceName: z.string().optional(),
 });
 
 export const collectNodeDataSchema = z.object({
   label: z.string().min(1).max(AUTOMATION_TEXT_LIMITS.qr.text),
+  referenceName: z.string().optional(),
   variable: z.string().min(1),
 });
 
@@ -116,9 +150,16 @@ export const saveContactNodeDataSchema = z.object({
   tagId: z.string().optional(),
   funnelStageId: z.string().optional(),
   customFields: z.record(z.string(), z.string()).optional(),
+  referenceName: z.string().optional(),
 });
 
-export const endNodeDataSchema = z.object({}).passthrough();
+export const endNodeDataSchema = z.object({
+  referenceName: z.string().optional(),
+  // Defaults to the historical behaviour: finishing a flow blocks future
+  // automatic triggers for the chat. Set to false for recoverable flows that
+  // should allow the customer to type MENU and start again later.
+  disableAutomation: z.boolean().optional(),
+}).passthrough();
 
 export const buttonMessageButtonSchema = z.object({
   id: z.string().min(1),
@@ -132,6 +173,7 @@ export const buttonMessageNodeDataSchema = z.object({
   footerText: z.string().max(AUTOMATION_TEXT_LIMITS.api.footer).optional(),
   buttonText: z.string().max(AUTOMATION_TEXT_LIMITS.api.buttonText).optional(),
   buttons: z.array(buttonMessageButtonSchema).min(1).max(3),
+  referenceName: z.string().optional(),
 });
 
 export const listMessageItemSchema = z.object({
@@ -150,6 +192,7 @@ export const listMessageNodeDataSchema = z.object({
   footerText: z.string().max(AUTOMATION_TEXT_LIMITS.api.footer).optional(),
   buttonText: z.string().min(1).max(AUTOMATION_TEXT_LIMITS.api.buttonText),
   items: z.array(listMessageItemSchema).min(1).max(10),
+  referenceName: z.string().optional(),
 });
 
 export const callToActionNodeDataSchema = z.object({
@@ -158,10 +201,12 @@ export const callToActionNodeDataSchema = z.object({
   footerText: z.string().max(AUTOMATION_TEXT_LIMITS.api.footer).optional(),
   buttonText: z.string().min(1).max(AUTOMATION_TEXT_LIMITS.api.buttonText),
   url: z.string().url().max(AUTOMATION_TEXT_LIMITS.api.ctaUrl),
+  referenceName: z.string().optional(),
 });
 
 export const aiControlNodeDataSchema = z.object({
   action: z.enum(["active", "paused"]),
+  referenceName: z.string().optional(),
 });
 
 export const conditionEntrySchema = z.object({
@@ -170,12 +215,79 @@ export const conditionEntrySchema = z.object({
   operator: z.string().min(1),
   value: z.string().min(1),
   value2: z.string().optional(),
+  label: z.string().optional(), // Texto identificador para la condición
 });
 
 export const conditionNodeDataSchema = z.object({
   conditions: z.array(conditionEntrySchema).min(1),
   label: z.string().optional(),
+  referenceName: z.string().optional(),
 });
+
+// Menu Simple: a single text menu (works on both qr and api). Fusion of options
+// + condition + collect. Each option can match automatically by its marker
+// (number/letter/emoji) and text, or via an optional advanced condition that
+// reuses the same operators as the condition node.
+export const menuSimpleOptionSchema = z.object({
+  id: z.string().min(1),
+  text: z.string().min(1).max(AUTOMATION_TEXT_LIMITS.qr.option),
+  // Optional advanced matching (mirrors conditionEntrySchema). Empty matchValue
+  // means "match automatically by marker/text".
+  matchType: z.string().optional(),
+  matchOperator: z.string().optional(),
+  matchValue: z.string().optional(),
+  matchValue2: z.string().optional(),
+});
+
+export const menuSimpleNodeDataSchema = z.object({
+  label: z.string().min(1).max(AUTOMATION_TEXT_LIMITS.qr.text),
+  referenceName: z.string().optional(),
+  markerStyle: z.enum(MENU_SIMPLE_MARKER_STYLES).default("emoji_number"),
+  menuOptions: z.array(menuSimpleOptionSchema).min(1).max(10),
+  // Delay (seconds) applied before continuing to the chosen branch.
+  globalDelaySeconds: z.number().int().min(0).max(600).optional(),
+  // Optional variable to store the raw reply (collect behaviour).
+  variable: z.string().optional(),
+});
+
+export const formFieldSchema = z
+  .object({
+    id: z.string().min(1),
+    type: z.enum(["text", "menu"]),
+    label: z.string().min(1).max(AUTOMATION_TEXT_LIMITS.qr.text),
+    variable: z.string().min(1),
+    markerStyle: z.enum(MENU_SIMPLE_MARKER_STYLES).optional(),
+    menuOptions: z.array(menuSimpleOptionSchema).max(10).optional(),
+  })
+  .superRefine((field, ctx) => {
+    if (field.type === "menu" && (!field.menuOptions || field.menuOptions.length === 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Menu form fields require at least one option.",
+        path: ["menuOptions"],
+      });
+    }
+  });
+
+export const formNodeDataSchema = z
+  .object({
+    referenceName: z.string().optional(),
+    fields: z.array(formFieldSchema).min(1).max(20),
+  })
+  .superRefine((data, ctx) => {
+    const variables = new Set<string>();
+    data.fields.forEach((field, index) => {
+      const key = field.variable.trim();
+      if (variables.has(key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Duplicate form variable: ${key}`,
+          path: ["fields", index, "variable"],
+        });
+      }
+      variables.add(key);
+    });
+  });
 
 export const goToNodeDataSchema = z
   .object({
@@ -184,6 +296,7 @@ export const goToNodeDataSchema = z
     targetAutomationId: z.union([z.number().int().positive(), z.string().min(1)]).optional(),
     fallbackAction: z.enum(["stop", "node"]).optional(),
     fallbackNodeId: z.string().min(1).optional(),
+    referenceName: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.mode === "specific_node" && !data.targetNodeId) {
@@ -213,6 +326,12 @@ export const goToNodeDataSchema = z
     }
   });
 
+export const stickyNoteNodeDataSchema = z.object({
+  title: z.string().max(120).optional(),
+  bodyText: z.string().max(4000).optional(),
+  referenceName: z.string().optional(),
+});
+
 export const automationNodeDataSchemaByType = {
   start: startNodeDataSchema,
   message: messageNodeDataSchema,
@@ -220,6 +339,7 @@ export const automationNodeDataSchemaByType = {
   options: optionsNodeDataSchema,
   delay: delayNodeDataSchema,
   collect: collectNodeDataSchema,
+  form: formNodeDataSchema,
   save_contact: saveContactNodeDataSchema,
   end: endNodeDataSchema,
   button_message: buttonMessageNodeDataSchema,
@@ -228,6 +348,8 @@ export const automationNodeDataSchemaByType = {
   ai_control: aiControlNodeDataSchema,
   condition: conditionNodeDataSchema,
   go_to_node: goToNodeDataSchema,
+  sticky_note: stickyNoteNodeDataSchema,
+  menu_simple: menuSimpleNodeDataSchema,
 } as const;
 
 const createNodeSchema = <TType extends AutomationFlowNodeType>(
@@ -248,6 +370,7 @@ export const automationFlowNodeSchema = z.discriminatedUnion("type", [
   createNodeSchema("options", optionsNodeDataSchema),
   createNodeSchema("delay", delayNodeDataSchema),
   createNodeSchema("collect", collectNodeDataSchema),
+  createNodeSchema("form", formNodeDataSchema),
   createNodeSchema("save_contact", saveContactNodeDataSchema),
   createNodeSchema("end", endNodeDataSchema),
   createNodeSchema("button_message", buttonMessageNodeDataSchema),
@@ -256,6 +379,8 @@ export const automationFlowNodeSchema = z.discriminatedUnion("type", [
   createNodeSchema("ai_control", aiControlNodeDataSchema),
   createNodeSchema("condition", conditionNodeDataSchema),
   createNodeSchema("go_to_node", goToNodeDataSchema),
+  createNodeSchema("sticky_note", stickyNoteNodeDataSchema),
+  createNodeSchema("menu_simple", menuSimpleNodeDataSchema),
 ]);
 
 export const automationFlowEdgeSchema = z.object({
@@ -264,6 +389,7 @@ export const automationFlowEdgeSchema = z.object({
   target: z.string().min(1),
   sourceHandle: z.string().nullable().optional(),
   targetHandle: z.string().nullable().optional(),
+  styleVariant: z.enum(AUTOMATION_EDGE_STYLE_VARIANTS).optional(),
 });
 
 export type AutomationFlowNode = z.infer<typeof automationFlowNodeSchema>;
@@ -282,20 +408,26 @@ export type MediaNodeData = z.infer<typeof mediaNodeDataSchema>;
 export type OptionsNodeData = z.infer<typeof optionsNodeDataSchema>;
 export type DelayNodeData = z.infer<typeof delayNodeDataSchema>;
 export type CollectNodeData = z.infer<typeof collectNodeDataSchema>;
+export type FormField = z.infer<typeof formFieldSchema>;
+export type FormNodeData = z.infer<typeof formNodeDataSchema>;
 export type SaveContactNodeData = z.infer<typeof saveContactNodeDataSchema>;
 export type CallToActionNodeData = z.infer<typeof callToActionNodeDataSchema>;
 export type AIControlNodeData = z.infer<typeof aiControlNodeDataSchema>;
 export type ConditionNodeData = z.infer<typeof conditionNodeDataSchema>;
 export type GoToNodeData = z.infer<typeof goToNodeDataSchema>;
+export type MenuSimpleOption = z.infer<typeof menuSimpleOptionSchema>;
+export type MenuSimpleNodeData = z.infer<typeof menuSimpleNodeDataSchema>;
 
 export type AutomationCanvasNodeData = {
+  referenceName?: string;
   label?:
-    | StartNodeData["label"]
-    | MessageNodeData["label"]
-    | OptionsNodeData["label"]
-    | DelayNodeData["label"]
-    | CollectNodeData["label"]
-    | ConditionNodeData["label"];
+  | StartNodeData["label"]
+  | MessageNodeData["label"]
+  | OptionsNodeData["label"]
+  | DelayNodeData["label"]
+  | CollectNodeData["label"]
+  | ConditionNodeData["label"]
+  | z.infer<typeof stickyNoteNodeDataSchema>["title"];
   triggerType?: StartNodeData["triggerType"];
   keywords?: StartNodeData["keywords"];
   conditions?: StartNodeData["conditions"] | ConditionEntry[];
@@ -308,6 +440,7 @@ export type AutomationCanvasNodeData = {
   options?: OptionsNodeData["options"];
   seconds?: DelayNodeData["seconds"];
   variable?: CollectNodeData["variable"];
+  fields?: FormNodeData["fields"];
   nameVariable?: SaveContactNodeData["nameVariable"];
   agentId?: SaveContactNodeData["agentId"];
   departmentId?: SaveContactNodeData["departmentId"];
@@ -339,6 +472,10 @@ export type AutomationCanvasNodeData = {
   targetAutomationId?: GoToNodeData["targetAutomationId"];
   fallbackAction?: GoToNodeData["fallbackAction"];
   fallbackNodeId?: GoToNodeData["fallbackNodeId"];
+  markerStyle?: MenuSimpleNodeData["markerStyle"];
+  menuOptions?: MenuSimpleOption[];
+  globalDelaySeconds?: MenuSimpleNodeData["globalDelaySeconds"];
+  disableAutomation?: z.infer<typeof endNodeDataSchema>["disableAutomation"];
 };
 
 export type AutomationCanvasNode = ReactFlowNode<
@@ -346,7 +483,7 @@ export type AutomationCanvasNode = ReactFlowNode<
   AutomationFlowNodeType
 >;
 
-export type AutomationCanvasEdge = ReactFlowEdge;
+export type AutomationCanvasEdge = ReactFlowEdge & AutomationFlowEdge;
 
 const handleValidators: Partial<
   Record<AutomationFlowNodeType, (node: AutomationFlowNode) => Set<string>>
@@ -374,6 +511,13 @@ const handleValidators: Partial<
       ...(
         node as Extract<AutomationFlowNode, { type: "condition" }>
       ).data.conditions.map((condition) => condition.id),
+      "fallback",
+    ]),
+  menu_simple: (node) =>
+    new Set([
+      ...(
+        node as Extract<AutomationFlowNode, { type: "menu_simple" }>
+      ).data.menuOptions.map((option) => `menu-${option.id}`),
       "fallback",
     ]),
 };

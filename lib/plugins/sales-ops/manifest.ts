@@ -14,6 +14,14 @@ const salesOpsSettingsSchema = z.object({
   subscriptionVisibility: z.record(z.string(), z.enum(['private', 'hidden'])).default({}),
   /** Visibilidad por cliente/empresa (`customer:{id}` | `company:{id}`). */
   accountVisibility: z.record(z.string(), z.enum(['private', 'hidden'])).default({}),
+  /** Chats cuyos audios no se transcriben nunca: no entran a la cola ni a la vista Audios. */
+  audioNeverChatIds: z.array(z.number().int().positive()).default([]),
+  /** Ítems descartados de la cola de conectores: `until` null = excluido para siempre; con fecha = por esta vez. */
+  /** Leads pospuestos: no aparecen en las listas hasta `until`. */
+  leadSnoozes: z.array(z.object({ chatId: z.number().int().positive(), until: z.string(), note: z.string().optional(), at: z.string().optional() })).default([]),
+  /** Chats excluidos de Respuestas: el radar no les crea señales y no se listan. */
+  radarMutedChatIds: z.array(z.number().int().positive()).default([]),
+  workQueueSkips: z.array(z.object({ kind: z.string(), key: z.string(), until: z.string().nullable(), label: z.string().optional(), at: z.string().optional() })).default([]),
 });
 
 const manifest: AppPluginManifest<typeof salesOpsSettingsSchema> = {

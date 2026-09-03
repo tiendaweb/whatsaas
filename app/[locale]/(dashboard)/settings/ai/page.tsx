@@ -11,10 +11,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
-import { Bot, Loader2, Save, Key, BrainCircuit, Sliders, Paperclip, X, FileText, FileImage, File as FileIcon, UploadCloud, Database, Sparkles } from 'lucide-react';
+import { Bot, Loader2, Save, Key, BrainCircuit, Sliders, Paperclip, Pencil, X, FileText, FileImage, File as FileIcon, UploadCloud, Database, Sparkles } from 'lucide-react';
 import { getAiConfig, saveAiConfig, testAiConfigConnection, AiActionState, AiConnectionTestState } from './actions';
+import { DocumentEditorModal } from '@/components/ai/DocumentEditorModal';
 import { toast } from 'sonner';
 import { ToolsManager } from '@/components/ai/ToolsManager';
+import { BuiltinToolsManager } from '@/components/ai/BuiltinToolsManager';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTranslations } from 'next-intl';
 
@@ -31,10 +33,11 @@ const MODELS = {
     { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' }
   ],
   gemini: [
-    { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash-Lite (Recommended)' },
-    { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash-Lite' },
-    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
-    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+    // Los 2.5 quedaron fuera: Google los dejó de servir a los proyectos nuevos
+    // (404 "no longer available to new users"), así que ofrecerlos sólo genera
+    // agentes que fallan al primer mensaje.
+    { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash (Recommended)' },
+    { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash-Lite' },
     { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro (preview)' },
   ]
 };
@@ -69,6 +72,7 @@ export default function AiSettingsPage() {
   const [existingAttachments, setExistingAttachments] = useState<Attachment[]>([]);
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [editingAttachment, setEditingAttachment] = useState<Attachment | null>(null);
   const [isTestingConnection, startConnectionTest] = useTransition();
   const [connectionTestState, setConnectionTestState] = useState<AiConnectionTestState>({});
 
@@ -168,6 +172,16 @@ export default function AiSettingsPage() {
 
   const removeExistingAttachment = (index: number) => {
     setExistingAttachments(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const isTextFile = (file: Attachment) =>
+    file.type.startsWith('text/') ||
+    ['.txt', '.md', '.csv', '.json'].some((ext) => file.name.toLowerCase().endsWith(ext));
+
+  const handleAttachmentSaved = (url: string, newSize: number) => {
+    setExistingAttachments((prev) =>
+      prev.map((a) => (a.url === url ? { ...a, size: newSize } : a))
+    );
   };
 
   const getFileIcon = (type: string) => {
@@ -375,10 +389,22 @@ export default function AiSettingsPage() {
                                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                                             {existingAttachments.map((file, idx) => (
                                                 <div key={`existing-${idx}`} className="relative group flex flex-col items-center justify-center p-4 border rounded-lg bg-card hover:shadow-md transition-all h-32">
-                                                     <Button 
-                                                        type="button" 
-                                                        variant="ghost" 
-                                                        size="icon" 
+                                                    {isTextFile(file) && (
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="absolute top-1 right-7 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/10 hover:text-primary rounded-full"
+                                                            onClick={() => setEditingAttachment(file)}
+                                                            title="Editar documento"
+                                                        >
+                                                            <Pencil className="h-3 w-3" />
+                                                        </Button>
+                                                    )}
+                                                     <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="icon"
                                                         className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive rounded-full"
                                                         onClick={() => removeExistingAttachment(idx)}
                                                     >
@@ -403,7 +429,7 @@ export default function AiSettingsPage() {
                                                     </Button>
                                                     {getFileIcon(file.type)}
                                                     <span className="text-xs text-center font-medium w-full truncate px-1" title={file.name}>{file.name}</span>
-                                                    <span className="text-[10px] text-primary mt-1">New</span>
+                                                    <span className="text-[10px] text-primary mt-1">{t('new_attachment_badge')}</span>
                                                 </div>
                                             ))}
                                             
@@ -412,7 +438,7 @@ export default function AiSettingsPage() {
                                                 onClick={() => fileInputRef.current?.click()}
                                             >
                                                 <Paperclip className="h-6 w-6 mb-2 text-muted-foreground" />
-                                                <span className="text-xs text-muted-foreground">Add more</span>
+                                                <span className="text-xs text-muted-foreground">{t('add_more_attachments')}</span>
                                             </div>
                                         </div>
                                     )}
@@ -432,9 +458,18 @@ export default function AiSettingsPage() {
         </TabsContent>
 
         <TabsContent value="tools">
+            {/* Primero el creador de llamadas; abajo, el listado de funciones por app. */}
             <ToolsManager />
+            <BuiltinToolsManager />
         </TabsContent>
       </Tabs>
+
+      <DocumentEditorModal
+        attachment={editingAttachment}
+        isOpen={editingAttachment !== null}
+        onClose={() => setEditingAttachment(null)}
+        onSaved={handleAttachmentSaved}
+      />
     </section>
   );
 }

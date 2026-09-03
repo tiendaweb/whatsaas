@@ -3,46 +3,13 @@ import { and, desc, eq, like } from 'drizzle-orm';
 
 import { getUserPermissionContext } from '@/lib/auth/permissions-guard';
 import { db } from '@/lib/db/drizzle';
-import { contacts, departmentMembers, messages } from '@/lib/db/schema';
-import { getRadarTarget } from '@/lib/plugins/radar/server/access';
+import { messages } from '@/lib/db/schema';
+import { getRadarTarget, userCanAccessContact } from '@/lib/plugins/radar/server/access';
 import { listContactTasks } from '@/lib/plugins/tasks/server/contact-tasks';
+import { RADAR_NOTE_PREFIX } from '@/lib/plugins/radar/server/note-parser';
 import { RADAR_ANALYST_FIELD_KEYS } from '@/lib/plugins/radar/shared/constants';
 
 export const dynamic = 'force-dynamic';
-
-const RADAR_NOTE_PREFIX = '🎯 RADAR';
-
-async function userCanAccessContact(
-  contactId: number,
-  permCtx: NonNullable<Awaited<ReturnType<typeof getUserPermissionContext>>>,
-) {
-  const contact = await db.query.contacts.findFirst({
-    where: and(eq(contacts.id, contactId), eq(contacts.teamId, permCtx.teamId)),
-    columns: {
-      id: true,
-      chatId: true,
-      name: true,
-      customData: true,
-      assignedUserId: true,
-      assignedDepartmentId: true,
-    },
-  });
-
-  if (!contact) return { contact: null, allowed: false as const };
-  if (permCtx.canSeeAllChats) return { contact, allowed: true as const };
-  if (contact.assignedUserId === permCtx.userId) return { contact, allowed: true as const };
-
-  if (permCtx.chatVisibility === 'department' && contact.assignedDepartmentId) {
-    const memberships = await db.query.departmentMembers.findMany({
-      where: eq(departmentMembers.userId, permCtx.userId),
-      columns: { departmentId: true },
-    });
-    const departmentIds = memberships.map((m) => m.departmentId);
-    return { contact, allowed: departmentIds.includes(contact.assignedDepartmentId) };
-  }
-
-  return { contact, allowed: false as const };
-}
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ contactId: string }> }) {
   try {

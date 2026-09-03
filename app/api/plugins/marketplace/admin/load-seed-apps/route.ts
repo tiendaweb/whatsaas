@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getMarketplaceAdminContext } from "../../_lib/context";
-import { seedApps, seedDefaultApps } from "@/lib/db/seed-apps";
+import { SEED_APPS, SEED_MARKETPLACE_SERVICES, seedApps, seedDefaultApps, seedMarketplaceServices } from "@/lib/db/seed-apps";
 
 export async function POST() {
   const context = await getMarketplaceAdminContext();
@@ -12,13 +12,16 @@ export async function POST() {
     // Cargar apps de ejemplo
     await seedApps();
 
+    // Cargar mejoras y servicios del marketplace
+    await seedMarketplaceServices();
+
     // Cargar apps por defecto (Notas y Calendario)
     await seedDefaultApps();
 
     return NextResponse.json(
       {
         success: true,
-        message: "Apps de ejemplo cargadas exitosamente",
+        message: `Apps de ejemplo cargadas exitosamente (${SEED_APPS.length + SEED_MARKETPLACE_SERVICES.length} apps + 2 por defecto)`,
       },
       { status: 201 }
     );

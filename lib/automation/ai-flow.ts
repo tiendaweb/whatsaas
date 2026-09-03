@@ -31,9 +31,14 @@ export type AutomationGeneratedFlow = {
   edges: AutomationFlowEdge[];
 };
 
-export const AUTOMATION_AI_NODE_CATALOG = getAllowedAutomationNodeCatalog('qr').concat(
-  getAllowedAutomationNodeCatalog('api').filter((entry) => !getAllowedAutomationNodeCatalog('qr').some((qrEntry) => qrEntry.type === entry.type)),
-).map((entry) => ({
+export const AUTOMATION_AI_NODE_CATALOG = getAllowedAutomationNodeCatalog('qr')
+  .concat(
+    getAllowedAutomationNodeCatalog('api').filter(
+      (entry) => !getAllowedAutomationNodeCatalog('qr').some((qrEntry) => qrEntry.type === entry.type),
+    ),
+  )
+  .filter((entry) => entry.category !== 'utility')
+  .map((entry) => ({
   type: entry.type,
   labelKey: entry.labelKey,
   channels: entry.channels,
@@ -221,7 +226,9 @@ export function insertGeneratedSubflow(params: {
 }
 
 export function buildAutomationFlowGeneratorPrompt(input: z.infer<typeof automationAIGenerationRequestSchema>) {
-  const allowedCatalog = getAllowedAutomationNodeCatalog(input.channel, input.allowedNodeTypes);
+  const allowedCatalog = getAllowedAutomationNodeCatalog(input.channel, input.allowedNodeTypes).filter(
+    (entry) => entry.category !== "utility",
+  );
 
   return [
     'You are generating JSON for a WhatsApp automation flow builder.',

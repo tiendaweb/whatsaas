@@ -22,6 +22,7 @@ import {
   LayoutGrid,
   LayoutTemplate,
   LifeBuoy,
+  LockKeyhole,
   Loader2,
   Megaphone,
   MessageCircle,
@@ -32,8 +33,10 @@ import {
   Plug,
   Plus,
   Receipt,
+  Radar,
   Server,
   ShoppingCart,
+  Sparkles,
   Store,
   UserCheck,
   UserCog,
@@ -44,6 +47,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { isAppsOnlyItem, isMainNavOnlyItem } from '@/lib/menu/core-nav-items';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -71,9 +75,11 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Package,
   PanelsTopLeft,
   PieChart,
+  Radar,
   Receipt,
   Server,
   ShoppingCart,
+  Sparkles,
   Store,
   UserCheck,
   UserCog,
@@ -211,7 +217,12 @@ export default function MenuEditorPage() {
                       {mainNav.map((item, index) => {
                         const Icon = resolveIcon(item.icon);
                         return (
-                          <Draggable key={item.key} draggableId={`menu-item-${item.key}`} index={index}>
+                          <Draggable
+                            key={item.key}
+                            draggableId={`menu-item-${item.key}`}
+                            index={index}
+                            isDragDisabled={isMainNavOnlyItem(item.href)}
+                          >
                             {(draggableProvided, snapshot) => (
                               <div
                                 ref={draggableProvided.innerRef}
@@ -221,8 +232,9 @@ export default function MenuEditorPage() {
                                 <button
                                   type="button"
                                   {...draggableProvided.dragHandleProps}
-                                  className="cursor-grab text-muted-foreground hover:text-foreground active:cursor-grabbing shrink-0"
-                                  aria-label="Reordenar"
+                                  className="cursor-grab text-muted-foreground hover:text-foreground active:cursor-grabbing shrink-0 disabled:cursor-default disabled:opacity-40"
+                                  aria-label={isMainNavOnlyItem(item.href) ? 'Posición fija' : 'Reordenar'}
+                                  disabled={isMainNavOnlyItem(item.href)}
                                 >
                                   <GripVertical className="size-4" />
                                 </button>
@@ -234,7 +246,7 @@ export default function MenuEditorPage() {
                                   variant="ghost"
                                   size="icon"
                                   className="size-7 shrink-0 text-muted-foreground hover:text-destructive"
-                                  disabled={pendingKey === item.key}
+                                  disabled={pendingKey === item.key || isMainNavOnlyItem(item.href)}
                                   onClick={() => removeFromMenu(item)}
                                   aria-label={`Quitar ${item.label} del menú`}
                                 >
@@ -286,11 +298,15 @@ export default function MenuEditorPage() {
                         variant="ghost"
                         size="icon"
                         className="size-7 shrink-0 text-muted-foreground hover:text-primary"
-                        disabled={pendingKey === item.key}
+                        disabled={pendingKey === item.key || isAppsOnlyItem(item.href)}
                         onClick={() => addToMenu(item)}
                         aria-label={`Agregar ${item.label} al menú`}
                       >
-                        {pendingKey === item.key ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+                        {isAppsOnlyItem(item.href)
+                          ? <LockKeyhole className="size-3.5" />
+                          : pendingKey === item.key
+                            ? <Loader2 className="size-3.5 animate-spin" />
+                            : <Plus className="size-3.5" />}
                       </Button>
                     </div>
                   );

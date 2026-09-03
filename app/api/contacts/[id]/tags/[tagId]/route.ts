@@ -2,7 +2,7 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { db } from '@/lib/db/drizzle';
 import { getTeamForUser } from '@/lib/db/queries';
-import { contactTags } from '@/lib/db/schema';
+import { contactTags, contacts } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 
 
@@ -20,7 +20,15 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
     if (isNaN(contactId) || isNaN(tagId)) {
       return NextResponse.json({ error: 'Invalid contact and tag IDs' }, { status: 400 });
     }
-    
+
+    const contact = await db.query.contacts.findFirst({
+      where: and(eq(contacts.id, contactId), eq(contacts.teamId, team.id)),
+      columns: { id: true },
+    });
+    if (!contact) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
     await db.delete(contactTags)
       .where(and(
         eq(contactTags.contactId, contactId),

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Bot } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { BaseNode } from './BaseNode';
 
 interface AiControlNodeData {
@@ -7,14 +8,15 @@ interface AiControlNodeData {
 }
 
 export function AiControlNode({ id, data, selected }: { id: string; data: AiControlNodeData, selected?: boolean }) {
-  const actionLabel = data.action === 'active' ? 'Enable IA' : 'Pause IA';
+  const t = useTranslations('Automation');
+  const actionLabel = data.action === 'active' ? t('enable_ai_select') : t('disable_pause_ai_select');
   
-  const actionColor = data.action === 'active' 
-    ? 'text-green-600 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-900/30 dark:border-green-800' 
+  const actionColor = data.action === 'active'
+    ? 'text-primary bg-primary/10 border-primary/20'
     : 'text-orange-600 bg-orange-50 border-orange-200 dark:text-orange-400 dark:bg-orange-900/30 dark:border-orange-800';
 
   return (
-    <BaseNode nodeId={id} title="IA Control" icon={Bot} selected={selected}>
+    <BaseNode nodeId={id} title={t('nodes.ai_control')} icon={Bot} selected={selected} referenceName={(data as any).referenceName}>
       <div className={`text-xs font-medium px-2 py-1 rounded border text-center ${actionColor}`}>
         {actionLabel}
       </div>

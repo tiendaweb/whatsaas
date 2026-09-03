@@ -1,9 +1,11 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import useSWR from 'swr';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { cn } from '@/lib/utils';
 
 type MarketplacePrice = {
   id: number;
@@ -77,12 +79,24 @@ function billingLabel(type: string) {
 }
 
 export default function SettingsUpgradesPage() {
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const { data: entitlements, isLoading } = useSWR<Entitlement[]>('/api/plugins/marketplace/entitlements', fetcher);
   const { data: items } = useSWR<MarketplaceItem[]>('/api/plugins/marketplace/items', fetcher);
 
   const activeEntitlements = (entitlements ?? []).filter((entry) => entry.status === 'active');
   const activeItemIds = new Set(activeEntitlements.map((entry) => entry.itemId));
   const availableItems = (items ?? []).filter((item) => item.status === 'active' && !activeItemIds.has(item.id));
+  const hasMonthlyPrices = availableItems.some((item) => item.prices.some((price) => price.billingType === 'monthly'));
+  const hasYearlyPrices = availableItems.some((item) => item.prices.some((price) => price.billingType === 'yearly'));
+
+  useEffect(() => {
+    if (billingCycle === 'monthly' && !hasMonthlyPrices && hasYearlyPrices) {
+      setBillingCycle('yearly');
+    }
+    if (billingCycle === 'yearly' && !hasYearlyPrices && hasMonthlyPrices) {
+      setBillingCycle('monthly');
+    }
+  }, [billingCycle, hasMonthlyPrices, hasYearlyPrices]);
 
   return (
     <div className="space-y-6">
@@ -160,11 +174,50 @@ export default function SettingsUpgradesPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          <div className="flex justify-end">
+            <div className="relative inline-flex rounded-full border border-border bg-background p-1 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setBillingCycle('monthly')}
+                disabled={!hasMonthlyPrices}
+                className={cn(
+                  'relative z-10 h-9 w-28 rounded-full text-sm font-medium transition-colors',
+                  billingCycle === 'monthly' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+                  !hasMonthlyPrices && 'cursor-not-allowed opacity-40'
+                )}
+              >
+                Mensual
+              </button>
+              <button
+                type="button"
+                onClick={() => setBillingCycle('yearly')}
+                disabled={!hasYearlyPrices}
+                className={cn(
+                  'relative z-10 h-9 w-28 rounded-full text-sm font-medium transition-colors',
+                  billingCycle === 'yearly' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+                  !hasYearlyPrices && 'cursor-not-allowed opacity-40'
+                )}
+              >
+                Anual
+              </button>
+              <div
+                className={cn(
+                  'absolute bottom-1 left-1 top-1 w-28 rounded-full border border-border/60 bg-muted transition-transform duration-300',
+                  billingCycle === 'yearly' && 'translate-x-full'
+                )}
+              />
+            </div>
+          </div>
+
           {availableItems.length === 0 ? (
             <p className="text-sm text-muted-foreground">No hay upgrades adicionales disponibles en este momento.</p>
           ) : (
             availableItems.map((item) => {
-              const firstPrice = item.prices.find((price) => price.amount > 0) ?? item.prices[0];
+              const firstPrice =
+                item.prices.find((price) => price.billingType === billingCycle && price.amount > 0) ??
+                item.prices.find((price) => price.billingType === billingCycle) ??
+                item.prices.find((price) => price.amount > 0) ??
+                item.prices[0];
               return (
                 <div key={item.id} className="rounded-lg border p-3">
                   <div className="flex items-center justify-between">

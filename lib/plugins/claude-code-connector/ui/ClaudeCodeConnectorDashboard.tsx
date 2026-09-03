@@ -36,7 +36,7 @@ type Status = {
   readOnly: boolean;
   transport: 'remote-mcp';
   mcpUrl: string;
-  connections: Array<{ clientId: string; clientName: string; createdAt: string; lastUsedAt: string | null }>;
+  connections: Array<{ clientId: string; clientName: string; createdAt: string; lastUsedAt: string | null; scopes: string[] }>;
   baseUrl: string;
   downloadUrl: string;
   tokens: TokenRow[];
@@ -150,6 +150,8 @@ export function ClaudeCodeConnectorDashboard() {
     <header className="flex flex-col gap-5 border-b border-border pb-6 lg:flex-row lg:items-end lg:justify-between"><div className="space-y-3"><div className="flex flex-wrap gap-2"><Badge variant="secondary" className="gap-1.5"><Bot className="size-3.5" />{t('plugin_badge')}</Badge><Badge variant="outline" className="gap-1.5"><ShieldCheck className="size-3.5" />{t('actions_enabled')}</Badge><Badge variant="outline" className="font-mono">MCP</Badge></div><div><h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{t('title')}</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{t('description')}</p></div></div><Button variant="outline" onClick={() => loadStatus()} className="min-h-11 shrink-0 gap-2 rounded-xl"><RefreshCw className="size-4" />{t('refresh')}</Button></header>
 
     {error ? <Alert variant="destructive"><Terminal /><AlertTitle>{t('error_title')}</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
+
+    {status?.connections.some((connection) => ['whatspro:write', 'appmaker:read', 'appmaker:write', 'appmaker:publish', 'appmaker:media'].some((scope) => !connection.scopes?.includes(scope))) ? <Alert><RefreshCw /><AlertTitle>{t('reconnect_title')}</AlertTitle><AlertDescription>{t('reconnect_description')}</AlertDescription></Alert> : null}
 
     <section className="grid gap-4 sm:grid-cols-3"><Card><CardContent className="p-5"><p className="text-xs font-semibold text-muted-foreground">{t('authorized_account')}</p><p className="mt-2 break-all font-mono text-sm font-semibold">{status?.targetEmail}</p></CardContent></Card><Card><CardContent className="p-5"><p className="text-xs font-semibold text-muted-foreground">{t('active_connections')}</p><p className="mt-2 text-3xl font-bold tabular-nums">{status?.connections.length ?? 0}</p></CardContent></Card><Card><CardContent className="p-5"><p className="text-xs font-semibold text-muted-foreground">{t('access_scope')}</p><p className="mt-2 text-sm font-semibold">{t('actions_scope')}</p></CardContent></Card></section>
 

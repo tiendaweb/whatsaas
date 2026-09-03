@@ -44,10 +44,10 @@ export async function requestPasswordReset(
       await sendPasswordResetEmail(email, token);
     }
 
-    return { success: 'If an account with that email exists, a reset link has been sent.' };
+    return { success: 'Si existe una cuenta con ese correo, se envió un enlace de restablecimiento.' };
   } catch (error) {
     console.error('Password reset request error:', error);
-    return { error: 'Something went wrong. Please try again.' };
+    return { error: 'Ocurrió un error. Intenta nuevamente.' };
   }
 }
 
@@ -69,7 +69,7 @@ export async function resetPassword(
   const { token, password, confirmPassword } = result.data;
 
   if (password !== confirmPassword) {
-    return { error: 'Passwords do not match.' };
+    return { error: 'Las contraseñas no coinciden.' };
   }
 
   try {
@@ -86,7 +86,7 @@ export async function resetPassword(
       .limit(1);
 
     if (!resetToken) {
-      return { error: 'Invalid or expired reset link. Please request a new one.' };
+      return { error: 'El enlace de restablecimiento es inválido o expiró. Solicita uno nuevo.' };
     }
 
     const passwordHash = await hashPassword(password);
@@ -102,9 +102,9 @@ export async function resetPassword(
         .where(eq(passwordResetTokens.id, resetToken.id)),
     ]);
 
-    return { success: 'Password reset successfully. You can now sign in.' };
+    return { success: 'Contraseña restablecida correctamente. Ya puedes iniciar sesión.' };
   } catch (error) {
     console.error('Password reset error:', error);
-    return { error: 'Something went wrong. Please try again.' };
+    return { error: 'Ocurrió un error. Intenta nuevamente.' };
   }
 }

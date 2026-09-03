@@ -23,6 +23,7 @@ export default async function TaskEmbedPage({ params }: PageProps) {
       token={token}
       initial={{
         access: board.access,
+        scope: board.scope,
         title: board.title,
         projects: board.projects as TaskProject[],
       }}

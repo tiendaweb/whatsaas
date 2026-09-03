@@ -1,21 +1,25 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  CheckSquare, Copy, FileCode2, FolderKanban, LayoutTemplate, MoreHorizontal, Paintbrush, Paperclip, Plus, Share2, Tag,
+  ArrowRightLeft, CheckSquare, Copy, FileCode2, FolderKanban, LayoutTemplate, Loader2, MoreHorizontal, Paintbrush, Paperclip, Plus, Share2, Tag,
 } from 'lucide-react';
 import { getAppearanceBaseColor, withAppearanceAlpha } from '@/lib/plugins/tasks/client/appearance-color';
-import type { Project } from '@/lib/plugins/tasks/client/types';
+import type { Project, Workspace } from '@/lib/plugins/tasks/client/types';
 import { resolveTaskIcon } from '@/lib/plugins/tasks/client/task-appearance';
 import { taskOsBorder, taskOsBtn, taskOsChrome, taskOsPanel, taskOsText } from '@/lib/plugins/tasks/ui/shared/task-os-theme';
 import { cn } from '@/lib/utils';
 import { ProjectAppearanceModal } from './ProjectAppearanceModal';
 import { EmbedShareModal } from '@/lib/plugins/tasks/ui/embed/EmbedShareModal';
+import { ProjectWorkspaceActionModal } from '@/lib/plugins/tasks/ui/shared/TaskTransferModals';
 
 export type ProjectHeaderProps = {
   project: Project;
-  onRenameProject: (projectId: number, name: string) => void;
+  workspaces: Workspace[];
+  onRenameProject: (projectId: number, name: string) => void | Promise<void>;
   onDuplicateProject: (projectId: number) => void;
+  onMoveProjectToWorkspace: (projectId: number, workspaceId: number) => Promise<void>;
+  onCopyProjectToWorkspace: (projectId: number, workspaceId: number) => Promise<void>;
   onConvertToTask: (projectId: number) => void;
   onOpenProjectMedia: () => void;
   onSaveTemplate: (project: Project) => void;
@@ -40,20 +44,24 @@ function HeaderBtn({ onClick, title, children }: { onClick: () => void; title: s
 
 const EXTRA_ACTIONS = [
   { key: 'appearance', icon: Paintbrush, label: 'Color del proyecto' },
+  { key: 'workspace', icon: ArrowRightLeft, label: 'Mover / copiar' },
   { key: 'duplicate', icon: Copy, label: 'Duplicar' },
   { key: 'cascade', icon: FileCode2, label: 'Editor cascada' },
   { key: 'convert', icon: CheckSquare, label: 'A tarea' },
-  { key: 'media', icon: Paperclip, label: 'Media' },
+  { key: 'media', icon: Paperclip, label: 'Archivos' },
   { key: 'template', icon: LayoutTemplate, label: 'Plantilla' },
   { key: 'labels', icon: Tag, label: 'Etiquetas' },
-  { key: 'embed', icon: Share2, label: 'Compartir / Embeber' },
+  { key: 'embed', icon: Share2, label: 'Compartir / Insertar' },
   { key: 'column', icon: Plus, label: 'Etapa' },
 ] as const;
 
 export function ProjectHeader({
   project,
+  workspaces,
   onRenameProject,
   onDuplicateProject,
+  onMoveProjectToWorkspace,
+  onCopyProjectToWorkspace,
   onConvertToTask,
   onOpenProjectMedia,
   onSaveTemplate,
@@ -65,13 +73,44 @@ export function ProjectHeader({
   const [moreOpen, setMoreOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [embedOpen, setEmbedOpen] = useState(false);
+  const [workspaceActionOpen, setWorkspaceActionOpen] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(project.name);
+  const [savingTitle, setSavingTitle] = useState(false);
+  const [titleError, setTitleError] = useState<string | null>(null);
   const projectColor = getAppearanceBaseColor(project.color);
   const projectTint = withAppearanceAlpha(project.color, 12);
   const projectBorder = withAppearanceAlpha(project.color, 35);
 
+  useEffect(() => {
+    setTitleDraft(project.name);
+    setTitleError(null);
+  }, [project.id, project.name]);
+
+  const commitTitle = async () => {
+    const nextName = titleDraft.trim();
+    if (!nextName) {
+      setTitleDraft(project.name);
+      setTitleError(null);
+      return;
+    }
+    if (nextName === project.name || savingTitle) return;
+
+    setSavingTitle(true);
+    setTitleError(null);
+    try {
+      await onRenameProject(project.id, nextName);
+    } catch (error) {
+      setTitleDraft(project.name);
+      setTitleError(error instanceof Error ? error.message : 'No se pudo renombrar el proyecto');
+    } finally {
+      setSavingTitle(false);
+    }
+  };
+
   const runExtra = (key: typeof EXTRA_ACTIONS[number]['key']) => {
     setMoreOpen(false);
     if (key === 'appearance') { setAppearanceOpen(true); return; }
+    if (key === 'workspace') { setWorkspaceActionOpen(true); return; }
     if (key === 'duplicate') void onDuplicateProject(project.id);
     if (key === 'cascade') onOpenCascade?.(project.id);
     if (key === 'convert') void onConvertToTask(project.id);
@@ -90,19 +129,31 @@ export function ProjectHeader({
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {(() => { const I = resolveTaskIcon(project.icon) || FolderKanban; return <I className="hidden h-3.5 w-3.5 shrink-0 sm:block" style={projectColor ? { color: projectColor } : undefined} />; })()}
         <input
-          key={project.id}
-          defaultValue={project.name}
-          onBlur={(e) => e.currentTarget.value.trim() && e.currentTarget.value.trim() !== project.name && onRenameProject(project.id, e.currentTarget.value)}
+          value={titleDraft}
+          onChange={(e) => setTitleDraft(e.target.value)}
+          onBlur={() => void commitTitle()}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur();
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              e.currentTarget.blur();
+            }
             if (e.key === 'Escape') {
-              e.currentTarget.value = project.name;
+              setTitleDraft(project.name);
+              setTitleError(null);
               e.currentTarget.blur();
             }
           }}
-          className={cn('min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none', taskOsText)}
-          title="Renombrar proyecto"
+          disabled={savingTitle}
+          className={cn(
+            'min-w-0 flex-1 rounded-md bg-transparent px-1 py-0.5 text-sm font-semibold outline-none transition-colors',
+            taskOsText,
+            'hover:bg-white/5 focus:bg-white/8 focus:ring-1 focus:ring-white/20',
+            titleError && 'text-red-200 ring-1 ring-red-400/30',
+            savingTitle && 'opacity-70',
+          )}
+          title={titleError ?? 'Editar título del proyecto'}
         />
+        {savingTitle && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-[#93c5fd]" />}
         {onSetAppearance && (
           <button
             type="button"
@@ -125,10 +176,13 @@ export function ProjectHeader({
             <FileCode2 className="h-3.5 w-3.5" />
           </HeaderBtn>
         )}
+        <HeaderBtn onClick={() => setWorkspaceActionOpen(true)} title="Mover o copiar a espacio de trabajo">
+          <ArrowRightLeft className="h-3.5 w-3.5" />
+        </HeaderBtn>
         <HeaderBtn onClick={() => void onConvertToTask(project.id)} title="Convertir proyecto en tarea">
           <CheckSquare className="h-3.5 w-3.5" />
         </HeaderBtn>
-        <HeaderBtn onClick={onOpenProjectMedia} title="Media del proyecto">
+        <HeaderBtn onClick={onOpenProjectMedia} title="Archivos del proyecto">
           <Paperclip className="h-3.5 w-3.5" />
         </HeaderBtn>
         <HeaderBtn onClick={() => void onSaveTemplate(project)} title="Guardar plantilla">
@@ -137,7 +191,7 @@ export function ProjectHeader({
         <HeaderBtn onClick={onShowLabelManager} title="Etiquetas">
           <Tag className="h-3.5 w-3.5" />
         </HeaderBtn>
-        <HeaderBtn onClick={() => setEmbedOpen(true)} title="Compartir / Embeber proyecto">
+        <HeaderBtn onClick={() => setEmbedOpen(true)} title="Compartir / Insertar proyecto">
           <Share2 className="h-3.5 w-3.5" />
         </HeaderBtn>
         <HeaderBtn onClick={onAddColumn} title="Agregar etapa">
@@ -195,6 +249,17 @@ export function ProjectHeader({
           entityId={project.id}
           entityName={project.name}
           onClose={() => setEmbedOpen(false)}
+        />
+      )}
+      {workspaceActionOpen && (
+        <ProjectWorkspaceActionModal
+          project={project}
+          workspaces={workspaces}
+          onClose={() => setWorkspaceActionOpen(false)}
+          onSubmit={async ({ mode, workspaceId }) => {
+            if (mode === 'move') await onMoveProjectToWorkspace(project.id, workspaceId);
+            else await onCopyProjectToWorkspace(project.id, workspaceId);
+          }}
         />
       )}
     </div>

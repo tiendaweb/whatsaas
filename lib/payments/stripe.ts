@@ -1,8 +1,14 @@
 import Stripe from 'stripe';
 import { redirect } from 'next/navigation';
 import { db } from '@/lib/db/drizzle';
-import { teams, plans } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { teams, plans, resellerPlanPrices } from '@/lib/db/schema';
+import { and, eq, inArray } from 'drizzle-orm';
+import { chargePlanActivation } from '@/lib/resellers/billing';
+import { stripeSubscriptionChargeKey } from '@/lib/resellers/idempotency';
+import { getProviderConfig } from '@/lib/payments/provider-settings';
+import { getTenantForReseller } from '@/lib/tenant/resolve';
+import { baseUrlForTenant } from '@/lib/tenant/urls';
+import type { PaymentTenantContext } from '@/lib/payments/plugin-types';
 import {
   getTeamByStripeCustomerId,
   getUser,
@@ -21,14 +27,44 @@ export function getStripeClient() {
   });
 }
 
+/**
+ * Cliente de Stripe del tenant. Para un reseller usa SUS claves: el dinero de sus
+ * clientes tiene que entrar en su cuenta, no en la de la plataforma.
+ *
+ * No hay fallback a las claves de la plataforma a propósito. Si un reseller tiene el
+ * cobro activado pero no ha cargado su secret key, el checkout debe fallar: cobrar con
+ * las claves de la plataforma le mandaría el dinero a la cuenta equivocada.
+ */
+export async function getStripeClientFor(
+  resellerId?: number | null,
+  providerConfig?: Record<string, string | undefined>,
+) {
+  if (resellerId == null) {
+    return getStripeClient();
+  }
+
+  const config = providerConfig ?? await getProviderConfig('stripe', resellerId);
+  const secretKey = config.secretKey;
+
+  if (!secretKey) {
+    throw new Error(
+      'Este proveedor no tiene Stripe configurado. Contacta con soporte.',
+    );
+  }
+
+  return new Stripe(secretKey, { apiVersion: '2025-08-27.basil' });
+}
+
 export async function createCheckoutSession({
   team,
   priceId,
   planId,
+  context,
 }: {
   team: typeof teams.$inferSelect | null;
   priceId: string;
   planId?: number;
+  context?: PaymentTenantContext;
 }) {
   const user = await getUser();
   const redirectQuery = new URLSearchParams({
@@ -41,7 +77,10 @@ export async function createCheckoutSession({
     redirect(`/sign-up?${redirectQuery}`);
   }
 
-  if (!process.env.STRIPE_SECRET_KEY) {
+  // El reseller sale del equipo, no del host: es quien cobra y a quien se le debita.
+  const resellerId = team.resellerId ?? null;
+
+  if (resellerId == null && !process.env.STRIPE_SECRET_KEY) {
     redirect('/pricing?payment_notice=stripe_not_configured');
   }
 
@@ -49,7 +88,32 @@ export async function createCheckoutSession({
     ? await db.query.plans.findFirst({ where: eq(plans.id, planId) })
     : await db.query.plans.findFirst({ where: eq(plans.stripePriceId, priceId) });
 
-  const resolvedPriceId = priceId || plan?.stripePriceId;
+  let resolvedPriceId: string | undefined;
+
+  if (resellerId != null) {
+    // NUNCA se cae a plan.stripePriceId: ese price vive en la cuenta de la
+    // plataforma y cobrarlo aquí metería el dinero del cliente del reseller en la
+    // cuenta equivocada. Si no ha sincronizado sus precios, se falla.
+    const planPrice = plan
+      ? await db.query.resellerPlanPrices.findFirst({
+          where: and(
+            eq(resellerPlanPrices.resellerId, resellerId),
+            eq(resellerPlanPrices.planId, plan.id),
+          ),
+        })
+      : null;
+
+    resolvedPriceId = planPrice?.externalPriceRef ?? undefined;
+
+    if (!resolvedPriceId) {
+      throw new Error(
+        'Este plan todavía no está disponible para la compra. Contacta con soporte.',
+      );
+    }
+  } else {
+    resolvedPriceId = priceId || plan?.stripePriceId;
+  }
+
   if (!resolvedPriceId) {
     throw new Error('El plan no tiene precio de Stripe configurado.');
   }
@@ -64,7 +128,11 @@ export async function createCheckoutSession({
     subscriptionData.trial_period_days = plan.trialDays;
   }
 
-  const stripe = getStripeClient();
+  // Las claves del reseller si el equipo es suyo; las de la plataforma si no.
+  const stripe = await getStripeClientFor(resellerId, context?.providerConfig);
+
+  // El cliente vuelve a la web por la que compró, no al dominio de la plataforma.
+  const baseUrl = context?.baseUrl ?? baseUrlForTenant(await getTenantForReseller(resellerId));
 
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ['card'],
@@ -75,27 +143,35 @@ export async function createCheckoutSession({
       }
     ],
     mode: 'subscription',
-    success_url: `${process.env.BASE_URL}/api/stripe/checkout?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${process.env.BASE_URL}/pricing`,
+    success_url: `${baseUrl}/api/stripe/checkout?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${baseUrl}/pricing`,
     customer: team.stripeCustomerId || undefined,
     client_reference_id: user.id.toString(),
     allow_promotion_codes: true,
     subscription_data: subscriptionData,
+    metadata: {
+      teamId: String(team.id),
+      resellerId: resellerId == null ? 'platform' : String(resellerId),
+      planId: plan?.id ? String(plan.id) : '',
+    },
   });
 
   redirect(session.url!);
 }
 
-export async function createCustomerPortalSession(team: typeof teams.$inferSelect) {
+export async function createCustomerPortalSession(
+  team: typeof teams.$inferSelect,
+  context?: PaymentTenantContext,
+) {
   if (!team.stripeCustomerId || !team.stripeProductId) {
     redirect('/pricing');
   }
 
-  if (!process.env.STRIPE_SECRET_KEY) {
+  if (team.resellerId == null && !process.env.STRIPE_SECRET_KEY) {
     redirect('/pricing?payment_notice=stripe_not_configured');
   }
 
-  const stripe = getStripeClient();
+  const stripe = await getStripeClientFor(team.resellerId, context?.providerConfig);
 
   let configuration: Stripe.BillingPortal.Configuration;
   const configurations = await stripe.billingPortal.configurations.list();
@@ -155,19 +231,20 @@ export async function createCustomerPortalSession(team: typeof teams.$inferSelec
 
   return stripe.billingPortal.sessions.create({
     customer: team.stripeCustomerId,
-    return_url: `${process.env.BASE_URL}/dashboard`,
+    return_url: `${context?.baseUrl ?? process.env.BASE_URL}/dashboard`,
     configuration: configuration.id
   });
 }
 
 export async function handleSubscriptionChange(
-  subscription: Stripe.Subscription
+  subscription: Stripe.Subscription,
+  resellerId?: number | null,
 ) {
   const customerId = subscription.customer as string;
   const subscriptionId = subscription.id;
   const status = subscription.status;
 
-  const team = await getTeamByStripeCustomerId(customerId);
+  const team = await getTeamByStripeCustomerId(customerId, resellerId);
 
   if (!team) {
     console.error('Team not found for Stripe customer:', customerId);
@@ -180,9 +257,28 @@ export async function handleSubscriptionChange(
 
   if (status === 'active' || status === 'trialing') {
     if (planStripeProduct) {
-      const localPlan = await db.query.plans.findFirst({
-        where: eq(plans.stripeProductId, planStripeProduct)
-      });
+      // Si el equipo es de un reseller, el product id viene de SU cuenta de Stripe:
+      // buscarlo en plans.stripeProductId (ids de la plataforma) no encontraría nada
+      // y la suscripción quedaría sin plan.
+      const localPlan = team.resellerId
+        ? await db.query.plans.findFirst({
+            where: inArray(
+              plans.id,
+              db
+                .select({ id: resellerPlanPrices.planId })
+                .from(resellerPlanPrices)
+                .where(
+                  and(
+                    eq(resellerPlanPrices.resellerId, team.resellerId),
+                    eq(resellerPlanPrices.externalProductRef, planStripeProduct),
+                  ),
+                ),
+            ),
+          })
+        : await db.query.plans.findFirst({
+            where: eq(plans.stripeProductId, planStripeProduct),
+          });
+
       if (localPlan) {
         localPlanId = localPlan.id;
         planName = localPlan.name;
@@ -221,6 +317,32 @@ export async function handleSubscriptionChange(
   await db.update(teams)
     .set(updateData)
     .where(eq(teams.id, team.id));
+
+  // Cobro al reseller. Solo en altas y renovaciones activas: una cancelación baja al
+  // plan free y no debe generar débito.
+  if (localPlanId && (status === 'active' || status === 'trialing')) {
+    // Misma clave que /api/stripe/checkout, que también procesa esta alta. La clave
+    // incluye el inicio del periodo, así que cada renovación sí vuelve a cobrar.
+    await chargePlanActivation({
+      teamId: team.id,
+      planId: localPlanId,
+      idempotencyKey: stripeSubscriptionChargeKey(subscription),
+      // El cliente ya le pagó al reseller: la activación no se revierte aunque
+      // el reseller se haya quedado sin saldo.
+      allowDebt: true,
+      provider: 'stripe',
+      providerRef: subscriptionId,
+    });
+  }
+}
+
+export async function cancelStripeSubscription(
+  team: typeof teams.$inferSelect,
+  context: PaymentTenantContext,
+) {
+  if (!team.stripeSubscriptionId) return;
+  const stripe = await getStripeClientFor(team.resellerId, context.providerConfig);
+  await stripe.subscriptions.cancel(team.stripeSubscriptionId);
 }
 
 export async function getStripePrices() {

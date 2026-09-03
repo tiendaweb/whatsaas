@@ -1,11 +1,16 @@
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
-import { users, teams, teamMembers, plans } from '@/lib/db/schema';
+import { users, teams, plans, resellerPlanPrices } from '@/lib/db/schema';
 import { setSession } from '@/lib/auth/session';
 import { NextRequest, NextResponse } from 'next/server';
-import { getStripeClient } from '@/lib/payments/stripe';
+import { getStripeClientFor } from '@/lib/payments/stripe';
 import { getActivePaymentProvider } from '@/lib/payments/provider-settings';
+import { chargePlanActivation } from '@/lib/resellers/billing';
+import { stripeSubscriptionChargeKey } from '@/lib/resellers/idempotency';
 import Stripe from 'stripe';
+import { getTeamForUser } from '@/lib/db/queries';
+import { resolvePaymentTenantContext } from '@/lib/payments/context';
+import { and, inArray } from 'drizzle-orm';
 
 function redirectToPricingWithInfo(request: NextRequest, reason: string) {
   const redirectUrl = new URL('/pricing', request.url);
@@ -21,12 +26,17 @@ export async function GET(request: NextRequest) {
     return redirectToPricingWithInfo(request, 'missing_checkout_session');
   }
 
-  const activeProvider = await getActivePaymentProvider();
+  const currentTeam = await getTeamForUser();
+  if (!currentTeam) {
+    return redirectToPricingWithInfo(request, 'team_not_found');
+  }
+
+  const activeProvider = await getActivePaymentProvider(currentTeam.resellerId);
   if (activeProvider !== 'stripe') {
     return redirectToPricingWithInfo(request, `checkout_ignored_provider_${activeProvider}`);
   }
 
-  if (!process.env.STRIPE_SECRET_KEY) {
+  if (currentTeam.resellerId == null && !process.env.STRIPE_SECRET_KEY) {
     console.error({
       scope: 'api.stripe.checkout',
       action: 'validate_stripe_config',
@@ -37,7 +47,13 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const stripe = getStripeClient();
+    const context = await resolvePaymentTenantContext({
+      provider: 'stripe',
+      resellerId: currentTeam.resellerId,
+      teamId: currentTeam.id,
+      requirePaymentsEnabled: false,
+    });
+    const stripe = await getStripeClientFor(currentTeam.resellerId, context.providerConfig);
 
     const session = await stripe.checkout.sessions.retrieve(sessionId, {
       expand: ['customer', 'subscription'],
@@ -74,9 +90,20 @@ export async function GET(request: NextRequest) {
       throw new Error('No product ID found for this subscription.');
     }
 
-    const internalPlan = await db.query.plans.findFirst({
-      where: eq(plans.stripeProductId, productId),
-    });
+    const internalPlan = currentTeam.resellerId
+      ? await db.query.plans.findFirst({
+          where: inArray(
+            plans.id,
+            db
+              .select({ id: resellerPlanPrices.planId })
+              .from(resellerPlanPrices)
+              .where(and(
+                eq(resellerPlanPrices.resellerId, currentTeam.resellerId),
+                eq(resellerPlanPrices.externalProductRef, productId),
+              )),
+          ),
+        })
+      : await db.query.plans.findFirst({ where: eq(plans.stripeProductId, productId) });
 
     if (!internalPlan) {
       throw new Error('Internal plan not found for this Stripe product.');
@@ -97,18 +124,6 @@ export async function GET(request: NextRequest) {
       throw new Error('User not found in database.');
     }
 
-    const userTeam = await db
-      .select({
-        teamId: teamMembers.teamId,
-      })
-      .from(teamMembers)
-      .where(eq(teamMembers.userId, user[0].id))
-      .limit(1);
-
-    if (userTeam.length === 0) {
-      throw new Error('User is not associated with any team.');
-    }
-
     await db
       .update(teams)
       .set({
@@ -120,7 +135,19 @@ export async function GET(request: NextRequest) {
         subscriptionStatus: subscription.status,
         updatedAt: new Date(),
       })
-      .where(eq(teams.id, userTeam[0].teamId));
+      .where(eq(teams.id, currentTeam.id));
+
+    // El cliente ya pagó, así que el cobro al reseller no puede rechazarse (allowDebt).
+    // Comparte la clave con handleSubscriptionChange(), que se dispara por webhook
+    // para esta misma alta: sin eso, se le cobraría el plan dos veces.
+    await chargePlanActivation({
+      teamId: currentTeam.id,
+      planId: internalPlan.id,
+      idempotencyKey: stripeSubscriptionChargeKey(subscription),
+      allowDebt: true,
+      provider: 'stripe',
+      providerRef: subscriptionId,
+    });
 
     await setSession(user[0]);
     return NextResponse.redirect(new URL('/dashboard', request.url));

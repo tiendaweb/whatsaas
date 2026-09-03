@@ -76,8 +76,8 @@ export function KanbanColumn({
     <div
       className={cn(
         taskOsColumn,
-        'transition-all rounded-2xl overflow-hidden shadow-sm',
-        dragOver && 'border-[#3b82f6]/50 bg-[#1c1c22] ring-1 ring-[#3b82f6]/20',
+        'transition-all rounded-2xl overflow-hidden',
+        dragOver && 'bg-[#1c1c22] ring-1 ring-[#3b82f6]/30',
       )}
       style={baseColor ? { backgroundColor: columnBg, borderLeft: `4px solid ${baseColor}` } : undefined}
       onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -148,7 +148,7 @@ export function KanbanColumn({
         ))}
       </div>
 
-      <div className={cn('border-t p-2.5', taskOsBorder)}>
+      <div className="p-2.5">
         <div className="flex items-center gap-2">
           <input
             ref={newTaskRef}

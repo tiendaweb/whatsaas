@@ -22,7 +22,7 @@ import { ChatHeader } from '@/components/chat/ChatHeader';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { DateSeparator } from '@/components/chat/DateSeparator';
-import { isRadarUserEmail } from '@/lib/plugins/radar/shared/constants';
+import { isRadarEnabledInNav } from '@/lib/plugins/radar/shared/constants';
 import '@/lib/plugins/radar/ui/radar.css';
 import { useTheme } from 'next-themes';
 import { useTranslations } from 'next-intl';
@@ -52,7 +52,15 @@ export default function ChatPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const rawJid = params.jid as string;
-  const chatNumber = rawJid ? decodeURIComponent(rawJid) : rawJid;
+  // El parámetro de ruta es el número pelado; el sufijo `@s.whatsapp.net` lo
+  // agrega esta página. Varias pantallas (Radar, Clientes, Archivos, Tareas)
+  // enlazan con el JID completo, y sin este saneo terminaba en
+  // `...@s.whatsapp.net@s.whatsapp.net` y el chat no abría. Los grupos sí
+  // conservan su JID entero, porque se detectan por el sufijo `@g.us`.
+  const decodedJid = rawJid ? decodeURIComponent(rawJid) : rawJid;
+  const chatNumber = decodedJid && !decodedJid.endsWith('@g.us')
+    ? decodedJid.split('@')[0]
+    : decodedJid;
   const instanceIdParam = searchParams.get('instanceId');
   const openContactPanel = searchParams.get('panel') === 'contact';
 
@@ -88,6 +96,9 @@ export default function ChatPage() {
   const [improvedReply, setImprovedReply] = useState('');
   const [isImprovingReply, setIsImprovingReply] = useState(false);
   const [radarSuggestions, setRadarSuggestions] = useState<string[]>([]);
+  // Mismo criterio que el panel lateral: Radar se ve si el plugin está activo
+  // para este usuario, no por su dirección de correo.
+  const { data: radarNavItems } = useSWR<Array<{ href?: string }>>('/api/plugins/nav', fetcher, { revalidateOnFocus: false });
   const [showQuickReplySuggestions, setShowQuickReplySuggestions] = useState(false);
   const [draftShortcutQuery, setDraftShortcutQuery] = useState('');
   const [saveDraftModalOpen, setSaveDraftModalOpen] = useState(false);
@@ -1178,7 +1189,7 @@ export default function ChatPage() {
 
         {renderReplyPreview()}
 
-        {isRadarUserEmail(user?.email) && radarSuggestions.length > 0 && (
+        {isRadarEnabledInNav(radarNavItems) && radarSuggestions.length > 0 && (
           <div className="radar-ui flex flex-wrap items-center gap-1.5 border-t border-neutral-100 bg-neutral-50 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900">
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-400">Radar</span>
             {radarSuggestions.map((suggestion, index) => (

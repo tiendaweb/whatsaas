@@ -1,13 +1,14 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { redirect } from 'next/navigation';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 import { getUser, getFreePlan } from '@/lib/db/queries';
 import { db } from '@/lib/db/drizzle';
-import { paymentWebhookEvents, plans, teams } from '@/lib/db/schema';
-import { getProviderConfig } from '@/lib/payments/provider-settings';
+import { paymentWebhookEvents, plans, resellerPlanPrices, teams } from '@/lib/db/schema';
 import { PaymentPlugin } from './types';
 import { consolePaymentAuditLogger } from './audit';
+import { chargePlanActivation } from '@/lib/resellers/billing';
+import { normalizeMercadoPagoStatus } from '@/lib/payments/statuses';
 
 type MercadoPagoPayment = {
   id: number;
@@ -162,15 +163,28 @@ async function cancelTeamPlan(teamId: number) {
   }).where(eq(teams.id, teamId));
 }
 
+async function getSaleTerms(plan: typeof plans.$inferSelect, resellerId: number | null) {
+  if (resellerId == null) return { amount: plan.amount, currency: plan.currency };
+  const price = await db.query.resellerPlanPrices.findFirst({
+    where: and(
+      eq(resellerPlanPrices.resellerId, resellerId),
+      eq(resellerPlanPrices.planId, plan.id),
+      eq(resellerPlanPrices.isPublished, true),
+    ),
+  });
+  if (!price) throw new Error(`Plan ${plan.id} is not published for reseller ${resellerId}.`);
+  return { amount: price.retailAmount, currency: price.currency };
+}
+
 export const mercadoPagoPlugin: PaymentPlugin = {
   id: 'mercadopago',
-  async validateConfig() {
-    const mp = await getProviderConfig('mercadopago');
+  async validateConfig(context) {
+    const mp = context.providerConfig;
     if (!mp.accessToken) {
       throw new Error('Mercado Pago no está configurado. Falta access token.');
     }
   },
-  async createCheckout({ team, priceId, planId }) {
+  async createCheckout({ team, priceId, planId, context }) {
     const user = await getUser();
     const redirectQuery = new URLSearchParams({
       redirect: 'checkout',
@@ -188,12 +202,13 @@ export const mercadoPagoPlugin: PaymentPlugin = {
       throw new Error('Plano não encontrado.');
     }
 
-    const mp = await getProviderConfig('mercadopago');
+    const mp = context.providerConfig;
     if (!mp.accessToken) {
       throw new Error('Mercado Pago no está configurado. Falta access token.');
     }
 
-    const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+    const baseUrl = context.baseUrl;
+    const saleTerms = await getSaleTerms(plan, context.resellerId);
     const checkoutMode = mp.checkoutMode === 'subscription' ? 'subscription' : 'payment';
     const externalReference = `${team.id}:${plan.id}:${priceId || plan.stripePriceId}`;
 
@@ -209,8 +224,8 @@ export const mercadoPagoPlugin: PaymentPlugin = {
         auto_recurring: {
           frequency,
           frequency_type: frequencyType,
-          transaction_amount: Number((plan.amount / 100).toFixed(2)),
-          currency_id: plan.currency.toUpperCase(),
+          transaction_amount: Number((saleTerms.amount / 100).toFixed(2)),
+          currency_id: saleTerms.currency.toUpperCase(),
         },
       };
 
@@ -245,8 +260,8 @@ export const mercadoPagoPlugin: PaymentPlugin = {
           title: plan.name,
           description: plan.description || plan.name,
           quantity: 1,
-          currency_id: plan.currency.toUpperCase(),
-          unit_price: Number((plan.amount / 100).toFixed(2)),
+          currency_id: saleTerms.currency.toUpperCase(),
+          unit_price: Number((saleTerms.amount / 100).toFixed(2)),
         },
       ],
       back_urls: {
@@ -261,6 +276,7 @@ export const mercadoPagoPlugin: PaymentPlugin = {
         planId: plan.id,
         priceId,
         userId: user.id,
+        resellerId: context.resellerId,
       },
     };
 
@@ -288,8 +304,8 @@ export const mercadoPagoPlugin: PaymentPlugin = {
 
     redirect(checkoutUrl);
   },
-  async handleWebhook(request) {
-    await mercadoPagoPlugin.validateConfig();
+  async handleWebhook(request, tenantContext) {
+    await mercadoPagoPlugin.validateConfig(tenantContext);
 
     const rawBody = await request.text();
     let payload: Record<string, unknown> = {};
@@ -306,7 +322,7 @@ export const mercadoPagoPlugin: PaymentPlugin = {
     const paymentId = topic.includes('payment') ? entityId : undefined;
     const preapprovalId = topic.includes('preapproval') || topic.includes('subscription') ? entityId : undefined;
 
-    const mp = await getProviderConfig('mercadopago');
+    const mp = tenantContext.providerConfig;
     if (mp.webhookSecret) {
       const signature = request.headers.get('x-signature');
       const requestId = request.headers.get('x-request-id');
@@ -329,6 +345,7 @@ export const mercadoPagoPlugin: PaymentPlugin = {
     }
 
     const idempotencyInsert = await db.insert(paymentWebhookEvents).values({
+      resellerId: tenantContext.resellerId,
       provider: 'mercadopago',
       topic,
       eventId,
@@ -377,18 +394,30 @@ export const mercadoPagoPlugin: PaymentPlugin = {
         if (!team || !plan) {
           throw new Error(`Team (${resolvedTeamId}) or plan (${resolvedPlanId}) not found.`);
         }
+        if ((team.resellerId ?? null) !== tenantContext.resellerId) {
+          throw new Error(`Team ${team.id} does not belong to webhook tenant.`);
+        }
 
         const amountInCents = Math.round((payment.transaction_amount ?? 0) * 100);
         const normalizedCurrency = (payment.currency_id || '').toLowerCase();
+        const saleTerms = await getSaleTerms(plan, tenantContext.resellerId);
 
-        if (amountInCents !== plan.amount || normalizedCurrency !== plan.currency.toLowerCase()) {
-          throw new Error(`Payment mismatch for team ${resolvedTeamId}: expected ${plan.amount}/${plan.currency}, got ${amountInCents}/${normalizedCurrency}`);
+        if (amountInCents !== saleTerms.amount || normalizedCurrency !== saleTerms.currency.toLowerCase()) {
+          throw new Error(`Payment mismatch for team ${resolvedTeamId}: expected ${saleTerms.amount}/${saleTerms.currency}, got ${amountInCents}/${normalizedCurrency}`);
         }
 
         const canonicalStatus = mercadoPagoPlugin.normalizePaymentStatus(payment.status || 'pending');
 
         if (canonicalStatus === 'paid') {
           await activateTeamPlan(team.id, plan.id);
+          await chargePlanActivation({
+            teamId: team.id,
+            planId: plan.id,
+            idempotencyKey: `mercadopago:payment:${payment.id}`,
+            allowDebt: true,
+            provider: 'mercadopago',
+            providerRef: String(payment.id),
+          });
         }
 
         if (canonicalStatus === 'canceled' || canonicalStatus === 'rejected' || canonicalStatus === 'failed') {
@@ -407,6 +436,7 @@ export const mercadoPagoPlugin: PaymentPlugin = {
             topic: context.topic,
             eventId: context.eventId,
             providerStatus: payment.status,
+            resellerId: tenantContext.resellerId,
           },
         });
       } else if (context.preapprovalId) {
@@ -425,18 +455,30 @@ export const mercadoPagoPlugin: PaymentPlugin = {
         if (!team || !plan) {
           throw new Error(`Team (${referenceData.teamId}) or plan (${referenceData.planId}) not found.`);
         }
+        if ((team.resellerId ?? null) !== tenantContext.resellerId) {
+          throw new Error(`Team ${team.id} does not belong to webhook tenant.`);
+        }
 
         const amountInCents = Math.round((preapproval.auto_recurring?.transaction_amount ?? 0) * 100);
         const normalizedCurrency = (preapproval.auto_recurring?.currency_id || '').toLowerCase();
+        const saleTerms = await getSaleTerms(plan, tenantContext.resellerId);
 
-        if (amountInCents !== plan.amount || normalizedCurrency !== plan.currency.toLowerCase()) {
-          throw new Error(`Preapproval mismatch for team ${team.id}: expected ${plan.amount}/${plan.currency}, got ${amountInCents}/${normalizedCurrency}`);
+        if (amountInCents !== saleTerms.amount || normalizedCurrency !== saleTerms.currency.toLowerCase()) {
+          throw new Error(`Preapproval mismatch for team ${team.id}: expected ${saleTerms.amount}/${saleTerms.currency}, got ${amountInCents}/${normalizedCurrency}`);
         }
 
         const canonicalStatus = mercadoPagoPlugin.normalizePaymentStatus(preapproval.status || 'pending');
 
         if (canonicalStatus === 'paid') {
           await activateTeamPlan(team.id, plan.id);
+          await chargePlanActivation({
+            teamId: team.id,
+            planId: plan.id,
+            idempotencyKey: `mercadopago:preapproval:${preapproval.id}`,
+            allowDebt: true,
+            provider: 'mercadopago',
+            providerRef: preapproval.id,
+          });
         }
 
         if (canonicalStatus === 'canceled' || canonicalStatus === 'rejected' || canonicalStatus === 'failed') {
@@ -455,6 +497,7 @@ export const mercadoPagoPlugin: PaymentPlugin = {
             topic: context.topic,
             eventId: context.eventId,
             providerStatus: preapproval.status,
+            resellerId: tenantContext.resellerId,
           },
         });
       } else {
@@ -497,29 +540,9 @@ export const mercadoPagoPlugin: PaymentPlugin = {
       return NextResponse.json({ received: false, message: 'Webhook processing failed.' }, { status: 500 });
     }
   },
-  normalizePaymentStatus(providerStatus) {
-    const normalized = providerStatus.toLowerCase();
-
-    if (normalized === 'approved' || normalized === 'accredited' || normalized === 'paid' || normalized === 'authorized') {
-      return 'paid';
-    }
-
-    if (normalized === 'in_process' || normalized === 'pending' || normalized === 'waiting_for_gateway') {
-      return 'pending';
-    }
-
-    if (normalized === 'cancelled' || normalized === 'canceled') {
-      return 'canceled';
-    }
-
-    if (normalized === 'rejected' || normalized === 'refunded' || normalized === 'charged_back' || normalized === 'paused') {
-      return 'rejected';
-    }
-
-    return 'failed';
-  },
-  async getPublicConfig() {
-    const mp = await getProviderConfig('mercadopago');
+  normalizePaymentStatus: normalizeMercadoPagoStatus,
+  async getPublicConfig(context) {
+    const mp = context.providerConfig;
     return {
       provider: 'mercadopago',
       publicKey: mp.publicKey,

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Sparkles, Variable, Type, Layout, Settings2, Tag as TagIcon } from 'lucide-react';
+import { Loader2, Sparkles, Variable, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,6 @@ import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -25,6 +24,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { DraftWorkflowCanvas } from './DraftWorkflowCanvas';
+import { extractEditorPlaceholders, normalizePlaceholderName } from '@/lib/drafts/utils';
 import type {
   DraftAgent,
   DraftAiMetadata,
@@ -49,21 +49,7 @@ type Props = {
   onSaved: () => void;
 };
 
-const PLACEHOLDER_REGEX = /\[\[([\w\-. ]+)\]\]/g;
 const emptyWorkflow: DraftWorkflow = { stages: [], tasks: [] };
-
-function extractPlaceholders(content: string): string[] {
-  const set = new Set<string>();
-  for (const match of content.matchAll(PLACEHOLDER_REGEX)) {
-    const key = match[1]?.trim();
-    if (key) set.add(key);
-  }
-  return Array.from(set);
-}
-
-function normalizePlaceholderName(raw: string) {
-  return raw.trim().replace(/\s+/g, '_');
-}
 
 export function DraftEditorModal({
   open,
@@ -94,7 +80,6 @@ export function DraftEditorModal({
   const [workflow, setWorkflow] = useState<DraftWorkflow>(emptyWorkflow);
   const [isSaving, setIsSaving] = useState(false);
 
-  // --- Lógica original mantenida ---
   useEffect(() => {
     if (!open) return;
     setTitle(draft?.title ?? '');
@@ -103,24 +88,26 @@ export function DraftEditorModal({
     setAiMetadata(draft?.aiMetadata ?? null);
     setAiMode(draft?.draftType === 'dynamic' ? 'variables' : 'create');
     setAiPrompt('');
-    const initialPlaceholders = extractPlaceholders(draft?.content ?? '');
-    setPlaceholderEditor(initialPlaceholders.join('\n'));
+
+    const initial = extractEditorPlaceholders(draft?.content ?? '');
+    setPlaceholderEditor(initial.join('\n'));
+
     setCategoryId(draft?.categoryId ? String(draft.categoryId) : 'none');
     setSelectedTagIds(draft?.tags?.map((tag) => tag.id) ?? []);
+
     const hasAdvanced = Boolean(
-      draft?.contactId ||
-      draft?.assignedUserId ||
-      draft?.departmentId ||
+      draft?.contactId || draft?.assignedUserId || draft?.departmentId ||
       (draft?.stages && ((draft.stages.stages?.length ?? 0) > 0 || (draft.stages.tasks?.length ?? 0) > 0))
     );
     setAdvancedMode(hasAdvanced);
+
     setContactId(draft?.contactId ? String(draft.contactId) : 'none');
     setAssignedUserId(draft?.assignedUserId ? String(draft.assignedUserId) : 'none');
     setDepartmentId(draft?.departmentId ? String(draft.departmentId) : 'none');
     setWorkflow(draft?.stages ?? emptyWorkflow);
   }, [draft, open]);
 
-  const detectedPlaceholders = useMemo(() => extractPlaceholders(content), [content]);
+  const detectedPlaceholders = useMemo(() => extractEditorPlaceholders(content), [content]);
 
   useEffect(() => {
     if (draftType !== 'dynamic') return;
@@ -142,7 +129,7 @@ export function DraftEditorModal({
       return false;
     }
     const uniqueNames = Array.from(new Set(names));
-    const foundInContent = extractPlaceholders(content);
+    const foundInContent = extractEditorPlaceholders(content);
     let nextContent = content;
     if (foundInContent.length > 0) {
       foundInContent.forEach((placeholder, index) => {
@@ -171,17 +158,21 @@ export function DraftEditorModal({
       if (!response.ok) throw new Error(result?.error || 'Error IA');
       setContent(result.content ?? '');
       setAiMetadata(result.metadata ?? null);
-      toast.success('Contenido generado.');
+      toast.success('Contenido generado con IA.');
     } catch (error: any) { toast.error(error?.message); } finally { setIsGenerating(false); }
   };
 
   const handleSave = async () => {
-    if (!title.trim() || !content.trim()) { toast.error('Faltan campos.'); return; }
+    if (!title.trim() || !content.trim()) { toast.error('Título y contenido son requeridos.'); return; }
     if (draftType === 'dynamic' && !handleNormalizeDynamicContent()) return;
+
     setIsSaving(true);
     try {
       const payload = {
-        title: title.trim(), content: content.trim(), draftType, aiMetadata,
+        title: title.trim(),
+        content: content.trim(),
+        draftType,
+        aiMetadata,
         categoryId: categoryId === 'none' ? null : Number(categoryId),
         tagIds: selectedTagIds,
         contactId: advancedMode && contactId !== 'none' ? Number(contactId) : null,
@@ -195,252 +186,223 @@ export function DraftEditorModal({
         body: JSON.stringify(payload),
       });
       if (!response.ok) throw new Error('Error al guardar');
-      toast.success('Guardado.');
+      toast.success('Borrador guardado');
       onOpenChange(false);
       onSaved();
-    } catch (error: any) { toast.error(error?.message); } finally { setIsSaving(false); }
+    } catch (error: any) {
+      toast.error(error?.message || 'Error al guardar');
+    } finally {
+      setIsSaving(false);
+    }
   };
+
+  const handleDelete = async () => {
+    if (!draft) return;
+    if (!confirm('¿Eliminar este borrador?')) return;
+    try {
+      const res = await fetch(`/api/drafts/${draft.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+      toast.success('Borrador eliminado');
+      onOpenChange(false);
+      onSaved();
+    } catch {
+      toast.error('No se pudo eliminar');
+    }
+  };
+
+  const dynamicVars = draftType === 'dynamic' ? extractEditorPlaceholders(content) : [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[calc(100vw-1rem)] max-w-4xl max-h-[95dvh] overflow-hidden p-0 flex flex-col gap-0 border-none shadow-2xl">
-        
-        {/* HEADER ESTILO PREMIUM */}
-        <DialogHeader className="p-6 bg-primary text-primary-foreground">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-white/20 rounded-lg">
-              <Type className="h-5 w-5" />
-            </div>
-            <div>
-              <DialogTitle className="text-xl">{isEditMode ? 'Editar Borrador' : 'Crear Nuevo Borrador'}</DialogTitle>
-              <DialogDescription className="text-primary-foreground/80">
-                Configura la estructura y lógica del mensaje para {isEditMode ? title : 'tu equipo'}.
-              </DialogDescription>
-            </div>
-          </div>
+      <DialogContent className="w-[calc(100vw-12px)] max-w-3xl max-h-[96dvh] p-0 flex flex-col gap-0 rounded-3xl overflow-hidden border shadow-xl">
+        {/* Minimal modern header */}
+        <DialogHeader className="px-6 pt-5 pb-3 border-b bg-background flex-row items-center gap-4">
+          <DialogTitle className="text-xl font-semibold tracking-tight">
+            {isEditMode ? 'Editar borrador' : 'Nuevo borrador'}
+          </DialogTitle>
+          {isEditMode && (
+            <Button variant="ghost" size="sm" className="ml-auto text-destructive hover:bg-destructive/10 h-8 px-3 rounded-2xl" onClick={handleDelete}>
+              <Trash2 className="h-4 w-4 mr-1.5" /> Eliminar
+            </Button>
+          )}
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto bg-secondary/5">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-0">
-            
-            {/* COLUMNA IZQUIERDA: CONTENIDO Y EDITOR */}
-            <div className="lg:col-span-7 p-6 space-y-6 border-r border-border/50">
-              
-              <section className="space-y-4">
-                <div className="flex items-center gap-2 text-sm font-bold text-muted-foreground uppercase tracking-wider">
-                  <Layout className="h-4 w-4" /> Cuerpo del Mensaje
-                </div>
-                
-                <div className="space-y-4 bg-background p-4 rounded-xl border shadow-sm">
-                  <div className="space-y-2">
-                    <Label className="text-xs uppercase font-bold text-muted-foreground">Título del Borrador</Label>
-                    <Input 
-                      value={title} 
-                      onChange={(e) => setTitle(e.target.value)} 
-                      placeholder="Ej: Bienvenida Cliente Nuevo"
-                      className="text-lg font-semibold bg-secondary/20 border-none focus-visible:ring-primary"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-xs uppercase font-bold text-muted-foreground">Contenido</Label>
-                    <Textarea
-                      value={content}
-                      onChange={(e) => setContent(e.target.value)}
-                      className="min-h-[250px] font-mono text-sm leading-relaxed bg-secondary/10 border-none focus-visible:ring-primary"
-                      placeholder="Escribe tu mensaje aquí..."
-                    />
-                  </div>
-                </div>
-              </section>
-
-              {/* GENERADOR IA INTEGRADO */}
-              <section className="bg-primary/5 rounded-xl border border-primary/20 p-4 space-y-4">
-                <div className="flex items-center gap-2 text-sm font-bold text-primary uppercase">
-                  <Sparkles className="h-4 w-4" /> Asistente de IA
-                </div>
-                <div className="flex gap-2">
-                  <Select value={aiMode} onValueChange={(v: any) => setAiMode(v)}>
-                    <SelectTrigger className="w-[130px] bg-background">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="create">Crear</SelectItem>
-                      <SelectItem value="rewrite">Reescribir</SelectItem>
-                      <SelectItem value="variables">Variables</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    value={aiPrompt}
-                    onChange={(e) => setAiPrompt(e.target.value)}
-                    placeholder="Describe el tono o cambio..."
-                    className="flex-1 bg-background"
-                  />
-                  <Button onClick={handleGenerateWithAi} disabled={isGenerating} size="icon">
-                    {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                  </Button>
-                </div>
-              </section>
+        <div className="flex-1 overflow-y-auto p-5 md:p-6 space-y-6 bg-muted/20">
+          {/* Title + Content — clean OS focus */}
+          <div className="space-y-4">
+            <div>
+              <Label className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-1.5 block">Título</Label>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Nombre descriptivo del mensaje"
+                className="h-12 text-lg font-medium bg-background rounded-3xl border"
+              />
             </div>
 
-            {/* COLUMNA DERECHA: CONFIGURACIÓN Y VARIABLES */}
-            <div className="lg:col-span-5 p-6 space-y-6 bg-background">
-              
-              {/* TIPO Y CATEGORÍA */}
-              <section className="space-y-4">
-                <div className="flex items-center gap-2 text-sm font-bold text-muted-foreground uppercase tracking-wider">
-                  <Settings2 className="h-4 w-4" /> Configuración
-                </div>
-                
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label className="text-[10px] uppercase font-bold">Tipo</Label>
-                    <Select value={draftType} onValueChange={(v: any) => setDraftType(v)}>
-                      <SelectTrigger className="h-9 w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="static">Estática</SelectItem>
-                        <SelectItem value="dynamic">Dinámica</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] uppercase font-bold">Categoría</Label>
-                    <Select value={categoryId} onValueChange={setCategoryId}>
-                      <SelectTrigger className="h-9 w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Sin Categoría</SelectItem>
-                        {categories.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
+            <div>
+              <Label className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-1.5 block">Contenido</Label>
+              <Textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                rows={9}
+                className="resize-y min-h-[170px] font-mono text-[15px] leading-relaxed bg-background rounded-3xl border p-5"
+                placeholder="Escribe el mensaje. Usa [[variable]] para contenido dinámico."
+              />
+            </div>
+          </div>
 
-                <div className="space-y-2">
-                  <Label className="text-[10px] uppercase font-bold flex items-center gap-1">
-                    <TagIcon className="h-3 w-3" /> Etiquetas
-                  </Label>
-                  <div className="flex flex-wrap gap-1.5 p-2 border rounded-lg bg-secondary/5">
-                    {tags.map(tag => (
-                      <Badge
-                        key={tag.id}
-                        variant={selectedTagIds.includes(tag.id) ? "default" : "outline"}
-                        className="cursor-pointer transition-all"
-                        onClick={() => toggleTag(tag.id)}
-                      >
-                        {tag.name}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              </section>
+          {/* Type + Category + Tags row */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <Label className="text-xs uppercase tracking-widest mb-1.5 block font-medium text-muted-foreground">Tipo</Label>
+              <Select value={draftType} onValueChange={(v: any) => setDraftType(v)}>
+                <SelectTrigger className="bg-background rounded-2xl h-11">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="static">Estático (fijo)</SelectItem>
+                  <SelectItem value="dynamic">Dinámico (variables)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-              {/* SECCIÓN DINÁMICA: VARIABLES */}
-              {draftType === 'dynamic' && (
-                <section className="space-y-4 p-4 bg-blue-50/50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-900/30">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase">
-                      <Variable className="h-4 w-4" /> Variables Dinámicas
-                    </div>
-                  </div>
-                  <Textarea
-                    value={placeholderEditor}
-                    onChange={(e) => setPlaceholderEditor(e.target.value)}
-                    className="min-h-[80px] text-xs font-mono"
-                    placeholder="nombre_cliente&#10;monto_pago"
-                  />
-                  <Button variant="outline" size="sm" className="w-full text-xs h-8" onClick={handleNormalizeDynamicContent}>
-                    Vincular Variables al Texto
-                  </Button>
-                </section>
+            <div>
+              <Label className="text-xs uppercase tracking-widest mb-1.5 block font-medium text-muted-foreground">Categoría</Label>
+              <Select value={categoryId} onValueChange={setCategoryId}>
+                <SelectTrigger className="bg-background rounded-2xl h-11">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sin categoría</SelectItem>
+                  {categories.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-xs uppercase tracking-widest mb-1.5 block font-medium text-muted-foreground">Etiquetas</Label>
+              <div className="flex flex-wrap gap-1.5 min-h-11 rounded-2xl border bg-background p-2">
+                {tags.length === 0 && <span className="text-xs text-muted-foreground px-1">Sin etiquetas</span>}
+                {tags.map(tag => (
+                  <Badge
+                    key={tag.id}
+                    variant={selectedTagIds.includes(tag.id) ? 'default' : 'outline'}
+                    onClick={() => toggleTag(tag.id)}
+                    className="cursor-pointer rounded-full text-xs px-3 active:scale-95 transition"
+                  >
+                    {tag.name}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Dynamic variables — clean chips + editor */}
+          {draftType === 'dynamic' && (
+            <div className="rounded-3xl border bg-background p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Variable className="h-4 w-4" />
+                <div className="font-semibold text-sm">Variables dinámicas</div>
+              </div>
+
+              {dynamicVars.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {dynamicVars.map(v => (
+                    <Badge key={v} variant="secondary" className="rounded-full px-3 py-px text-xs font-mono">[[{v}]]</Badge>
+                  ))}
+                </div>
               )}
 
-              {/* MODO AVANZADO (Switch) */}
-              <section className="pt-4 border-t">
-                <div className="flex items-center justify-between p-3 rounded-lg border bg-secondary/10">
-                  <div className="space-y-0.5">
-                    <Label className="text-sm font-bold">Modo Flujos</Label>
-                    <p className="text-[10px] text-muted-foreground uppercase">Workflows & CRM</p>
-                  </div>
-                  <Switch checked={advancedMode} onCheckedChange={setAdvancedMode} />
-                </div>
+              <Textarea
+                value={placeholderEditor}
+                onChange={(e) => setPlaceholderEditor(e.target.value)}
+                placeholder="variable1&#10;variable2"
+                className="font-mono text-xs bg-muted/50 border-0 rounded-2xl min-h-[64px]"
+              />
+              <Button size="sm" variant="secondary" className="mt-3 rounded-2xl" onClick={handleNormalizeDynamicContent}>
+                Sincronizar variables con el contenido
+              </Button>
+            </div>
+          )}
 
-                {advancedMode && (
-  <div className="mt-4 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
-    {/* Selector de Contacto */}
-    <div className="space-y-1">
-      <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Contacto Vinculado</Label>
-      <Select value={contactId} onValueChange={setContactId}>
-        <SelectTrigger className="h-9 w-full bg-background">
-          <SelectValue placeholder="Seleccionar contacto" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="none">Sin contacto</SelectItem>
-          {contacts.map((c) => (
-            <SelectItem key={c.id} value={String(c.id)}>
-              {c.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-
-    {/* Selector de Agente/Usuario */}
-    <div className="space-y-1">
-      <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Agente Asignado</Label>
-      <Select value={assignedUserId} onValueChange={setAssignedUserId}>
-        <SelectTrigger className="h-9 w-full bg-background">
-          <SelectValue placeholder="Seleccionar agente" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="none">Sin agente</SelectItem>
-          {agents.map((a) => (
-            <SelectItem key={a.id} value={String(a.id)}>
-              {a.name ?? a.email}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-
-    {/* Selector de Departamento */}
-    <div className="space-y-1">
-      <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Departamento</Label>
-      <Select value={departmentId} onValueChange={setDepartmentId}>
-        <SelectTrigger className="h-9 w-full bg-background">
-          <SelectValue placeholder="Seleccionar departamento" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="none">Sin departamento</SelectItem>
-          {departments.map((d) => (
-            <SelectItem key={d.id} value={String(d.id)}>
-              {d.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  </div>
-)}
-              </section>
+          {/* AI Assistant — subtle modern */}
+          <div className="rounded-3xl border bg-background p-5">
+            <div className="flex items-center gap-2 mb-3 text-sm font-medium">
+              <Sparkles className="h-4 w-4 text-primary" /> Asistente IA
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Select value={aiMode} onValueChange={(v: any) => setAiMode(v)}>
+                <SelectTrigger className="w-full sm:w-[140px] bg-muted/40 rounded-2xl"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="create">Crear</SelectItem>
+                  <SelectItem value="rewrite">Reescribir</SelectItem>
+                  <SelectItem value="variables">Detectar vars</SelectItem>
+                </SelectContent>
+              </Select>
+              <div className="flex-1 flex gap-2">
+                <Input
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  placeholder="Describe lo que necesitas…"
+                  className="bg-muted/40 rounded-2xl"
+                />
+                <Button onClick={handleGenerateWithAi} disabled={isGenerating} className="rounded-2xl px-4">
+                  {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Generar'}
+                </Button>
+              </div>
             </div>
           </div>
+
+          {/* Advanced toggle */}
+          <div className="pt-2">
+            <div className="flex items-center justify-between rounded-2xl border bg-background px-4 py-3">
+              <div>
+                <div className="text-sm font-medium">Opciones avanzadas</div>
+                <div className="text-[11px] text-muted-foreground">Asociar contacto, agente o flujo</div>
+              </div>
+              <Switch checked={advancedMode} onCheckedChange={setAdvancedMode} />
+            </div>
+
+            {advancedMode && (
+              <div className="mt-4 grid gap-4 md:grid-cols-3 bg-background border rounded-3xl p-4">
+                {[
+                  { label: 'Contacto', state: contactId, setter: setContactId, items: contacts },
+                  { label: 'Agente', state: assignedUserId, setter: setAssignedUserId, items: agents },
+                  { label: 'Departamento', state: departmentId, setter: setDepartmentId, items: departments },
+                ].map((row, idx) => (
+                  <div key={idx}>
+                    <Label className="text-[10px] uppercase text-muted-foreground tracking-widest mb-1 block">{row.label}</Label>
+                    <Select value={row.state} onValueChange={row.setter}>
+                      <SelectTrigger className="rounded-2xl bg-muted/30 h-10"><SelectValue placeholder={`Sin ${row.label.toLowerCase()}`} /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Ninguno</SelectItem>
+                        {row.items.map((item: any) => (
+                          <SelectItem key={item.id} value={String(item.id)}>{item.name || item.email}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Workflow (only when editing + advanced) */}
+          {isEditMode && advancedMode && (
+            <div className="border rounded-3xl p-4 bg-background">
+              <div className="uppercase text-[10px] tracking-widest mb-3 text-muted-foreground">Workflow</div>
+              <DraftWorkflowCanvas value={workflow} onChange={setWorkflow} departments={departments} />
+            </div>
+          )}
         </div>
 
-        {/* WORKFLOW CANVAS (Si aplica) */}
-        {isEditMode && advancedMode && (
-          <div className="border-t bg-secondary/5 p-4 max-h-[300px] overflow-y-auto">
-            <DraftWorkflowCanvas value={workflow} onChange={setWorkflow} departments={departments} />
-          </div>
-        )}
-
-        <DialogFooter className="p-4 border-t bg-background shrink-0">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={handleSave} disabled={isSaving} className="min-w-[120px]">
-            {isSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : 'Guardar Borrador'}
+        {/* Clean bottom bar */}
+        <DialogFooter className="p-4 border-t bg-background flex-row gap-2 sm:gap-2">
+          <Button variant="ghost" onClick={() => onOpenChange(false)} className="rounded-2xl flex-1 sm:flex-none">Cancelar</Button>
+          <Button onClick={handleSave} disabled={isSaving} className="rounded-2xl flex-1 sm:flex-none min-w-[128px]">
+            {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+            Guardar
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -16,9 +16,11 @@ export default async function AdminSettingsPage() {
   const stripe = providers.find((p) => p.provider === 'stripe');
   const manual = providers.find((p) => p.provider === 'manual');
   const mp = providers.find((p) => p.provider === 'mercadopago');
+  const ls = providers.find((p) => p.provider === 'lemonsqueezy');
 
   const stripeConfig = (stripe?.config ?? {}) as Record<string, string>;
   const mpConfig = (mp?.config ?? {}) as Record<string, string>;
+  const lsConfig = (ls?.config ?? {}) as Record<string, string>;
 
   return (
     <div className="space-y-8">
@@ -62,15 +64,15 @@ export default async function AdminSettingsPage() {
             <input type="hidden" name="provider" value="stripe" />
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label>Secret Key</Label>
+                <Label>Clave secreta</Label>
                 <Input name="secretKey" defaultValue={stripeConfig.secretKey || ''} placeholder="sk_live_..." />
               </div>
               <div className="space-y-2">
-                <Label>Publishable Key</Label>
+                <Label>Clave publicable</Label>
                 <Input name="publishableKey" defaultValue={stripeConfig.publishableKey || ''} placeholder="pk_live_..." />
               </div>
               <div className="space-y-2">
-                <Label>Webhook Secret</Label>
+                <Label>Secreto del webhook</Label>
                 <Input name="webhookSecret" defaultValue={stripeConfig.webhookSecret || ''} placeholder="whsec_..." />
               </div>
             </div>
@@ -98,24 +100,24 @@ export default async function AdminSettingsPage() {
           <form action={saveProviderConfig} className="space-y-4">
             <input type="hidden" name="provider" value="mercadopago" />
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2"><Label>Access Token</Label><Input name="accessToken" defaultValue={mpConfig.accessToken || ''} /></div>
-              <div className="space-y-2"><Label>Public Key</Label><Input name="publicKey" defaultValue={mpConfig.publicKey || ''} /></div>
-              <div className="space-y-2"><Label>Webhook Secret</Label><Input name="webhookSecret" defaultValue={mpConfig.webhookSecret || ''} /></div>
-              <div className="space-y-2"><Label>Success URL</Label><Input name="successUrl" defaultValue={mpConfig.successUrl || ''} /></div>
-              <div className="space-y-2"><Label>Failure URL</Label><Input name="failureUrl" defaultValue={mpConfig.failureUrl || ''} /></div>
-              <div className="space-y-2"><Label>Pending URL</Label><Input name="pendingUrl" defaultValue={mpConfig.pendingUrl || ''} /></div>
+              <div className="space-y-2"><Label>Token de acceso</Label><Input name="accessToken" defaultValue={mpConfig.accessToken || ''} /></div>
+              <div className="space-y-2"><Label>Clave pública</Label><Input name="publicKey" defaultValue={mpConfig.publicKey || ''} /></div>
+              <div className="space-y-2"><Label>Secreto del webhook</Label><Input name="webhookSecret" defaultValue={mpConfig.webhookSecret || ''} /></div>
+              <div className="space-y-2"><Label>URL de éxito</Label><Input name="successUrl" defaultValue={mpConfig.successUrl || ''} /></div>
+              <div className="space-y-2"><Label>URL de error</Label><Input name="failureUrl" defaultValue={mpConfig.failureUrl || ''} /></div>
+              <div className="space-y-2"><Label>URL pendiente</Label><Input name="pendingUrl" defaultValue={mpConfig.pendingUrl || ''} /></div>
               <div className="space-y-2">
-                <Label>Checkout Mode</Label>
+                <Label>Modo de checkout</Label>
                 <select
                   name="checkoutMode"
                   defaultValue={mpConfig.checkoutMode || 'payment'}
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
-                  <option value="payment">Payment (Checkout Pro)</option>
-                  <option value="subscription">Subscription (Preapproval)</option>
+                  <option value="payment">Pago (Checkout Pro)</option>
+                  <option value="subscription">Suscripción (Preapproval)</option>
                 </select>
               </div>
-              <div className="space-y-2"><Label>Subscription Reason</Label><Input name="subscriptionReason" defaultValue={mpConfig.subscriptionReason || ''} /></div>
+              <div className="space-y-2"><Label>Motivo de suscripción</Label><Input name="subscriptionReason" defaultValue={mpConfig.subscriptionReason || ''} /></div>
             </div>
             <div className="flex items-center gap-6">
               <label className="flex items-center gap-2 text-sm">
@@ -134,7 +136,36 @@ export default async function AdminSettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Offline / Manual Payment</CardTitle>
+          <CardTitle>Lemon Squeezy</CardTitle>
+          <CardDescription>Configura la API key, la tienda y el webhook.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={saveProviderConfig} className="space-y-4">
+            <input type="hidden" name="provider" value="lemonsqueezy" />
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2"><Label>API key</Label><Input name="apiKey" defaultValue={lsConfig.apiKey || ''} /></div>
+              <div className="space-y-2"><Label>Store ID</Label><Input name="storeId" defaultValue={lsConfig.storeId || ''} /></div>
+              <div className="space-y-2"><Label>Secreto del webhook</Label><Input name="webhookSecret" defaultValue={lsConfig.webhookSecret || ''} /></div>
+              <div className="space-y-2"><Label>URL de éxito</Label><Input name="successUrl" defaultValue={lsConfig.successUrl || ''} /></div>
+            </div>
+            <div className="flex items-center gap-6">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="enabled" defaultChecked={Boolean(ls?.enabled)} />
+                Habilitado
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="isDefault" defaultChecked={Boolean(ls?.isDefault)} />
+                Predeterminado
+              </label>
+            </div>
+            <Button type="submit">Guardar Lemon Squeezy</Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Pago offline / manual</CardTitle>
           <CardDescription>Permite aceptar pagos fuera de línea y aprobarlos en el panel de pagos.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -150,7 +181,7 @@ export default async function AdminSettingsPage() {
                 Predeterminado
               </label>
             </div>
-            <Button type="submit">Guardar Manual Payment</Button>
+            <Button type="submit">Guardar pago manual</Button>
           </form>
         </CardContent>
       </Card>

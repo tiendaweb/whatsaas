@@ -1,7 +1,7 @@
 import 'server-only';
 import { z } from 'zod';
 import { assertPermission, parse, type GrokActionContext, type GrokActionTool } from '@/lib/plugins/grok-connector/server/actions';
-import { approveBatch, getBatch, listBatches, markResult, proposeBatch, QueueError } from '@/lib/plugins/sales-ops/server/queue';
+import { approveBatch, editAction, getBatch, listBatches, markResult, proposeBatch, QueueError, rejectBatch, removeFromBatch } from '@/lib/plugins/sales-ops/server/queue';
 import { ACTION_KINDS, ACTION_ROLES, ACTION_STATUSES, ANALYSIS_STATUSES, GATES, OWNERS, SALES_OPS_PLUGIN_ID } from '@/lib/plugins/sales-ops/shared/taxonomy';
 
 /**
@@ -18,7 +18,10 @@ import { ACTION_KINDS, ACTION_ROLES, ACTION_STATUSES, ANALYSIS_STATUSES, GATES, 
  */
 
 const KIND_HELP =
-  'send_message (mensaje de WhatsApp; requiere payload_template.text), create_task (tarea para el responsable), ' +
+  'send_message (mensaje de WhatsApp; requiere payload_template.text), schedule_message (mensaje programado: requiere ' +
+  'payload_template.text y send_at; al ejecutar se crea un programado por contacto y sale solo a esa hora), create_task ' +
+  '(tarea para el responsable), request_demo (al ejecutar, una tarea por contacto en el workspace "Demos" de Tareas OS con la ' +
+  'investigación del chat y el prompt para generar la web en AAPP SPACE; payload_template.text es la indicación opcional), ' +
   'register_sale (registrar cobro), mark_pre_descarte (pasar a pre-descarte, sin mensaje), mark_descarte (descarte definitivo; ' +
   'sólo lo aprueba una persona), assign_owner (devolver a la cola de un responsable), schedule_call (agendar llamada).';
 
@@ -95,6 +98,7 @@ export const queueActionTools: GrokActionTool[] = [
             text_b: { type: 'string', maxLength: 4000, description: 'Texto de la variante B (obligatorio con variant_split).' },
             task_title: { type: 'string', maxLength: 200 },
             due_in_days: { type: 'integer', minimum: 0, maximum: 365 },
+            send_at: { type: 'string', maxLength: 40, description: 'schedule_message: fecha y hora de salida ISO 8601 (al menos 5 min en el futuro).' },
             extra: { type: 'object', additionalProperties: true, description: 'Datos libres que acompañan la acción (p. ej. { owner: "carlos" } en assign_owner).' },
           },
         },
@@ -121,6 +125,61 @@ export const queueActionTools: GrokActionTool[] = [
         batch_id: { type: 'string', minLength: 3, maxLength: 64 },
         exclude_action_ids: { type: 'array', items: { type: 'integer', minimum: 1 }, maxItems: 5000, description: 'Ids de acción (filas) que se sacan del lote antes de aprobar.' },
         confirm: { type: 'boolean', description: 'Debe ser true: un humano revisó la lista.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'whatspro_sales_queue_edit',
+    description:
+      'Corrige el texto (payload.text) o el título de tarea (task_title) de UNA fila propuesta del lote, sin sacar al contacto ' +
+      'ni armar otro lote. Sólo funciona mientras la fila está proposed/pending_approval: después de aprobar el texto es lo ' +
+      'que se firmó y no se toca. El texto se guarda tal cual (las variables {{nombre}} ya venían resueltas al proponer). ' +
+      'Releé la fila con whatspro_sales_queue_get antes de escribir. No envía nada ni toca el CRM.',
+    inputSchema: {
+      type: 'object',
+      required: ['action_id'],
+      properties: {
+        action_id: { type: 'integer', minimum: 1 },
+        text: { type: 'string', maxLength: 4000, description: 'Texto final del mensaje (send_message).' },
+        task_title: { type: 'string', maxLength: 200, description: 'Título de la tarea (create_task).' },
+        dry_run: { type: 'boolean' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'whatspro_sales_queue_remove',
+    description:
+      'Quita uno o más contactos de un lote: cada fila pasa a rejected en el momento (queda el rastro, no se borra). ' +
+      'Sirve para filas proposed, pending_approval o approved que todavía no salieron; lo executed no se toca. Es distinto de ' +
+      'exclude_action_ids en approve (que sólo aplica al aprobar): esto es inmediato y también funciona en lotes ya aprobados. ' +
+      'Quitar una fila approved exige el rol del lote. Exige confirm=true.',
+    inputSchema: {
+      type: 'object',
+      required: ['action_ids', 'confirm'],
+      properties: {
+        action_ids: { type: 'array', items: { type: 'integer', minimum: 1 }, minItems: 1, maxItems: 500, description: 'Ids de fila (action.id en whatspro_sales_queue_get).' },
+        confirm: { type: 'boolean', description: 'Debe ser true.' },
+        dry_run: { type: 'boolean' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'whatspro_sales_queue_reject',
+    description:
+      'Rechaza un lote entero: todas sus filas proposed, pending_approval y approved pasan a rejected con el motivo. Lo ya ' +
+      'executed/resulted no cambia. Usalo cuando el lote no debe salir (texto equivocado, segmento mal elegido); para sacar a ' +
+      'algunos contactos nomás usá whatspro_sales_queue_remove. Exige confirm=true. No envía nada ni toca el CRM.',
+    inputSchema: {
+      type: 'object',
+      required: ['batch_id', 'confirm'],
+      properties: {
+        batch_id: { type: 'string', minLength: 3, maxLength: 64 },
+        reason: { type: 'string', maxLength: 300 },
+        confirm: { type: 'boolean', description: 'Debe ser true.' },
+        dry_run: { type: 'boolean' },
       },
       additionalProperties: false,
     },
@@ -178,6 +237,7 @@ const proposeSchema = z.object({
       text_b: z.string().max(4000).optional(),
       task_title: z.string().max(200).optional(),
       due_in_days: z.number().int().min(0).max(365).optional(),
+      send_at: z.string().max(40).optional(),
       extra: z.record(z.string(), z.unknown()).optional(),
     })
     .optional(),
@@ -190,6 +250,26 @@ const approveSchema = z.object({
   batch_id: z.string().min(3).max(64),
   exclude_action_ids: z.array(z.number().int().positive()).max(5000).optional(),
   confirm: z.boolean(),
+});
+
+const editSchema = z.object({
+  action_id: z.number().int().positive(),
+  text: z.string().max(4000).optional(),
+  task_title: z.string().max(200).optional(),
+  dry_run: z.boolean().optional(),
+});
+
+const removeSchema = z.object({
+  action_ids: z.array(z.number().int().positive()).min(1).max(500),
+  confirm: z.boolean(),
+  dry_run: z.boolean().optional(),
+});
+
+const rejectSchema = z.object({
+  batch_id: z.string().min(3).max(64),
+  reason: z.string().max(300).optional(),
+  confirm: z.boolean(),
+  dry_run: z.boolean().optional(),
 });
 
 const resultSchema = z.object({
@@ -250,6 +330,7 @@ export async function executeQueueTool(name: string, input: Record<string, unkno
               textB: data.payload_template.text_b,
               taskTitle: data.payload_template.task_title,
               dueInDays: data.payload_template.due_in_days,
+              sendAt: data.payload_template.send_at,
               extra: data.payload_template.extra,
             }
           : undefined,
@@ -278,6 +359,47 @@ export async function executeQueueTool(name: string, input: Record<string, unkno
     try {
       const result = await approveBatch(context.teamId, context.userId, data.batch_id, { excludeActionIds: data.exclude_action_ids });
       return { ...result, note: 'Aprobado. La ejecución es por conector (un envío por llamada) o manual hasta la Fase 6.' };
+    } catch (error) {
+      friendly(error);
+    }
+  }
+
+  if (name === 'whatspro_sales_queue_edit') {
+    await assertPermission(context, 'salesOpsWrite', SALES_OPS_PLUGIN_ID);
+    const data = parse(editSchema, input);
+    if (data.dry_run) return { dryRun: true, actionId: data.action_id, changes: { text: data.text, taskTitle: data.task_title } };
+    try {
+      const result = await editAction(context.teamId, context.userId, data.action_id, { text: data.text, taskTitle: data.task_title });
+      return { ...result, note: 'Texto corregido. El lote sigue pendiente de aprobación.' };
+    } catch (error) {
+      friendly(error);
+    }
+  }
+
+  if (name === 'whatspro_sales_queue_remove') {
+    await assertPermission(context, 'salesOpsWrite', SALES_OPS_PLUGIN_ID);
+    const data = parse(removeSchema, input);
+    if (!data.confirm) throw new Error('confirm debe ser true: quitar del lote es definitivo para esa fila.');
+    if (data.dry_run) return { dryRun: true, actionIds: data.action_ids };
+    const removed: Array<{ actionId: number; batchId: string; chatId: number }> = [];
+    const errors: Array<{ actionId: number; error: string }> = [];
+    for (const actionId of data.action_ids) {
+      try {
+        removed.push(await removeFromBatch(context.teamId, context.userId, actionId));
+      } catch (error) {
+        errors.push({ actionId, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return { removed, errors, summary: `${removed.length} fuera del lote${errors.length ? `, ${errors.length} no se pudieron quitar` : ''}.` };
+  }
+
+  if (name === 'whatspro_sales_queue_reject') {
+    await assertPermission(context, 'salesOpsWrite', SALES_OPS_PLUGIN_ID);
+    const data = parse(rejectSchema, input);
+    if (!data.confirm) throw new Error('confirm debe ser true: rechazar el lote saca a todos sus contactos.');
+    if (data.dry_run) return { dryRun: true, batchId: data.batch_id };
+    try {
+      return await rejectBatch(context.teamId, context.userId, data.batch_id, data.reason ?? 'rechazado por conector');
     } catch (error) {
       friendly(error);
     }

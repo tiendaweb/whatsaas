@@ -1,9 +1,10 @@
 import { db } from '@/lib/db/drizzle';
 import { relationExists } from '@/lib/db/relation-exists';
 import { paymentProviderSettings } from '@/lib/db/schema';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
+import { decryptProviderConfig } from '@/lib/payments/secrets';
 
-export type PaymentProviderId = 'stripe' | 'manual' | 'mercadopago';
+export type PaymentProviderId = 'stripe' | 'manual' | 'mercadopago' | 'lemonsqueezy';
 
 export type ProviderConfigMap = {
   stripe: Record<string, string | undefined>;
@@ -18,11 +19,22 @@ export type ProviderConfigMap = {
     checkoutMode?: 'payment' | 'subscription';
     subscriptionReason?: string;
   };
+  lemonsqueezy: {
+    apiKey?: string;
+    storeId?: string;
+    webhookSecret?: string;
+    successUrl?: string;
+  };
 };
 
 function getEnvDefaultProvider(): PaymentProviderId {
   const envProvider = process.env.PAYMENT_PROVIDER;
-  if (envProvider === 'manual' || envProvider === 'mercadopago' || envProvider === 'stripe') {
+  if (
+    envProvider === 'manual' ||
+    envProvider === 'mercadopago' ||
+    envProvider === 'stripe' ||
+    envProvider === 'lemonsqueezy'
+  ) {
     return envProvider;
   }
 
@@ -65,16 +77,32 @@ async function ensurePaymentTables() {
   ]);
 
   if (!hasProviderSettings) {
+    // Sin UNIQUE global sobre `provider`: cada reseller tiene su propia fila por
+    // proveedor. La unicidad se expresa con los dos índices parciales de abajo
+    // (mismo esquema que la migración 0050).
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS payment_provider_settings (
         id serial PRIMARY KEY,
-        provider varchar(50) NOT NULL UNIQUE,
+        reseller_id integer,
+        provider varchar(50) NOT NULL,
         enabled boolean NOT NULL DEFAULT false,
         is_default boolean NOT NULL DEFAULT false,
         config jsonb NOT NULL DEFAULT '{}'::jsonb,
         created_at timestamp NOT NULL DEFAULT now(),
         updated_at timestamp NOT NULL DEFAULT now()
       );
+    `);
+
+    await db.execute(sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS pps_provider_platform_uidx
+      ON payment_provider_settings (provider)
+      WHERE reseller_id IS NULL;
+    `);
+
+    await db.execute(sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS pps_provider_reseller_uidx
+      ON payment_provider_settings (reseller_id, provider)
+      WHERE reseller_id IS NOT NULL;
     `);
   }
 
@@ -97,10 +125,16 @@ async function ensurePaymentTables() {
     `);
   }
 
+  await db.execute(sql`
+    ALTER TABLE manual_payments
+    ADD COLUMN IF NOT EXISTS reseller_id integer REFERENCES resellers(id) ON DELETE cascade;
+  `);
+
   if (!hasWebhookEvents) {
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS payment_webhook_events (
         id serial PRIMARY KEY,
+        reseller_id integer REFERENCES resellers(id) ON DELETE cascade,
         provider varchar(50) NOT NULL,
         topic varchar(80) NOT NULL,
         event_id varchar(191),
@@ -114,32 +148,73 @@ async function ensurePaymentTables() {
       );
     `);
 
-    await db.execute(sql`
-      CREATE UNIQUE INDEX IF NOT EXISTS payment_webhook_events_provider_event_id_uidx
-      ON payment_webhook_events (provider, event_id)
-      WHERE event_id IS NOT NULL;
-    `);
-
-    await db.execute(sql`
-      CREATE UNIQUE INDEX IF NOT EXISTS payment_webhook_events_provider_payment_id_uidx
-      ON payment_webhook_events (provider, payment_id)
-      WHERE payment_id IS NOT NULL;
-    `);
   }
+
+  await db.execute(sql`
+    ALTER TABLE payment_webhook_events
+    ADD COLUMN IF NOT EXISTS reseller_id integer REFERENCES resellers(id) ON DELETE cascade;
+  `);
+  await db.execute(sql`DROP INDEX IF EXISTS payment_webhook_events_provider_event_id_uidx;`);
+  await db.execute(sql`DROP INDEX IF EXISTS payment_webhook_events_provider_payment_id_uidx;`);
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS pwe_provider_event_uidx
+    ON payment_webhook_events (provider, COALESCE(reseller_id, 0), event_id)
+    WHERE event_id IS NOT NULL;
+  `);
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS pwe_provider_payment_uidx
+    ON payment_webhook_events (provider, COALESCE(reseller_id, 0), payment_id)
+    WHERE payment_id IS NOT NULL;
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS payment_audit_events (
+      id serial PRIMARY KEY,
+      reseller_id integer REFERENCES resellers(id) ON DELETE set null,
+      team_id integer REFERENCES teams(id) ON DELETE set null,
+      provider varchar(50) NOT NULL,
+      payment_reference varchar(191) NOT NULL,
+      previous_status varchar(30),
+      next_status varchar(30) NOT NULL,
+      actor varchar(30) NOT NULL,
+      metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamp NOT NULL DEFAULT now()
+    );
+  `);
 
   paymentTablesBootstrapped = true;
 }
 
-export async function ensurePaymentProviderDefaults() {
+/**
+ * La tabla contiene tanto las credenciales de la plataforma (reseller_id NULL) como
+ * las de cada reseller. Toda lectura tiene que acotar el tenant: sin esto, la
+ * plataforma leería la pasarela de un reseller cualquiera.
+ */
+function scopeToTenant(resellerId?: number | null) {
+  return resellerId == null
+    ? isNull(paymentProviderSettings.resellerId)
+    : eq(paymentProviderSettings.resellerId, resellerId);
+}
+
+export async function ensurePaymentProviderDefaults(resellerId?: number | null) {
   try {
     await ensurePaymentTables();
+
+    // Los defaults solo se siembran para la plataforma. Un reseller arranca sin
+    // credenciales y las carga desde su panel.
+    if (resellerId != null) return;
+
     const requiredProviders = [
       { provider: 'stripe', enabled: true, isDefault: true, config: {} },
       { provider: 'manual', enabled: true, isDefault: false, config: {} },
       { provider: 'mercadopago', enabled: false, isDefault: false, config: {} },
+      { provider: 'lemonsqueezy', enabled: false, isDefault: false, config: {} },
     ] as const;
 
-    const existing = await db.select().from(paymentProviderSettings);
+    const existing = await db
+      .select()
+      .from(paymentProviderSettings)
+      .where(scopeToTenant(null));
     const existingProviders = new Set(existing.map((row) => row.provider));
 
     const missingProviders = requiredProviders.filter((provider) => !existingProviders.has(provider.provider));
@@ -147,7 +222,9 @@ export async function ensurePaymentProviderDefaults() {
       await db.insert(paymentProviderSettings).values(missingProviders).onConflictDoNothing();
     }
 
-    const providers = missingProviders.length > 0 ? await db.select().from(paymentProviderSettings) : existing;
+    const providers = missingProviders.length > 0
+      ? await db.select().from(paymentProviderSettings).where(scopeToTenant(null))
+      : existing;
     const hasDefaultProvider = providers.some((provider) => provider.isDefault);
 
     if (!hasDefaultProvider) {
@@ -161,7 +238,12 @@ export async function ensurePaymentProviderDefaults() {
         await db
           .update(paymentProviderSettings)
           .set({ isDefault: true })
-          .where(eq(paymentProviderSettings.provider, deterministicDefault.provider));
+          .where(
+            and(
+              scopeToTenant(null),
+              eq(paymentProviderSettings.provider, deterministicDefault.provider),
+            ),
+          );
       }
     }
   } catch (error) {
@@ -173,10 +255,13 @@ export async function ensurePaymentProviderDefaults() {
   }
 }
 
-export async function getPaymentProvidersConfig() {
+export async function getPaymentProvidersConfig(resellerId?: number | null) {
   try {
-    await ensurePaymentProviderDefaults();
-    return await db.select().from(paymentProviderSettings);
+    await ensurePaymentProviderDefaults(resellerId);
+    return await db
+      .select()
+      .from(paymentProviderSettings)
+      .where(scopeToTenant(resellerId));
   } catch (error) {
     if (isRelationMissingError(error)) {
       warnWithFallback('getPaymentProvidersConfig', error);
@@ -186,14 +271,20 @@ export async function getPaymentProvidersConfig() {
   }
 }
 
-export async function getActivePaymentProvider(): Promise<PaymentProviderId> {
+export async function getActivePaymentProvider(
+  resellerId?: number | null,
+): Promise<PaymentProviderId> {
   try {
-    const providers = await getPaymentProvidersConfig();
+    const providers = await getPaymentProvidersConfig(resellerId);
     const defaultProvider = providers.find((p) => p.isDefault && p.enabled);
     if (defaultProvider) return defaultProvider.provider as PaymentProviderId;
 
     const anyEnabled = providers.find((p) => p.enabled);
     if (anyEnabled) return anyEnabled.provider as PaymentProviderId;
+
+    // Un reseller sin proveedor propio configurado no hereda el de la plataforma:
+    // cobrar con las credenciales de la plataforma mandaría su dinero a otra cuenta.
+    if (resellerId != null) return 'manual';
 
     return getEnvDefaultProvider();
   } catch (error) {
@@ -205,11 +296,17 @@ export async function getActivePaymentProvider(): Promise<PaymentProviderId> {
   }
 }
 
-export async function getProviderConfig<T extends PaymentProviderId>(provider: T): Promise<ProviderConfigMap[T]> {
-  await ensurePaymentProviderDefaults();
+export async function getProviderConfig<T extends PaymentProviderId>(
+  provider: T,
+  resellerId?: number | null,
+): Promise<ProviderConfigMap[T]> {
+  await ensurePaymentProviderDefaults(resellerId);
   const settings = await db.query.paymentProviderSettings.findFirst({
-    where: eq(paymentProviderSettings.provider, provider),
+    where: and(
+      scopeToTenant(resellerId),
+      eq(paymentProviderSettings.provider, provider),
+    ),
   });
 
-  return (settings?.config ?? {}) as ProviderConfigMap[T];
+  return decryptProviderConfig((settings?.config ?? {}) as ProviderConfigMap[T]);
 }

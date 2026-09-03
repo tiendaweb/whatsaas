@@ -65,7 +65,8 @@ import {
   Settings2,
   MoreVertical,
   Building2,
-  Sparkles,
+  BriefcaseBusiness,
+  UserRoundPlus,
   Link2,
   Mail,
   Globe2,
@@ -89,11 +90,12 @@ import {
 import { cn } from '@/lib/utils';
 import { daysUntil, serviceUrgency, type ServiceUrgency } from '@/lib/aapp/subscription';
 import { ChatAgendaPicker } from '@/components/dashboard/ChatAgendaPicker';
+import { CommercialPanel } from '@/components/chat/CommercialPanel';
 import { ContactTaskPanel } from '@/components/chat/ContactTaskPanel';
 import { ContactTagsEditor } from '@/components/chat/ContactTagsEditor';
 import { CustomerProfileDialog } from '@/components/chat/CustomerProfileDialog';
 import { RadarPanel } from '@/lib/plugins/radar/ui/RadarPanel';
-import { isRadarUserEmail } from '@/lib/plugins/radar/shared/constants';
+import { isRadarEnabledInNav } from '@/lib/plugins/radar/shared/constants';
 import { Radar as RadarIcon } from 'lucide-react';
 
 type Agent = Pick<import('@/lib/db/schema').User, 'id' | 'name' | 'email'>;
@@ -588,8 +590,10 @@ export function ChatSidebar({ chatDetails, chatId, isCollapsed = false, onToggle
   const instanceId = searchParams.get('instanceId');
 
   const [sidebarView, setSidebarView] = useState<'contact' | 'radar'>('contact');
-  const { data: currentUser } = useSWR<{ email?: string }>('/api/user', fetcher);
-  const isRadarUser = isRadarUserEmail(currentUser?.email);
+  // Radar se muestra a quien lo tenga habilitado: `/api/plugins/nav` ya resuelve
+  // la activación por usuario, así que basta con ver si la ruta viene ahí.
+  const { data: radarNav } = useSWR<Array<{ href?: string }>>('/api/plugins/nav', fetcher, { revalidateOnFocus: false });
+  const isRadarUser = isRadarEnabledInNav(radarNav);
 
   const [isAssigningAgent, setIsAssigningAgent] = useState(false);
   const [isAssigningDepartment, setIsAssigningDepartment] = useState(false);
@@ -731,7 +735,7 @@ export function ChatSidebar({ chatDetails, chatId, isCollapsed = false, onToggle
           className="w-full justify-center bg-gradient-to-r from-rose-500 to-pink-500 text-white hover:from-rose-600 hover:to-pink-600"
           onClick={openBusinessWomanClient}
         >
-          <Sparkles className="h-4 w-4 mr-2" />
+          <BriefcaseBusiness className="h-4 w-4 mr-2" />
           Ver en Business Womman
         </Button>
       );
@@ -745,7 +749,7 @@ export function ChatSidebar({ chatDetails, chatId, isCollapsed = false, onToggle
         onClick={handleCreateBusinessWomanClient}
         disabled={isCreatingBusinessWomanClient}
       >
-        {isCreatingBusinessWomanClient ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+        {isCreatingBusinessWomanClient ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <UserRoundPlus className="h-4 w-4 mr-2" />}
         Crear Cliente
       </Button>
     );
@@ -1015,6 +1019,8 @@ export function ChatSidebar({ chatDetails, chatId, isCollapsed = false, onToggle
 
         {renderBusinessWomanAction()}
 
+        <CommercialPanel contactId={contact?.id} />
+
         {aappSpaceSummary?.customer && (
           <section className="space-y-3 border-y py-4">
             <div className="flex items-center justify-between gap-2">
@@ -1228,6 +1234,8 @@ export function ChatSidebar({ chatDetails, chatId, isCollapsed = false, onToggle
             <RadarPanel
               contactId={contact.id}
               chatId={chatId}
+              contactName={contact.name}
+              remoteJid={remoteJid}
               onBack={() => setSidebarView('contact')}
               onUseSuggestion={(text) => onInsertComposerText?.(text)}
               onSuggestionsLoaded={onRadarSuggestionsLoaded}

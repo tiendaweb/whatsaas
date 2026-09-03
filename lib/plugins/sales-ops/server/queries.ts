@@ -15,7 +15,12 @@ import {
   teamCommercialAnalysis,
   teamCommercialAnalysisVersions,
   teamCommercialSignals,
+  teamPromptRuns,
+  teamScheduledMessages,
+  teamCustomerContacts,
 } from '@/lib/db/schema';
+import { condicionDeChatMarcado } from '@/lib/chats/internos';
+import { getSalesOpsSettings } from './settings';
 import { maskJid } from '@/lib/desktop/command-center/types';
 import type {
   ActionRow,
@@ -34,7 +39,9 @@ import {
   FRONT_OPPORTUNITY_GATES,
   FRONT_SWEEP_GATES,
   SEND_COOLDOWN_HOURS,
+  URGENT_SIGNALS,
   type Gate,
+  type SignalKind,
 } from '../shared/taxonomy';
 
 export const MONEY_GATES: Gate[] = ['G8', 'G9', 'G10'];
@@ -223,9 +230,12 @@ const AGE_INTERVALS: Record<NonNullable<ListQuery['ageBucket']>, SQL> = {
   gt180: sql`${teamCommercialAnalysis.lastCustomerMessageAt} < now() - interval '180 days'`,
 };
 
-function buildWhere(teamId: number, q: ListQuery): SQL {
+function buildWhere(teamId: number, q: ListQuery, snoozeIds: number[] = []): SQL {
   const a = teamCommercialAnalysis;
-  const parts: Array<SQL | undefined> = [eq(a.teamId, teamId), vistaWhere(q.vista)];
+  // Los chats marcados en Limpieza (personal / equipo / otros) no aparecen en
+  // ninguna lista comercial: se ven sólo en su grupo de Limpieza. El análisis
+  // que tuvieran sigue guardado, así que desmarcarlos los devuelve a su lista.
+  const parts: Array<SQL | undefined> = [eq(a.teamId, teamId), condicionDeChatMarcado(), vistaWhere(q.vista)];
   if (q.gates?.length) parts.push(inArray(a.currentGate, q.gates));
   if (q.status?.length) parts.push(inArray(a.status, q.status));
   if (q.owner) parts.push(eq(a.recommendedOwner, q.owner));
@@ -241,6 +251,78 @@ function buildWhere(teamId: number, q: ListQuery): SQL {
   if (typeof q.automationActive === 'boolean') parts.push(eq(a.automationActive, q.automationActive));
   if (typeof q.stale === 'boolean') parts.push(eq(a.stale, q.stale));
   if (q.toReview) parts.push(and(isNotNull(a.analyzedAt), lt(a.confidence, 55)));
+  if (q.followUp) {
+    // Comparación de columna contra columna dentro del SQL: nada de `Date` en
+    // el filtro. Cuenta un envío ejecutado o una corrida de prompt cerrada
+    // POSTERIOR al análisis; lo anterior es de otra auditoría.
+    const tuvoSeguimiento = sql`(
+      exists (
+        select 1 from team_commercial_actions ac
+         where ac.team_id = ${teamId} and ac.chat_id = ${a.chatId}
+           and ac.status in ('executed', 'resulted')
+           and ac.executed_at is not null and ac.executed_at > ${a.analyzedAt}
+      )
+      or exists (
+        select 1 from team_prompt_runs pr
+         where pr.team_id = ${teamId} and pr.target_kind = 'chat' and pr.target_id = ${a.chatId}::text
+           and pr.status = 'completed'
+           and pr.completed_at is not null and pr.completed_at > ${a.analyzedAt}
+      )
+    )`;
+    parts.push(q.followUp === 'con' ? tuvoSeguimiento : sql`${a.analyzedAt} is not null and not ${tuvoSeguimiento}`);
+  }
+  if (snoozeIds.length) parts.push(q.snoozed === 'con' ? inArray(a.chatId, snoozeIds) : notInArray(a.chatId, snoozeIds));
+  else if (q.snoozed === 'con') parts.push(sql`false`);
+  if (q.executed) {
+    const leSalioAlgo = sql`exists (
+      select 1 from team_commercial_actions ac
+       where ac.team_id = ${teamId} and ac.chat_id = ${a.chatId}
+         and ac.status in ('executed', 'resulted') and ac.executed_at is not null
+    )`;
+    parts.push(q.executed === 'con' ? leSalioAlgo : sql`not ${leSalioAlgo}`);
+  }
+  if (q.queued) {
+    // "En cola" es una sola pregunta con tres orígenes: una acción del Command
+    // Center todavía sin ejecutar, un prompt esperando conector, o un mensaje
+    // programado vivo. Si se mira sólo uno de los tres, el contacto aparece
+    // como libre y alguien le escribe encima de algo que ya iba a salir.
+    const tieneAlgoEnCola = sql`(
+      exists (
+        select 1 from team_commercial_actions ac
+         where ac.team_id = ${teamId} and ac.chat_id = ${a.chatId}
+           and ac.status in ('proposed', 'pending_approval', 'approved', 'executing')
+      )
+      or exists (
+        select 1 from team_prompt_runs pr
+         where pr.team_id = ${teamId} and pr.target_kind = 'chat' and pr.target_id = ${a.chatId}::text
+           and pr.status in ('queued', 'in_progress')
+      )
+      or exists (
+        select 1 from team_scheduled_messages sm
+         where sm.team_id = ${teamId}
+           and sm.status = 'active'
+           and exists (
+             select 1 from jsonb_array_elements_text(sm.target_numbers) as n(numero)
+              where regexp_replace(n.numero, '[^0-9]', '', 'g') = regexp_replace(split_part(${chats.remoteJid}, '@', 1), '[^0-9]', '', 'g')
+           )
+      )
+    )`;
+    parts.push(q.queued === 'con' ? tieneAlgoEnCola : sql`not ${tieneAlgoEnCola}`);
+  }
+  if (q.scheduled) {
+    // Los programados guardan teléfonos sueltos, no chatId: se cruzan por
+    // dígitos contra el JID, igual que el enriquecido de la fila.
+    const tieneProgramado = sql`exists (
+      select 1 from team_scheduled_messages sm
+       where sm.team_id = ${teamId}
+         and sm.status in ('active', 'paused')
+         and exists (
+           select 1 from jsonb_array_elements_text(sm.target_numbers) as n(numero)
+            where regexp_replace(n.numero, '[^0-9]', '', 'g') = regexp_replace(split_part(${chats.remoteJid}, '@', 1), '[^0-9]', '', 'g')
+         )
+    )`;
+    parts.push(q.scheduled === 'con' ? tieneProgramado : sql`not ${tieneProgramado}`);
+  }
 
   const term = (q.q ?? '').trim();
   if (term) {
@@ -275,7 +357,8 @@ export async function listAnalyses(teamId: number, query: ListQuery): Promise<Li
   const a = teamCommercialAnalysis;
   const sort = query.sort ?? 'priority';
   const limit = Math.min(Math.max(1, query.limit ?? DEFAULT_LIMIT), MAX_LIMIT);
-  const where = buildWhere(teamId, query);
+  const snoozes = await vigentesSnoozes(teamId);
+  const where = buildWhere(teamId, query, snoozes.map((x) => x.chatId));
   const cursor = decodeCursor(query.cursor);
 
   let pageWhere: SQL = where;
@@ -316,6 +399,11 @@ export async function listAnalyses(teamId: number, query: ListQuery): Promise<Li
   const page = rowsRaw.slice(0, limit);
   const now = Date.now();
   const rows = page.map((r) => toRow(r as JoinedRow, now));
+  await anotarProgramados(teamId, page as JoinedRow[], rows);
+  await anotarSeguimiento(teamId, rows);
+  await anotarClientes(teamId, rows);
+  await anotarRadar(teamId, rows);
+  for (const r of rows) r.snoozedUntil = snoozes.find((x) => x.chatId === r.chatId)?.until ?? null;
   const last = page[page.length - 1];
 
   let nextCursor: string | null = null;
@@ -327,6 +415,184 @@ export async function listAnalyses(teamId: number, query: ListQuery): Promise<Li
   }
 
   return { rows, total: totalRow[0]?.n ?? 0, nextCursor };
+}
+
+/**
+ * Marca qué contactos ya tuvieron seguimiento **después** del análisis.
+ *
+ * Sin esto, "auditado" y "auditado y ya le escribimos" se veían igual en la
+ * lista, así que los recién auditados quedaban mezclados con los que ya están
+ * en curso y alguien los volvía a trabajar. El corte es la fecha del análisis:
+ * un envío de marzo no es seguimiento de una auditoría de agosto.
+ *
+ * Cuenta como seguimiento un envío ejecutado o una corrida de prompt cerrada.
+ * Las fechas se comparan en JS, nunca dentro del SQL (un `Date` en un FILTER
+ * revienta en runtime y el build lo deja pasar).
+ */
+/** Pospuestos vigentes (los vencidos se ignoran; se limpian al escribir). */
+export async function vigentesSnoozes(teamId: number): Promise<Array<{ chatId: number; until: string; note?: string }>> {
+  const ahora = new Date().toISOString();
+  return (await getSalesOpsSettings(teamId)).leadSnoozes.filter((x) => x.until > ahora);
+}
+
+/**
+ * Señales del radar sin atender por chat.
+ *
+ * En la lista importa lo mismo que en Respuestas —quién contestó y qué dijo—
+ * pero sin salir de la lista de trabajo: una fila con "💰 Pago" es la que hay
+ * que abrir primero, y hasta ahora eso sólo se veía en otra vista.
+ */
+async function anotarRadar(teamId: number, rows: AnalysisRow[]): Promise<void> {
+  if (!rows.length) return;
+  try {
+    const chatIds = rows.map((r) => r.chatId);
+    const filas = await db
+      .select({ chatId: teamCommercialSignals.chatId, kind: teamCommercialSignals.kind, createdAt: teamCommercialSignals.createdAt })
+      .from(teamCommercialSignals)
+      .where(and(eq(teamCommercialSignals.teamId, teamId), inArray(teamCommercialSignals.chatId, chatIds), inArray(teamCommercialSignals.status, ['new', 'seen'])));
+    const porChat = new Map<number, { kinds: Set<string>; count: number; lastAt: string }>();
+    for (const f of filas) {
+      const iso = f.createdAt.toISOString();
+      const actual = porChat.get(f.chatId) ?? { kinds: new Set<string>(), count: 0, lastAt: iso };
+      actual.kinds.add(f.kind);
+      actual.count += 1;
+      if (iso > actual.lastAt) actual.lastAt = iso;
+      porChat.set(f.chatId, actual);
+    }
+    for (const row of rows) {
+      const hit = porChat.get(row.chatId);
+      row.radar = hit
+        ? { kinds: [...hit.kinds] as SignalKind[], count: hit.count, urgent: [...hit.kinds].some((k) => URGENT_SIGNALS.includes(k as SignalKind)), lastAt: hit.lastAt }
+        : null;
+    }
+  } catch (error) {
+    console.error('[sales-ops/queries] radar de la lista', error);
+  }
+}
+
+/** Cliente vinculado a cada contacto, para mostrar el ícono y abrir su ficha. */
+async function anotarClientes(teamId: number, rows: AnalysisRow[]): Promise<void> {
+  const contactIds = rows.map((r) => r.contactId).filter((id): id is number => typeof id === 'number');
+  if (!contactIds.length) return;
+  try {
+    const links = await db
+      .select({ contactId: teamCustomerContacts.contactId, customerId: teamCustomerContacts.customerId })
+      .from(teamCustomerContacts)
+      .where(and(eq(teamCustomerContacts.teamId, teamId), inArray(teamCustomerContacts.contactId, contactIds)));
+    const porContacto = new Map(links.map((l) => [l.contactId, l.customerId]));
+    for (const r of rows) r.customerId = r.contactId ? (porContacto.get(r.contactId) ?? null) : null;
+  } catch (error) {
+    console.error('[sales-ops/queries] clientes de la lista', error);
+  }
+}
+
+async function anotarSeguimiento(teamId: number, rows: AnalysisRow[]): Promise<void> {
+  const conAnalisis = rows.filter((r) => r.analyzedAt);
+  if (!conAnalisis.length) return;
+  const chatIds = conAnalisis.map((r) => r.chatId);
+
+  try {
+    const [acciones, corridas] = await Promise.all([
+      db
+        .select({ chatId: teamCommercialActions.chatId, at: teamCommercialActions.executedAt, kind: teamCommercialActions.kind })
+        .from(teamCommercialActions)
+        .where(and(
+          eq(teamCommercialActions.teamId, teamId),
+          inArray(teamCommercialActions.chatId, chatIds),
+          inArray(teamCommercialActions.status, ['executed', 'resulted']),
+        )),
+      db
+        .select({ targetId: teamPromptRuns.targetId, at: teamPromptRuns.completedAt })
+        .from(teamPromptRuns)
+        .where(and(
+          eq(teamPromptRuns.teamId, teamId),
+          eq(teamPromptRuns.targetKind, 'chat'),
+          inArray(teamPromptRuns.targetId, chatIds.map(String)),
+          eq(teamPromptRuns.status, 'completed'),
+        )),
+    ]);
+
+    const ultimo = new Map<number, { at: string; kind: string }>();
+    const ultimaAccion = new Map<number, { at: string; kind: string }>();
+    const guardar = (mapa: Map<number, { at: string; kind: string }>, chatId: number, at: Date | null, kind: string) => {
+      if (!at) return;
+      const iso = at.toISOString();
+      const actual = mapa.get(chatId);
+      if (!actual || actual.at < iso) mapa.set(chatId, { at: iso, kind });
+    };
+    for (const fila of acciones) {
+      guardar(ultimo, fila.chatId, fila.at, fila.kind);
+      guardar(ultimaAccion, fila.chatId, fila.at, fila.kind);
+    }
+    for (const fila of corridas) guardar(ultimo, Number(fila.targetId), fila.at, 'prompt');
+
+    for (const row of conAnalisis) {
+      const hit = ultimo.get(row.chatId);
+      row.followUp = hit && row.analyzedAt && hit.at > row.analyzedAt ? { at: hit.at, kind: hit.kind } : null;
+      row.lastExecution = ultimaAccion.get(row.chatId) ?? null;
+    }
+  } catch (error) {
+    console.error('[sales-ops/queries] seguimiento de la lista', error);
+  }
+}
+
+/** Sólo dígitos: el programado guarda teléfonos sueltos y el chat tiene un JID. */
+function digitosDeJid(remoteJid: string): string {
+  return (remoteJid.split('@')[0] ?? '').replace(/\D/g, '');
+}
+
+/**
+ * Marca en cada fila si al contacto le va a salir un mensaje programado.
+ *
+ * Se trae los programados vivos del equipo (son decenas, no miles) y cruza por
+ * teléfono en memoria: `target_numbers` es un jsonb de strings sin normalizar,
+ * así que un join en SQL habría que escribirlo con `jsonb_array_elements` y una
+ * normalización por fila que no vale la pena para este volumen.
+ *
+ * Si falla, la lista sale igual sin el dato: un icono de más o de menos no
+ * puede tumbar la pantalla principal del Command Center.
+ */
+async function anotarProgramados(teamId: number, page: JoinedRow[], rows: AnalysisRow[]): Promise<void> {
+  if (!rows.length) return;
+  try {
+    const programados = await db
+      .select({
+        targetNumbers: teamScheduledMessages.targetNumbers,
+        nextRunAt: teamScheduledMessages.nextRunAt,
+        status: teamScheduledMessages.status,
+      })
+      .from(teamScheduledMessages)
+      .where(and(
+        eq(teamScheduledMessages.teamId, teamId),
+        inArray(teamScheduledMessages.status, ['active', 'paused']),
+      ));
+    if (!programados.length) return;
+
+    const porTelefono = new Map<string, { count: number; nextRunAt: string | null }>();
+    for (const programado of programados) {
+      const numeros = Array.isArray(programado.targetNumbers) ? programado.targetNumbers : [];
+      const proximo = programado.status === 'active' ? iso(programado.nextRunAt) : null;
+      // Un programado con varios destinatarios cuenta para cada uno.
+      for (const numero of new Set(numeros.map((n) => String(n).replace(/\D/g, '')).filter(Boolean))) {
+        const actual = porTelefono.get(numero);
+        if (!actual) {
+          porTelefono.set(numero, { count: 1, nextRunAt: proximo });
+          continue;
+        }
+        actual.count += 1;
+        if (proximo && (!actual.nextRunAt || proximo < actual.nextRunAt)) actual.nextRunAt = proximo;
+      }
+    }
+
+    rows.forEach((row, index) => {
+      const jid = page[index]?.chat.remoteJid;
+      if (!jid) return;
+      const encontrado = porTelefono.get(digitosDeJid(jid));
+      if (encontrado) row.scheduled = { count: encontrado.count, nextRunAt: encontrado.nextRunAt };
+    });
+  } catch (error) {
+    console.error('[sales-ops/queries] programados de la lista', error);
+  }
 }
 
 // ── Ficha ───────────────────────────────────────────────────────────────────

@@ -88,9 +88,9 @@ export function EmbedShareModal({ entityType, entityId, entityName, onClose }: E
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className={cn('text-base font-semibold', taskOsText)}>Compartir / Embeber</h2>
+            <h2 className={cn('text-base font-semibold', taskOsText)}>Compartir / Insertar</h2>
             <p className={cn('mt-0.5 truncate text-xs', taskOsMuted)}>
-              {entityType === 'project' ? 'Proyecto' : 'Workspace'}: {entityName}
+              {entityType === 'project' ? 'Proyecto' : 'Espacio de trabajo'}: {entityName}
             </p>
           </div>
           <button type="button" onClick={onClose} className={cn('flex h-8 w-8 items-center justify-center', taskOsBtn)}>
@@ -105,7 +105,7 @@ export function EmbedShareModal({ entityType, entityId, entityName, onClose }: E
         ) : (
           <div className="space-y-4">
             <label className="flex items-center justify-between gap-3">
-              <span className={cn('text-sm', taskOsText)}>Publicar embed</span>
+              <span className={cn('text-sm', taskOsText)}>Publicar enlace</span>
               <button
                 type="button"
                 disabled={busy}

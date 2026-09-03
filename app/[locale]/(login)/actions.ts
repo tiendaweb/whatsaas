@@ -29,6 +29,14 @@ import {
 import { sendInvitationEmail } from '@/lib/email';
 import { getFreePlan } from '@/lib/db/queries';
 import { enforceLimit } from '@/lib/limits';
+import { getTenant } from '@/lib/tenant/context';
+import { resolvePaymentTenantContext } from '@/lib/payments/context';
+
+function getLocaleRedirectPath(formData: FormData, path: string) {
+  const locale = formData.get('locale');
+  const safeLocale = typeof locale === 'string' && /^(es|en|pt)$/.test(locale) ? locale : null;
+  return safeLocale ? `/${safeLocale}${path}` : path;
+}
 
 async function logActivity(
   teamId: number | null | undefined,
@@ -69,7 +77,7 @@ export const signIn = validatedAction(signInSchema, async (data, formData) => {
 
   if (userWithTeam.length === 0) {
     return {
-      error: 'Invalid email or password. Please try again.',
+      error: 'Correo o contraseña inválidos. Intenta nuevamente.',
       email,
       password
     };
@@ -84,7 +92,7 @@ export const signIn = validatedAction(signInSchema, async (data, formData) => {
 
   if (!isPasswordValid) {
     return {
-      error: 'Invalid email or password. Please try again.',
+      error: 'Correo o contraseña inválidos. Intenta nuevamente.',
       email,
       password
     };
@@ -100,11 +108,25 @@ export const signIn = validatedAction(signInSchema, async (data, formData) => {
     const priceId = formData.get('priceId') as string;
     const rawPlanId = formData.get('planId');
     const planId = rawPlanId ? Number(rawPlanId) : undefined;
-    const plugin = await getActivePlugin();
-    return plugin.createCheckout({ team: foundTeam, priceId, planId });
+    const plugin = await getActivePlugin(foundTeam?.resellerId);
+    const context = await resolvePaymentTenantContext({
+      provider: plugin.id,
+      resellerId: foundTeam?.resellerId,
+      teamId: foundTeam?.id,
+    });
+    return plugin.createCheckout({ team: foundTeam, priceId, planId, context });
   }
 
-  redirect('/dashboard');
+  redirect(
+    getLocaleRedirectPath(
+      formData,
+      foundUser.role === 'admin'
+        ? '/admin'
+        : foundUser.role === 'reseller'
+          ? '/reseller'
+          : '/dashboard',
+    ),
+  );
 });
 
 const signUpSchema = z.object({
@@ -124,7 +146,7 @@ export const signUp = validatedAction(signUpSchema, async (data, formData) => {
 
   if (existingUser.length > 0) {
     return {
-      error: 'Failed to create user. Please try again.',
+      error: 'No se pudo crear el usuario. Intenta nuevamente.',
       email,
       password
     };
@@ -132,17 +154,22 @@ export const signUp = validatedAction(signUpSchema, async (data, formData) => {
 
   const passwordHash = await hashPassword(password);
 
+  // Quien se registra por el dominio de un reseller queda ligado a él. Se resuelve
+  // por el Host del request, no por nada que venga del formulario.
+  const tenant = await getTenant();
+
   const newUser: NewUser = {
     email,
     passwordHash,
-    role: 'owner' 
+    role: 'owner',
+    resellerId: tenant?.resellerId ?? null,
   };
 
   const [createdUser] = await db.insert(users).values(newUser).returning();
 
   if (!createdUser) {
     return {
-      error: 'Failed to create user. Please try again.',
+      error: 'No se pudo crear el usuario. Intenta nuevamente.',
       email,
       password
     };
@@ -182,13 +209,25 @@ export const signUp = validatedAction(signUpSchema, async (data, formData) => {
         .from(teams)
         .where(eq(teams.id, teamId))
         .limit(1);
+
+      // Por invitación el usuario hereda el reseller del equipo al que entra: la
+      // facturación del equipo ya está atada a ese reseller.
+      if (createdTeam?.resellerId && createdTeam.resellerId !== createdUser.resellerId) {
+        await db
+          .update(users)
+          .set({ resellerId: createdTeam.resellerId })
+          .where(eq(users.id, createdUser.id));
+      }
     } else {
-      return { error: 'Invalid or expired invitation.', email, password };
+      return { error: 'Invitación inválida o expirada.', email, password };
     }
   } else {
-    
+
     const newTeam: NewTeam = {
-      name: `${email}'s Team`
+      name: `Equipo de ${email}`,
+      // Fuente de verdad de la facturación: de aquí sale a quién se le debita
+      // el mayorista cuando este equipo active un plan.
+      resellerId: tenant?.resellerId ?? null,
     };
 
     [createdTeam] = await db.insert(teams).values(newTeam).returning();
@@ -205,7 +244,7 @@ export const signUp = validatedAction(signUpSchema, async (data, formData) => {
 
     if (!createdTeam) {
       return {
-        error: 'Failed to create team. Please try again.',
+        error: 'No se pudo crear el equipo. Intenta nuevamente.',
         email,
         password
       };
@@ -234,11 +273,16 @@ export const signUp = validatedAction(signUpSchema, async (data, formData) => {
     const priceId = formData.get('priceId') as string;
     const rawPlanId = formData.get('planId');
     const planId = rawPlanId ? Number(rawPlanId) : undefined;
-    const plugin = await getActivePlugin();
-    return plugin.createCheckout({ team: createdTeam, priceId, planId });
+    const plugin = await getActivePlugin(createdTeam.resellerId);
+    const context = await resolvePaymentTenantContext({
+      provider: plugin.id,
+      resellerId: createdTeam.resellerId,
+      teamId: createdTeam.id,
+    });
+    return plugin.createCheckout({ team: createdTeam, priceId, planId, context });
   }
 
-  redirect('/dashboard');
+  redirect(getLocaleRedirectPath(formData, '/dashboard'));
 });
 
 export async function signOut() {
@@ -269,7 +313,7 @@ export const updatePassword = validatedActionWithUser(
         currentPassword,
         newPassword,
         confirmPassword,
-        error: 'Current password is incorrect.'
+        error: 'La contraseña actual es incorrecta.'
       };
     }
 
@@ -278,7 +322,7 @@ export const updatePassword = validatedActionWithUser(
         currentPassword,
         newPassword,
         confirmPassword,
-        error: 'New password must be different from the current password.'
+        error: 'La nueva contraseña debe ser diferente de la contraseña actual.'
       };
     }
 
@@ -287,7 +331,7 @@ export const updatePassword = validatedActionWithUser(
         currentPassword,
         newPassword,
         confirmPassword,
-        error: 'New password and confirmation password do not match.'
+        error: 'La nueva contraseña y su confirmación no coinciden.'
       };
     }
 
@@ -303,7 +347,7 @@ export const updatePassword = validatedActionWithUser(
     ]);
 
     return {
-      success: 'Password updated successfully.'
+      success: 'Contraseña actualizada correctamente.'
     };
   }
 );
@@ -321,7 +365,7 @@ export const deleteAccount = validatedActionWithUser(
     if (!isPasswordValid) {
       return {
         password,
-        error: 'Incorrect password. Account deletion failed.'
+        error: 'Contraseña incorrecta. No se pudo eliminar la cuenta.'
       };
     }
 
@@ -359,8 +403,8 @@ export const deleteAccount = validatedActionWithUser(
 );
 
 const updateAccountSchema = z.object({
-  name: z.string().min(1, 'Name is required').max(100),
-  email: z.string().email('Invalid email address'),
+  name: z.string().min(1, 'El nombre es obligatorio').max(100),
+  email: z.string().email('Correo electrónico inválido'),
   enableSignature: z.string().optional(),
 });
 
@@ -379,7 +423,7 @@ export const updateAccount = validatedActionWithUser(
       logActivity(userWithTeam?.teamId, user.id, ActivityType.UPDATE_ACCOUNT)
     ]);
 
-    return { name, success: 'Account updated successfully.' };
+    return { name, success: 'Cuenta actualizada correctamente.' };
   }
 );
 
@@ -394,7 +438,7 @@ export const removeTeamMember = validatedActionWithUser(
     const userWithTeam = await getUserWithTeam(user.id);
 
     if (!userWithTeam?.teamId) {
-      return { error: 'User is not part of a team' };
+      return { error: 'El usuario no forma parte de un equipo' };
     }
 
     await db
@@ -412,12 +456,12 @@ export const removeTeamMember = validatedActionWithUser(
       ActivityType.REMOVE_TEAM_MEMBER
     );
 
-    return { success: 'Team member removed successfully' };
+    return { success: 'Miembro del equipo eliminado correctamente' };
   }
 );
 
 const inviteTeamMemberSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  email: z.string().email('Correo electrónico inválido'),
   role: z.enum(['owner', 'admin', 'agent'])
 });
 
@@ -428,7 +472,7 @@ export const inviteTeamMember = validatedActionWithUser(
     const userWithTeam = await getUserWithTeam(user.id);
 
     if (!userWithTeam?.teamId) {
-      return { error: 'User is not part of a team' };
+      return { error: 'El usuario no forma parte de un equipo' };
     }
 
     try {
@@ -443,7 +487,7 @@ export const inviteTeamMember = validatedActionWithUser(
     });
 
     if (!team) {
-      return { error: 'Team not found' };
+      return { error: 'Equipo no encontrado' };
     }
 
     const existingMember = await db
@@ -456,7 +500,7 @@ export const inviteTeamMember = validatedActionWithUser(
       .limit(1);
 
     if (existingMember.length > 0) {
-      return { error: 'User is already a member of this team' };
+      return { error: 'El usuario ya es miembro de este equipo' };
     }
 
     const existingInvitation = await db
@@ -472,7 +516,7 @@ export const inviteTeamMember = validatedActionWithUser(
       .limit(1);
 
     if (existingInvitation.length > 0) {
-      return { error: 'An invitation has already been sent to this email' };
+      return { error: 'Ya se envió una invitación a este correo' };
     }
 
     const [newInvitation] = await db.insert(invitations).values({
@@ -491,7 +535,7 @@ export const inviteTeamMember = validatedActionWithUser(
 
     await sendInvitationEmail(email, team.name, newInvitation.id);
 
-    return { success: 'Invitation sent successfully' };
+    return { success: 'Invitación enviada correctamente' };
   }
 );
 
@@ -506,7 +550,7 @@ export const revokeInvitation = validatedActionWithUser(
     const userWithTeam = await getUserWithTeam(user.id);
 
     if (!userWithTeam?.teamId) {
-      return { error: 'User is not part of a team' };
+      return { error: 'El usuario no forma parte de un equipo' };
     }
 
     await db
@@ -524,7 +568,7 @@ export const revokeInvitation = validatedActionWithUser(
       ActivityType.REMOVE_TEAM_MEMBER
     );
 
-    return { success: 'Invitation revoked successfully' };
+    return { success: 'Invitación revocada correctamente' };
   }
 );
 
@@ -539,7 +583,7 @@ export const resendInvitation = validatedActionWithUser(
     const userWithTeam = await getUserWithTeam(user.id);
 
     if (!userWithTeam?.teamId) {
-      return { error: 'User is not part of a team' };
+      return { error: 'El usuario no forma parte de un equipo' };
     }
 
     const invitation = await db.query.invitations.findFirst({
@@ -550,7 +594,7 @@ export const resendInvitation = validatedActionWithUser(
     });
 
     if (!invitation) {
-      return { error: 'Invitation not found' };
+      return { error: 'Invitación no encontrada' };
     }
 
     const team = await db.query.teams.findFirst({
@@ -559,11 +603,11 @@ export const resendInvitation = validatedActionWithUser(
     });
 
     if (!team) {
-      return { error: 'Team not found' };
+      return { error: 'Equipo no encontrado' };
     }
 
     await sendInvitationEmail(invitation.email, team.name, invitation.id);
 
-    return { success: 'Invitation resent successfully' };
+    return { success: 'Invitación reenviada correctamente' };
   }
 );

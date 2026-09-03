@@ -9,6 +9,7 @@ import { X, Check, Loader2, ImageIcon, Sun, Moon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTheme } from 'next-themes';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { updateChatTheme, removeBackgroundImage } from './chat-theme-actions';
 import type { ChatTheme } from '@/lib/db/schema';
 
@@ -67,12 +68,16 @@ const PRESET_THEMES: PresetTheme[] = [
   },
 ];
 
+const allowedImageTypes = new Set(['image/gif', 'image/jpeg', 'image/png', 'image/webp']);
+const maxImageSizeBytes = 5 * 1024 * 1024;
+
 interface ChatThemeFormProps {
   theme: ChatTheme | null;
 }
 
 export function ChatThemeForm({ theme }: ChatThemeFormProps) {
   const { resolvedTheme } = useTheme();
+  const router = useRouter();
   const [previewMode, setPreviewMode] = useState<'light' | 'dark'>(resolvedTheme === 'dark' ? 'dark' : 'light');
   const isDark = previewMode === 'dark';
   const t = useTranslations('ChatTheme');
@@ -88,6 +93,7 @@ export function ChatThemeForm({ theme }: ChatThemeFormProps) {
   const [backgroundType, setBackgroundType] = useState(theme?.backgroundType || 'solid');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(theme?.backgroundImageUrl || null);
+  const [persistedImageUrl, setPersistedImageUrl] = useState<string | null>(theme?.backgroundImageUrl || null);
   const [saving, setSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -118,10 +124,15 @@ export function ChatThemeForm({ theme }: ChatThemeFormProps) {
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith('image/')) {
+    if (!allowedImageTypes.has(file.type) || file.size > maxImageSizeBytes) {
       toast.error(t('image_error'));
       return;
     }
+
+    if (imagePreview?.startsWith('blob:')) {
+      URL.revokeObjectURL(imagePreview);
+    }
+
     setImageFile(file);
     setBackgroundType('image');
     const preview = URL.createObjectURL(file);
@@ -129,16 +140,29 @@ export function ChatThemeForm({ theme }: ChatThemeFormProps) {
   };
 
   const handleRemoveImage = async () => {
+    const previousPreview = imagePreview;
+    const previousPersistedImageUrl = persistedImageUrl;
+    const previousBackgroundType = backgroundType;
+
     setImageFile(null);
     setImagePreview(null);
+    setPersistedImageUrl(null);
     setBackgroundType('solid');
     if (fileInputRef.current) fileInputRef.current.value = '';
 
-    if (theme?.backgroundImageUrl) {
+    if (previousPersistedImageUrl) {
       const result = await removeBackgroundImage();
       if (result.success) {
         toast.success(t('image_removed'));
+        router.refresh();
+      } else {
+        setImagePreview(previousPreview);
+        setPersistedImageUrl(previousPersistedImageUrl);
+        setBackgroundType(previousBackgroundType);
+        toast.error(result.message || t('error_msg'));
       }
+    } else if (previousPreview?.startsWith('blob:')) {
+      URL.revokeObjectURL(previousPreview);
     }
   };
 
@@ -159,6 +183,17 @@ export function ChatThemeForm({ theme }: ChatThemeFormProps) {
 
       const result = await updateChatTheme(formData);
       if (result.success) {
+        if (imagePreview?.startsWith('blob:')) {
+          URL.revokeObjectURL(imagePreview);
+        }
+
+        setPersistedImageUrl(result.backgroundImageUrl ?? null);
+        if (result.backgroundImageUrl) {
+          setImagePreview(result.backgroundImageUrl);
+        }
+        setImageFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        router.refresh();
         toast.success(t('success_msg'));
       } else {
         toast.error(result.message || t('error_msg'));
@@ -193,7 +228,7 @@ export function ChatThemeForm({ theme }: ChatThemeFormProps) {
                 }`}
               >
                 <Sun className="h-4 w-4" />
-                Light
+                Claro
               </button>
               <button
                 onClick={() => setPreviewMode('dark')}
@@ -202,7 +237,7 @@ export function ChatThemeForm({ theme }: ChatThemeFormProps) {
                 }`}
               >
                 <Moon className="h-4 w-4" />
-                Dark
+                Oscuro
               </button>
             </div>
             <span className="text-sm text-muted-foreground">

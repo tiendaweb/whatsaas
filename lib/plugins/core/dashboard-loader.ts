@@ -15,8 +15,8 @@ function matchRoutePath(routePath: string, currentPath: string) {
   return currentPath === routePath || currentPath.startsWith(`${routePath}/`);
 }
 
-export async function resolvePluginRouteForTeam(teamId: number, pluginId: string, slug?: string[]): Promise<TeamPluginRouteResolution | null> {
-  const plugins = await resolveActivePluginsForTeam(teamId);
+export async function resolvePluginRouteForTeam(teamId: number, pluginId: string, slug?: string[], userId?: number): Promise<TeamPluginRouteResolution | null> {
+  const plugins = await resolveActivePluginsForTeam(teamId, userId);
   const plugin = plugins.find((item) => item.pluginId === pluginId);
 
   if (!plugin) {
@@ -29,7 +29,7 @@ export async function resolvePluginRouteForTeam(teamId: number, pluginId: string
     return null;
   }
 
-  const renderer = resolvePluginPageRenderer(pluginId, slug);
+  const renderer = await resolvePluginPageRenderer(pluginId, slug);
   if (!renderer) {
     return null;
   }

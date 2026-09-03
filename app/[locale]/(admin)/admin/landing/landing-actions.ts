@@ -114,7 +114,7 @@ const landingPageSchema = z.object({
       (value) => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value),
       "Usa solo letras, números y guiones.",
     ),
-  contentMode: z.enum(["builder", "react"]).default("builder"),
+  contentMode: z.enum(["builder", "react", "html"]).default("builder"),
   content: z.string().max(30000).default(""),
   externalPrompt: z.string().max(20000).default(""),
   sections: z.array(pageSectionSchema).min(1).max(16),

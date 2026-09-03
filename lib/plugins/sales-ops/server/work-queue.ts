@@ -4,6 +4,7 @@ import { chats, messageAudioInsights, teamCommercialActions, teamCommercialAnaly
 import { maskJid } from '@/lib/desktop/command-center/types';
 import { listPendingChats, type PendingChat } from './classifier';
 import { listScanCandidates, type ScanCandidate } from './radar';
+import { getSalesOpsSettings, patchSalesOpsSettings } from './settings';
 import { listPromptRuns } from './prompt-queue';
 
 /**
@@ -20,7 +21,7 @@ export type WorkKind = 'run_prompt' | 'classify' | 'execute_action' | 'classify_
 export const WORK_KINDS: WorkKind[] = ['run_prompt', 'classify', 'execute_action', 'classify_signal', 'transcribe'];
 
 export type WorkItem =
-  | { kind: 'run_prompt'; priority: number; runId: number; title: string; promptKey: string; text: string; targetKind: string; targetId: string; targetName: string | null; chatId: number | null; createdAt: string; tools: string[]; steps: string[] }
+  | { kind: 'run_prompt'; priority: number; runId: number; title: string; promptKey: string; text: string; variables: Record<string, string>; targetKind: string; targetId: string; targetName: string | null; chatId: number | null; createdAt: string; tools: string[]; steps: string[] }
   | { kind: 'classify'; priority: number; chatId: number; name: string; phoneMasked: string; reason: PendingChat['pendingReason']; signals: string[]; automationActive: boolean; pendingAudios: number; tools: string[]; steps: string[] }
   | { kind: 'execute_action'; priority: number; actionId: number; batchId: string; batchLabel: string; actionKind: string; chatId: number; name: string; payload: Record<string, unknown>; idempotencyKey: string; approvedAt: string | null; tools: string[]; steps: string[] }
   | { kind: 'classify_signal'; priority: number; messageId: string; chatId: number; name: string; excerpt: string; at: string; tools: string[]; steps: string[] }
@@ -67,7 +68,8 @@ export async function listWorkQueue(teamId: number, opts: { kinds?: WorkKind[]; 
   const counts: Record<WorkKind, number> = { run_prompt: 0, classify: 0, execute_action: 0, classify_signal: 0, transcribe: 0 };
 
   // 0. Prompts encolados a mano (Prompt Studio / "Siguiente acción"): lo más explícito va primero.
-  const runs = await listPromptRuns(teamId, { status: 'queued', limit: 200 });
+  // Sólo lo aprobado: lo que espera en "En revisión" todavía no es trabajo para nadie.
+  const runs = await listPromptRuns(teamId, { status: 'queued', approved: true, limit: 200 });
   counts.run_prompt = runs.length;
   if (kinds.has('run_prompt')) {
     for (const run of runs) {
@@ -78,16 +80,19 @@ export async function listWorkQueue(teamId: number, opts: { kinds?: WorkKind[]; 
         title: run.title,
         promptKey: run.promptKey,
         text: run.text,
+        // El texto ya viene con las variables resueltas; esto es sólo para que se vea con qué datos se lanzó.
+        variables: run.variables,
         targetKind: run.targetKind,
         targetId: run.targetId,
         targetName: run.targetName,
         chatId: run.targetKind === 'chat' ? Number(run.targetId) : null,
         createdAt: run.createdAt,
-        tools: ['whatspro_sales_prompt_result'],
+        tools: ['whatspro_sales_dossier', 'whatspro_sales_tareas_from_chat', 'whatspro_manage_scheduled_message', 'whatspro_sales_queue_propose', 'whatspro_sales_prompt_result'],
         steps: [
           `whatspro_sales_prompt_result {run_id: ${run.id}, status: "in_progress"} (opcional, para marcar que lo tomaste)`,
           'ejecutar el texto del prompt tal cual, con las tools whatspro_* que pida; respetar las reglas del Command Center',
-          `whatspro_sales_prompt_result {run_id: ${run.id}, status: "completed"|"failed"|"blocked", summary: "<qué hiciste, 1-3 líneas>"}`,
+          'si el pedido no dice qué forma tiene el resultado, leé el chat y elegí: mensaje programado (whatspro_manage_scheduled_message / whatspro_sales_queue_propose), demo web (whatspro_sales_tareas_from_chat action "demo") o proyecto del cliente en Tareas OS (whatspro_sales_tareas_from_chat action "project")',
+          `whatspro_sales_prompt_result {run_id: ${run.id}, status: "completed"|"failed"|"blocked", summary: "<qué hiciste, 1-3 líneas>", output: "<el resultado completo, si lo hay>"}`,
         ],
       });
     }
@@ -122,7 +127,11 @@ export async function listWorkQueue(teamId: number, opts: { kinds?: WorkKind[]; 
             ? ['whatspro_create_contact_task', 'whatspro_sales_queue_result']
             : a.kind === 'register_sale'
               ? ['whatspro_register_sale', 'whatspro_sales_queue_result']
-              : ['whatspro_sales_queue_result'];
+              : a.kind === 'schedule_message'
+                ? ['whatspro_manage_scheduled_message', 'whatspro_sales_queue_result']
+                : a.kind === 'request_demo'
+                  ? ['whatspro_sales_dossier', 'whatspro_manage_task_workspace', 'whatspro_manage_task', 'whatspro_sales_queue_result']
+                  : ['whatspro_sales_queue_result'];
       items.push({
         kind: 'execute_action',
         priority: 2000,
@@ -143,7 +152,19 @@ export async function listWorkQueue(teamId: number, opts: { kinds?: WorkKind[]; 
                 `whatspro_chat_send_message {chat_id: ${a.chatId}, text: payload.text, idempotency_key: "${idempotencyKey}", dry_run: true} y después sin dry_run`,
                 `whatspro_sales_queue_result {action_id: ${a.id}, status: "executed", result_message_id, executed_via: "connector"}`,
               ]
-            : [`ejecutar ${a.kind} según payload`, `whatspro_sales_queue_result {action_id: ${a.id}, status: "executed"|"failed", result}`],
+            : a.kind === 'schedule_message'
+              ? [
+                  `whatspro_manage_scheduled_message: crear un programado único para el chat ${a.chatId} con payload.text a la hora payload.sendAt (nombre "Cola · #${a.id}")`,
+                  `whatspro_sales_queue_result {action_id: ${a.id}, status: "executed", result: { scheduledMessageId }}`,
+                ]
+              : a.kind === 'request_demo'
+                ? [
+                    `whatspro_sales_dossier {chat_id: ${a.chatId}}: investigar el negocio, qué pidió, tono y datos concretos`,
+                    'redactar el prompt para generar el sitio de demo en AAPP SPACE (gobiz_sites_create: una página, secciones, textos en el tono del cliente, paleta, datos a confirmar)',
+                    'whatspro_manage_task_workspace / whatspro_manage_task: tarea "Demo web — {nombre}" en el workspace "Demos" (proyecto "Demos") con la investigación en notes y el prompt en ai_prompt, vinculada al contacto',
+                    `whatspro_sales_queue_result {action_id: ${a.id}, status: "executed", result: { taskId }}`,
+                  ]
+                : [`ejecutar ${a.kind} según payload`, `whatspro_sales_queue_result {action_id: ${a.id}, status: "executed"|"failed", result}`],
       });
     }
   }
@@ -215,8 +236,67 @@ export async function listWorkQueue(teamId: number, opts: { kinds?: WorkKind[]; 
     }
   }
 
+  // Descartados desde la Cola de conectores: por esta vez (hasta una fecha) o para siempre.
+  const skips = await listWorkSkips(teamId);
+  if (skips.length) {
+    const activos = new Set(skips.map((s) => `${s.kind}|${s.key}`));
+    const antes = new Map<WorkKind, number>();
+    for (const it of items) antes.set(it.kind, (antes.get(it.kind) ?? 0) + 1);
+    const filtrados = items.filter((it) => !activos.has(`${it.kind}|${workItemKey(it)}`));
+    for (const kind of WORK_KINDS) {
+      const quitados = (antes.get(kind) ?? 0) - filtrados.filter((it) => it.kind === kind).length;
+      if (quitados > 0) counts[kind] = Math.max(0, counts[kind] - quitados);
+    }
+    items.length = 0;
+    items.push(...filtrados);
+  }
+
   items.sort((a, b) => b.priority - a.priority);
   return { generatedAt: new Date().toISOString(), counts, items: items.slice(0, limit), rules: RULES };
+}
+
+/** La clave estable de un ítem, para poder descartarlo o excluirlo. */
+export function workItemKey(item: WorkItem): string {
+  switch (item.kind) {
+    case 'run_prompt':
+      return String(item.runId);
+    case 'execute_action':
+      return String(item.actionId);
+    case 'classify':
+      return String(item.chatId);
+    case 'classify_signal':
+    case 'transcribe':
+      return item.messageId;
+  }
+}
+
+export type WorkSkip = { kind: string; key: string; until: string | null; label?: string; at?: string };
+
+/** Descartes vigentes (los "por esta vez" vencidos se limpian al leer). */
+export async function listWorkSkips(teamId: number): Promise<WorkSkip[]> {
+  const todos = (await getSalesOpsSettings(teamId)).workQueueSkips;
+  const ahora = new Date().toISOString();
+  return todos.filter((s) => s.until === null || s.until > ahora);
+}
+
+/**
+ * Descarta un ítem de la cola de conectores: por esta vez (24 h, después
+ * vuelve si sigue pendiente) o para siempre. No borra nada: sólo deja de
+ * ofrecérselo a los conectores. Lo que tenga un estado propio (una corrida,
+ * una fila aprobada) se cancela o se quita desde su propia acción.
+ */
+export async function skipWorkItem(teamId: number, userId: number, input: { kind: WorkKind; key: string; forever: boolean; label?: string }): Promise<WorkSkip[]> {
+  const vigentes = (await listWorkSkips(teamId)).filter((s) => !(s.kind === input.kind && s.key === input.key));
+  const until = input.forever ? null : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const next = [...vigentes, { kind: input.kind, key: input.key, until, label: input.label?.slice(0, 120), at: new Date().toISOString() }].slice(-500);
+  const settings = await patchSalesOpsSettings(teamId, userId, { workQueueSkips: next });
+  return settings.workQueueSkips;
+}
+
+export async function unskipWorkItem(teamId: number, userId: number, input: { kind: string; key: string }): Promise<WorkSkip[]> {
+  const vigentes = (await listWorkSkips(teamId)).filter((s) => !(s.kind === input.kind && s.key === input.key));
+  const settings = await patchSalesOpsSettings(teamId, userId, { workQueueSkips: vigentes });
+  return settings.workQueueSkips;
 }
 
 /** Conteo barato para el dashboard: aprobadas sin ejecutar + sin analizar + desactualizados. */

@@ -5,6 +5,8 @@ import { chats, aiTools, messages, contacts, funnelStages, teamMembers, users, c
 import { eq, and } from 'drizzle-orm';
 import { pusherServer } from '@/lib/pusher-server';
 import { createSystemMessage } from '@/lib/db/system-messages';
+import { triggerAutomationManually } from '@/lib/automation/engine';
+import { getBuiltinToolDefinition, getBuiltinToolsForTeam } from './builtin';
 
 const BASE_URL =  process.env.BASE_URL || "http://localhost:3000";
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "http://localhost:8080";
@@ -20,21 +22,33 @@ async function sendMediaToEvolution(
 ) {
     if (!instance.accessToken) return { error: 'No access token' };
 
-    const finalMediaUrl = mediaUrl.startsWith('http') 
-        ? mediaUrl 
+    const finalMediaUrl = mediaUrl.startsWith('http')
+        ? mediaUrl
         : `${BASE_URL}${mediaUrl.startsWith('/') ? '' : '/'}${mediaUrl}`;
 
-    const payload = {
-        number: remoteJid.replace(/\D/g, ''),
-        mediatype: type,
-        mimetype: type === 'image' ? 'image/jpeg' : (type === 'audio' ? 'audio/mp3' : 'application/pdf'), 
-        media: finalMediaUrl, 
-        caption: caption,
-        fileName: "file"
-    };
+    // WhatsApp sends voice/audio as a distinct audioMessage (PTT), not a generic media
+    // attachment. The generic sendMedia endpoint acks the request but never delivers it —
+    // mirrors the working /api/messages/sendAudio route and app/api/v1/send.
+    const isAudio = type === 'audio';
+    const evolutionEndpoint = isAudio ? 'sendWhatsAppAudio' : 'sendMedia';
+    const payload = isAudio
+        ? {
+            number: remoteJid.replace(/\D/g, ''),
+            audio: finalMediaUrl,
+            mimetype: 'audio/mpeg',
+            ptt: true,
+        }
+        : {
+            number: remoteJid.replace(/\D/g, ''),
+            mediatype: type,
+            mimetype: type === 'image' ? 'image/jpeg' : 'application/pdf',
+            media: finalMediaUrl,
+            caption: caption,
+            fileName: "file"
+        };
 
     try {
-        const response = await fetch(`${EVOLUTION_API_URL}/message/sendMedia/${instance.instanceName}`, {
+        const response = await fetch(`${EVOLUTION_API_URL}/message/${evolutionEndpoint}/${instance.instanceName}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -394,12 +408,19 @@ async function executeAddTagAction(
 }
 
 export async function getDynamicTools(teamId: number): Promise<ToolDefinition[]> {
-    const dbTools = await db.query.aiTools.findMany({
-        where: and(
-            eq(aiTools.teamId, teamId),
-            eq(aiTools.isActive, true)
-        )
-    });
+    const [dbTools, builtinTools] = await Promise.all([
+        db.query.aiTools.findMany({
+            where: and(
+                eq(aiTools.teamId, teamId),
+                eq(aiTools.isActive, true)
+            )
+        }),
+        getBuiltinToolsForTeam(teamId).catch((error) => {
+            // Una app rota no debe dejar mudo al agente: sigue con las manuales.
+            console.error('[ai-chat] builtin tools unavailable:', error);
+            return [] as ToolDefinition[];
+        }),
+    ]);
 
     const dynamicTools: ToolDefinition[] = dbTools.map(t => {
         const actions: any[] = (t.actionData as any)?.actions || [];
@@ -426,6 +447,72 @@ export async function getDynamicTools(teamId: number): Promise<ToolDefinition[]>
                     type: 'string',
                     description: 'Note content: summary of the conversation, key insights, and relevant details',
                 };
+            }
+            // Acciones de apps: la IA completa los datos que el equipo no fijó.
+            if (action.type === 'create_task') {
+                if (!action.taskTitle) {
+                    properties['task_title'] = { type: 'string', description: 'Título breve de la tarea para el equipo humano' };
+                }
+                properties['task_notes'] = { type: 'string', description: 'Contexto para quien tome la tarea: qué pidió el cliente' };
+            }
+            if (action.type === 'create_deal') {
+                properties['deal_title'] = { type: 'string', description: 'Qué quiere comprar/contratar el cliente' };
+                properties['deal_value'] = { type: 'number', description: 'Valor estimado en unidades de la moneda (opcional)' };
+            }
+            if (action.type === 'open_ticket') {
+                properties['ticket_subject'] = { type: 'string', description: 'Título breve del problema o reclamo' };
+                properties['ticket_description'] = { type: 'string', description: 'Detalle completo: qué pasó, cuándo, qué producto/servicio' };
+            }
+            if (action.type === 'schedule_message' && !action.message) {
+                properties['reminder_message'] = { type: 'string', description: 'Texto final del mensaje que recibirá el cliente' };
+            }
+            if (action.type === 'book_appointment') {
+                properties['appointment_starts_at'] = { type: 'string', description: 'Inicio del turno en ISO 8601 en hora local del negocio, sin zona (ej. 2026-09-03T15:00:00). Confirmá día y hora con el cliente antes.' };
+                properties['appointment_title'] = { type: 'string', description: 'Título breve del turno (opcional)' };
+                properties['appointment_notes'] = { type: 'string', description: 'Motivo o detalles que dio el cliente (opcional)' };
+            }
+            if (action.type === 'register_customer') {
+                properties['customer_name'] = { type: 'string', description: 'Nombre o razón social si lo dijo (opcional, por defecto el del contacto)' };
+                properties['customer_email'] = { type: 'string', description: 'Email del cliente si lo dio (opcional)' };
+                properties['customer_notes'] = { type: 'string', description: 'Qué compró o contrató y cómo llegó (opcional)' };
+            }
+            if (action.type === 'register_membership') {
+                if (!action.planId) {
+                    properties['membership_plan_id'] = { type: 'integer', description: 'id del plan elegido por el cliente (obtenelo con list_membership_plans)' };
+                }
+                properties['membership_notes'] = { type: 'string', description: 'Medio de pago prometido o aclaraciones (opcional)' };
+            }
+            if (action.type === 'report_payment') {
+                properties['payment_amount'] = { type: 'number', description: 'Importe que el cliente dice haber pagado, en unidades de la moneda' };
+                if (!action.currency) {
+                    properties['payment_currency'] = { type: 'string', description: 'Código ISO de 3 letras (ARS, USD, PYG…)' };
+                }
+                if (!action.paymentMethod) {
+                    properties['payment_method'] = { type: 'string', description: 'Medio: transferencia, efectivo, Mercado Pago, tarjeta… (opcional)' };
+                }
+                properties['payment_reference'] = { type: 'string', description: 'Número de operación o comprobante si lo dio (opcional)' };
+            }
+            if (action.type === 'register_sale') {
+                properties['sale_items'] = {
+                    type: 'array',
+                    description: 'Ítems acordados con el cliente. Confirmá ítems y total antes.',
+                    items: {
+                        type: 'object',
+                        required: ['name', 'quantity', 'unit_price'],
+                        properties: {
+                            name: { type: 'string', description: 'Producto o servicio' },
+                            quantity: { type: 'number', description: 'Cantidad' },
+                            unit_price: { type: 'number', description: 'Precio unitario en unidades de la moneda' },
+                        },
+                    },
+                };
+                properties['sale_notes'] = { type: 'string', description: 'Forma de entrega, pago acordado, etc. (opcional)' };
+            }
+            if (action.type === 'update_contact') {
+                properties['contact_name'] = { type: 'string', description: 'Nombre completo tal como lo dijo la persona (opcional)' };
+                properties['contact_email'] = { type: 'string', description: 'Email (opcional)' };
+                properties['contact_company'] = { type: 'string', description: 'Empresa u organización (opcional)' };
+                properties['contact_job_title'] = { type: 'string', description: 'Cargo o rol (opcional)' };
             }
         }
 
@@ -472,6 +559,76 @@ export async function getDynamicTools(teamId: number): Promise<ToolDefinition[]>
                         } else {
                             results.push({ success: false, message: "Instance not found" });
                         }
+                    } else if (action.type === 'create_task') {
+                        // Reusa la función integrada de Tareas: misma lógica, otro disparador.
+                        const def = getBuiltinToolDefinition('create_followup_task');
+                        results.push(def
+                            ? await def.execute({ title: action.taskTitle || args.task_title, notes: args.task_notes }, context)
+                            : { success: false, message: 'Tasks action unavailable' });
+                    } else if (action.type === 'create_deal') {
+                        const def = getBuiltinToolDefinition('create_opportunity');
+                        results.push(def
+                            ? await def.execute({ title: args.deal_title || action.dealTitle, value: args.deal_value, currency: action.currency }, context)
+                            : { success: false, message: 'Deals action unavailable' });
+                    } else if (action.type === 'open_ticket') {
+                        const def = getBuiltinToolDefinition('open_support_ticket');
+                        results.push(def
+                            ? await def.execute({ subject: args.ticket_subject, description: args.ticket_description || args.ticket_subject, priority: action.priority, category: action.category }, context)
+                            : { success: false, message: 'Support action unavailable' });
+                    } else if (action.type === 'schedule_message') {
+                        const def = getBuiltinToolDefinition('schedule_message');
+                        const hours = Number(action.delayHours) > 0 ? Number(action.delayHours) : 24;
+                        const sendAt = new Date(Date.now() + hours * 3_600_000);
+                        results.push(def
+                            ? await def.execute({ message: action.message || args.reminder_message, send_at: sendAt.toISOString() }, context)
+                            : { success: false, message: 'Scheduled messages action unavailable' });
+                    } else if (action.type === 'book_appointment') {
+                        const def = getBuiltinToolDefinition('book_appointment');
+                        results.push(def
+                            ? await def.execute({ starts_at: args.appointment_starts_at, duration_minutes: action.durationMinutes, kind: action.kind, title: args.appointment_title, notes: args.appointment_notes }, context)
+                            : { success: false, message: 'Calendar action unavailable' });
+                    } else if (action.type === 'register_customer') {
+                        const def = getBuiltinToolDefinition('register_customer');
+                        results.push(def
+                            ? await def.execute({ name: args.customer_name, email: args.customer_email, notes: args.customer_notes }, context)
+                            : { success: false, message: 'Customers action unavailable' });
+                    } else if (action.type === 'register_membership') {
+                        const def = getBuiltinToolDefinition('register_membership');
+                        results.push(def
+                            ? await def.execute({ plan_id: action.planId || args.membership_plan_id, notes: args.membership_notes }, context)
+                            : { success: false, message: 'Memberships action unavailable' });
+                    } else if (action.type === 'report_payment') {
+                        const def = getBuiltinToolDefinition('report_payment');
+                        results.push(def
+                            ? await def.execute({ amount: args.payment_amount, currency: action.currency || args.payment_currency, method: action.paymentMethod || args.payment_method, reference: args.payment_reference }, context)
+                            : { success: false, message: 'Finance action unavailable' });
+                    } else if (action.type === 'register_sale') {
+                        const def = getBuiltinToolDefinition('register_sale');
+                        results.push(def
+                            ? await def.execute({ items: args.sale_items, currency: action.currency, notes: args.sale_notes }, context)
+                            : { success: false, message: 'Sales action unavailable' });
+                    } else if (action.type === 'update_contact') {
+                        const def = getBuiltinToolDefinition('update_contact_details');
+                        results.push(def
+                            ? await def.execute({ name: args.contact_name, email: args.contact_email, company: args.contact_company, job_title: args.contact_job_title }, context)
+                            : { success: false, message: 'CRM action unavailable' });
+                    } else if (action.type === 'trigger_automation') {
+                        const chat = await db.query.chats.findFirst({
+                            where: eq(chats.id, context.chatId),
+                        });
+
+                        if (chat?.instanceId) {
+                            const started = await triggerAutomationManually(
+                                teamId,
+                                context.chatId,
+                                chat.remoteJid,
+                                chat.instanceId,
+                                { automationId: action.automationId, startNodeId: action.startNodeId }
+                            );
+                            results.push({ success: started });
+                        } else {
+                            results.push({ success: false, message: "Instance not found" });
+                        }
                     }
                 }
 
@@ -484,5 +641,7 @@ export async function getDynamicTools(teamId: number): Promise<ToolDefinition[]>
         };
     });
 
-    return [...baseTools, ...dynamicTools];
+    // Si el equipo definió a mano una herramienta con el mismo nombre, gana la suya.
+    const taken = new Set([...baseTools, ...dynamicTools].map((t) => t.name));
+    return [...baseTools, ...builtinTools.filter((t) => !taken.has(t.name)), ...dynamicTools];
 }

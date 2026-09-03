@@ -1,16 +1,16 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { db } from '@/lib/db/drizzle'; 
-import { getTeamForUser } from '@/lib/db/queries'; 
+import { getUserPermissionContext } from '@/lib/auth/permissions-guard';
 import { chats, messages } from '@/lib/db/schema'; 
-import { eq, and, asc } from 'drizzle-orm';
+import { eq, and, desc, lt, or } from 'drizzle-orm';
 import { resolveMediaUrl } from '@/lib/media-url';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    const team = await getTeamForUser();
-    if (!team) {
+    const permissionContext = await getUserPermissionContext();
+    if (!permissionContext) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -18,13 +18,24 @@ export async function GET(request: NextRequest) {
     const jid = searchParams.get('jid');
     const instanceId = searchParams.get('instanceId');
     const chatId = searchParams.get('chatId');
+    const requestedLimit = Number(searchParams.get('limit'));
+    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(Math.floor(requestedLimit), 200)
+      : null;
+    const before = searchParams.get('before');
+    const beforeId = searchParams.get('beforeId');
+    const beforeDate = before ? new Date(before) : null;
+
+    if (beforeDate && Number.isNaN(beforeDate.getTime())) {
+      return NextResponse.json({ error: 'Invalid before cursor' }, { status: 400 });
+    }
 
     let chat;
 
     if (chatId) {
         chat = await db.query.chats.findFirst({
             where: and(
-                eq(chats.teamId, team.id),
+                eq(chats.teamId, permissionContext.teamId),
                 eq(chats.id, parseInt(chatId))
             ),
             columns: { id: true }
@@ -35,7 +46,7 @@ export async function GET(request: NextRequest) {
         }
 
         const conditions = [
-            eq(chats.teamId, team.id),
+            eq(chats.teamId, permissionContext.teamId),
             eq(chats.remoteJid, jid)
         ];
 
@@ -53,9 +64,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Chat not found or unauthorized' }, { status: 404 });
     }
 
-    const chatMessages = await db.query.messages.findMany({
-      where: eq(messages.chatId, chat.id),
-      orderBy: [asc(messages.timestamp)],
+    const cursorCondition = beforeDate
+      ? beforeId
+        ? or(
+            lt(messages.timestamp, beforeDate),
+            and(eq(messages.timestamp, beforeDate), lt(messages.id, beforeId)),
+          )
+        : lt(messages.timestamp, beforeDate)
+      : undefined;
+
+    const chatMessagesDescending = await db.query.messages.findMany({
+      where: cursorCondition
+        ? and(eq(messages.chatId, chat.id), cursorCondition)
+        : eq(messages.chatId, chat.id),
+      orderBy: [desc(messages.timestamp), desc(messages.id)],
+      ...(limit ? { limit } : {}),
       with: {
         reactions: {
           columns: {
@@ -68,6 +91,7 @@ export async function GET(request: NextRequest) {
         },
       },
     });
+    const chatMessages = chatMessagesDescending.reverse();
 
     const normalizedMessages = chatMessages.map((message) => ({
       ...message,

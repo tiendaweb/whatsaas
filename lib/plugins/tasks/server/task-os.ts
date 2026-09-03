@@ -1,8 +1,15 @@
-import { and, count, eq, inArray, or } from 'drizzle-orm';
+import { and, count, eq, inArray, like, or } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import {
   chats,
   contacts,
+  teamCustomers,
+  teamCustomerTransactions,
+  teamDocumentFolders,
+  teamDocuments,
+  teamMembershipCompanies,
+  teamMembershipSubscriptions,
+  teamSales,
   messages,
   teamTaskColumns,
   teamTaskComments,
@@ -18,8 +25,20 @@ import {
   type TaskLabel,
 } from '@/lib/db/schema';
 import { resolveMediaUrl } from '@/lib/media-url';
+import { pusherServer } from '@/lib/pusher-server';
 
-export type TaskEntityType = 'workspace' | 'project' | 'task' | 'contact';
+/**
+ * Con qué se puede vincular una tarea.
+ *
+ * `sale`, `transaction`, `subscription` y `company` se sumaron para que una
+ * tarea pueda colgar de la venta, el comprobante, la membresía o la empresa a
+ * la que responde — antes sólo llegaba hasta el cliente, y el vínculo con lo
+ * que de verdad la originó había que anotarlo a mano en las notas.
+ */
+export type TaskEntityType =
+  | 'workspace' | 'project' | 'task' | 'contact' | 'customer' | 'document' | 'document_folder'
+  | 'sale' | 'transaction' | 'subscription' | 'company'
+  | 'note' | 'event';
 
 export async function ensureTaskLocations(teamId: number) {
   const items = await db.query.teamTaskItems.findMany({
@@ -171,11 +190,70 @@ export async function assertContact(teamId: number, contactId: number) {
   });
 }
 
+export async function assertCustomer(teamId: number, customerId: number) {
+  return db.query.teamCustomers.findFirst({
+    where: and(eq(teamCustomers.id, customerId), eq(teamCustomers.teamId, teamId)),
+    columns: { id: true },
+  });
+}
+
+export async function assertDocument(teamId: number, documentId: number) {
+  return db.query.teamDocuments.findFirst({
+    where: and(eq(teamDocuments.id, documentId), eq(teamDocuments.teamId, teamId)),
+    columns: { id: true, title: true, emoji: true },
+  });
+}
+
+export async function assertSale(teamId: number, saleId: number) {
+  return db.query.teamSales.findFirst({
+    where: and(eq(teamSales.id, saleId), eq(teamSales.teamId, teamId)),
+    columns: { id: true },
+  });
+}
+
+export async function assertTransaction(teamId: number, transactionId: number) {
+  return db.query.teamCustomerTransactions.findFirst({
+    where: and(eq(teamCustomerTransactions.id, transactionId), eq(teamCustomerTransactions.teamId, teamId)),
+    columns: { id: true },
+  });
+}
+
+export async function assertSubscription(teamId: number, subscriptionId: number) {
+  return db.query.teamMembershipSubscriptions.findFirst({
+    where: and(eq(teamMembershipSubscriptions.id, subscriptionId), eq(teamMembershipSubscriptions.teamId, teamId)),
+    columns: { id: true },
+  });
+}
+
+export async function assertCompany(teamId: number, companyId: number) {
+  return db.query.teamMembershipCompanies.findFirst({
+    where: and(eq(teamMembershipCompanies.id, companyId), eq(teamMembershipCompanies.teamId, teamId)),
+    columns: { id: true },
+  });
+}
+
+/** Vincular la CARPETA permite que sus documentos hereden el cliente. */
+export async function assertDocumentFolder(teamId: number, folderId: number) {
+  return db.query.teamDocumentFolders.findFirst({
+    where: and(eq(teamDocumentFolders.id, folderId), eq(teamDocumentFolders.teamId, teamId)),
+    columns: { id: true, name: true },
+  });
+}
+
 export async function assertEntity(teamId: number, type: TaskEntityType, id: number) {
   if (type === 'task') return Boolean(await assertTask(teamId, id));
   if (type === 'project') return Boolean(await assertProject(teamId, id));
   if (type === 'workspace') return Boolean(await assertWorkspace(teamId, id));
   if (type === 'contact') return Boolean(await assertContact(teamId, id));
+  if (type === 'customer') return Boolean(await assertCustomer(teamId, id));
+  if (type === 'document') return Boolean(await assertDocument(teamId, id));
+  if (type === 'sale') return Boolean(await assertSale(teamId, id));
+  if (type === 'transaction') return Boolean(await assertTransaction(teamId, id));
+  if (type === 'subscription') return Boolean(await assertSubscription(teamId, id));
+  if (type === 'company') return Boolean(await assertCompany(teamId, id));
+  if (type === 'document_folder') return Boolean(await assertDocumentFolder(teamId, id));
+  // `note` y `event` siguen sin validador: los acepta el tipo (hay filas
+  // históricas creadas por meeting-notes) pero ninguna ruta puede crearlos.
   return false;
 }
 
@@ -227,6 +305,7 @@ export async function createTaskLocation(input: {
       set: {
         columnId: input.columnId,
         order: input.order,
+        isPrimary: input.isPrimary ?? false,
         updatedAt: new Date(),
       },
     })
@@ -241,6 +320,11 @@ export async function createTaskInColumn(input: {
   columnId: number;
   title: string;
   notes?: string;
+  aiPrompt?: string;
+  aiNextStep?: string;
+  aiContextQuestion?: string;
+  aiContextAnswer?: string;
+  aiReadyAt?: string | null;
   labelIds?: string[];
   checklist?: TaskChecklistItem[];
   dueDate?: string | null;
@@ -265,6 +349,11 @@ export async function createTaskInColumn(input: {
     teamId: input.teamId,
     title: input.title.trim(),
     notes: input.notes ?? '',
+    aiPrompt: String(input.aiPrompt ?? '').slice(0, 20000),
+    aiNextStep: String(input.aiNextStep ?? '').slice(0, 20000),
+    aiContextQuestion: String(input.aiContextQuestion ?? '').slice(0, 20000),
+    aiContextAnswer: String(input.aiContextAnswer ?? '').slice(0, 20000),
+    aiReadyAt: input.aiReadyAt ? new Date(input.aiReadyAt) : null,
     labelIds: input.labelIds ?? [],
     checklist: input.checklist ?? [],
     status: input.status ?? 'open',
@@ -295,6 +384,11 @@ export async function createTaskInColumn(input: {
 export type TaskPatchInput = Partial<{
   title: string;
   notes: string;
+  aiPrompt: string;
+  aiNextStep: string;
+  aiContextQuestion: string;
+  aiContextAnswer: string;
+  aiReadyAt: string | null;
   labelIds: string[];
   checklist: TaskChecklistItem[];
   dueDate: string | null;
@@ -302,12 +396,14 @@ export type TaskPatchInput = Partial<{
   endDate: string | null;
   columnId: number;
   order: number;
+  makePrimary: boolean;
   status: string;
   parentTaskId: number | null;
   projectId: number;
   color: string | null;
   icon: string | null;
   coverMediaId: number | null;
+  assigneeId: number | null;
 }>;
 
 /**
@@ -323,30 +419,69 @@ export async function patchTaskItem(input: { teamId: number; taskId: number; pat
   if (!current) return { error: 'not_found' as const };
 
   let nextProjectId: number | undefined;
+  let nextColumnId: number | undefined;
+  let nextOrder: number | undefined;
+  let nextPrimaryProjectId: number | undefined;
+  let nextPrimaryColumnId: number | undefined;
+  let nextPrimaryOrder: number | undefined;
   if (patch.columnId !== undefined) {
     const column = await db.query.teamTaskColumns.findFirst({
       where: and(eq(teamTaskColumns.id, Number(patch.columnId)), eq(teamTaskColumns.teamId, teamId)),
     });
     if (!column) return { error: 'column_not_found' as const };
-    nextProjectId = patch.projectId ? Number(patch.projectId) : column.projectId;
+    if (patch.projectId !== undefined && Number(patch.projectId) !== column.projectId) {
+      return { error: 'column_project_mismatch' as const };
+    }
 
-    const location = await db.query.teamTaskItemLocations.findFirst({
+    nextProjectId = column.projectId;
+    nextColumnId = column.id;
+    const moved = current.projectId !== nextProjectId || current.columnId !== nextColumnId;
+    nextOrder = patch.order !== undefined
+      ? Number(patch.order)
+      : moved
+        ? await nextTaskOrder(teamId, nextColumnId)
+        : current.order;
+
+    const targetLocation = await db.query.teamTaskItemLocations.findFirst({
       where: and(
         eq(teamTaskItemLocations.taskId, current.id),
         eq(teamTaskItemLocations.projectId, nextProjectId),
         eq(teamTaskItemLocations.teamId, teamId),
       ),
+      columns: { id: true, isPrimary: true },
     });
+    const makePrimary = patch.makePrimary === true || current.projectId === nextProjectId || targetLocation?.isPrimary === true;
 
-    if (location) {
+    if (makePrimary) {
       await db
         .update(teamTaskItemLocations)
-        .set({
-          columnId: Number(patch.columnId),
-          ...(patch.order !== undefined && { order: Number(patch.order) }),
-          updatedAt: new Date(),
-        })
-        .where(eq(teamTaskItemLocations.id, location.id));
+        .set({ isPrimary: false, updatedAt: new Date() })
+        .where(and(eq(teamTaskItemLocations.taskId, current.id), eq(teamTaskItemLocations.teamId, teamId)));
+    }
+
+    if (makePrimary && current.projectId !== nextProjectId) {
+      await db
+        .delete(teamTaskItemLocations)
+        .where(and(
+          eq(teamTaskItemLocations.taskId, current.id),
+          eq(teamTaskItemLocations.teamId, teamId),
+          eq(teamTaskItemLocations.projectId, current.projectId),
+        ));
+    }
+
+    await createTaskLocation({
+      taskId: current.id,
+      teamId,
+      projectId: nextProjectId,
+      columnId: nextColumnId,
+      order: nextOrder,
+      isPrimary: makePrimary,
+    });
+
+    if (makePrimary) {
+      nextPrimaryProjectId = nextProjectId;
+      nextPrimaryColumnId = nextColumnId;
+      nextPrimaryOrder = nextOrder;
     }
   }
 
@@ -365,14 +500,22 @@ export async function patchTaskItem(input: { teamId: number; taskId: number; pat
     .set({
       ...(patch.title !== undefined && { title: patch.title }),
       ...(patch.notes !== undefined && { notes: patch.notes }),
+      // El endpoint PATCH pasa el body crudo, así que el recorte a 20k se
+      // hace acá y no en la ruta: es el único punto por el que pasan todos
+      // los escritores (REST y MCP).
+      ...(patch.aiPrompt !== undefined && { aiPrompt: String(patch.aiPrompt ?? '').slice(0, 20000) }),
+      ...(patch.aiNextStep !== undefined && { aiNextStep: String(patch.aiNextStep ?? '').slice(0, 20000) }),
+      ...(patch.aiContextQuestion !== undefined && { aiContextQuestion: String(patch.aiContextQuestion ?? '').slice(0, 20000) }),
+      ...(patch.aiContextAnswer !== undefined && { aiContextAnswer: String(patch.aiContextAnswer ?? '').slice(0, 20000) }),
+      ...(patch.aiReadyAt !== undefined && { aiReadyAt: patch.aiReadyAt ? new Date(patch.aiReadyAt) : null }),
       ...(patch.labelIds !== undefined && { labelIds: patch.labelIds }),
       ...(patch.checklist !== undefined && { checklist: patch.checklist }),
       ...(patch.dueDate !== undefined && { dueDate: patch.dueDate ? new Date(patch.dueDate) : null }),
       ...(patch.startDate !== undefined && { startDate: patch.startDate ? new Date(patch.startDate) : null }),
       ...(patch.endDate !== undefined && { endDate: patch.endDate ? new Date(patch.endDate) : null }),
-      ...(patch.columnId !== undefined && { columnId: Number(patch.columnId) }),
-      ...(nextProjectId !== undefined && { projectId: nextProjectId }),
-      ...(patch.order !== undefined && { order: patch.order }),
+      ...(nextPrimaryColumnId !== undefined && { columnId: nextPrimaryColumnId }),
+      ...(nextPrimaryProjectId !== undefined && { projectId: nextPrimaryProjectId }),
+      ...(nextPrimaryOrder !== undefined ? { order: nextPrimaryOrder } : patch.order !== undefined && { order: patch.order }),
       ...(nextStatus !== undefined && {
         status: nextStatus,
         completedAt: nextStatus === 'done' ? new Date() : null,
@@ -381,17 +524,85 @@ export async function patchTaskItem(input: { teamId: number; taskId: number; pat
       ...(patch.color !== undefined && { color: patch.color ? String(patch.color) : null }),
       ...(patch.icon !== undefined && { icon: patch.icon ? String(patch.icon) : null }),
       ...(patch.coverMediaId !== undefined && { coverMediaId: patch.coverMediaId ? Number(patch.coverMediaId) : null }),
+      ...(patch.assigneeId !== undefined && { assigneeId: patch.assigneeId ? Number(patch.assigneeId) : null }),
       updatedAt: new Date(),
     })
     .where(and(eq(teamTaskItems.id, taskId), eq(teamTaskItems.teamId, teamId)))
     .returning();
 
   if (!updated) return { error: 'not_found' as const };
+
+  const taskMessages = await db
+    .update(messages)
+    .set({
+      text: updated.title,
+      quotedMessageText: JSON.stringify({ taskId, status: updated.status }),
+    })
+    .where(like(messages.id, `task_${taskId}_contact_%`))
+    .returning();
+
+  for (const taskMessage of taskMessages) {
+    const chat = await db.query.chats.findFirst({
+      where: eq(chats.id, taskMessage.chatId),
+      columns: { remoteJid: true, instanceId: true },
+    });
+    if (chat) {
+      try {
+        await pusherServer.trigger(`team-${teamId}`, 'task-message-update', {
+          id: taskMessage.id,
+          taskId,
+          text: taskMessage.text,
+          status: updated.status,
+          remoteJid: chat.remoteJid,
+          instanceId: chat.instanceId,
+        });
+      } catch (error) {
+        console.error('Could not broadcast task message update:', error);
+      }
+    }
+  }
+
   return { item: updated };
 }
 
 export async function deleteTaskItem(teamId: number, taskId: number) {
-  await db.delete(teamTaskItems).where(and(eq(teamTaskItems.id, taskId), eq(teamTaskItems.teamId, teamId)));
+  const task = await db.query.teamTaskItems.findFirst({
+    where: and(eq(teamTaskItems.id, taskId), eq(teamTaskItems.teamId, teamId)),
+    columns: { id: true },
+  });
+  if (!task) return false;
+
+  const taskMessages = await db.query.messages.findMany({
+    where: like(messages.id, `task_${taskId}_contact_%`),
+    columns: { id: true },
+  });
+  const messageIds = taskMessages.map((message) => message.id);
+
+  await db.transaction(async (tx) => {
+    await tx.delete(teamTaskRelations).where(and(
+      eq(teamTaskRelations.teamId, teamId),
+      or(
+        and(eq(teamTaskRelations.sourceType, 'task'), eq(teamTaskRelations.sourceId, taskId)),
+        and(eq(teamTaskRelations.targetType, 'task'), eq(teamTaskRelations.targetId, taskId)),
+      ),
+    ));
+    await tx.delete(teamTaskMedia).where(and(
+      eq(teamTaskMedia.teamId, teamId),
+      eq(teamTaskMedia.ownerType, 'task'),
+      eq(teamTaskMedia.ownerId, taskId),
+    ));
+    if (messageIds.length) await tx.delete(messages).where(inArray(messages.id, messageIds));
+    await tx.delete(teamTaskItems).where(and(eq(teamTaskItems.id, taskId), eq(teamTaskItems.teamId, teamId)));
+  });
+
+  if (messageIds.length) {
+    try {
+      await pusherServer.trigger(`team-${teamId}`, 'task-message-delete', { taskId, messageIds });
+    } catch (error) {
+      console.error('Could not broadcast task message deletion:', error);
+    }
+  }
+  return true;
 }
 
 export async function listTaskComments(teamId: number, taskId: number) {
@@ -401,7 +612,16 @@ export async function listTaskComments(teamId: number, taskId: number) {
   });
 }
 
-export async function addTaskComment(input: { teamId: number; userId?: number | null; taskId: number; text: string }) {
+export async function addTaskComment(input: {
+  teamId: number;
+  userId?: number | null;
+  taskId: number;
+  text: string;
+  /** 'comment' = hilo de conversación; 'report' = parte de trabajo. */
+  kind?: 'comment' | 'report';
+  /** 'user' = escrito en la app; 'connector' = lo dejó una IA por MCP. */
+  source?: 'user' | 'connector';
+}) {
   const task = await db.query.teamTaskItems.findFirst({
     where: and(eq(teamTaskItems.id, input.taskId), eq(teamTaskItems.teamId, input.teamId)),
   });
@@ -409,7 +629,14 @@ export async function addTaskComment(input: { teamId: number; userId?: number | 
 
   const [comment] = await db
     .insert(teamTaskComments)
-    .values({ taskId: input.taskId, teamId: input.teamId, text: input.text.trim(), createdBy: input.userId ?? null })
+    .values({
+      taskId: input.taskId,
+      teamId: input.teamId,
+      text: input.text.trim(),
+      kind: input.kind ?? 'comment',
+      source: input.source ?? 'user',
+      createdBy: input.userId ?? null,
+    })
     .returning();
   return comment;
 }
@@ -468,9 +695,28 @@ export async function updateColumn(input: {
 }
 
 export async function deleteColumn(teamId: number, columnId: number) {
+  const taskRows = await db.query.teamTaskItems.findMany({
+    where: and(eq(teamTaskItems.columnId, columnId), eq(teamTaskItems.teamId, teamId)),
+    columns: { id: true },
+  });
+  for (const task of taskRows) await deleteTaskItem(teamId, task.id);
   await db.delete(teamTaskColumns).where(and(eq(teamTaskColumns.id, columnId), eq(teamTaskColumns.teamId, teamId)));
 }
 
+/**
+ * Inserta una relación evitando duplicados EN AMBAS DIRECCIONES.
+ *
+ * `teamTaskRelations` es no dirigida en la práctica (todos los lectores
+ * consultan `source OR target`), pero su índice único es sobre la tupla
+ * exacta. Sin este chequeo, dos llamadores que expresen el mismo vínculo al
+ * revés — históricamente la UI y `link_customer_task` escribían
+ * `customer→task` mientras `tasks_links` escribía `task→customer` — crean dos
+ * filas para lo mismo: el cliente aparece dos veces en la ficha y desvincular
+ * una deja la otra viva.
+ *
+ * Se resuelve acá, en el único punto de escritura, en vez de en cada
+ * llamador: así ningún caller nuevo puede reintroducir el problema.
+ */
 export async function insertRelation(input: {
   teamId: number;
   userId: number;
@@ -481,6 +727,30 @@ export async function insertRelation(input: {
   relationType?: string;
   metadata?: Record<string, unknown>;
 }) {
+  const relationType = input.relationType ?? 'related';
+
+  const existing = await db.query.teamTaskRelations.findFirst({
+    where: and(
+      eq(teamTaskRelations.teamId, input.teamId),
+      eq(teamTaskRelations.relationType, relationType),
+      or(
+        and(
+          eq(teamTaskRelations.sourceType, input.sourceType),
+          eq(teamTaskRelations.sourceId, input.sourceId),
+          eq(teamTaskRelations.targetType, input.targetType),
+          eq(teamTaskRelations.targetId, input.targetId),
+        ),
+        and(
+          eq(teamTaskRelations.sourceType, input.targetType),
+          eq(teamTaskRelations.sourceId, input.targetId),
+          eq(teamTaskRelations.targetType, input.sourceType),
+          eq(teamTaskRelations.targetId, input.sourceId),
+        ),
+      ),
+    ),
+  });
+  if (existing) return existing;
+
   const [relation] = await db
     .insert(teamTaskRelations)
     .values({
@@ -489,13 +759,78 @@ export async function insertRelation(input: {
       sourceId: input.sourceId,
       targetType: input.targetType,
       targetId: input.targetId,
-      relationType: input.relationType ?? 'related',
+      relationType,
       metadata: input.metadata ?? {},
       createdBy: input.userId,
     })
     .onConflictDoNothing()
     .returning();
   return relation ?? null;
+}
+
+/**
+ * Borra TODAS las relaciones de una entidad, en las dos direcciones. Se usa
+ * al eliminar clientes, contactos y proyectos: sin esto quedan relaciones
+ * colgadas apuntando a ids inexistentes y, como los ids son `serial`, un id
+ * reciclado volvería a atar esa tarea a otra entidad.
+ */
+export async function deleteRelationsFor(teamId: number, type: TaskEntityType, id: number) {
+  await db.delete(teamTaskRelations).where(and(
+    eq(teamTaskRelations.teamId, teamId),
+    or(
+      and(eq(teamTaskRelations.sourceType, type), eq(teamTaskRelations.sourceId, id)),
+      and(eq(teamTaskRelations.targetType, type), eq(teamTaskRelations.targetId, id)),
+    ),
+  ));
+}
+
+/**
+ * Relaciones tarea↔cliente para MUCHAS tareas de una sola vez.
+ *
+ * La UI necesita mostrar el chip del cliente en cada tarjeta de la lista;
+ * pedir los detalles tarea por tarea sería N+1 de red, y hacerlo sólo al
+ * abrir la tarea (como antes) dejaba las tarjetas sin chip hasta abrirlas.
+ */
+export async function listEntityLinksForTasks(
+  teamId: number,
+  taskIds: number[] | null,
+  entityType: 'customer' | 'contact',
+) {
+  if (taskIds && !taskIds.length) return new Map<number, number[]>();
+
+  const rows = await db.query.teamTaskRelations.findMany({
+    where: and(
+      eq(teamTaskRelations.teamId, teamId),
+      taskIds
+        ? or(
+            and(eq(teamTaskRelations.sourceType, 'task'), inArray(teamTaskRelations.sourceId, taskIds), eq(teamTaskRelations.targetType, entityType)),
+            and(eq(teamTaskRelations.targetType, 'task'), inArray(teamTaskRelations.targetId, taskIds), eq(teamTaskRelations.sourceType, entityType)),
+          )
+        : or(
+            and(eq(teamTaskRelations.sourceType, 'task'), eq(teamTaskRelations.targetType, entityType)),
+            and(eq(teamTaskRelations.targetType, 'task'), eq(teamTaskRelations.sourceType, entityType)),
+          ),
+    ),
+  });
+
+  const byTask = new Map<number, number[]>();
+  for (const row of rows) {
+    const taskId = row.sourceType === 'task' ? row.sourceId : row.targetId;
+    const entityId = row.sourceType === entityType ? row.sourceId : row.targetId;
+    const current = byTask.get(taskId);
+    if (current) {
+      if (!current.includes(entityId)) current.push(entityId);
+    } else {
+      byTask.set(taskId, [entityId]);
+    }
+  }
+  return byTask;
+}
+
+/** Atajo histórico: clientes. Los leads (contactos del CRM) usan el mismo
+ * mecanismo con `entityType: 'contact'`. */
+export async function listCustomerLinksForTasks(teamId: number, taskIds: number[] | null) {
+  return listEntityLinksForTasks(teamId, taskIds, 'customer');
 }
 
 export async function copyTaskMedia(input: {

@@ -108,7 +108,7 @@ export default async function AdminPluginsPage({ searchParams }: PageProps) {
         </CardHeader>
         <CardContent>
           <form method="GET" className="max-w-xs space-y-2">
-            <Label htmlFor="teamId">Team</Label>
+            <Label htmlFor="teamId">Equipo</Label>
             <select
               id="teamId"
               name="teamId"

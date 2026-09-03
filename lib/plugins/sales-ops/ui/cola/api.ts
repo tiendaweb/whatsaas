@@ -34,7 +34,9 @@ export async function postJson<T>(url: string, body: unknown): Promise<T> {
 
 export const KIND_LABELS: Record<ActionKind, string> = {
   send_message: 'Mensaje',
+  schedule_message: 'Mensaje programado',
   create_task: 'Tarea',
+  request_demo: 'Demo web (Tareas OS)',
   register_sale: 'Registrar cobro',
   mark_pre_descarte: 'Pre-descarte',
   mark_descarte: 'Descarte definitivo',

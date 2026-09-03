@@ -2,6 +2,7 @@ import { getBranding } from '@/lib/db/queries/branding';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { brandName } from '@/lib/branding/constants';
 
 export const metadata = {
   title: 'Términos del Servicio',
@@ -10,7 +11,7 @@ export const metadata = {
 
 export default async function TermsPage() {
   const branding = await getBranding();
-  const siteName = branding?.name || 'WhatsPro';
+  const siteName = brandName(branding);
 
   return (
     <main className="min-h-screen bg-background py-16 px-4 sm:px-6 lg:px-8">

@@ -234,6 +234,38 @@ export class GeminiProvider implements AIProvider {
   }
 
   async transcribeAudio(audioUrl: string): Promise<string> {
-    return "Audio content"; 
+    const audio = await this.getFileContent(audioUrl);
+    if (!audio) {
+      throw new Error('Audio file could not be loaded.');
+    }
+
+    const response = await this.client.models.generateContent({
+      model: this.modelName,
+      contents: [{
+        role: 'user',
+        parts: [
+          {
+            inlineData: {
+              mimeType: audio.mimeType,
+              data: audio.data,
+            },
+          },
+          {
+            text: 'Transcribe this audio faithfully. Return only the spoken words, without commentary or markdown.',
+          },
+        ],
+      }],
+      config: {
+        temperature: 0,
+        maxOutputTokens: 4000,
+      },
+    });
+
+    const transcription = response.text?.trim();
+    if (!transcription) {
+      throw new Error('Gemini returned an empty audio transcription.');
+    }
+
+    return transcription;
   }
 }

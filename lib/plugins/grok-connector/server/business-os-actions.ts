@@ -22,6 +22,20 @@ import { generateTasksFromNoteCommitments } from '@/lib/plugins/notes/server/mee
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
+/**
+ * `isoDate` es un esquema de ZOD, para validar la entrada. Esto es JSON Schema,
+ * para DESCRIBIR la tool al modelo. Son dos cosas distintas y no se pueden
+ * mezclar: esparcir el objeto de zod dentro de `properties` filtraba sus
+ * campos internos, el resultado no validaba contra el meta-esquema de la API
+ * ("properties/from/maxLength must be integer") y el conector directamente
+ * descartaba `whatspro_finance_summary` al cargar las herramientas. O sea: la
+ * tool existía, funcionaba, y ninguna IA podía verla.
+ */
+const isoDateProperty = {
+  type: 'string',
+  pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+} as const;
+
 export const businessOsReadTools: GrokActionTool[] = [
   {
     name: 'whatspro_finance_summary',
@@ -30,8 +44,8 @@ export const businessOsReadTools: GrokActionTool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        from: { ...isoDate, description: 'Fecha inicial ISO (YYYY-MM-DD) del período a resumir. Por defecto, el primer día del mes actual.' },
-        to: { ...isoDate, description: 'Fecha final ISO (YYYY-MM-DD) del período a resumir. Por defecto, hoy.' },
+        from: { ...isoDateProperty, description: 'Fecha inicial ISO (YYYY-MM-DD) del período a resumir. Por defecto, el primer día del mes actual.' },
+        to: { ...isoDateProperty, description: 'Fecha final ISO (YYYY-MM-DD) del período a resumir. Por defecto, hoy.' },
       },
       additionalProperties: false,
     },

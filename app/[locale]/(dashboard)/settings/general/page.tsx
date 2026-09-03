@@ -12,6 +12,7 @@ import { User } from '@/lib/db/schema';
 import useSWR from 'swr';
 import { Suspense } from 'react';
 import { useTranslations } from 'next-intl';
+import { GeneralPreferences } from '@/components/settings/GeneralPreferences';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -108,12 +109,17 @@ export default function GeneralPage() {
   );
 
   return (
-    <section className="flex-1 p-4 lg:p-8">
-      <h1 className="text-lg lg:text-2xl font-medium text-foreground mb-6">
+    <section className="min-w-0 flex-1 space-y-6">
+      <div>
+      <h1 className="text-xl font-bold tracking-tight text-foreground lg:text-2xl">
         {t('general_title')}
       </h1>
+      <p className="mt-1 text-sm text-muted-foreground">{t('general_description')}</p>
+      </div>
 
-      <Card>
+      <GeneralPreferences />
+
+      <Card className="rounded-none shadow-none">
         <CardHeader>
           <CardTitle>{t('account_info')}</CardTitle>
         </CardHeader>

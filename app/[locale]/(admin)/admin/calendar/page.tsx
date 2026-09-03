@@ -1,10 +1,27 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   ChevronLeft,
   ChevronRight,
@@ -15,7 +32,16 @@ import {
   Users,
   Trash2,
   Filter,
+  Plus,
+  Pencil,
 } from 'lucide-react';
+
+type EventParticipant = {
+  id: number;
+  userId: number | null;
+  contactId: number | null;
+  role: string;
+};
 
 type TeamEvent = {
   id: number;
@@ -27,6 +53,47 @@ type TeamEvent = {
   reminderAt: string | null;
   status: 'scheduled' | 'completed' | 'canceled';
   createdBy?: string;
+  kind: 'meeting' | 'call';
+  subtype: string | null;
+  outcome: string;
+  nextAction: string;
+  customerId: number | null;
+  relatedEventId: number | null;
+  participants: EventParticipant[];
+};
+
+type Customer = { id: number; name: string };
+type TeamMember = { id: number; userId: number; user: { id: number; name: string | null; email: string } };
+
+const MEETING_SUBTYPES = [
+  { value: 'presencial', label: 'Presencial' },
+  { value: 'videollamada', label: 'Videollamada' },
+  { value: 'interna', label: 'Interna' },
+  { value: 'comercial', label: 'Comercial' },
+  { value: 'onboarding', label: 'Onboarding' },
+  { value: 'soporte', label: 'Soporte' },
+  { value: 'seguimiento', label: 'Seguimiento' },
+];
+
+const CALL_SUBTYPES = [
+  { value: 'entrante', label: 'Entrante' },
+  { value: 'saliente', label: 'Saliente' },
+  { value: 'no_respondio', label: 'No respondió' },
+  { value: 'reagendada', label: 'Reagendada' },
+];
+
+const EMPTY_FORM = {
+  title: '',
+  kind: 'meeting' as 'meeting' | 'call',
+  subtype: '',
+  startsAt: '',
+  endsAt: '',
+  notes: '',
+  outcome: '',
+  nextAction: '',
+  status: 'scheduled' as TeamEvent['status'],
+  customerId: '' as string | number,
+  participantUserIds: [] as number[],
 };
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -42,10 +109,77 @@ const EVENT_COLORS = {
 
 export default function AdminCalendarPage() {
   const { data: eventsData, mutate } = useSWR<TeamEvent[]>('/api/plugins/calendar/events', fetcher);
+  const { data: customersData } = useSWR<Customer[]>('/api/plugins/customers', fetcher);
+  const { data: membersData } = useSWR<TeamMember[]>('/api/team/members', fetcher);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'scheduled' | 'completed' | 'canceled'>('all');
   const [expandedEvent, setExpandedEvent] = useState<number | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+
+  const customers = customersData ?? [];
+  const members = membersData ?? [];
+
+  function openCreateDialog() {
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+    setDialogOpen(true);
+  }
+
+  function openEditDialog(event: TeamEvent) {
+    setEditingId(event.id);
+    setForm({
+      title: event.title,
+      kind: event.kind,
+      subtype: event.subtype ?? '',
+      startsAt: toLocalInput(event.startsAt),
+      endsAt: toLocalInput(event.endsAt),
+      notes: event.notes,
+      outcome: event.outcome,
+      nextAction: event.nextAction,
+      status: event.status,
+      customerId: event.customerId ?? '',
+      participantUserIds: event.participants.filter((p) => p.userId).map((p) => p.userId as number),
+    });
+    setDialogOpen(true);
+  }
+
+  async function submitEvent() {
+    if (!form.title.trim() || !form.startsAt || !form.endsAt) return;
+    setSaving(true);
+    try {
+      const payload = {
+        title: form.title.trim(),
+        kind: form.kind,
+        subtype: form.subtype || null,
+        startsAt: new Date(form.startsAt).toISOString(),
+        endsAt: new Date(form.endsAt).toISOString(),
+        notes: form.notes,
+        outcome: form.outcome,
+        nextAction: form.nextAction,
+        status: form.status,
+        customerId: form.customerId === '' ? null : Number(form.customerId),
+        participants: form.participantUserIds.map((userId) => ({ userId, role: 'attendee' })),
+        attendees: [] as string[],
+      };
+      const url = editingId ? `/api/plugins/calendar/events/${editingId}` : '/api/plugins/calendar/events';
+      const method = editingId ? 'PATCH' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        setDialogOpen(false);
+        mutate();
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const events = eventsData ?? [];
   const calendarDays = generateCalendarDays(currentDate);
@@ -107,9 +241,147 @@ export default function AdminCalendarPage() {
   return (
     <div className="space-y-6 p-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Administración de Calendario</h1>
-        <p className="text-muted-foreground">Monitorea y gestiona todos los eventos del equipo</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Administración de Calendario</h1>
+          <p className="text-muted-foreground">Monitorea y gestiona reuniones, llamadas y eventos del equipo</p>
+        </div>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild>
+            <Button onClick={openCreateDialog}>
+              <Plus className="h-4 w-4 mr-1.5" />
+              Nueva reunión/llamada
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{editingId ? 'Editar' : 'Nueva'} reunión/llamada</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs mb-1.5 block">Tipo</Label>
+                  <Select
+                    value={form.kind}
+                    onValueChange={(value) => setForm((f) => ({ ...f, kind: value as 'meeting' | 'call', subtype: '' }))}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="meeting">Reunión</SelectItem>
+                      <SelectItem value="call">Llamada</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs mb-1.5 block">Subtipo</Label>
+                  <Select value={form.subtype || undefined} onValueChange={(value) => setForm((f) => ({ ...f, subtype: value }))}>
+                    <SelectTrigger><SelectValue placeholder="Elegir..." /></SelectTrigger>
+                    <SelectContent>
+                      {(form.kind === 'meeting' ? MEETING_SUBTYPES : CALL_SUBTYPES).map((s) => (
+                        <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-xs mb-1.5 block">Título</Label>
+                <Input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="Ej. Kickoff con ACME" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs mb-1.5 block">Inicio</Label>
+                  <Input type="datetime-local" value={form.startsAt} onChange={(e) => setForm((f) => ({ ...f, startsAt: e.target.value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs mb-1.5 block">Fin</Label>
+                  <Input type="datetime-local" value={form.endsAt} onChange={(e) => setForm((f) => ({ ...f, endsAt: e.target.value }))} />
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-xs mb-1.5 block">Cliente (opcional)</Label>
+                <Select
+                  value={form.customerId ? String(form.customerId) : undefined}
+                  onValueChange={(value) => setForm((f) => ({ ...f, customerId: value }))}
+                >
+                  <SelectTrigger><SelectValue placeholder="Sin cliente" /></SelectTrigger>
+                  <SelectContent>
+                    {customers.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs mb-1.5 block">Participantes</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {members.map((m) => {
+                    const selected = form.participantUserIds.includes(m.userId);
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() =>
+                          setForm((f) => ({
+                            ...f,
+                            participantUserIds: selected
+                              ? f.participantUserIds.filter((id) => id !== m.userId)
+                              : [...f.participantUserIds, m.userId],
+                          }))
+                        }
+                        className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                          selected ? 'bg-primary text-primary-foreground border-primary' : 'border-border/50 hover:bg-muted'
+                        }`}
+                      >
+                        {m.user.name || m.user.email}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-xs mb-1.5 block">Estado</Label>
+                <Select value={form.status} onValueChange={(value) => setForm((f) => ({ ...f, status: value as TeamEvent['status'] }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="scheduled">Programado</SelectItem>
+                    <SelectItem value="completed">Completado</SelectItem>
+                    <SelectItem value="canceled">Cancelado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs mb-1.5 block">Notas</Label>
+                <Textarea value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} rows={2} />
+              </div>
+
+              {form.status === 'completed' && (
+                <>
+                  <div>
+                    <Label className="text-xs mb-1.5 block">Resultado</Label>
+                    <Textarea value={form.outcome} onChange={(e) => setForm((f) => ({ ...f, outcome: e.target.value }))} rows={2} placeholder="¿Qué se resolvió?" />
+                  </div>
+                  <div>
+                    <Label className="text-xs mb-1.5 block">Próxima acción</Label>
+                    <Input value={form.nextAction} onChange={(e) => setForm((f) => ({ ...f, nextAction: e.target.value }))} placeholder="Ej. Enviar propuesta el viernes" />
+                  </div>
+                </>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
+              <Button onClick={submitEvent} disabled={saving || !form.title.trim() || !form.startsAt || !form.endsAt}>
+                {saving ? 'Guardando...' : editingId ? 'Guardar cambios' : 'Crear'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Stats Grid */}
@@ -313,12 +585,29 @@ export default function AdminCalendarPage() {
 
                       {isExpanded && (
                         <div className="border-t border-border/50 p-3 space-y-2 text-xs bg-muted/20">
-                          {event.attendees.length > 0 && (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <Badge variant="secondary" className="text-[10px]">
+                              {event.kind === 'call' ? 'Llamada' : 'Reunión'}
+                            </Badge>
+                            {event.subtype && <Badge variant="outline" className="text-[10px]">{event.subtype}</Badge>}
+                            {event.customerId && (
+                              <Badge variant="outline" className="text-[10px]">
+                                {customers.find((c) => c.id === event.customerId)?.name ?? `Cliente #${event.customerId}`}
+                              </Badge>
+                            )}
+                          </div>
+
+                          {event.participants.length > 0 && (
                             <div className="flex items-start gap-2">
                               <Users className="h-3.5 w-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
                               <div className="flex-1">
-                                <p className="text-muted-foreground mb-1">Asistentes</p>
-                                <p className="line-clamp-2">{event.attendees.join(', ')}</p>
+                                <p className="text-muted-foreground mb-1">Participantes</p>
+                                <p className="line-clamp-2">
+                                  {event.participants
+                                    .map((p) => members.find((m) => m.userId === p.userId)?.user.name || members.find((m) => m.userId === p.userId)?.user.email)
+                                    .filter(Boolean)
+                                    .join(', ') || event.attendees.join(', ')}
+                                </p>
                               </div>
                             </div>
                           )}
@@ -330,17 +619,47 @@ export default function AdminCalendarPage() {
                             </div>
                           )}
 
+                          {event.outcome && (
+                            <div className="flex items-start gap-2">
+                              <span className="text-muted-foreground">Resultado:</span>
+                              <p className="line-clamp-2">{event.outcome}</p>
+                            </div>
+                          )}
+
+                          {event.nextAction && (
+                            <div className="flex items-start gap-2">
+                              <span className="text-muted-foreground">Próxima acción:</span>
+                              <p className="line-clamp-2">{event.nextAction}</p>
+                            </div>
+                          )}
+
                           <div className="text-muted-foreground">
                             Duración: {getEventDuration(event.startsAt, event.endsAt)}
                           </div>
 
-                          <button
-                            onClick={() => deleteEvent(event.id)}
-                            className="flex items-center gap-1.5 text-destructive hover:text-destructive/80 transition-colors mt-2"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            Eliminar
-                          </button>
+                          <div className="flex items-center gap-3 pt-1">
+                            <button
+                              onClick={() => openEditDialog(event)}
+                              className="flex items-center gap-1.5 text-primary hover:text-primary/80 transition-colors"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                              Editar
+                            </button>
+                            <a
+                              href={`/plugins/notes?eventId=${event.id}`}
+                              className="flex items-center gap-1.5 text-primary hover:text-primary/80 transition-colors"
+                            >
+                              <Users className="h-3.5 w-3.5" />
+                              Nota de reunión
+                            </a>
+                            <button
+                              onClick={() => deleteEvent(event.id)}
+                              className="flex items-center gap-1.5 text-destructive hover:text-destructive/80 transition-colors"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Eliminar
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -381,6 +700,12 @@ function StatCard({
       <p className="text-3xl font-bold">{value}</p>
     </div>
   );
+}
+
+function toLocalInput(isoString: string): string {
+  const d = new Date(isoString);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function generateCalendarDays(date: Date): (Date | null)[] {

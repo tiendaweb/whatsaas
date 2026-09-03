@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import { Resend } from 'resend';
 import { getBranding } from '@/lib/db/queries/branding';
+import { brandName } from '@/lib/branding/constants';
 
 const contactSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -19,7 +20,7 @@ export type ContactActionState = {
 
 export async function sendContactMessage(prevState: ContactActionState, formData: FormData): Promise<ContactActionState> {
   const branding = await getBranding();
-  const siteName = branding?.name || 'WhatsPro';
+  const siteName = brandName(branding);
   
   const rawData = {
     firstName: formData.get('firstName') as string,

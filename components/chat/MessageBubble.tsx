@@ -1,12 +1,27 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Mic, CheckCheck, Check, Loader2, FileText, User, MapPin, CornerUpLeft, Download, FilePenLine, MousePointerClick, Info, Bot, Zap, Megaphone, AlertCircle, RefreshCw, SmilePlus, Plus, Save } from 'lucide-react';
+import { Mic, CheckCheck, Check, Loader2, FileText, User, MapPin, CornerUpLeft, Download, FilePenLine, MousePointerClick, Info, Bot, Zap, Megaphone, AlertCircle, RefreshCw, SmilePlus, Plus, Save, Play, Clock, ListTodo, Radar as RadarIcon } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import { CustomAudioPlayer } from '@/components/ui/custom-audio-player';
 import { Message, Reaction } from './types';
 import { formatBytes } from './utils';
 import { useTranslations } from 'next-intl';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  isRadarNoteText,
+  isRadarTaskTitle,
+  radarNoteBody,
+  radarNoteHeadline,
+  radarTaskTitle,
+} from '@/lib/plugins/radar/shared/display';
+import { RadarTag } from '@/lib/plugins/radar/ui/RadarTag';
+
+const hardWrapStyle: React.CSSProperties = {
+  minWidth: 0,
+  overflowWrap: 'anywhere',
+  wordBreak: 'break-word',
+};
 
 function ReadReceipt({ status, isInternal }: { status?: string | null, isInternal?: boolean }) {
   if (isInternal) return null;
@@ -22,32 +37,39 @@ function QuotedMessagePreview({ quotedJson }: { quotedJson: string | null }) {
   const t = useTranslations('Chat');
   if (!quotedJson) return null;
   let quotedData: any = null;
-  try { quotedData = JSON.parse(quotedJson); } catch (e) { return <p className="text-sm text-foreground line-clamp-2">{quotedJson}</p>; }
+  try { quotedData = JSON.parse(quotedJson); } catch (e) { return <p className="text-sm text-foreground line-clamp-2 break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>{quotedJson}</p>; }
   if (!quotedData) return null;
 
   if (quotedData.messageType === 'imageMessage' && quotedData.mediaUrl) {
-    return (<div className="flex items-center gap-2 min-h-[40px]"><img src={quotedData.mediaUrl} alt="Reply" className="h-10 w-10 rounded object-cover" /><p className="text-sm text-foreground line-clamp-2">{quotedData.text || t('image_item')}</p></div>);
+    return (<div className="flex items-center gap-2 min-h-[40px] min-w-0"><img src={quotedData.mediaUrl} alt="Reply" className="h-10 w-10 rounded object-cover shrink-0" /><p className="text-sm text-foreground line-clamp-2 min-w-0 break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>{quotedData.text || t('image_item')}</p></div>);
   }
   if (quotedData.messageType === 'videoMessage' && quotedData.mediaUrl) {
-    return (<div className="flex items-center gap-2 min-h-[40px]"><video src={quotedData.mediaUrl} className="h-10 w-10 rounded object-cover bg-background" /><p className="text-sm text-foreground line-clamp-2">{quotedData.text || t('video_item')}</p></div>);
+    return (
+      <div className="flex items-center gap-2 min-h-[40px] min-w-0">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-background">
+          <Play className="h-4 w-4 text-muted-foreground" />
+        </div>
+        <p className="text-sm text-foreground line-clamp-2 min-w-0 break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>{quotedData.text || t('video_item')}</p>
+      </div>
+    );
   }
   if (quotedData.messageType === 'stickerMessage' && quotedData.mediaUrl) {
-    return (<div className="flex items-center gap-2 min-h-[40px]"><img src={quotedData.mediaUrl} alt="Reply Sticker" className="h-10 w-10 object-contain" /><p className="text-sm text-foreground line-clamp-2">{t('sticker_item')}</p></div>);
+    return (<div className="flex items-center gap-2 min-h-[40px] min-w-0"><img src={quotedData.mediaUrl} alt="Reply Sticker" className="h-10 w-10 shrink-0 object-contain" /><p className="text-sm text-foreground line-clamp-2 min-w-0 break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>{t('sticker_item')}</p></div>);
   }
   if (quotedData.messageType === 'audioMessage') {
-    return (<div className="flex items-center gap-2 text-foreground min-h-[40px]"><Mic className="h-4 w-4 flex-shrink-0" /><p className="text-sm line-clamp-2">{t('audio_item')}</p></div>);
+    return (<div className="flex items-center gap-2 text-foreground min-h-[40px] min-w-0"><Mic className="h-4 w-4 flex-shrink-0" /><p className="text-sm line-clamp-2 min-w-0 break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>{t('audio_item')}</p></div>);
   }
   if (quotedData.messageType === 'documentMessage') {
-    return (<div className="flex items-center gap-2 text-foreground min-h-[40px]"><FileText className="h-4 w-4 flex-shrink-0" /><p className="text-sm line-clamp-2">{quotedData.text || t('document_item')}</p></div>);
+    return (<div className="flex items-center gap-2 text-foreground min-h-[40px] min-w-0"><FileText className="h-4 w-4 flex-shrink-0" /><p className="text-sm line-clamp-2 min-w-0 break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>{quotedData.text || t('document_item')}</p></div>);
   }
-  return <p className="text-sm text-foreground line-clamp-2">{quotedData.text || t('message_item')}</p>;
+  return <p className="text-sm text-foreground line-clamp-2 break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>{quotedData.text || t('message_item')}</p>;
 }
 
 const FormattedText = ({ text, highlight }: { text: string, highlight: string }) => {
   if (!text) return null;
   const parts = highlight.trim() ? text.split(new RegExp(`(${highlight})`, 'gi')) : [text];
   return (
-    <span className="whitespace-pre-wrap break-words">
+    <span className="block min-w-0 max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word]" style={{ ...hardWrapStyle, whiteSpace: 'pre-wrap' }}>
       {parts.map((part, i) => {
         const isHighlight = highlight.trim() && part.toLowerCase() === highlight.toLowerCase();
         const formatParts = part.split(/(\*.*?\*|_.*?_)/g);
@@ -73,32 +95,32 @@ function InteractiveMessage({ text, metadataJson }: { text: string, metadataJson
     } catch (e) {}
 
     return (
-        <div className="flex flex-col gap-2 min-w-[200px]">
-            <p className="text-sm text-foreground whitespace-pre-wrap">{text}</p>
-            
+        <div className="flex w-full max-w-full flex-col gap-2 min-w-0 sm:w-[200px] sm:max-w-full">
+            <p className="text-sm text-foreground whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>{text}</p>
+
             {interactive?.footer && (
-                <p className="text-xs text-muted-foreground">{interactive.footer.text}</p>
+                <p className="text-xs text-muted-foreground break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>{interactive.footer.text}</p>
             )}
 
             <div className="flex flex-col gap-2 mt-1 w-full">
                 {interactive?.type === 'button' && interactive.action?.buttons?.map((btn: any, idx: number) => (
-                    <div key={idx} className="bg-background/50 border border-border/50 rounded-md p-2 text-center text-sm font-medium text-primary shadow-sm">
+                    <div key={idx} className="bg-background/50 border border-border/50 rounded-md p-2 text-center text-sm font-medium text-primary shadow-sm break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>
                         {btn.reply?.title}
                     </div>
                 ))}
 
                 {interactive?.type === 'list' && (
                     <div className="bg-background/50 border border-border/50 rounded-md overflow-hidden shadow-sm">
-                        <div className="p-2 text-center text-sm font-medium text-primary border-b border-border/50">
+                        <div className="p-2 text-center text-sm font-medium text-primary border-b border-border/50 break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>
                             {interactive.action?.button || t('menu_item')}
                         </div>
                         {interactive.action?.sections?.map((section: any, sIdx: number) => (
                             <div key={sIdx} className="p-2">
-                                {section.title && <p className="text-xs font-bold text-muted-foreground mb-1">{section.title}</p>}
+                                {section.title && <p className="text-xs font-bold text-muted-foreground mb-1 break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>{section.title}</p>}
                                 {section.rows?.map((row: any, rIdx: number) => (
-                                    <div key={rIdx} className="text-xs p-1.5 hover:bg-muted rounded cursor-default">
-                                        <span className="font-medium block">{row.title}</span>
-                                        {row.description && <span className="text-muted-foreground text-[10px]">{row.description}</span>}
+                                    <div key={rIdx} className="text-xs p-1.5 hover:bg-muted rounded cursor-default min-w-0">
+                                        <span className="font-medium block break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>{row.title}</span>
+                                        {row.description && <span className="text-muted-foreground text-[10px] break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>{row.description}</span>}
                                     </div>
                                 ))}
                             </div>
@@ -190,13 +212,14 @@ interface MessageBubbleProps {
   onRetry?: (message: Message) => void;
   onReact?: (messageId: string, emoji: string) => void;
   onSaveDraft?: (content: string) => void;
+  onToggleTask?: (taskId: number, currentStatus: string) => void;
   searchQuery: string;
   userBubbleColor?: string;
   contactBubbleColor?: string;
   isGroup?: boolean;
 }
 
-export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, onSaveDraft, searchQuery, userBubbleColor, contactBubbleColor, isGroup }: MessageBubbleProps) {
+export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, onSaveDraft, onToggleTask, searchQuery, userBubbleColor, contactBubbleColor, isGroup }: MessageBubbleProps) {
   const t = useTranslations('Chat');
   if (msg.messageType === 'system') {
       let displayText = msg.text || '';
@@ -217,36 +240,58 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, on
           }
       }
       return (
-          <div className="flex justify-center my-3">
-              <div className="flex items-center gap-2 bg-muted/50 px-3 py-1 rounded-full text-xs text-muted-foreground border border-border/50 shadow-sm">
-                  <Info className="h-3 w-3" />
-                  <span>{displayText}</span>
+          <div className="flex w-full max-w-full justify-center my-3 min-w-0">
+              <div className="flex max-w-full min-w-0 items-center gap-2 rounded-full border border-border/50 bg-muted/50 px-3 py-1 text-xs text-muted-foreground shadow-sm">
+                  <Info className="h-3 w-3 shrink-0" />
+                  <span className="min-w-0 break-words [overflow-wrap:anywhere]">{displayText}</span>
               </div>
           </div>
       );
   }
 
   const isMe = msg.fromMe;
-  const isInternal = msg.isInternal;
+  const isTask = msg.messageType === 'task';
+  let taskMetadata: { taskId?: number; status?: string } = {};
+  if (isTask && msg.quotedMessageText) {
+    try {
+      taskMetadata = JSON.parse(msg.quotedMessageText);
+    } catch {}
+  }
+  const taskDone = taskMetadata.status === 'done';
+  const isInternal = Boolean(msg.isInternal) && !isTask;
+  // La detección va contra el texto original: el encabezado `🎯 RADAR …` sigue
+  // guardado en el mensaje, acá sólo se decide cómo pintarlo.
+  const isRadarNote = isInternal && isRadarNoteText(msg.text);
   const isAi = msg.isAi;
   const isAutomation = msg.isAutomation;
   const isCampaign = msg.messageType === 'campaign';
+  const isScheduled = msg.messageType === 'scheduled';
+  const isAappSpaceScheduled = msg.messageType === 'scheduled_aapp_space';
   const isError = msg.status === 'error';
 
   const time = new Date(msg.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false });
   const [isHovered, setIsHovered] = useState(false);
   const [reactionPickerOpen, setReactionPickerOpen] = useState(false);
   const showActions = isHovered || reactionPickerOpen;
-  const isTextOnlyMessage = ['text', 'conversation', 'extendedTextMessage'].includes(msg.messageType || '') && !!msg.text?.trim();
+  const isTextOnlyMessage = ['text', 'conversation', 'extendedTextMessage', 'scheduled', 'scheduled_aapp_space'].includes(msg.messageType || '') && !!msg.text?.trim();
 
   const hasCustomTheme = !!(userBubbleColor || contactBubbleColor);
   let bubbleColor = isMe ? 'bg-primary/10' : 'bg-card';
   let borderColor = '';
-  let bubbleStyle: React.CSSProperties = {};
+  let bubbleStyle: React.CSSProperties = {
+    ...hardWrapStyle,
+    maxWidth: 'min(70%, 42rem)',
+  };
 
   if (isError) {
       bubbleColor = 'bg-red-500/10 dark:bg-red-500/5';
       borderColor = 'border border-red-500/30';
+  } else if (isTask) {
+      bubbleColor = 'bg-primary/5';
+      borderColor = 'border border-primary/20';
+  } else if (isRadarNote) {
+      bubbleColor = 'bg-indigo-500/10 dark:bg-indigo-500/5';
+      borderColor = 'border border-indigo-500/25';
   } else if (isInternal) {
       bubbleColor = 'bg-yellow-500/10 dark:bg-yellow-500/5';
       borderColor = 'border border-yellow-500/20';
@@ -262,6 +307,7 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, on
   } else if (hasCustomTheme) {
       bubbleColor = '';
       bubbleStyle = {
+        ...bubbleStyle,
         backgroundColor: isMe ? userBubbleColor : contactBubbleColor,
       };
   }
@@ -283,7 +329,7 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, on
                   }
 
                   return (
-                      <div key={idx} className="bg-card/80 border rounded-md p-2 text-center text-sm font-medium text-primary cursor-pointer hover:bg-muted transition-colors shadow-sm">
+                      <div key={idx} className="bg-card/80 border rounded-md p-2 text-center text-sm font-medium text-primary cursor-pointer hover:bg-muted transition-colors shadow-sm break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>
                           {label}
                       </div>
                   );
@@ -293,6 +339,25 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, on
   };
 
   const renderContent = () => {
+    if (isTask) {
+      return (
+        <div className="flex min-w-[12rem] max-w-full items-start gap-2.5 py-0.5">
+          <Checkbox
+            checked={taskDone}
+            onCheckedChange={() => {
+              if (taskMetadata.taskId) onToggleTask?.(taskMetadata.taskId, taskMetadata.status || 'open');
+            }}
+            className="mt-0.5"
+            aria-label={t(taskDone ? 'task_reopen' : 'task_mark_done')}
+            title={t(taskDone ? 'task_reopen' : 'task_mark_done')}
+          />
+          <span className={`flex min-w-0 items-center gap-1.5 break-words font-medium leading-5 ${taskDone ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
+            {isRadarTaskTitle(msg.text) && <RadarTag size="xs" />}
+            <span className="min-w-0 break-words">{radarTaskTitle(msg.text)}</span>
+          </span>
+        </div>
+      );
+    }
     if ((msg.messageType === 'interactiveMessage' || msg.messageType === 'buttonsMessage' || msg.messageType === 'listMessage') && msg.quotedMessageText) {
         return <InteractiveMessage text={msg.text || ''} metadataJson={msg.quotedMessageText} />;
     }
@@ -307,11 +372,11 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, on
     
     if (msg.messageType === 'stickerMessage' && msg.mediaUrl) {
       return (
-        <div className="flex flex-col gap-1 p-1">
+        <div className="flex min-w-0 max-w-full flex-col gap-1 overflow-hidden p-1">
           <img 
             src={msg.mediaUrl} 
             alt="Sticker" 
-            className="rounded-lg max-w-[150px] max-h-[150px] object-contain cursor-pointer" 
+            className="rounded-lg max-w-full max-h-[150px] object-contain cursor-pointer"
             onClick={() => onMediaClick(msg.id)} 
           />
         </div>
@@ -320,19 +385,19 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, on
 
     if (isVideo && msg.mediaUrl) {
       return (
-        <div className="flex flex-col gap-1">
-          <video 
-            controls 
-            preload="metadata" 
-            playsInline 
-            src={msg.mediaUrl} 
-            className="rounded-lg max-w-xs max-h-60 cursor-pointer bg-black/10" 
-            onClick={(e) => { e.preventDefault(); onMediaClick(msg.id); }}
+        <div className="flex min-w-0 max-w-full flex-col gap-1 overflow-hidden">
+          <button
+            type="button"
+            className="relative flex h-40 w-full max-w-full items-center justify-center rounded-lg bg-black/10 text-foreground sm:w-64"
+            onClick={() => onMediaClick(msg.id)}
+            aria-label={t('video_item')}
           >
-            <a href={msg.mediaUrl}>{t('download_video_text')}</a>
-          </video>
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-background/90 shadow-sm">
+              <Play className="h-6 w-6 text-foreground" />
+            </div>
+          </button>
           {msg.mediaCaption && (
-            <p className="text-sm text-foreground px-1 pb-1">
+            <p className="text-sm text-foreground px-1 pb-1 min-w-0">
               <FormattedText text={msg.mediaCaption} highlight={searchQuery} />
             </p>
           )}
@@ -342,18 +407,18 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, on
 
     if (isImage && msg.mediaUrl) {
       return (
-        <div className="flex flex-col gap-1">
+        <div className="flex min-w-0 max-w-full flex-col gap-1 overflow-hidden">
           <img 
             src={msg.mediaUrl} 
             alt={msg.mediaCaption || 'Image'} 
-            className="rounded-lg max-w-xs max-h-60 object-contain cursor-pointer" 
+            className="rounded-lg max-w-full max-h-60 object-contain cursor-pointer"
             onClick={() => onMediaClick(msg.id)} 
             onError={(e) => {
                 e.currentTarget.style.display = 'none';
             }}
           />
           {msg.mediaCaption && (
-            <p className="text-sm text-foreground px-1 pb-1">
+            <p className="text-sm text-foreground px-1 pb-1 min-w-0">
               <FormattedText text={msg.mediaCaption} highlight={searchQuery} />
             </p>
           )}
@@ -366,11 +431,11 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, on
       const fileSize = formatBytes(msg.mediaFileLength ?? null);
       const fileExtension = fileName.split('.').pop()?.toUpperCase() || '';
       return (
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center p-2 rounded-lg bg-muted/50 min-w-[250px]">
+        <div className="flex min-w-0 max-w-full flex-col gap-1 overflow-hidden">
+          <div className="flex w-full max-w-full items-center p-2 rounded-lg bg-muted/50 min-w-0 sm:w-[250px] sm:max-w-full">
             <div className="flex-shrink-0 mr-3"><FileText className="h-8 w-8 text-muted-foreground" /></div>
             <div className="flex-1 min-w-0 mr-2">
-              <p className="text-sm font-medium text-foreground truncate" title={fileName}>
+              <p className="text-sm font-medium text-foreground truncate break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle} title={fileName}>
                 <FormattedText text={fileName} highlight={searchQuery} />
               </p>
               <p className="text-xs text-muted-foreground">{fileExtension}{fileSize ? ` 窶｢ ${fileSize}` : ''}</p>
@@ -378,7 +443,7 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, on
             <a href={msg.mediaUrl} download={fileName} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 p-1.5 rounded-full hover:bg-muted/80 text-muted-foreground" title={t('download_file_text')}><Download className="h-5 w-5" /></a>
           </div>
           {msg.mediaCaption && (
-            <p className="text-sm text-foreground px-1">
+            <p className="text-sm text-foreground px-1 min-w-0">
               <FormattedText text={msg.mediaCaption} highlight={searchQuery} />
             </p>
           )}
@@ -395,13 +460,13 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, on
         } catch (e) {}
 
         return (
-            <div className="flex flex-col gap-1 min-w-[200px]">
-                <p className="text-sm text-foreground whitespace-pre-wrap">
+            <div className="flex w-full max-w-full flex-col gap-1 min-w-0 sm:w-[200px] sm:max-w-full">
+                <p className="text-sm text-foreground whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>
                     <FormattedText text={msg.text || ''} highlight={searchQuery} />
                 </p>
                 
                 {templateData?.hydratedTemplate?.hydratedFooterText && (
-                    <p className="text-xs text-muted-foreground mt-1">{templateData.hydratedTemplate.hydratedFooterText}</p>
+                    <p className="text-xs text-muted-foreground mt-1 break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>{templateData.hydratedTemplate.hydratedFooterText}</p>
                 )}
 
                 {templateData && renderTemplateButtons(templateData)}
@@ -415,7 +480,7 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, on
                  <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
                      <MousePointerClick className="h-3 w-3" /> {t('selected_option_text')}
                  </div>
-                 <p className="text-sm text-foreground font-medium">
+                 <p className="text-sm text-foreground font-medium break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>
                     <FormattedText text={msg.text || ''} highlight={searchQuery} />
                  </p>
              </div>
@@ -424,7 +489,7 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, on
 
     if (msg.messageType === 'contactMessage' && msg.contactName) {
       return (
-        <div className="flex items-center p-2 rounded-lg bg-muted/50 min-w-[200px]">
+        <div className="flex w-full max-w-full items-center p-2 rounded-lg bg-muted/50 min-w-0 sm:w-[200px] sm:max-w-full">
           <div className="flex-shrink-0 mr-3 p-2 bg-muted rounded-full"><User className="h-6 w-6 text-muted-foreground" /></div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-foreground truncate" title={msg.contactName}>{msg.contactName}</p>
@@ -438,7 +503,7 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, on
       const lat = parseFloat(msg.locationLatitude); const lon = parseFloat(msg.locationLongitude!);
       const mapsUrl = `http://googleusercontent.com/maps.google.com/?q=${lat},${lon}`;
       return (
-        <div className="p-2 rounded-lg bg-muted/50 min-w-[200px]">
+        <div className="w-full max-w-full p-2 rounded-lg bg-muted/50 min-w-0 sm:w-[200px] sm:max-w-full">
           <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="flex items-center group">
             <div className="flex-shrink-0 mr-3 p-2 bg-primary/10 rounded-full group-hover:bg-primary/20 transition-colors"><MapPin className="h-6 w-6 text-primary" /></div>
             <div className="flex-1 min-w-0">
@@ -451,18 +516,20 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, on
     }
     
     if (msg.text) {
-      return <FormattedText text={msg.text} highlight={searchQuery} />;
+      // El texto completo sigue en la data: la nota de Radar se pinta sin su
+      // primera línea porque esos metadatos ya están arriba, en el encabezado.
+      return <FormattedText text={isRadarNote ? radarNoteBody(msg.text) : msg.text} highlight={searchQuery} />;
     }
     
     return <p className="text-muted-foreground italic text-xs">[{msg.messageType || t('unsupported_message')}]</p>;
   };
 
   return (
-    <div className={`flex group ${isMe ? 'justify-end' : 'justify-start'} ${msg.reactions && msg.reactions.length > 0 ? 'mb-5' : 'mb-2'}`} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
-      <div className={`relative rounded-lg px-3 text-sm py-2 max-w-[70%] shadow-sm ${bubbleColor} ${borderColor}`} style={bubbleStyle}>
+    <div className={`flex w-full min-w-0 max-w-full group ${isMe ? 'justify-end' : 'justify-start'} ${msg.reactions && msg.reactions.length > 0 ? 'mb-5' : 'mb-2'}`} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
+        <div className={`relative min-w-0 overflow-visible rounded-lg px-3 text-sm py-2 shadow-sm [overflow-wrap:anywhere] [word-break:break-word] ${bubbleColor} ${borderColor}`} style={bubbleStyle}>
         
         {isGroup && !isMe && (msg.participant || msg.participantName) && (
-          <div className="mb-1 text-xs font-semibold text-primary">
+          <div className="mb-1 min-w-0 text-xs font-semibold text-primary break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>
             <span>{msg.participantName || (msg.participant ? `~+${msg.participant.split('@')[0]}` : '')}</span>
             {msg.participantName && msg.participant && (
               <span className="text-muted-foreground font-normal ml-1.5">+{msg.participant.split('@')[0]}</span>
@@ -470,7 +537,17 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, on
           </div>
         )}
 
-        {isInternal && (
+        {isRadarNote && (
+          <div className="mb-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-indigo-200 pb-1 dark:border-indigo-800">
+            <span className="flex items-center gap-1 text-xs font-bold text-indigo-700 dark:text-indigo-400">
+              <RadarIcon className="h-3 w-3" /> Radar
+            </span>
+            <span className="min-w-0 break-words text-[11px] font-medium text-indigo-600/80 dark:text-indigo-400/80">
+              {radarNoteHeadline(msg.text)}
+            </span>
+          </div>
+        )}
+        {isInternal && !isRadarNote && (
           <div className="flex items-center gap-1 mb-1 text-xs text-yellow-700 dark:text-yellow-400 font-medium border-b border-yellow-200 dark:border-yellow-800 pb-1">
             <FilePenLine className="h-3 w-3" /> {t('internal_note_title')}
           </div>
@@ -485,13 +562,28 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, on
             <Megaphone className="h-3 w-3" /> {t('campaign_title')}
           </div>
         )}
+        {isTask && (
+          <div className="mb-1 flex items-center gap-1 border-b border-primary/20 pb-1 text-xs font-medium text-primary">
+            <ListTodo className="h-3 w-3" /> {t('task_message_title')}
+          </div>
+        )}
+        {isScheduled && (
+          <div className="mb-1 flex items-center gap-1 border-b border-border pb-1 text-xs font-medium text-muted-foreground">
+            <Clock className="h-3 w-3" /> {t('scheduled_message_title')}
+          </div>
+        )}
+        {isAappSpaceScheduled && (
+          <div className="mb-1 flex items-center gap-1 border-b border-primary/20 pb-1 text-xs font-medium text-primary">
+            <Clock className="h-3 w-3" /> {t('scheduled_aapp_space_title')}
+          </div>
+        )}
         {isAutomation && !isCampaign && (
           <div className="flex items-center gap-1 mb-1 text-xs text-blue-700 dark:text-blue-400 font-medium border-b border-blue-200 dark:border-blue-800 pb-1">
             <Zap className="h-3 w-3" /> {t('automation_title')}
           </div>
         )}
 
-        {showActions && !msg.id.startsWith('temp_') && !isInternal && (
+        {showActions && !msg.id.startsWith('temp_') && !isInternal && !isTask && (
           <div className={`absolute top-0 flex items-center gap-0.5 ${isMe ? '-left-[68px]' : '-right-[68px]'}`}>
             {onSaveDraft && isTextOnlyMessage && (
               <Button
@@ -526,11 +618,13 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, on
           </div>
         )}
         
-        {msg.quotedMessageText && !msg.messageType?.includes('interactive') && !msg.messageType?.includes('buttons') && !msg.messageType?.includes('list') && (
-            <div className="p-2 mb-1 rounded-md bg-foreground/5 border-l-2 border-primary opacity-80"><QuotedMessagePreview quotedJson={msg.quotedMessageText} /></div>
+        {msg.quotedMessageText && !isTask && !msg.messageType?.includes('interactive') && !msg.messageType?.includes('buttons') && !msg.messageType?.includes('list') && (
+            <div className="p-2 mb-1 rounded-md bg-foreground/5 border-l-2 border-primary opacity-80 min-w-0 overflow-hidden"><QuotedMessagePreview quotedJson={msg.quotedMessageText} /></div>
         )}
         
-        {renderContent()}
+        <div className="min-w-0 max-w-full overflow-hidden [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>
+          {renderContent()}
+        </div>
         
         {isError && (
           <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-red-500/20">
@@ -540,7 +634,7 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, on
               {msg.errorMessage && (
                 <div className="absolute bottom-full left-0 mb-1 hidden group-hover:block z-50 max-w-[280px]">
                   <div className="bg-popover text-popover-foreground text-xs rounded-md px-3 py-2 shadow-md border">
-                    {msg.errorMessage}
+                    <span className="break-words [overflow-wrap:anywhere] [word-break:break-word]" style={hardWrapStyle}>{msg.errorMessage}</span>
                   </div>
                 </div>
               )}
@@ -558,7 +652,7 @@ export function MessageBubble({ msg, onMediaClick, onReply, onRetry, onReact, on
         )}
         <div className={`flex justify-end items-center space-x-1 mt-1 ${isMe ? '' : 'text-right'}`}>
           <span className="text-xs text-muted-foreground">{time}</span>
-          {isMe && !isError && <ReadReceipt status={msg.status} isInternal={isInternal} />}
+          {isMe && !isError && <ReadReceipt status={msg.status} isInternal={isInternal || isTask} />}
         </div>
 
         {msg.reactions && msg.reactions.length > 0 && (

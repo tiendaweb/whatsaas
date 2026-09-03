@@ -10,36 +10,36 @@ export default async function AdminTeamsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Teams Management</h1>
-        <Badge variant="outline">{teams.length} Teams</Badge>
+        <h1 className="text-2xl font-bold">Gestión de equipos</h1>
+        <Badge variant="outline">{teams.length} equipos</Badge>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>All Teams</CardTitle>
+          <CardTitle>Todos los equipos</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
+                <TableHead>Nombre</TableHead>
                 <TableHead>Plan</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead>Creado</TableHead>
+                <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {teams.map((team) => (
                 <TableRow key={team.id}>
                   <TableCell className="font-medium">{team.name}</TableCell>
-                  <TableCell>{team.planName || 'Free'}</TableCell>
+                  <TableCell>{team.planName || 'Gratis'}</TableCell>
                   <TableCell>
                     <Badge 
                       variant={team.subscriptionStatus === 'active' ? 'default' : 'outline'}
                       className={team.subscriptionStatus === 'active' ? 'bg-green-600' : ''}
                     >
-                      {team.subscriptionStatus || 'Inactive'}
+                      {team.subscriptionStatus || 'Inactivo'}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground text-xs">

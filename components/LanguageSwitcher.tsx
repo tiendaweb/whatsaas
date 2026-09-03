@@ -1,6 +1,6 @@
 'use client';
 
-import { useLocale } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { usePathname, useRouter } from '@/i18n/routing';
 import {
   Select,
@@ -11,9 +11,11 @@ import {
 } from '@/components/ui/select';
 import { Globe } from 'lucide-react';
 import { useTransition } from 'react';
+import { cn } from '@/lib/utils';
 
-export function LanguageSwitcher() {
+export function LanguageSwitcher({ className }: { className?: string }) {
   const locale = useLocale();
+  const t = useTranslations('Common');
   const router = useRouter();
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
@@ -25,15 +27,15 @@ export function LanguageSwitcher() {
   }
 
   return (
-    <Select defaultValue={locale} onValueChange={onSelectChange} disabled={isPending}>
-      <SelectTrigger className="w-[140px] h-9 gap-2 bg-background/50 border-border/60">
+    <Select value={locale} onValueChange={onSelectChange} disabled={isPending}>
+      <SelectTrigger className={cn("h-9 w-[140px] gap-2 border-border/60 bg-background/50", className)}>
         <Globe className="h-4 w-4 text-muted-foreground" />
-        <SelectValue placeholder="Idioma" />
+        <SelectValue placeholder={t('language_placeholder')} />
       </SelectTrigger>
       <SelectContent align="end">
-        <SelectItem value="en">English</SelectItem>
-        <SelectItem value="pt">Portuguese</SelectItem>
-        <SelectItem value="es">Español</SelectItem>
+        <SelectItem value="en">{t('language_english')}</SelectItem>
+        <SelectItem value="pt">{t('language_portuguese')}</SelectItem>
+        <SelectItem value="es">{t('language_spanish')}</SelectItem>
       </SelectContent>
     </Select>
   );

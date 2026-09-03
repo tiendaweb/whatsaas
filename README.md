@@ -113,7 +113,54 @@ Plataforma SaaS para operación comercial y soporte sobre WhatsApp, con gestión
 - Validación de payload con Zod.
 - Soporte para texto y archivos multimedia.
 - Persistencia del mensaje enviado dentro del historial interno.
-- Base para exponer más capacidades de integración hacia terceros.
+- API externa completa de solo lectura en `/api/readonly/v1`, con catálogo de recursos,
+  paginación, filtros exactos, búsqueda, OpenAPI 3.1 y contexto Markdown para IA.
+- Tokens `ro_live_…` separados de las claves de envío; se almacenan únicamente como
+  hash SHA-256, admiten vencimiento y revocación, y siempre quedan aislados por equipo.
+- Conector MCP sin dependencias en `/integrations/whatspro-readonly-mcp.mjs` para
+  Claude Code, Claude Desktop y clientes Codex compatibles.
+
+Variables del módulo de solo lectura:
+
+```env
+READ_ONLY_API_ALLOWED_EMAILS=noelia@whatspro.uno
+# SHA-256 hexadecimal del código que desbloquea la documentación administrativa.
+READ_ONLY_API_DOCS_CODE_HASH=
+```
+
+La página administrativa está en `/settings/developers/read-only`. El router externo
+solo implementa `GET`, `HEAD` y `OPTIONS`; no reutiliza `/api/v1/send` ni las claves
+`sk_live_…`. Contraseñas y credenciales de proveedores se eliminan antes de serializar.
+
+El conector de Claude Code vive como plugin de usuario en
+`/plugins/claude-code-connector`. Su acceso se valida en servidor contra
+`noelia@whatspro.uno` y requiere además una activación individual en
+`team_member_plugins`. Para aplicar y verificar esa asignación de forma idempotente:
+
+```bash
+pnpm activate:claude-code-connector
+```
+
+Los conectores de Grok, Claude Code y ChatGPT se muestran en la biblioteca de Apps
+cuando están asignados al usuario. Para mantener los tres desactivados globalmente y
+habilitarlos exclusivamente para `noelia@whatspro.uno`, ejecuta:
+
+```bash
+pnpm activate:ai-connectors-noelia
+```
+
+Los tres conectores reutilizan el mismo servidor MCP y publican el mismo plano de
+administración. Además del catálogo de lectura y las acciones de negocio, pueden:
+
+- crear, configurar, publicar y eliminar sitios sin depender de una plantilla;
+- crear, leer, mover, reemplazar y eliminar archivos o carpetas del sitio;
+- aplicar parches exactos con `expected_updated_at` para evitar escrituras obsoletas;
+- gestionar slugs, subdominios, dominios personalizados y el inventario de dominios;
+- crear, editar, archivar, eliminar y vincular clientes con contactos.
+
+Todas las herramientas validan `teamId`, permisos del miembro y activación del plugin.
+Las eliminaciones exigen `confirm=true` y las mutaciones generan actividad auditable.
+No se expone SQL arbitrario ni credenciales de proveedores.
 
 ### 12. IA y extensibilidad
 - Configuración AI persistida en base de datos.
@@ -128,6 +175,19 @@ Plataforma SaaS para operación comercial y soporte sobre WhatsApp, con gestión
 - `user` se controla por asignación individual.
 - `hybrid` permite default por team con override por usuario.
 - `marketplace` está marcado como `system` y se auto-provisiona activo para cada team.
+
+### Form Builder
+- El team asociado a `noelia@whatspro.uno` recibe el plugin `form-builder` activo por defecto, sin requerir variables de entorno.
+- El plugin sigue siendo desactivable desde `/admin/plugins`; si ya existe un override de team, el bootstrap no lo sobrescribe.
+
+### Sitios
+- Plugin de activación individual para publicar HTML, CSS, JavaScript y assets estáticos.
+- Cada sitio dispone de una URL inmediata `https://whatspro.uno/s/{slug}` y puede reservar un subdominio editable.
+- Un sitio también puede guardar un dominio personalizado y configuración JSON. El DNS, el certificado TLS y la regla `Host(...)` del proxy deben apuntar ese dominio a la ruta interna `/api/sites-custom/{path}` antes de usarlo públicamente; el resolver toma el dominio desde `Host` y conserva el path solicitado.
+- Los subdominios requieren DNS y certificado TLS wildcard para `*.whatspro.uno`; configura el dominio con `SITES_BASE_DOMAIN`.
+- El editor usa Monaco Editor. La carga admite archivos, carpetas y ZIP (máximo 40 MB por operación y 10 MB por archivo).
+- Variables: `SITES_BASE_DOMAIN` y `SITES_RESERVED_SUBDOMAINS`.
+- Para activar el plugin a un usuario: `node scripts/activate-sites-for-user.mjs correo@dominio.com`.
 
 ### Pagos hoy
 Actualmente el core está acoplado principalmente a Stripe en:
@@ -181,7 +241,8 @@ En `.env`:
 1. Usuario selecciona plan.
 2. Sistema genera orden `pending_manual_review`.
 3. Usuario sube comprobante o referencia.
-4. Admin aprueba/rechaza.
+4. En ventas de marca blanca, el reseller dueño del cliente aprueba/rechaza; el admin
+   de plataforma conserva visibilidad y auditoría. En ventas directas aprueba el admin.
 5. Al aprobar, activar plan del team.
 
 ### Estados recomendados
@@ -224,6 +285,39 @@ Tabla nueva `manual_payments`:
 - Validar credenciales al iniciar (`validateConfig`).
 - En webhook, usar idempotencia por `external_reference`/`payment_id`.
 - Confirmar monto, moneda y `teamId` antes de activar plan.
+
+### Webhooks por tenant
+
+- Plataforma: `/api/stripe/webhook` y `/api/mercadopago/webhook` (compatibilidad).
+- Reseller: `/api/payments/webhook/{provider}/{resellerSlug}`.
+- Cada webhook valida con el secreto del tenant indicado y registra `reseller_id` para
+  idempotencia y auditoría. Nunca existe fallback a credenciales de la plataforma.
+
+Las credenciales guardadas desde los paneles se cifran con
+`PAYMENT_CONFIG_ENCRYPTION_KEY` y nunca se devuelven completas al navegador.
+
+### Activación de resellers y dominios
+
+Un reseller no queda listo para vender solo por existir en la base. El admin debe
+completar el checklist de `/admin/resellers`: dominio verificado, al menos un plan
+publicado, proveedor propio habilitado, saldo/crédito y autorización de cobros.
+
+La activación del dominio comprueba DNS y una respuesta HTTPS firmada por esta
+instalación. Antes de pulsar **Verificar y activar**:
+
+1. Apunta los registros A/AAAA del dominio al mismo ingress que `BASE_URL`.
+2. Añade el host a la regla Traefik y recrea el contenedor; un restart no relee labels.
+3. Asegura TLS válido para el dominio.
+
+Si la resolución pública de `BASE_URL` no representa las IP reales del ingress,
+decláralas explícitamente, separadas por coma:
+
+```env
+RESELLER_INGRESS_IPS=203.0.113.10,2001:db8::10
+```
+
+Desactivar un dominio o fallar su revalidación deshabilita también los cobros del
+reseller para evitar checkouts con URLs de retorno inválidas.
 
 ---
 
@@ -279,6 +373,7 @@ lib/
 - `app/api/stripe/*`: checkout y webhook actuales.
 - `app/api/webhook/evolution`: recepción de eventos externos.
 - `app/api/v1/send`: API autenticada para integraciones.
+- `app/api/readonly/v1/*`: lectura paginada y aislada de datos centrales y plugins.
 
 ---
 
@@ -329,6 +424,18 @@ pnpm db:migrate
 
 Si se omite este paso, pueden fallar lecturas de configuración de pagos (por ejemplo, tabla `payment_provider_settings` inexistente).
 
+Las instalaciones históricas cuyo journal quedó congelado antes de las migraciones
+de resellers deben hacer backup y ejecutar primero la reconciliación idempotente:
+
+```bash
+pnpm db:reconcile-resellers
+pnpm verify:resellers
+```
+
+No ejecutes `pnpm db:migrate` a ciegas si `drizzle.__drizzle_migrations` está por
+detrás del esquema real; reconcilia el journal completo antes de reactivar el flujo
+normal de Drizzle.
+
 ### Migración CRM pendiente (requerida)
 
 Hay una migración obligatoria para CRM que agrega `contacts.custom_data` (`jsonb`, default `{}`):
@@ -348,9 +455,99 @@ Asegúrate de ejecutar `pnpm db:migrate` antes de iniciar la app para evitar des
 5) restart del proceso (next start / PM2 / systemd)
 ```
 
+## Integración AAPP SPACE (GoBiz)
+
+El plugin `aapp-space` sincroniza clientes, planes, membresías, tiendas y transacciones de GoBiz. La API key `gbz_...` se configura por equipo desde **Apps → AAPP SPACE** y no se expone nuevamente al navegador.
+
+Variables:
+
+```env
+AAPP_SPACE_API_URL=https://aapp.space/api/gobiz/v1
+CRON_SECRET=un-secreto-seguro
+APP_URL=https://whatspro.uno
+```
+
+El endpoint `GET /api/cron/aapp-sync` requiere `Authorization: Bearer $CRON_SECRET`. Para programarlo cada seis horas con PM2:
+
+```bash
+pm2 start scripts/aapp-sync.js --name aapp-sync --cron-restart "0 */6 * * *" --no-autorestart
+pm2 save
+```
+
+La sincronización es de solo lectura hacia GoBiz. Los registros locales usan identificadores externos únicos por equipo para que las ejecuciones sean idempotentes. La vista anterior de Clientes, derivada de ventas y notas internas de chat, no se migra automáticamente a la entidad `team_customers`.
+
 Usuario semilla:
 - `test@test.com`
 - `admin123`
+
+---
+
+## Fichas de audio y banco de keys de Gemini
+
+Cada nota de voz entrante de WhatsApp se **transcribe** y después se **analiza** (resumen, intención, urgencia, ánimo, montos y fechas, qué hacer), una sola vez, y queda en `message_audio_insights`. Son dos llamadas por audio: la segunda va sobre el texto ya transcripto, no sobre el audio otra vez. `AUDIO_INSIGHTS_ANALYZE=false` deja el análisis a pedido.
+
+Existe porque ningún modelo de Claude recibe audio y los conectores de ChatGPT tampoco: el bloque MCP `type: "audio"` de `whatspro_chat_media_get` sólo lo aprovecha Gemini. El que escucha es el servidor, y lo que viaja a cualquier IA es texto.
+
+### Banco de API keys (app Gemini)
+
+Las llamadas salen de un **banco de API keys** propio (`team_gemini_keys`), **independiente de Ajustes → Agente IA**, que sigue siendo la configuración del chat. Se administra en la app **Gemini** (`/plugins/gemini`), activada por equipo.
+
+- El free tier de `gemini-3.6-flash` da **20 requests por día** por cuenta y por modelo (quota `GenerateRequestsPerDayPerProjectPerModel-FreeTier`, verificado contra la respuesta de Google). Es el límite real, y es bajo: **una key = 20 audios por día**. Varias keys multiplican el techo sin pagar.
+- La key se elige **al azar** entre las que tengan cuota libre. Un orden fijo concentraría el gasto en la primera de la lista.
+- Falle por lo que falle —cuota agotada, `503` por saturación, key inválida, red— **se prueba la siguiente key del banco**. Si ninguna puede, el audio vuelve a la cola **sin gastar un intento** y queda disponible para que lo tome un conector.
+- Las keys se guardan cifradas (AES-256-GCM) y nunca vuelven al navegador: sólo los últimos cuatro caracteres.
+
+**Las barras de progreso son una estimación local.** Google no expone cuánta cuota gratuita queda —no hay endpoint—, así que se cuentan las llamadas que hacemos desde acá. Si la misma key se usa en otro lado, el consumo real es mayor que el que muestra la barra. Los límites (`limitRpm`, `limitRpd`) son editables por key porque Google los cambia sin aviso.
+
+### La cola
+
+Encolar no consume cuota; procesar sí. El worker drena de a poco respetando el límite por minuto y por día.
+
+| Herramienta MCP | Para qué |
+|---|---|
+| `whatspro_audio_queue_add` | Encola audios sin gastar. Es el camino para "transcribí todo lo de este cliente". |
+| `whatspro_audio_queue_status` | Cuántos esperan y cuánta cuota le queda hoy al banco. |
+| `whatspro_transcribe_media` | Transcribe **ahora** un audio puntual. |
+| `whatspro_audio_analyze` | Rehace el análisis de un audio ya transcripto (normalmente ya viene hecho). |
+| `whatspro_audio_queue_takeover` | Los audios que el banco no pudo, con enlace de descarga para que los tome el conector. |
+| `whatspro_audio_insight_write` | El conector guarda lo que **él** entendió del audio, sin tocar el banco. |
+| `whatspro_pending_audios` | Qué quedó sin escuchar. |
+
+**El plan B, en orden:** la cola manda el audio a transcribir → si una key falla, prueba la siguiente → si ninguna puede, el audio queda listado en `whatspro_audio_queue_takeover` con un enlace de descarga temporal, para que un conector que sí escuche audio lo baje, lo transcriba con su propia cuota y devuelva el resultado con `whatspro_audio_insight_write`.
+
+`whatspro_audio_insight_write` cierra el círculo: un modelo que sí escucha audio (o una persona corrigiendo una transcripción mala) puede bajar el archivo con `whatspro_chat_media_get` / `whatspro_chat_media_link`, entenderlo con su propia cuota y guardar el resultado. Queda registrado como `external:<fuente>` para saber que no salió del banco, y no pisa una transcripción existente sin `overwrite: true`.
+
+La ficha aparece sola en `whatspro_chat_media_list` (campos `transcript`, `summary`, `intent`, `urgency`, `sentiment`), en `whatspro_chat_media_get` y como recurso `audio-insights` de la API de sólo lectura — que es también la vía para que Radar mida sobre el contenido de los audios.
+
+### Cron
+
+```bash
+pm2 start scripts/audio-insights.js --name audio-insights --cron-restart "*/10 * * * *" --no-autorestart
+pm2 save
+```
+
+Encola los audios entrantes nuevos y drena la cola. No se cuelga del webhook de Evolution a propósito: la llamada al proveedor tarda segundos y demoraría el ACK en cada audio que entra.
+
+Variables (todas opcionales, con los valores por defecto puestos):
+
+```env
+AUDIO_INSIGHTS_TEAM_IDS=             # equipos habilitados, separados por coma. Vacío = todos
+AUDIO_INSIGHTS_ENABLED=true          # "false" apaga el cron sin desregistrarlo
+AUDIO_INSIGHTS_ANALYZE=true          # "false" deja el análisis a pedido
+AUDIO_INSIGHTS_BATCH=10              # audios por corrida
+AUDIO_INSIGHTS_MIN_SECONDS=3         # los más cortos son "dale" y "ok": no se procesan
+AUDIO_INSIGHTS_MAX_SECONDS=600
+AUDIO_INSIGHTS_MAX_AGE_DAYS=30       # el histórico viejo va por backfill, no arrastrándolo
+AUDIO_INSIGHTS_MAX_ATTEMPTS=3
+```
+
+Sólo se procesan los audios **entrantes**: los que mandamos nosotros ya sabemos qué dicen y son el 65% del volumen. `AUDIO_INSIGHTS_TEAM_IDS` acota el gasto: un equipo fuera de la lista no procesa ni por cron ni a pedido desde el conector. Hoy en producción está en `2` (noelia@whatspro.uno).
+
+Backfill del histórico, a mano y por tandas:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" "$APP_URL/api/cron/audio-insights?limit=100"
+```
 
 ---
 

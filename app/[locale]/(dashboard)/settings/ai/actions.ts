@@ -193,3 +193,65 @@ export async function saveAiConfig(prevState: AiActionState, formData: FormData)
     return { error: 'Database error. Failed to save settings.' };
   }
 }
+
+export async function getAttachmentContent(
+  url: string
+): Promise<{ content: string } | { error: string }> {
+  const team = await getTeamForUser();
+  if (!team) return { error: 'Unauthorized' };
+
+  const config = await db.query.aiConfigs.findFirst({
+    where: eq(aiConfigs.teamId, team.id),
+    columns: { attachments: true },
+  });
+
+  if (!config?.attachments?.some((a) => (a as { url: string }).url === url)) {
+    return { error: 'File not found' };
+  }
+
+  try {
+    const filePath = path.join(process.cwd(), 'public', url);
+    const content = await fs.readFile(filePath, 'utf-8');
+    return { content };
+  } catch {
+    return { error: 'Could not read file.' };
+  }
+}
+
+export async function saveAttachmentContent(
+  url: string,
+  content: string
+): Promise<{ success?: string; error?: string }> {
+  const team = await getTeamForUser();
+  if (!team) return { error: 'Unauthorized' };
+
+  const config = await db.query.aiConfigs.findFirst({
+    where: eq(aiConfigs.teamId, team.id),
+    columns: { attachments: true },
+  });
+
+  const attachments = config?.attachments as { name: string; url: string; type: string; size: number }[] | undefined;
+
+  if (!attachments?.some((a) => a.url === url)) {
+    return { error: 'File not found' };
+  }
+
+  try {
+    const filePath = path.join(process.cwd(), 'public', url);
+    await fs.writeFile(filePath, content, 'utf-8');
+
+    const newSize = Buffer.byteLength(content, 'utf-8');
+    const updatedAttachments = attachments.map((a) =>
+      a.url === url ? { ...a, size: newSize } : a
+    );
+
+    await db
+      .update(aiConfigs)
+      .set({ attachments: updatedAttachments, updatedAt: new Date() })
+      .where(eq(aiConfigs.teamId, team.id));
+
+    return { success: 'Document saved successfully.' };
+  } catch {
+    return { error: 'Could not save file.' };
+  }
+}

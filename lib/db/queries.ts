@@ -1,6 +1,6 @@
-import { desc, and, eq, isNull, count } from 'drizzle-orm';
+import { desc, and, eq, isNull, count, not } from 'drizzle-orm';
 import { db } from './drizzle';
-import { activityLogs, teamMembers, teams, users, plans, contacts, evolutionInstances } from './schema';
+import { activityLogs, teamMembers, teams, users, plans, contacts, evolutionInstances, resellerPlanPrices } from './schema';
 import { cookies } from 'next/headers';
 import { verifyToken } from '@/lib/auth/session';
 
@@ -37,14 +37,66 @@ export async function getUser() {
 }
 
 export async function getPublishedPlans() {
-  return await db.select().from(plans).orderBy(plans.amount);
+  return await db.select().from(plans).where(not(plans.isHidden)).orderBy(plans.amount);
 }
 
-export async function getTeamByStripeCustomerId(customerId: string) {
+/**
+ * Planes tal y como los ve el visitante de un dominio: en el de la plataforma, los
+ * precios de la plataforma; en el de un reseller, SUS precios de venta.
+ *
+ * Devuelve exactamente el mismo shape que getPublishedPlans() (con retail_amount
+ * pisando `amount`), así que pricing-client.tsx no necesita enterarse de nada.
+ */
+export async function getPublishedPlansForTenant(resellerId?: number | null) {
+  if (resellerId == null) {
+    return getPublishedPlans();
+  }
+
+  const rows = await db
+    .select({
+      plan: plans,
+      retailAmount: resellerPlanPrices.retailAmount,
+      currency: resellerPlanPrices.currency,
+      externalPriceRef: resellerPlanPrices.externalPriceRef,
+    })
+    .from(plans)
+    .innerJoin(
+      resellerPlanPrices,
+      and(
+        eq(resellerPlanPrices.planId, plans.id),
+        eq(resellerPlanPrices.resellerId, resellerId),
+        eq(resellerPlanPrices.isPublished, true),
+      ),
+    )
+    .where(not(plans.isHidden))
+    .orderBy(resellerPlanPrices.retailAmount);
+
+  return rows.map(({ plan, retailAmount, currency, externalPriceRef }) => ({
+    ...plan,
+    amount: retailAmount,
+    currency,
+    // El priceId debe ser el de la cuenta del reseller. Si no lo ha sincronizado,
+    // se deja vacío a propósito: el checkout debe fallar, nunca caer al price de la
+    // plataforma (cobraría en la cuenta equivocada).
+    stripePriceId: externalPriceRef ?? '',
+  }));
+}
+
+export async function getTeamByStripeCustomerId(
+  customerId: string,
+  resellerId?: number | null,
+) {
   const result = await db
     .select()
     .from(teams)
-    .where(eq(teams.stripeCustomerId, customerId))
+    .where(
+      resellerId === undefined
+        ? eq(teams.stripeCustomerId, customerId)
+        : and(
+            eq(teams.stripeCustomerId, customerId),
+            resellerId == null ? isNull(teams.resellerId) : eq(teams.resellerId, resellerId),
+          ),
+    )
     .limit(1);
 
   return result.length > 0 ? result[0] : null;
@@ -131,7 +183,7 @@ export async function getFreePlan() {
   const result = await db
     .select()
     .from(plans)
-    .where(eq(plans.amount, 0))
+    .where(and(eq(plans.amount, 0), not(plans.isHidden)))
     .limit(1);
 
   return result[0] || null;

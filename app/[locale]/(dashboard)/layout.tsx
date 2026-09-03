@@ -23,6 +23,7 @@ import { PusherProvider } from '@/providers/pusher-provider';
 import { MobileBottomNav } from '@/components/interface/MobileBottomNav';
 import { cn } from '@/lib/utils';
 import { GlobalChatNotifications } from '@/components/notifications/GlobalChatNotifications';
+import { NotificacionesCampana } from '@/components/notifications/NotificacionesCampana';
 import { useTranslations } from 'next-intl';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -149,6 +150,7 @@ function Header() {
         </Link>
         
         <div className="hidden md:flex items-center space-x-4">
+          <NotificacionesCampana />
           <ThemeSwitcher />
           <Suspense fallback={<div className="h-9 w-9 bg-muted rounded-full animate-pulse" />}>
             <UserMenu />
@@ -156,7 +158,8 @@ function Header() {
         </div>
 
 
-        <div className="md:hidden flex items-center gap-4">
+        <div className="md:hidden flex items-center gap-2">
+            <NotificacionesCampana />
             <ThemeSwitcher />
             <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
                 {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
@@ -181,8 +184,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const isHomePage = pathname === '/' || /^\/[a-z]{2}$/.test(pathname);
   const pathWithoutLocale = pathname.replace(/^\/(pt|en|es)(?=\/|$)/, '') || '/';
   const isBusinessWoman = pathname.includes('/plugins/mini-apps/business-woman-planner');
-  // Tareas OS y el Command Center Comercial son "aplicaciones aparte": takeover a pantalla completa.
-  const isTasksOS = pathWithoutLocale.startsWith('/plugins/tasks') || pathWithoutLocale.startsWith('/plugins/sales-ops');
+  // Aplicaciones aparte: traen su propia navegación y ocupan toda la pantalla
+  // (Tareas OS, Command Center, Finanzas OS, Calendario). Sin esto se ven las
+  // dos barras a la vez y ninguna de las dos se lee.
+  const isTasksOS =
+    pathWithoutLocale.startsWith('/plugins/tasks') ||
+    pathWithoutLocale.startsWith('/plugins/sales-ops') ||
+    pathWithoutLocale.startsWith('/plugins/finance') ||
+    pathWithoutLocale.startsWith('/plugins/calendar');
   const isAutomationEditor = /\/automation\/\d+/.test(pathWithoutLocale);
   // Tareas OS y el constructor de flujos traen su propia navegación a pantalla
   // completa; dentro de una conversación la barra taparía el teclado.

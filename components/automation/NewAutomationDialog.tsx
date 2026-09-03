@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useRouter } from 'next/navigation'; 
+import { useRouter } from '@/i18n/routing';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,9 +18,10 @@ const fetcher = (url: string) => fetch(url).then((res) => res.json());
 interface NewAutomationDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    folderId?: number | null;
 }
 
-export function NewAutomationDialog({ open, onOpenChange }: NewAutomationDialogProps) {
+export function NewAutomationDialog({ open, onOpenChange, folderId }: NewAutomationDialogProps) {
     const router = useRouter(); 
     const t = useTranslations('Automation');
     const { data: instances, isLoading } = useSWR<any[]>('/api/instance/details', fetcher);
@@ -37,7 +38,7 @@ export function NewAutomationDialog({ open, onOpenChange }: NewAutomationDialogP
 
         setIsCreating(true);
         try {
-            const result = await createAutomation(name, parseInt(instanceId));
+            const result = await createAutomation(name, parseInt(instanceId), folderId);
             if (result && result.id) {
                 toast.success(t('automation_created_toast'));
                 onOpenChange(false);

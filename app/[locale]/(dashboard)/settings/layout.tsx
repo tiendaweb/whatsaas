@@ -4,21 +4,22 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { 
-  Users, 
-  Settings, 
-  Shield, 
-  Activity, 
-  Menu, 
-  QrCode, 
-  Bot, 
+import {
+  Users,
+  Settings,
+  Shield,
+  Activity,
+  Menu,
+  QrCode,
+  Bot,
   Terminal,
   Rocket,
   ChevronRight,
-  LifeBuoy
+  LifeBuoy,
+  LayoutList
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import useSWR from 'swr';
 import type { MemberPermissions } from '@/lib/permissions';
 
@@ -26,6 +27,11 @@ const fetcher = (url: string) => fetch(url).then((res) => res.json());
 type MembershipData = { role: string; permissions: MemberPermissions };
 
 const RESTRICTED_SETTINGS: string[] = ['/settings/connect', '/settings/ai', '/settings/developers'];
+const UPGRADES_NAV_COPY: Record<string, { label: string; description: string }> = {
+  es: { label: 'Upgrades', description: 'Apps y mejoras activas' },
+  en: { label: 'Upgrades', description: 'Active apps and enhancements' },
+  pt: { label: 'Upgrades', description: 'Apps e melhorias ativas' },
+};
 
 export default function SettingsLayout({
   children
@@ -33,11 +39,13 @@ export default function SettingsLayout({
   children: React.ReactNode;
 }) {
   const t = useTranslations('SettingsLayout');
+  const locale = useLocale();
   const pathname = usePathname();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { data: membership } = useSWR<MembershipData>('/api/team/membership', fetcher);
 
   const isOwnerOrHasSettings = membership?.role === 'owner' || membership?.permissions?.settings === true;
+  const upgradesCopy = UPGRADES_NAV_COPY[locale] ?? UPGRADES_NAV_COPY.en;
 
   const allNavItems = [
     {
@@ -78,9 +86,16 @@ export default function SettingsLayout({
     {
       href: '/settings/upgrades',
       icon: Rocket,
-      label: t('nav.upgrades'),
-      description: t('nav.upgrades_desc'),
+      label: upgradesCopy.label,
+      description: upgradesCopy.description,
       restricted: false,
+    },
+    {
+      href: '/settings/menu',
+      icon: LayoutList,
+      label: 'Editor de Menú',
+      description: 'Reordená y personalizá el menú principal',
+      restricted: true,
     },
     {
       href: '/settings/activity',

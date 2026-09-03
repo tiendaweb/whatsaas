@@ -1,19 +1,22 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getAdminStats, getRecentActivity } from '@/lib/db/admin-queries';
-import { Users, Building2, CreditCard, Activity } from 'lucide-react';
+import { Users, Building2, CreditCard, Activity, Store } from 'lucide-react';
+import { getTranslations } from 'next-intl/server';
+import Link from 'next/link';
 
 export default async function AdminDashboardPage() {
+  const t = await getTranslations('Admin');
   const stats = await getAdminStats();
   const logs = await getRecentActivity();
 
   return (
     <div className="space-y-8">
-      <h1 className="text-3xl font-bold">Admin Overview</h1>
+      <h1 className="text-3xl font-bold">{t('dashboard_title')}</h1>
       
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Users</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('stats_total_users')}</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -22,7 +25,7 @@ export default async function AdminDashboardPage() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Teams</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('stats_total_teams')}</CardTitle>
             <Building2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -31,20 +34,32 @@ export default async function AdminDashboardPage() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Subscriptions</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('stats_active_subscriptions')}</CardTitle>
             <CreditCard className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.activeSubscriptions}</div>
           </CardContent>
         </Card>
+        <Link href="/admin/resellers" className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+          <Card className="h-full transition-colors hover:bg-muted/50">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">{t('stats_total_resellers')}</CardTitle>
+              <Store className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.resellers}</div>
+              <p className="text-xs text-muted-foreground">{t('manage_resellers')}</p>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Activity className="h-5 w-5" />
-            System Activity
+            Actividad del sistema
           </CardTitle>
         </CardHeader>
         <CardContent>

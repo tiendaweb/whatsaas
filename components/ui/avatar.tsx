@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Avatar as AvatarPrimitive } from "radix-ui";;
 
+import { getSafeAvatarSrc } from "@/lib/avatar-url";
 import { cn } from "@/lib/utils";
 
 function Avatar({
@@ -23,12 +24,20 @@ function Avatar({
 
 function AvatarImage({
   className,
+  src,
   ...props
 }: React.ComponentProps<typeof AvatarPrimitive.Image>) {
+  const safeSrc = getSafeAvatarSrc(src);
+
+  if (!safeSrc) {
+    return null;
+  }
+
   return (
     <AvatarPrimitive.Image
       data-slot="avatar-image"
       className={cn("aspect-square size-full", className)}
+      src={safeSrc}
       {...props}
     />
   );

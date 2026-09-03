@@ -8,10 +8,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Trash2, Copy, Plus, Key, Terminal, Loader2, Check, Eye, EyeOff } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Trash2, Copy, Plus, Key, Terminal, Loader2, Check, Eye, EyeOff, Smartphone, BookOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiKeys, createApiKey, deleteApiKey } from './actions';
 import { useTranslations } from 'next-intl';
+import useSWR from 'swr';
+
+type InstanceItem = {
+    dbId: number;
+    instanceName: string;
+    profileName: string | null;
+    status: string;
+};
+
+const fetcher = (url: string) => fetch(url).then(r => r.json());
 
 type ApiKeyData = {
     id: number;
@@ -20,6 +31,8 @@ type ApiKeyData = {
     createdAt: Date;
     lastUsedAt: Date | null;
 };
+
+type CurrentUser = { email: string };
 
 export default function DevelopersPage() {
     const t = useTranslations('Settings');
@@ -30,6 +43,18 @@ export default function DevelopersPage() {
     const [isCreating, setIsCreating] = useState(false);
     const [newlyCreatedKey, setNewlyCreatedKey] = useState<string | null>(null);
     const [visibleKeys, setVisibleKeys] = useState<Record<number, boolean>>({});
+    const [selectedInstanceName, setSelectedInstanceName] = useState<string>('');
+
+    const { data: instanceList } = useSWR<InstanceItem[]>('/api/instance/details', fetcher);
+    const { data: currentUser } = useSWR<CurrentUser>('/api/user', fetcher);
+
+    useEffect(() => {
+        if (instanceList && instanceList.length > 0 && !selectedInstanceName) {
+            setSelectedInstanceName(instanceList[0].instanceName);
+        }
+    }, [instanceList, selectedInstanceName]);
+
+    const displayInstanceName = selectedInstanceName || 'my-instance-name';
 
     useEffect(() => {
         loadKeys();
@@ -90,14 +115,23 @@ export default function DevelopersPage() {
 
     return (
         <section className="flex-1 p-4 lg:p-8 max-w-6xl mx-auto">
-            <div className="flex justify-between items-center mb-6">
+            <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-foreground">{t('developer_api_title')}</h1>
                     <p className="text-muted-foreground">{t('developer_api_desc')}</p>
                 </div>
-                <Button onClick={() => setIsCreateOpen(true)}>
-                    <Plus className="mr-2 h-4 w-4" /> {t('create_new_key_btn')}
-                </Button>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    {currentUser?.email?.toLowerCase() === 'noelia@whatspro.uno' && (
+                        <Button asChild variant="outline">
+                            <a href="/settings/developers/read-only">
+                                <BookOpen className="mr-2 h-4 w-4" /> {t('open_readonly_docs')}
+                            </a>
+                        </Button>
+                    )}
+                    <Button onClick={() => setIsCreateOpen(true)}>
+                        <Plus className="mr-2 h-4 w-4" /> {t('create_new_key_btn')}
+                    </Button>
+                </div>
             </div>
 
             <div className="grid gap-6">
@@ -158,6 +192,28 @@ export default function DevelopersPage() {
                         <CardDescription>{t('documentation_card_desc')}</CardDescription>
                     </CardHeader>
                     <CardContent>
+                        {instanceList && instanceList.length > 0 && (
+                            <div className="flex items-center gap-3 mb-4 p-3 bg-muted rounded-lg">
+                                <Smartphone className="h-4 w-4 text-muted-foreground shrink-0" />
+                                <Label className="text-sm shrink-0">instanceName:</Label>
+                                <Select value={selectedInstanceName} onValueChange={setSelectedInstanceName}>
+                                    <SelectTrigger className="h-8 font-mono text-sm">
+                                        <SelectValue placeholder="Seleccionar instancia" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {instanceList.map(inst => (
+                                            <SelectItem key={inst.dbId} value={inst.instanceName}>
+                                                <span className="font-mono">{inst.instanceName}</span>
+                                                {inst.profileName && <span className="text-muted-foreground ml-2 text-xs">({inst.profileName})</span>}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => { navigator.clipboard.writeText(selectedInstanceName); toast.success(t('copied_to_clipboard_toast')); }}>
+                                    <Copy className="h-3.5 w-3.5" />
+                                </Button>
+                            </div>
+                        )}
                         <Tabs defaultValue="text">
                             <TabsList className="mb-4">
                                 <TabsTrigger value="text">{t('send_text_tab')}</TabsTrigger>
@@ -177,7 +233,7 @@ export default function DevelopersPage() {
   -H "Authorization: Bearer sk_live_..." \\
   -H "Content-Type: application/json" \\
   -d '{
-    "instanceName": "my-instance-name",
+    "instanceName": "${displayInstanceName}",
     "number": "5511999999999",
     "type": "text",
     "message": "Hello from API!"
@@ -198,7 +254,7 @@ export default function DevelopersPage() {
   -H "Authorization: Bearer sk_live_..." \\
   -H "Content-Type: application/json" \\
   -d '{
-    "instanceName": "my-instance-name",
+    "instanceName": "${displayInstanceName}",
     "number": "5511999999999",
     "type": "image",  // other types: video, document
     "mediaUrl": "https://example.com/image.png",
@@ -220,7 +276,7 @@ export default function DevelopersPage() {
   -H "Authorization: Bearer sk_live_..." \\
   -H "Content-Type: application/json" \\
   -d '{
-    "instanceName": "my-instance-name",
+    "instanceName": "${displayInstanceName}",
     "number": "5511999999999",
     "type": "audio",
     "mediaUrl": "https://example.com/audio.mp3"

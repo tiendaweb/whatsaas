@@ -1,305 +1,236 @@
-import type { ReactElement } from "react";
+"use client";
+
+import { useEffect, useState, type ReactElement } from "react";
 import {
-  BarChart3,
+  Activity,
   CheckCircle2,
   Clock3,
+  Filter,
   KanbanSquare,
-  LayoutGrid,
-  MessageSquareMore,
-  MousePointerClick,
-  Save,
-  Sparkles,
+  Pause,
+  PieChart,
+  Play,
+  Timer,
   Users2,
-  ListChecks,
-  Split,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AutomationExplainerVideo } from "@/components/landing/automation-explainer-video";
 import type { LandingHomeSection } from "@/lib/landing/types";
 
 function AutomationShowcaseCard() {
-  const nodePalette = [
-    { label: "Inicio del flujo", tone: "bg-blue-500/10 text-blue-400 border-blue-500/30", icon: Sparkles },
-    { label: "Enviar mensaje", tone: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30", icon: MessageSquareMore },
-    { label: "Mensaje con botones", tone: "bg-purple-500/10 text-purple-400 border-purple-500/30", icon: MousePointerClick },
-    { label: "Pedir dato clave", tone: "bg-violet-500/10 text-violet-400 border-violet-500/30", icon: ListChecks },
-    { label: "Condición lógica", tone: "bg-amber-500/10 text-amber-400 border-amber-500/30", icon: Split },
-    { label: "Esperar tiempo", tone: "bg-cyan-500/10 text-cyan-400 border-cyan-500/30", icon: Clock3 },
-  ];
+  return <AutomationExplainerVideo />;
+}
+
+const ANALYTICS_VIEW_COUNT = 4;
+const ANALYTICS_ROTATION_MS = 4800;
+
+function ConversationTrendChart() {
+  const t = useTranslations("LandingPage.analytics_showcase");
+  const points = "18,168 100,142 182,151 264,103 346,116 428,62 510,79 582,34";
 
   return (
-    <div className="overflow-hidden rounded-[32px] border border-border/60 bg-[#0d1020] text-white shadow-2xl shadow-primary/10">
-      <div className="flex items-center justify-between border-b border-white/10 bg-black/20 px-5 py-4">
-        <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-white/50">
-            Flow builder
-          </p>
-          <h4 className="mt-1 text-lg font-semibold">
-            Constructor de automatización
-          </h4>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge
-            variant="secondary"
-            className="border-0 bg-white/10 text-white"
-          >
-            <LayoutGrid className="mr-1 h-3.5 w-3.5" /> Organizar nodos
-          </Badge>
-          <Badge className="border-0 bg-primary/90 text-primary-foreground">
-            <Save className="mr-1 h-3.5 w-3.5" /> Guardado automático
-          </Badge>
-        </div>
+    <div className="grid min-h-[286px] grid-cols-[42px_1fr] border border-[#30342d] bg-black">
+      <div className="flex flex-col justify-between border-r border-[#30342d] px-2 py-5 text-right text-[10px] text-[#8b9284]">
+        <span>60</span><span>40</span><span>20</span><span>0</span>
       </div>
-
-      <div className="grid gap-px bg-white/10 lg:grid-cols-1">
-        <div className="bg-black/20 p-4">
-          <p className="text-sm font-semibold">Componentes disponibles</p>
-          <p className="mt-1 text-xs text-white/45">
-            Arrastra componentes y conecta tu flujo sin código.
-          </p>
-          <div className="mt-5 grid gap-2 grid-cols-2 lg:grid-cols-3">
-            {nodePalette.map((node) => {
-              const Icon = node.icon;
-              return (
-                <div
-                  key={node.label}
-                  className={`flex items-center gap-2 rounded-xl border ${node.tone} bg-white/5 px-3 py-2.5 cursor-move hover:bg-white/15 transition-all hover:scale-105`}
-                >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg">
-                    <Icon className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 text-left">
-                    <p className="text-xs font-medium truncate">{node.label}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Canvas with Properties Panel */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-px bg-white/10 min-h-[520px]">
-          {/* Main Canvas Area */}
-          <div className="relative overflow-hidden bg-[radial-gradient(circle_at_center,rgba(78,88,255,0.12),transparent_45%),linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:auto,20px_20px,20px_20px] p-4 sm:p-6">
-            {/* Canvas toolbar */}
-            <div className="absolute top-3 right-3 flex items-center gap-1.5 rounded-lg bg-black/40 p-2 backdrop-blur-sm border border-white/10">
-              <button className="p-1.5 hover:bg-white/10 rounded text-xs text-white/70">
-                <BarChart3 className="h-3.5 w-3.5" />
-              </button>
-              <div className="w-px h-4 bg-white/20" />
-              <span className="text-xs text-white/50 px-1.5">100%</span>
-            </div>
-
-            {/* Flow visualization */}
-            <div className="flex flex-col gap-5 pt-2">
-              {/* Row 1: Start */}
-              <div className="flex justify-center">
-                <div className="rounded-2xl border-2 border-blue-400/70 bg-[#1c2033] p-4 shadow-lg shadow-blue-500/25 w-36 hover:shadow-blue-500/40 transition-all">
-                  <div className="flex items-center justify-center gap-2 text-xs text-blue-300 font-semibold">
-                    <Sparkles className="h-4 w-4" /> Inicio
-                  </div>
-                  <p className="mt-2 text-xs text-center text-white/80">
-                    Nuevo contacto
-                  </p>
-                </div>
-              </div>
-
-              {/* Connector with arrow */}
-              <div className="flex justify-center">
-                <div className="relative w-0.5 h-7">
-                  <div className="absolute inset-0 bg-gradient-to-b from-blue-400/50 to-cyan-400/50" />
-                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-cyan-400" />
-                </div>
-              </div>
-
-              {/* Row 2: Delay */}
-              <div className="flex justify-center">
-                <div className="rounded-2xl border-2 border-cyan-400/70 bg-[#1c2033] p-4 shadow-lg shadow-cyan-500/25 w-36 hover:shadow-cyan-500/40 transition-all">
-                  <div className="flex items-center justify-center gap-2 text-xs text-cyan-300 font-semibold">
-                    <Clock3 className="h-4 w-4" /> Esperar
-                  </div>
-                  <p className="mt-2 text-xs text-center text-white/80">2 minutos</p>
-                </div>
-              </div>
-
-              {/* Connector */}
-              <div className="flex justify-center">
-                <div className="relative w-0.5 h-7">
-                  <div className="absolute inset-0 bg-gradient-to-b from-cyan-400/50 to-emerald-400/50" />
-                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-emerald-400" />
-                </div>
-              </div>
-
-              {/* Row 3: Message & Condition */}
-              <div className="grid grid-cols-2 gap-3 max-w-xs mx-auto w-full">
-                <div className="rounded-2xl border-2 border-emerald-400/70 bg-[#1c2033] p-3 shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 transition-all">
-                  <div className="flex items-center gap-1.5 text-xs text-emerald-300 mb-2 font-semibold">
-                    <MessageSquareMore className="h-3.5 w-3.5" /> Mensaje
-                  </div>
-                  <p className="text-xs leading-4 text-white/80">
-                    "¿Interesado en automatizar tu atención?"
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border-2 border-amber-400/70 bg-[#1c2033] p-3 shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40 transition-all">
-                  <div className="flex items-center gap-1.5 text-xs text-amber-300 mb-2 font-semibold">
-                    <Split className="h-3.5 w-3.5" /> Condición
-                  </div>
-                  <p className="text-xs text-center font-semibold text-white/80">
-                    ¿Respondió?
-                  </p>
-                </div>
-              </div>
-
-              {/* Connector */}
-              <div className="flex justify-center">
-                <div className="relative w-0.5 h-7">
-                  <div className="absolute inset-0 bg-gradient-to-b from-amber-400/50 to-violet-400/50" />
-                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-violet-400" />
-                </div>
-              </div>
-
-              {/* Row 4: Collect Data */}
-              <div className="flex justify-center">
-                <div className="rounded-2xl border-2 border-violet-400/70 bg-[#1c2033] p-4 shadow-lg shadow-violet-500/25 w-36 hover:shadow-violet-500/40 transition-all">
-                  <div className="flex items-center justify-center gap-2 text-xs text-violet-300 font-semibold">
-                    <ListChecks className="h-4 w-4" /> Recolectar
-                  </div>
-                  <p className="mt-2 text-xs text-center text-white/80">
-                    Datos clave
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Panel - Properties */}
-          <div className="bg-black/30 border-l border-white/10 p-4 flex flex-col gap-4 text-white/70 text-xs">
-            <div>
-              <p className="text-white/50 uppercase text-[10px] tracking-wider font-semibold mb-2">
-                Propiedades
-              </p>
-              <div className="space-y-3">
-                <div className="bg-white/5 rounded-lg p-2.5 border border-white/10">
-                  <p className="text-white/70 text-[11px] mb-1">Nombre</p>
-                  <p className="text-xs text-white font-medium">Esperar</p>
-                </div>
-                <div className="bg-white/5 rounded-lg p-2.5 border border-white/10">
-                  <p className="text-white/70 text-[11px] mb-1">Duración</p>
-                  <p className="text-xs text-white font-medium">2 minutos</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-2 border-t border-white/10">
-              <p className="text-white/50 uppercase text-[10px] tracking-wider font-semibold mb-2">
-                Estado
-              </p>
-              <Badge className="w-full justify-center bg-green-500/20 text-green-400 border-green-500/30">
-                Activo
-              </Badge>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-black/20 p-4 border-t border-white/10">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <p className="text-sm font-semibold">Flujo de ejemplo</p>
-              <p className="mt-1 text-xs text-white/45">
-                Automatización de captura y seguimiento de leads
-              </p>
-              <div className="mt-4 space-y-2 text-xs text-white/70">
-                <div className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>Recibe contacto automáticamente</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>Espera 2 minutos antes de responder</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>Envía mensaje personalizado</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>Recolecta información clave</span>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <p className="text-sm font-semibold">Características</p>
-              <p className="mt-1 text-xs text-white/45">
-                Herramientas que potencian tu automatización
-              </p>
-              <div className="mt-4 space-y-2 text-xs text-white/70">
-                <div className="flex items-start gap-2">
-                  <Sparkles className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                  <span>Variables dinámicas con &#123;&#123;nombre&#125;&#125;</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <Sparkles className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                  <span>Ramificaciones lógicas por condición</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <Sparkles className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                  <span>Retrasos inteligentes y sin spam</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <Sparkles className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                  <span>Captura de datos en conversación</span>
-                </div>
-              </div>
-            </div>
-          </div>
+      <div className="flex min-w-0 flex-col p-4">
+        <svg viewBox="0 0 600 200" className="min-h-0 w-full flex-1" role="img" aria-label={t("trend.chart_label")}>
+          {[40, 90, 140, 190].map((y) => (
+            <line key={y} x1="0" x2="600" y1={y} y2={y} stroke="#242821" strokeWidth="1" />
+          ))}
+          <polyline points={points} fill="none" stroke="#C6FF4A" strokeWidth="5" vectorEffect="non-scaling-stroke" />
+          {points.split(" ").map((point) => {
+            const [cx, cy] = point.split(",");
+            return <circle key={point} cx={cx} cy={cy} r="5" fill="#0B0C0A" stroke="#C6FF4A" strokeWidth="3" />;
+          })}
+        </svg>
+        <div className="grid grid-cols-7 border-t border-[#30342d] pt-3 text-center text-[10px] text-[#8b9284]">
+          {(["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const).map((day) => <span key={day}>{t(`days.${day}`)}</span>)}
         </div>
       </div>
     </div>
   );
 }
 
-function AnalyticsShowcaseCard() {
+function SalesFunnelChart() {
+  const t = useTranslations("LandingPage.analytics_showcase");
+  const stages = [
+    { key: "conversations", value: 100, width: "100%" },
+    { key: "qualified", value: 68, width: "78%" },
+    { key: "opportunities", value: 42, width: "58%" },
+    { key: "sales", value: 24, width: "38%" },
+  ] as const;
+
   return (
-    <div className="rounded-3xl border border-border/60 bg-card p-5 shadow-xl shadow-primary/5">
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
-            Analytics
-          </p>
-          <h4 className="mt-1 text-lg font-semibold">Rendimiento del equipo</h4>
-        </div>
-        <BarChart3 className="h-5 w-5 text-primary" />
-      </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        {[
-          ["+34%", "Conversión"],
-          ["1.8m", "1ra respuesta"],
-          ["93%", "SLA cumplido"],
-        ].map(([value, label]) => (
-          <div
-            key={label}
-            className="rounded-2xl border border-border/50 bg-background/80 p-4"
-          >
-            <p className="text-2xl font-semibold">{value}</p>
-            <p className="mt-1 text-sm text-muted-foreground">{label}</p>
+    <div className="flex min-h-[286px] flex-col justify-center border border-[#30342d] bg-black p-5">
+      <div className="space-y-3">
+        {stages.map((stage, index) => (
+          <div key={stage.key} className="mx-auto" style={{ width: stage.width }}>
+            <div className="mb-1 flex items-center justify-between gap-3 text-[11px]">
+              <span className="truncate text-[#c4c9bf]">{t(`funnel.stages.${stage.key}`)}</span>
+              <span className="tabular-nums text-[#C6FF4A]">{stage.value}</span>
+            </div>
+            <div className="h-8 border border-[#3b4037] bg-[#151713] p-1">
+              <div className="h-full bg-[#C6FF4A]" style={{ opacity: 1 - index * 0.18 }} />
+            </div>
           </div>
         ))}
       </div>
-      <div className="mt-4 rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-4">
-        <div className="flex items-end gap-3">
-          {[45, 65, 58, 80, 74, 96, 88].map((height, index) => (
-            <div
-              key={index}
-              className="flex-1 rounded-t-2xl bg-primary/80"
-              style={{ height }}
-            />
-          ))}
+    </div>
+  );
+}
+
+function ChannelDistributionChart() {
+  const t = useTranslations("LandingPage.analytics_showcase");
+  const channels = [
+    { key: "direct", value: 46, color: "#C6FF4A" },
+    { key: "automations", value: 31, color: "#7e9f39" },
+    { key: "campaigns", value: 23, color: "#3f4d2a" },
+  ] as const;
+
+  return (
+    <div className="grid min-h-[286px] gap-6 border border-[#30342d] bg-black p-6 sm:grid-cols-[minmax(0,1fr)_minmax(180px,0.75fr)] sm:items-center">
+      <div className="relative mx-auto aspect-square w-full max-w-[210px] rounded-full" style={{ background: "conic-gradient(#C6FF4A 0 46%, #7e9f39 46% 77%, #3f4d2a 77% 100%)" }}>
+        <div className="absolute inset-[24%] flex items-center justify-center rounded-full border border-[#30342d] bg-black text-center">
+          <span className="text-[11px] leading-4 text-[#c4c9bf]">{t("channels.center")}</span>
         </div>
-        <p className="mt-3 text-sm text-muted-foreground">
-          Tendencia semanal de conversaciones con seguimiento.
-        </p>
+      </div>
+      <div className="border-t border-[#30342d] pt-4 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
+        {channels.map((channel) => (
+          <div key={channel.key} className="flex items-center justify-between gap-3 border-b border-[#242821] py-3 last:border-b-0">
+            <div className="flex min-w-0 items-center gap-2 text-xs text-[#c4c9bf]">
+              <span className="h-2.5 w-2.5 shrink-0" style={{ backgroundColor: channel.color }} />
+              <span className="truncate">{t(`channels.items.${channel.key}`)}</span>
+            </div>
+            <span className="tabular-nums text-sm text-white">{channel.value}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ResponseTimeChart() {
+  const t = useTranslations("LandingPage.analytics_showcase");
+  const rows = [
+    { key: "sales", previous: 72, current: 42 },
+    { key: "support", previous: 88, current: 55 },
+    { key: "billing", previous: 61, current: 31 },
+    { key: "general", previous: 76, current: 46 },
+  ] as const;
+
+  return (
+    <div className="flex min-h-[286px] flex-col border border-[#30342d] bg-black p-5">
+      <div className="mb-5 flex justify-end gap-5 text-[10px] text-[#a7ada2]">
+        <span className="flex items-center gap-2"><span className="h-2 w-2 bg-[#3f463c]" />{t("response.before")}</span>
+        <span className="flex items-center gap-2"><span className="h-2 w-2 bg-[#C6FF4A]" />{t("response.with_whatsaas")}</span>
+      </div>
+      <div className="flex flex-1 flex-col justify-around gap-4">
+        {rows.map((row) => (
+          <div key={row.key} className="grid grid-cols-[82px_1fr] items-center gap-3">
+            <span className="truncate text-[11px] text-[#c4c9bf]">{t(`response.teams.${row.key}`)}</span>
+            <div className="space-y-1.5 border-l border-[#30342d] pl-2">
+              <div className="h-2 bg-[#3f463c]" style={{ width: `${row.previous}%` }} />
+              <div className="h-2 bg-[#C6FF4A]" style={{ width: `${row.current}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="mt-5 border-t border-[#30342d] pt-3 text-[10px] text-[#8b9284]">{t("response.axis")}</p>
+    </div>
+  );
+}
+
+function AnalyticsShowcaseCard() {
+  const t = useTranslations("LandingPage.analytics_showcase");
+  const [activeView, setActiveView] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true);
+
+  const views = [
+    { key: "trend", icon: Activity, chart: ConversationTrendChart },
+    { key: "funnel", icon: Filter, chart: SalesFunnelChart },
+    { key: "channels", icon: PieChart, chart: ChannelDistributionChart },
+    { key: "response", icon: Timer, chart: ResponseTimeChart },
+  ] as const;
+
+  useEffect(() => {
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!isPlaying || reducedMotion) return;
+
+    const interval = window.setInterval(() => {
+      setActiveView((current) => (current + 1) % ANALYTICS_VIEW_COUNT);
+    }, ANALYTICS_ROTATION_MS);
+
+    return () => window.clearInterval(interval);
+  }, [isPlaying]);
+
+  const active = views[activeView];
+  const ActiveChart = active.chart;
+
+  return (
+    <div className="overflow-hidden border border-[#30342d] bg-[#0B0C0A] font-mono text-white">
+      <div className="grid border-b border-[#30342d] sm:grid-cols-[1fr_auto]">
+        <div className="p-5 sm:p-6">
+          <div className="mb-3 flex flex-wrap items-center gap-3 text-[10px] uppercase tracking-[0.16em] text-[#C6FF4A]">
+            <span>{t("eyebrow")}</span>
+            <span className="border border-[#59634f] px-2 py-1 text-[#a7ada2]">{t("sample_badge")}</span>
+          </div>
+          <h4 className="text-xl font-semibold tracking-tight sm:text-2xl">{t("title")}</h4>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#a7ada2]">{t("description")}</p>
+        </div>
+        <div className="flex items-center justify-between border-t border-[#30342d] px-5 py-3 sm:flex-col sm:justify-center sm:border-l sm:border-t-0 sm:px-4">
+          <span className="text-[10px] tabular-nums text-[#a7ada2]">{String(activeView + 1).padStart(2, "0")} / 04</span>
+          <button
+            type="button"
+            onClick={() => setIsPlaying((current) => !current)}
+            className="mt-0 border border-[#59634f] p-2 text-[#C6FF4A] transition-colors hover:bg-[#C6FF4A] hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C6FF4A] sm:mt-3"
+            aria-label={isPlaying ? t("pause") : t("play")}
+          >
+            {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-[220px_minmax(0,1fr)]">
+        <div className="grid grid-cols-2 border-b border-[#30342d] lg:grid-cols-1 lg:border-b-0 lg:border-r">
+          {views.map((view, index) => {
+            const Icon = view.icon;
+            const selected = index === activeView;
+            return (
+              <button
+                key={view.key}
+                type="button"
+                onClick={() => setActiveView(index)}
+                className={`flex min-h-16 items-center gap-3 border-b border-r border-[#30342d] px-4 py-3 text-left text-xs transition-colors last:border-b-0 focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#C6FF4A] lg:border-r-0 ${selected ? "bg-[#C6FF4A] text-black" : "text-[#a7ada2] hover:bg-[#151713] hover:text-white"}`}
+                aria-pressed={selected}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                <span>{t(`views.${view.key}.tab`)}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="min-w-0 p-4 sm:p-6">
+          <div key={active.key} className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-500">
+            <div className="mb-4 flex items-end justify-between gap-4">
+              <div>
+                <p className="text-base font-semibold text-white">{t(`views.${active.key}.title`)}</p>
+                <p className="mt-1 text-xs leading-5 text-[#8b9284]">{t(`views.${active.key}.description`)}</p>
+              </div>
+              <active.icon className="h-5 w-5 shrink-0 text-[#C6FF4A]" />
+            </div>
+            <ActiveChart />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-4 border-t border-[#30342d]" aria-hidden="true">
+        {views.map((view, index) => (
+          <span key={view.key} className={`h-1 ${index === activeView ? "bg-[#C6FF4A]" : "bg-[#242821]"}`} />
+        ))}
       </div>
     </div>
   );
@@ -311,7 +242,7 @@ function CollaborationShowcaseCard() {
       <div className="mb-5 flex items-center justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
-            Workspace
+            Espacio de trabajo
           </p>
           <h4 className="mt-1 text-lg font-semibold">Caso compartido</h4>
         </div>

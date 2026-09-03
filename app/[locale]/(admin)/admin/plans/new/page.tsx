@@ -10,7 +10,7 @@ export default function NewPlanPage() {
         <Link href="/admin/plans">
           <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
         </Link>
-        <h1 className="text-2xl font-bold">Create New Plan</h1>
+        <h1 className="text-2xl font-bold">Crear nuevo plan</h1>
       </div>
       <PlanForm />
     </div>

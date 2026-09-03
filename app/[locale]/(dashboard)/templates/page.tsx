@@ -13,6 +13,8 @@ import { Badge } from '@/components/ui/badge';
 import {
     Dialog,
     DialogContent,
+    DialogDescription,
+    DialogTitle,
 } from "@/components/ui/dialog";
 import {
     Select,
@@ -226,6 +228,12 @@ export default function TemplatesPage() {
 
             <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
                 <DialogContent className="sm:max-w-[400px] p-0 bg-transparent border-none shadow-none flex justify-center items-center">
+                    <DialogTitle className="sr-only">
+                        {selectedTemplate ? `${selectedTemplate.name} (${selectedTemplate.language})` : t('view_preview_title')}
+                    </DialogTitle>
+                    <DialogDescription className="sr-only">
+                        Vista previa de la plantilla de WhatsApp seleccionada.
+                    </DialogDescription>
                     {selectedTemplate && (
                         <div className="transform scale-90 sm:scale-100 transition-transform">
                             <WhatsAppPreview data={selectedTemplate.components} />

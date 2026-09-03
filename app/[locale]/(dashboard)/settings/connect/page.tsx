@@ -15,7 +15,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { toast } from 'sonner';
-import { Trash2, LogOut, QrCode, Plus, Smartphone, Settings as SettingsIcon, MoreVertical, Info, RefreshCw, Signal, Globe, Zap, Loader2, Download, Check, Users, MessageSquare, CheckCircle2 } from 'lucide-react';
+import { Trash2, LogOut, QrCode, Plus, Smartphone, Settings as SettingsIcon, MoreVertical, Info, RefreshCw, Signal, Globe, Zap, Loader2, Download, Check, Users, MessageSquare, CheckCircle2, Copy } from 'lucide-react';
 import PusherClient from 'pusher-js';
 import useSWR from 'swr';
 import { useTranslations } from 'next-intl';
@@ -40,6 +40,27 @@ type QrCodeApiResponse = {
 };
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
+
+function WebhookTokenDisplay() {
+  const { data } = useSWR<{ token: string }>('/api/settings/webhook-token', fetcher);
+  const token = data?.token || '';
+  const masked = token ? `${token.slice(0, 4)}••••••••${token.slice(-4)}` : '...';
+
+  const handleCopy = () => {
+    if (!token) return;
+    navigator.clipboard.writeText(token);
+    toast.success('Token copiado');
+  };
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <code className="bg-black/10 dark:bg-black/30 px-1 rounded">{masked}</code>
+      <button type="button" onClick={handleCopy} className="p-0.5 hover:opacity-70" title="Copiar token">
+        <Copy className="h-3 w-3" />
+      </button>
+    </span>
+  );
+}
 
 function ConnectInstanceForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: () => void; }) {
   const t = useTranslations('Settings');
@@ -147,7 +168,7 @@ function ConnectInstanceForm({ onSuccess, onCancel }: { onSuccess: () => void; o
                     <AlertDescription className="text-xs text-blue-700 dark:text-blue-400 mt-1">
                         {t('meta_configuration_desc')}<br/>
                         <code className="bg-black/10 dark:bg-black/30 px-1 rounded select-all">{process.env.NEXT_PUBLIC_EVOLUTION_WEBHOOK_URL+'/webhook/meta' || ''}</code><br/>
-                        {t('verify_token_label')} <code className="bg-black/10 dark:bg-black/30 px-1 rounded select-all">{process.env.NEXT_PUBLIC_EVOLUTION_WEBHOOK_TOKEN || ''}</code>
+                        {t('verify_token_label')} <WebhookTokenDisplay />
                     </AlertDescription>
                 </Alert>
 
@@ -424,6 +445,8 @@ function InstanceCard({ details, mutateDetails, allInstances }: { details: Insta
                         </Button>
                     </DialogTrigger>
                     <DialogContent className="sm:max-w-md p-0 overflow-hidden">
+                        <DialogTitle className="sr-only">{t('connect_whatsapp_title')}</DialogTitle>
+                        <DialogDescription className="sr-only">{t('connect_whatsapp_desc')}</DialogDescription>
                         <div className="p-6 pb-2 text-center bg-background">
                             <h2 className="text-xl font-bold text-foreground">{t('connect_whatsapp_title')}</h2>
                             <p className="text-sm text-muted-foreground mt-1">{t('connect_whatsapp_desc')}</p>

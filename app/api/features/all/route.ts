@@ -9,18 +9,20 @@ export async function GET() {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    const [isAiEnabled, isFlowBuilderEnabled, isCampaignsEnabled, isTemplatesEnabled] = await Promise.all([
+    const [isAiEnabled, isFlowBuilderEnabled, isCampaignsEnabled, isTemplatesEnabled, isSocialPublisherEnabled] = await Promise.all([
         checkFeature(team.id, 'isAiEnabled'),
         checkFeature(team.id, 'isFlowBuilderEnabled'),
         checkFeature(team.id, 'isCampaignsEnabled'),
         checkFeature(team.id, 'isTemplatesEnabled'),
+        checkFeature(team.id, 'isSocialPublisherEnabled'),
     ]);
 
-    return NextResponse.json({ 
+    return NextResponse.json({
         isAiEnabled,
         isFlowBuilderEnabled,
         isCampaignsEnabled,
         isTemplatesEnabled,
+        isSocialPublisherEnabled,
      });
 
   } catch (error: any) {

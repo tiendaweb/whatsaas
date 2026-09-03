@@ -19,7 +19,16 @@ type ProposeResponse = {
   dryRun: boolean;
 };
 
-const KIND_OPTIONS: ActionKind[] = ['send_message', 'create_task', 'mark_pre_descarte', 'assign_owner', 'schedule_call'];
+const KIND_OPTIONS: ActionKind[] = ['send_message', 'schedule_message', 'create_task', 'request_demo', 'mark_pre_descarte', 'assign_owner', 'schedule_call'];
+
+/** Valor por defecto del selector de fecha: mañana a las 10, en hora local. */
+function mananaALas10(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(10, 0, 0, 0);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 const REASON_LABELS: Record<string, string> = {
   cliente: 'ya es cliente',
@@ -59,14 +68,18 @@ export function NuevoLoteDialog({
   const [text, setText] = useState('');
   const [ab, setAb] = useState(false);
   const [textB, setTextB] = useState('');
+  const [sendAt, setSendAt] = useState(mananaALas10);
   const [maxFollowups, setMaxFollowups] = useState('');
   const [minDaysSilent, setMinDaysSilent] = useState('');
   const [preview, setPreview] = useState<ProposeResponse | null>(null);
   const [busy, setBusy] = useState<'preview' | 'create' | null>(null);
 
-  const usesText = kind === 'send_message';
+  const usesText = kind === 'send_message' || kind === 'schedule_message';
+  const esProgramado = kind === 'schedule_message';
+  const esDemo = kind === 'request_demo';
   const hasChats = Boolean(presetChatIds?.length);
-  const canSubmit = label.trim().length > 0 && (gates.length > 0 || hasChats) && (!usesText || text.trim().length > 0) && (!ab || textB.trim().length > 0);
+  const canSubmit =
+    label.trim().length > 0 && (gates.length > 0 || hasChats) && (!usesText || text.trim().length > 0) && (!ab || textB.trim().length > 0) && (!esProgramado || sendAt.length > 0);
 
   function reset() {
     setLabel('');
@@ -92,8 +105,12 @@ export function NuevoLoteDialog({
         ...(maxFollowups !== '' ? { maxFollowups: Number(maxFollowups) } : {}),
         ...(minDaysSilent !== '' ? { minDaysSilent: Number(minDaysSilent) } : {}),
       },
-      payloadTemplate: usesText ? { text: text.trim(), ...(ab ? { textB: textB.trim() } : {}) } : undefined,
-      variantSplit: usesText && ab,
+      payloadTemplate: usesText
+        ? { text: text.trim(), ...(ab && !esProgramado ? { textB: textB.trim() } : {}), ...(esProgramado ? { sendAt: new Date(sendAt).toISOString() } : {}) }
+        : esDemo
+          ? { taskTitle: 'Demo web — {{nombre}}', ...(text.trim() ? { text: text.trim() } : {}) }
+          : undefined,
+      variantSplit: usesText && ab && !esProgramado,
       dryRun,
     };
   }
@@ -208,6 +225,24 @@ export function NuevoLoteDialog({
               <Input id="lote-silencio" inputMode="numeric" value={minDaysSilent} onChange={(e) => setMinDaysSilent(e.target.value.replace(/\D/g, ''))} placeholder="0" />
             </div>
           </div>
+
+          {esProgramado && (
+            <div className="space-y-1.5">
+              <Label htmlFor="lote-fecha">Sale el</Label>
+              <Input id="lote-fecha" type="datetime-local" value={sendAt} onChange={(e) => setSendAt(e.target.value)} className="w-56" />
+              <p className="text-[11px] text-muted-foreground">Al ejecutar el lote se crea un mensaje programado por contacto; lo manda el plugin Mensajes programados a esa hora.</p>
+            </div>
+          )}
+
+          {esDemo && (
+            <div className="space-y-1.5">
+              <Label htmlFor="lote-demo">Indicación para la demo (opcional)</Label>
+              <Textarea id="lote-demo" value={text} onChange={(e) => setText(e.target.value)} rows={3} placeholder="Ej.: sitio de una página, foco en turnos por WhatsApp" />
+              <p className="text-[11px] text-muted-foreground">
+                Al ejecutar, cada contacto pasa a una tarea en el workspace “Demos” de Tareas OS con la investigación del chat y el prompt listo para generar la web en AAPP SPACE.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label>Quién aprueba</Label>

@@ -8,7 +8,12 @@ import {
   evolutionInstances, 
   aiConfigs,
   aiSessions, 
-  chats 
+  chats,
+  customFields as customFieldDefinitions,
+  departments,
+  funnelStages,
+  tags,
+  teamMembers,
 } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import fs from 'fs/promises';
@@ -20,16 +25,23 @@ import type {
   AutomationCanvasNode,
   ButtonMessageButton,
   ConditionEntry,
+  FormField,
   GoToNodeData,
   ListMessageItem,
+  MenuSimpleOption,
   SaveContactNodeData,
   StartNodeData,
 } from '@/lib/automation/flow-schema';
+import {
+  buildMenuSimpleMessage,
+  matchMenuSimpleReplyByMarker,
+} from '@/lib/automation/menu-simple';
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "http://localhost:8080";
 const GRAPH_API_URL = "https://graph.facebook.com";
 const GRAPH_API_VERSION = "v21.0";
 const NODE_HISTORY_KEY = "__nodeHistory";
+const FORM_PROGRESS_KEY = "__formProgress";
 
 type FlowData = {
   nodes: AutomationCanvasNode[];
@@ -45,6 +57,10 @@ type InstanceConfig = {
 
 type AutomationSessionVariables = Record<string, unknown> & {
   [NODE_HISTORY_KEY]?: string[];
+  [FORM_PROGRESS_KEY]?: {
+    nodeId: string;
+    fieldIndex: number;
+  };
 };
 
 function normalizeSessionVariables(raw: unknown): AutomationSessionVariables {
@@ -77,11 +93,96 @@ function extractStringVariables(variables: AutomationSessionVariables): Record<s
   }, {});
 }
 
+function getFormProgress(
+  variables: AutomationSessionVariables,
+  nodeId: string,
+): { nodeId: string; fieldIndex: number } {
+  const progress = variables[FORM_PROGRESS_KEY];
+  if (
+    progress &&
+    typeof progress === 'object' &&
+    progress.nodeId === nodeId &&
+    Number.isInteger(progress.fieldIndex)
+  ) {
+    return {
+      nodeId,
+      fieldIndex: Math.max(0, progress.fieldIndex),
+    };
+  }
+  return { nodeId, fieldIndex: 0 };
+}
+
+function buildFormFieldMessage(
+  field: FormField,
+  variables: AutomationSessionVariables,
+): string {
+  const stringVariables = extractStringVariables(variables);
+  const label = replaceVariables(field.label, stringVariables);
+  if (field.type !== 'menu') return label;
+  return buildMenuSimpleMessage({
+    label,
+    markerStyle: field.markerStyle,
+    menuOptions: field.menuOptions ?? [],
+  });
+}
+
+function matchesFormMenuField(
+  field: FormField,
+  text: string,
+  variables: AutomationSessionVariables,
+): boolean {
+  const options = field.menuOptions ?? [];
+  const stringVariables = extractStringVariables(variables);
+  for (const option of options) {
+    if (!option.matchValue?.trim()) continue;
+    if (
+      evaluateCondition(
+        {
+          id: option.id,
+          type: option.matchType || 'text',
+          operator: option.matchOperator || 'equals',
+          value: option.matchValue,
+          value2: option.matchValue2,
+        },
+        text,
+        stringVariables,
+      )
+    ) {
+      return true;
+    }
+  }
+  return matchMenuSimpleReplyByMarker(options, text) !== -1;
+}
+
 function replaceVariables(text: string, variables: Record<string, string> | null): string {
     if (!text || !variables) return text;
     return text.replace(/\{\{(\w+)\}\}/g, (_, key) => {
         return variables[key] || "";
     });
+}
+
+function resolveVariableTemplate(
+  template: string,
+  variables: Record<string, string>,
+): { value: string; missingVariables: string[] } {
+  const missingVariables: string[] = [];
+  const value = template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
+    const resolved = variables[key];
+    if (typeof resolved !== 'string' || !resolved.trim()) {
+      missingVariables.push(key);
+      return '';
+    }
+    return resolved.trim();
+  }).trim();
+
+  return { value, missingVariables };
+}
+
+function parseBooleanContactValue(value: string): boolean | undefined {
+  const normalized = value.trim().toLocaleLowerCase('es');
+  if (['true', '1', 'si', 'sí', 's'].includes(normalized)) return true;
+  if (['false', '0', 'no', 'n'].includes(normalized)) return false;
+  return undefined;
 }
 
 async function fileToBase64(filePath: string): Promise<string | null> {
@@ -148,6 +249,27 @@ function evaluateCondition(condition: ConditionEntry, text: string, variables: R
     }
 }
 
+/**
+ * Menor = se evalúa antes. Los triggers con keywords explícitas (exact_match/contains)
+ * son específicos y deben ganarle a los catch-all (first_message matchea cualquier
+ * primer mensaje; fallback matchea cualquier mensaje) cuando varias automatizaciones
+ * activas de la misma instancia podrían calzar con el mismo texto entrante.
+ */
+function triggerSpecificityRank(data: StartNodeData): number {
+    const keywords = data.keywords || [];
+    switch (data.triggerType) {
+        case 'exact_match':
+        case 'contains':
+            return keywords.length > 0 ? 0 : 1;
+        case 'fallback':
+            return 2;
+        case 'first_message':
+            return 1;
+        default:
+            return keywords.length > 0 ? 0 : 1;
+    }
+}
+
 export async function processAutomation(
   teamId: number,
   chatId: number,
@@ -185,6 +307,14 @@ export async function processAutomation(
   if (session && session.automation.instanceId !== instanceId) return false;
 
   if (!session) {
+    // If the chat was manually cut/closed by an operator, do not auto-trigger
+    // any automation again until it is manually re-triggered.
+    const chatRow = await db.query.chats.findFirst({
+      where: eq(chats.id, chatId),
+      columns: { automationDisabled: true }
+    });
+    if (chatRow?.automationDisabled) return false;
+
     const activeAutomations = await db.query.automations.findMany({
       where: and(
         eq(automations.teamId, teamId),
@@ -206,13 +336,24 @@ export async function processAutomation(
     let matchedAutomation = null;
     let fallbackAutomation = null;
 
-    for (const automation of activeAutomations) {
+    // Sin esto, dos automatizaciones activas para la misma instancia compiten en el
+    // orden en que Postgres devuelve las filas (sin ORDER BY, en la práctica el id
+    // ascendente), y una automatización genérica de "primer mensaje" sin keywords
+    // (ej. un "COMIENZO" catch-all) puede robarle el mensaje a una automatización
+    // específica por palabra clave (ej. "COMIENZO Paraguay (Ads)") solo por tener un
+    // id menor. Evaluamos primero los triggers con keywords explícitas, dejando
+    // first_message/fallback (que matchean cualquier mensaje) para el final.
+    const candidates = activeAutomations
+      .map((automation) => {
         const nodes = automation.nodes as AutomationCanvasNode[];
         const startNode = nodes.find(n => n.type === 'start');
-        if (!startNode) continue;
+        if (!startNode) return null;
+        return { automation, data: startNode.data as unknown as StartNodeData };
+      })
+      .filter((candidate): candidate is { automation: typeof activeAutomations[number]; data: StartNodeData } => candidate !== null)
+      .sort((a, b) => triggerSpecificityRank(a.data) - triggerSpecificityRank(b.data));
 
-        const data = startNode.data as unknown as StartNodeData;
-        
+    for (const { automation, data } of candidates) {
         if (data.conditions) {
             if (data.conditions.funnelStageId && (!contactData || contactData.funnelStageId?.toString() !== data.conditions.funnelStageId)) continue;
             if (data.conditions.assignedUserId && (!contactData || contactData.assignedUserId?.toString() !== data.conditions.assignedUserId)) continue;
@@ -286,7 +427,61 @@ export async function processAutomation(
       }
       const edge = flow.edges.find(e => e.source === currentNode.id);
       nextNodeId = edge?.target;
-  } 
+  }
+  else if (currentNode.type === 'form') {
+      const fields = (currentNode.data.fields as FormField[]) || [];
+      const currentVars = normalizeSessionVariables(session.variables);
+      const progress = getFormProgress(currentVars, currentNode.id);
+      const field = fields[progress.fieldIndex];
+
+      if (!field) {
+          const { [FORM_PROGRESS_KEY]: _completedProgress, ...variablesWithoutProgress } = currentVars;
+          await db.update(automationSessions)
+            .set({ variables: variablesWithoutProgress, updatedAt: new Date() })
+            .where(eq(automationSessions.id, session.id));
+          session.variables = variablesWithoutProgress;
+          nextNodeId = flow.edges.find(e => e.source === currentNode.id)?.target;
+      } else {
+          if (field.type === 'menu' && !matchesFormMenuField(field, text, currentVars)) {
+              await sendEvolutionMessage(config, remoteJid, "sendText", {
+                  text: buildFormFieldMessage(field, currentVars),
+              }, teamId, chatId);
+              return true;
+          }
+
+          const nextIndex = progress.fieldIndex + 1;
+          const nextField = fields[nextIndex];
+          const variablesWithAnswer: AutomationSessionVariables = {
+              ...currentVars,
+              [field.variable]: text,
+          };
+
+          if (nextField) {
+              variablesWithAnswer[FORM_PROGRESS_KEY] = {
+                  nodeId: currentNode.id,
+                  fieldIndex: nextIndex,
+              };
+              await db.update(automationSessions)
+                .set({ variables: variablesWithAnswer, updatedAt: new Date() })
+                .where(eq(automationSessions.id, session.id));
+              session.variables = variablesWithAnswer;
+              await sendEvolutionMessage(config, remoteJid, "sendText", {
+                  text: buildFormFieldMessage(nextField, variablesWithAnswer),
+              }, teamId, chatId);
+              return true;
+          }
+
+          const {
+              [FORM_PROGRESS_KEY]: _finishedProgress,
+              ...variablesWithoutProgress
+          } = variablesWithAnswer;
+          await db.update(automationSessions)
+            .set({ variables: variablesWithoutProgress, updatedAt: new Date() })
+            .where(eq(automationSessions.id, session.id));
+          session.variables = variablesWithoutProgress;
+          nextNodeId = flow.edges.find(e => e.source === currentNode.id)?.target;
+      }
+  }
   else if (currentNode.type === 'options' || currentNode.type === 'button_message' || currentNode.type === 'list_message') {
       let selectedEdge: AutomationCanvasEdge | undefined;
 
@@ -325,12 +520,90 @@ export async function processAutomation(
       if (selectedEdge) {
           nextNodeId = selectedEdge.target;
       } else {
-          await sendEvolutionMessage(config, remoteJid, "sendText", { 
-             text: "Opção inválida. Por favor, tente novamente." 
+          await sendEvolutionMessage(config, remoteJid, "sendText", {
+             text: "Opção inválida. Por favor, tente novamente."
           }, teamId, chatId);
           return true;
       }
-  } 
+  }
+  else if (currentNode.type === 'menu_simple') {
+      const menuOptions = (currentNode.data.menuOptions as MenuSimpleOption[]) || [];
+      const variables = normalizeSessionVariables(session.variables) as Record<string, string>;
+
+      // Match priority: an option's advanced condition first, then auto match by
+      // marker (number/letter/emoji) or option text.
+      let matchedOption: MenuSimpleOption | undefined;
+      for (const option of menuOptions) {
+          if (option.matchValue && option.matchValue.trim()) {
+              const cond: ConditionEntry = {
+                  id: option.id,
+                  type: option.matchType || 'text',
+                  operator: option.matchOperator || 'equals',
+                  value: option.matchValue,
+                  value2: option.matchValue2,
+              };
+              if (evaluateCondition(cond, text, variables)) {
+                  matchedOption = option;
+                  break;
+              }
+          }
+      }
+      if (!matchedOption) {
+          const idx = matchMenuSimpleReplyByMarker(menuOptions, text);
+          if (idx !== -1) matchedOption = menuOptions[idx];
+      }
+
+      let selectedEdge: AutomationCanvasEdge | undefined;
+      if (matchedOption) {
+          selectedEdge = flow.edges.find(
+              e => e.source === currentNode.id && e.sourceHandle === `menu-${matchedOption!.id}`,
+          );
+      }
+      // No option matched (or its branch isn't wired): use the fallback handle.
+      if (!selectedEdge) {
+          selectedEdge = flow.edges.find(
+              e => e.source === currentNode.id && e.sourceHandle === 'fallback',
+          );
+      }
+
+      if (selectedEdge) {
+          // Optionally store the raw reply (collect behaviour).
+          const variableName = (currentNode.data.variable as string | undefined)?.trim();
+          if (variableName) {
+              const newVars = { ...normalizeSessionVariables(session.variables), [variableName]: text };
+              await db.update(automationSessions)
+                .set({ variables: newVars, updatedAt: new Date() })
+                .where(eq(automationSessions.id, session.id));
+              session.variables = newVars;
+          }
+          // Global delay applied before continuing to the chosen branch.
+          const delaySeconds = Number(currentNode.data.globalDelaySeconds) || 0;
+          if (delaySeconds > 0) {
+              await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
+          }
+          nextNodeId = selectedEdge.target;
+      } else {
+          // Invalid reply and no fallback wired: re-send the menu and keep waiting.
+          // If NO option/fallback edge exists at all, the flow is stuck here forever;
+          // log it so an unwired menu can be traced.
+          const hasAnyMenuEdge = flow.edges.some(e => e.source === currentNode.id);
+          if (!hasAnyMenuEdge || matchedOption) {
+              console.warn(
+                  `[automation] menu_simple atascado: nodo "${currentNode.id}" sin arista ` +
+                  `${matchedOption ? `para la opción "${matchedOption.id}"` : "de salida"} ` +
+                  `ni fallback (automationId=${session.automationId}, chatId=${chatId}).`,
+              );
+          }
+          await sendEvolutionMessage(config, remoteJid, "sendText", {
+              text: buildMenuSimpleMessage({
+                  label: replaceVariables((currentNode.data.label as string) || '', variables),
+                  markerStyle: currentNode.data.markerStyle,
+                  menuOptions,
+              }),
+          }, teamId, chatId);
+          return true;
+      }
+  }
   else {
       const edge = flow.edges.find(e => e.source === currentNode.id);
       nextNodeId = edge?.target;
@@ -400,6 +673,12 @@ export async function triggerAutomationManually(
       .where(eq(automationSessions.id, existingSession.id));
   }
 
+  // Manually triggering an automation re-enables auto-triggering for this chat
+  // (it may have been disabled by a previous manual close/cut).
+  await db.update(chats)
+    .set({ automationDisabled: false })
+    .where(eq(chats.id, chatId));
+
   const [newSession] = await db.insert(automationSessions).values({
     teamId,
     automationId: automation.id,
@@ -464,7 +743,15 @@ async function executeStep(
         await db.update(automationSessions)
             .set({ status: 'completed', updatedAt: new Date() })
             .where(eq(automationSessions.id, session.id));
-        
+
+        // Preserve historical behaviour unless the flow explicitly marks this
+        // terminal as recoverable (used by the V3 MENU recovery automation).
+        if (nextNode.data.disableAutomation !== false) {
+            await db.update(chats)
+                .set({ automationDisabled: true })
+                .where(eq(chats.id, chatId));
+        }
+
         await pusherServer.trigger(`team-${teamId}`, 'chat-status-update', {
             chatId, type: 'automation', status: 'completed'
         });
@@ -595,7 +882,19 @@ async function executeStep(
         await moveToNextAuto(updatedSession, flow, nextNode.id, instance, remoteJid, teamId, chatId);
     }
     else if (nextNode.type === 'save_contact') {
-        await processSaveContact(nextNode, updatedSession, teamId, chatId);
+        try {
+            await processSaveContact(nextNode, updatedSession, teamId, chatId);
+        } catch (error) {
+            // CRM enrichment must not block the customer-facing flow. A deleted
+            // tag/stage or another recoverable data issue is logged with enough
+            // context to repair it, then execution continues to the next node.
+            console.error(
+                `[automation] save_contact falló; el flujo continuará ` +
+                `(automationId=${session.automationId}, sessionId=${session.id}, ` +
+                `chatId=${chatId}, nodeId=${nextNode.id}).`,
+                error,
+            );
+        }
         await moveToNextAuto(updatedSession, flow, nextNode.id, instance, remoteJid, teamId, chatId);
     }
     else if (nextNode.type === 'message' || nextNode.type === 'options') {
@@ -612,6 +911,36 @@ async function executeStep(
         let text = nextNode.data.label as string;
         text = replaceVariables(text, variables);
         await sendEvolutionMessage(instance, remoteJid, "sendText", { text: text }, teamId, chatId);
+    }
+    else if (nextNode.type === 'form') {
+        const fields = (nextNode.data.fields as FormField[]) || [];
+        const firstField = fields[0];
+        if (!firstField) {
+            await moveToNextAuto(updatedSession, flow, nextNode.id, instance, remoteJid, teamId, chatId);
+            return;
+        }
+        const variablesWithProgress: AutomationSessionVariables = {
+            ...variablesWithHistory,
+            [FORM_PROGRESS_KEY]: {
+                nodeId: nextNode.id,
+                fieldIndex: 0,
+            },
+        };
+        await db.update(automationSessions)
+            .set({ variables: variablesWithProgress, updatedAt: new Date() })
+            .where(eq(automationSessions.id, session.id));
+        await sendEvolutionMessage(instance, remoteJid, "sendText", {
+            text: buildFormFieldMessage(firstField, variablesWithProgress),
+        }, teamId, chatId);
+    }
+    else if (nextNode.type === 'menu_simple') {
+        const message = buildMenuSimpleMessage({
+            label: replaceVariables((nextNode.data.label as string) || '', variables),
+            markerStyle: nextNode.data.markerStyle,
+            menuOptions: (nextNode.data.menuOptions as MenuSimpleOption[]) || [],
+        });
+        await sendEvolutionMessage(instance, remoteJid, "sendText", { text: message }, teamId, chatId);
+        // Flow pauses here, waiting for the user's reply (handled in processAutomation).
     }
     else if (nextNode.type === 'button_message' || nextNode.type === 'list_message') {
         await processMetaInteractiveOutput(nextNode, instance, remoteJid, teamId, chatId, variables);
@@ -675,14 +1004,28 @@ async function executeStep(
 
         await moveToNextAuto(updatedSession, flow, nextNode.id, instance, remoteJid, teamId, chatId);
     }
+    else if (nextNode.type === 'sticky_note') {
+        await moveToNextAuto(updatedSession, flow, nextNode.id, instance, remoteJid, teamId, chatId);
+    }
+    else if (nextNode.type === 'start') {
+        // Landing on a start node (e.g. a go_to_node that jumps to another flow's
+        // start) must advance to the first real node instead of stalling here.
+        await moveToNextAuto(updatedSession, flow, nextNode.id, instance, remoteJid, teamId, chatId);
+    }
 }
 
 async function moveToNextAuto(session: typeof automationSessions.$inferSelect, flow: FlowData, currentNodeId: string, instance: InstanceConfig, remoteJid: string, teamId: number, chatId: number) {
     const edge = flow.edges.find(e => e.source === currentNodeId);
     if (edge) {
-        await new Promise(r => setTimeout(r, 500)); 
+        await new Promise(r => setTimeout(r, 500));
         await executeStep(session, flow, edge.target, '', instance, remoteJid, teamId, chatId);
     } else {
+        // Dead-end node: no outgoing edge, so the flow silently ends here. Log it so
+        // "the flow cuts off mid-way" can be traced to the exact node/automation.
+        console.warn(
+            `[automation] flujo cortado: nodo "${currentNodeId}" sin arista de salida ` +
+            `(automationId=${session.automationId}, chatId=${chatId}). La sesión se marca como completada.`,
+        );
         await db.update(automationSessions).set({ status: 'completed' }).where(eq(automationSessions.id, session.id));
         await pusherServer.trigger(`team-${teamId}`, 'chat-status-update', {
             chatId, type: 'automation', status: 'completed'
@@ -719,8 +1062,23 @@ async function processMediaOutput(node: AutomationCanvasNode, instance: Instance
         if (!base64) return;
 
         const caption = replaceVariables(data.caption || '', variables);
-        
+
         let mediaType = data.mediaType || 'image';
+
+        // WhatsApp treats voice/audio messages as a distinct message type (audioMessage,
+        // sent as a PTT/voice note), not as a generic media attachment. The generic
+        // sendMedia endpoint silently fails to deliver it even though Evolution API
+        // acks the request — mirrors the working /api/messages/sendAudio route.
+        if (mediaType === 'audio') {
+            const audioPayload = {
+                audio: base64,
+                mimetype: 'audio/mpeg',
+                ptt: true,
+            };
+            await sendEvolutionMessage(instance, remoteJid, "sendWhatsAppAudio", audioPayload, teamId, chatId, data.mediaUrl, caption);
+            return;
+        }
+
         const mimetype = data.mediaMimetype || 'application/octet-stream';
 
         const payload = {
@@ -795,24 +1153,24 @@ async function processMetaInteractiveOutput(node: AutomationCanvasNode, instance
 }
 
 async function sendEvolutionMessage(
-    instance: InstanceConfig, 
-    remoteJid: string, 
-    endpoint: "sendText" | "sendMedia", 
-    contentPayload: any, 
-    teamId: number, 
-    chatId: number, 
-    localMediaUrl?: string
+    instance: InstanceConfig,
+    remoteJid: string,
+    endpoint: "sendText" | "sendMedia" | "sendWhatsAppAudio",
+    contentPayload: any,
+    teamId: number,
+    chatId: number,
+    localMediaUrl?: string,
+    captionOverride?: string
 ) {
     try {
         const number = remoteJid.replace('@s.whatsapp.net', '').replace(/\D/g, '');
-        
-        const payload = {
-            number: number,
-            delay: 1000,
-            linkPreview: true,
-            mentionsEveryOne: false,
-            ...contentPayload
-        };
+
+        // sendWhatsAppAudio is a distinct Evolution endpoint from sendText/sendMedia and
+        // doesn't recognize linkPreview/mentionsEveryOne — keep its payload minimal and
+        // matching the proven-working shape used by /api/messages/sendAudio.
+        const payload = endpoint === 'sendWhatsAppAudio'
+            ? { number, delay: 1200, presence: 'recording', ...contentPayload }
+            : { number, delay: 1000, linkPreview: true, mentionsEveryOne: false, ...contentPayload };
 
         const response = await fetch(
             `${EVOLUTION_API_URL}/message/${endpoint}/${instance.instanceName}`,
@@ -836,10 +1194,13 @@ async function sendEvolutionMessage(
             let previewText = "Message";
             if (endpoint === 'sendText') previewText = contentPayload.text;
             else if (endpoint === 'sendMedia') previewText = contentPayload.caption || "Media";
+            else if (endpoint === 'sendWhatsAppAudio') previewText = captionOverride || "Audio";
 
             let messageType = 'conversation';
             if (endpoint === 'sendMedia') {
                 messageType = `${contentPayload.mediatype}Message`;
+            } else if (endpoint === 'sendWhatsAppAudio') {
+                messageType = 'audioMessage';
             }
 
             let mediaDetails = {};
@@ -847,7 +1208,7 @@ async function sendEvolutionMessage(
                 mediaDetails = {
                     mediaUrl: localMediaUrl,
                     mediaMimetype: contentPayload.mimetype,
-                    mediaCaption: contentPayload.caption
+                    mediaCaption: endpoint === 'sendWhatsAppAudio' ? captionOverride : contentPayload.caption
                 };
             }
 
@@ -979,68 +1340,129 @@ async function sendMetaMessage(instance: InstanceConfig, remoteJid: string, mess
 
 async function processSaveContact(node: AutomationCanvasNode, session: typeof automationSessions.$inferSelect, teamId: number, chatId: number) {
     const data = node.data as SaveContactNodeData;
-    const variables = (session.variables as Record<string, string>) || {};
-    
+    const variables = extractStringVariables(normalizeSessionVariables(session.variables));
 
-    let contactName = undefined;
-    if (data.nameVariable) {
-        contactName = replaceVariables(data.nameVariable, variables);
-    } 
+    await db.transaction(async (tx) => {
+        const currentContact = await tx.query.contacts.findFirst({
+            where: and(eq(contacts.chatId, chatId), eq(contacts.teamId, teamId)),
+        });
 
-    const currentContact = await db.query.contacts.findFirst({
-        where: eq(contacts.chatId, chatId)
+        const configuredFields = await tx.query.customFields.findMany({
+            where: eq(customFieldDefinitions.teamId, teamId),
+        });
+        const fieldsByKey = new Map(configuredFields.map((field) => [field.key, field]));
+        const customDataUpdates: Record<string, string | boolean> = {};
+
+        for (const [key, rawTemplate] of Object.entries(data.customFields ?? {})) {
+            const field = fieldsByKey.get(key);
+            if (!field) {
+                console.warn(`[automation] campo personalizado desconocido "${key}" (teamId=${teamId}, nodeId=${node.id}).`);
+                continue;
+            }
+
+            const template = String(rawTemplate ?? '');
+            const resolved = resolveVariableTemplate(template, variables);
+            if (resolved.missingVariables.length > 0 || !resolved.value) {
+                console.warn(
+                    `[automation] no se actualiza "${key}": variable faltante o vacía ` +
+                    `(${resolved.missingVariables.join(', ') || 'valor vacío'}, nodeId=${node.id}).`,
+                );
+                continue;
+            }
+
+            if (field.type === 'boolean') {
+                const booleanValue = parseBooleanContactValue(resolved.value);
+                if (booleanValue === undefined) {
+                    console.warn(`[automation] valor booleano inválido para "${key}": "${resolved.value}" (nodeId=${node.id}).`);
+                    continue;
+                }
+                customDataUpdates[key] = booleanValue;
+            } else {
+                customDataUpdates[key] = resolved.value;
+            }
+        }
+
+        const valuesToSet: Record<string, unknown> = { updatedAt: new Date() };
+        if (data.nameVariable) {
+            const resolvedName = resolveVariableTemplate(data.nameVariable, variables);
+            if (resolvedName.missingVariables.length === 0 && resolvedName.value) {
+                valuesToSet.name = resolvedName.value;
+            }
+        }
+
+        const parseConfiguredId = (value: string | undefined) => {
+            if (!value || value === 'null') return undefined;
+            const parsed = Number.parseInt(value, 10);
+            return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+        };
+        const agentId = parseConfiguredId(data.agentId);
+        const departmentId = parseConfiguredId(data.departmentId);
+        const funnelStageId = parseConfiguredId(data.funnelStageId);
+        const tagId = parseConfiguredId(data.tagId);
+        const [validAgent, validDepartment, validFunnelStage, validTag] = await Promise.all([
+            agentId
+                ? tx.select({ id: teamMembers.userId })
+                    .from(teamMembers)
+                    .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, agentId)))
+                    .limit(1)
+                : Promise.resolve([]),
+            departmentId
+                ? tx.select({ id: departments.id })
+                    .from(departments)
+                    .where(and(eq(departments.teamId, teamId), eq(departments.id, departmentId)))
+                    .limit(1)
+                : Promise.resolve([]),
+            funnelStageId
+                ? tx.select({ id: funnelStages.id })
+                    .from(funnelStages)
+                    .where(and(eq(funnelStages.teamId, teamId), eq(funnelStages.id, funnelStageId)))
+                    .limit(1)
+                : Promise.resolve([]),
+            tagId
+                ? tx.select({ id: tags.id })
+                    .from(tags)
+                    .where(and(eq(tags.teamId, teamId), eq(tags.id, tagId)))
+                    .limit(1)
+                : Promise.resolve([]),
+        ]);
+
+        if (agentId && validAgent.length > 0) valuesToSet.assignedUserId = agentId;
+        else if (agentId) console.warn(`[automation] agente inexistente o ajeno al equipo "${agentId}" (teamId=${teamId}, nodeId=${node.id}).`);
+        if (departmentId && validDepartment.length > 0) valuesToSet.assignedDepartmentId = departmentId;
+        else if (departmentId) console.warn(`[automation] departamento inexistente o ajeno al equipo "${departmentId}" (teamId=${teamId}, nodeId=${node.id}).`);
+        if (funnelStageId && validFunnelStage.length > 0) valuesToSet.funnelStageId = funnelStageId;
+        else if (funnelStageId) console.warn(`[automation] etapa inexistente o ajena al equipo "${funnelStageId}" (teamId=${teamId}, nodeId=${node.id}).`);
+
+        const nextCustomData = {
+            ...((currentContact?.customData as Record<string, unknown> | null) ?? {}),
+            ...customDataUpdates,
+        };
+        if (Object.keys(nextCustomData).length > 0) valuesToSet.customData = nextCustomData;
+
+        let contactId: number;
+        if (currentContact) {
+            await tx.update(contacts).set(valuesToSet).where(eq(contacts.id, currentContact.id));
+            contactId = currentContact.id;
+        } else {
+            if (!valuesToSet.name) {
+                const chat = await tx.query.chats.findFirst({
+                    where: and(eq(chats.id, chatId), eq(chats.teamId, teamId)),
+                    columns: { name: true, pushName: true },
+                });
+                valuesToSet.name = chat?.name || chat?.pushName || 'Nuevo contacto';
+            }
+            const [createdContact] = await tx.insert(contacts).values({
+                ...valuesToSet,
+                teamId,
+                chatId,
+            } as typeof contacts.$inferInsert).returning({ id: contacts.id });
+            contactId = createdContact.id;
+        }
+
+        if (tagId && validTag.length > 0) {
+            await tx.insert(contactTags).values({ contactId, tagId }).onConflictDoNothing();
+        } else if (tagId) {
+            console.warn(`[automation] etiqueta inexistente o ajena al equipo "${tagId}" (teamId=${teamId}, nodeId=${node.id}).`);
+        }
     });
-
-    let newCustomData = currentContact?.customData || {};
-
-    if (data.customFields && Object.keys(data.customFields).length > 0) {
-        const updates: Record<string, any> = {};
-        for (const [key, valueTemplate] of Object.entries(data.customFields)) {
-            const resolvedValue = replaceVariables(valueTemplate as string, variables);
-            
-            if (resolvedValue.toLowerCase() === 'true') updates[key] = true;
-            else if (resolvedValue.toLowerCase() === 'false') updates[key] = false;
-            else updates[key] = resolvedValue;
-        }
-        newCustomData = { ...newCustomData, ...updates };
-    }
-
-    const valuesToSet: any = {
-        updatedAt: new Date()
-    };
-    
-    if (contactName) valuesToSet.name = contactName;
-    if (data.agentId && data.agentId !== 'null') valuesToSet.assignedUserId = parseInt(data.agentId);
-    if (data.departmentId && data.departmentId !== 'null') valuesToSet.assignedDepartmentId = parseInt(data.departmentId);
-    if (data.funnelStageId && data.funnelStageId !== 'null') valuesToSet.funnelStageId = parseInt(data.funnelStageId);
-    if (Object.keys(newCustomData).length > 0) valuesToSet.customData = newCustomData;
-
-    if (currentContact) {
-        await db.update(contacts)
-            .set(valuesToSet)
-            .where(eq(contacts.id, currentContact.id));
-            
-        if (data.tagId && data.tagId !== 'null') {
-             await db.insert(contactTags).values({
-                contactId: currentContact.id,
-                tagId: parseInt(data.tagId)
-            }).onConflictDoNothing();
-        }
-    } else {
-        if (!valuesToSet.name) {
-             const chat = await db.query.chats.findFirst({ where: eq(chats.id, chatId), columns: { name: true, pushName: true } });
-             valuesToSet.name = chat?.name || chat?.pushName || 'New Contact';
-        }
-        valuesToSet.teamId = teamId;
-        valuesToSet.chatId = chatId;
-        
-        const [newContact] = await db.insert(contacts).values(valuesToSet).returning();
-        
-        if (data.tagId && data.tagId !== 'null' && newContact) {
-            await db.insert(contactTags).values({
-                contactId: newContact.id,
-                tagId: parseInt(data.tagId)
-            }).onConflictDoNothing();
-        }
-    }
 }

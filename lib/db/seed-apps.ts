@@ -1,5 +1,28 @@
 import { db } from "@/lib/db/drizzle";
-import { marketplaceItems } from "@/lib/db/schema";
+import { and, eq } from "drizzle-orm";
+import { marketplaceItemPrices, marketplaceItems } from "@/lib/db/schema";
+
+type SeedPrice = {
+  billingType: 'one_time' | 'monthly' | 'yearly' | 'setup';
+  amount: number;
+  currency?: string;
+  enabled?: boolean;
+};
+
+type SeedMarketplaceItem = {
+  title: string;
+  subtitle: string;
+  description: string;
+  category: string;
+  isDefault: boolean;
+  isFunctional: boolean;
+  appType: 'installable' | 'default';
+  iconUrl?: string;
+  imageUrl?: string;
+  features: Array<{ id: string; name: string; description: string; enabled?: boolean }>;
+  tags: string[];
+  prices: SeedPrice[];
+};
 
 export const SEED_APPS = [
   // Mejoras (4 apps)
@@ -325,25 +348,397 @@ export const SEED_APPS = [
     features: [],
     tags: ["analítica", "datos", "comportamiento"],
   },
+  {
+    title: "Gestión de Dominios",
+    subtitle: "Controla vencimientos y renovaciones",
+    description: "Centraliza todos tus dominios web en un solo lugar. Controla fechas de vencimiento, registradores, precios y renovaciones automáticas. Ideal para agencias, desarrolladores y empresas SaaS. Incluye calendario de vencimientos y alertas configurables.",
+    category: "Productividad",
+    isDefault: false,
+    isFunctional: true,
+    appType: "default" as const,
+    iconUrl: "/icons/domains.svg",
+    imageUrl: "/images/domains.png",
+    features: [
+      { id: "expiry-calendar", name: "Calendario de vencimientos", description: "Vista calendario con todos los vencimientos próximos", enabled: true },
+      { id: "contact-link", name: "Vinculación a contactos", description: "Asocia dominios a contactos de tu CRM", enabled: true },
+      { id: "notifications", name: "Alertas configurables", description: "Avisa N días antes del vencimiento", enabled: true },
+      { id: "multi-registrar", name: "Multi-registrador", description: "Soporta GoDaddy, Namecheap, Cloudflare y más", enabled: true },
+    ],
+    tags: ["dominios", "vencimientos", "hosting", "agencia", "saas"],
+    prices: [],
+  },
 ];
+
+export const SEED_MARKETPLACE_SERVICES: SeedMarketplaceItem[] = [
+  {
+    title: 'HubSpot CRM Sync',
+    subtitle: 'Sincroniza leads y deals con HubSpot',
+    description: 'Conecta contactos, empresas y estados de oportunidad con sincronización bidireccional y mapeo de campos.',
+    category: 'Mejoras',
+    isDefault: false,
+    isFunctional: false,
+    appType: 'installable',
+    features: [],
+    tags: ['hubspot', 'crm', 'sync'],
+    prices: [
+      { billingType: 'setup', amount: 9900 },
+      { billingType: 'monthly', amount: 4900 },
+      { billingType: 'yearly', amount: 49000 },
+    ],
+  },
+  {
+    title: 'Salesforce CRM Sync',
+    subtitle: 'Pipeline y contactos sincronizados',
+    description: 'Lleva clientes, cuentas y oportunidades a Salesforce con reglas de asignación y sincronización programada.',
+    category: 'Mejoras',
+    isDefault: false,
+    isFunctional: false,
+    appType: 'installable',
+    features: [],
+    tags: ['salesforce', 'crm', 'sync'],
+    prices: [
+      { billingType: 'setup', amount: 24900 },
+      { billingType: 'monthly', amount: 9900 },
+      { billingType: 'yearly', amount: 99000 },
+    ],
+  },
+  {
+    title: 'Google Sheets Sync',
+    subtitle: 'Exporta datos a hojas en tiempo real',
+    description: 'Sincroniza contactos, mensajes y eventos hacia Google Sheets para reportes y operaciones ligeras.',
+    category: 'Productividad',
+    isDefault: false,
+    isFunctional: false,
+    appType: 'installable',
+    features: [],
+    tags: ['google sheets', 'export', 'reportes'],
+    prices: [
+      { billingType: 'monthly', amount: 1900 },
+      { billingType: 'yearly', amount: 19000 },
+    ],
+  },
+  {
+    title: 'Shopify Commerce Inbox',
+    subtitle: 'Atiende ventas y pedidos de Shopify',
+    description: 'Recibe notificaciones de carrito, pedido y cliente para responder ventas sin salir del inbox.',
+    category: 'Apps',
+    isDefault: false,
+    isFunctional: false,
+    appType: 'installable',
+    features: [],
+    tags: ['shopify', 'commerce', 'inbox'],
+    prices: [
+      { billingType: 'setup', amount: 14900 },
+      { billingType: 'monthly', amount: 5900 },
+      { billingType: 'yearly', amount: 59000 },
+    ],
+  },
+  {
+    title: 'WooCommerce Orders Sync',
+    subtitle: 'Pedidos y clientes de WooCommerce',
+    description: 'Sincroniza pedidos, clientes y eventos de ecommerce para dar seguimiento y soporte más rápido.',
+    category: 'Apps',
+    isDefault: false,
+    isFunctional: false,
+    appType: 'installable',
+    features: [],
+    tags: ['woocommerce', 'ecommerce', 'sync'],
+    prices: [
+      { billingType: 'setup', amount: 9900 },
+      { billingType: 'monthly', amount: 3900 },
+      { billingType: 'yearly', amount: 39000 },
+    ],
+  },
+  {
+    title: 'Stripe Payments Automation',
+    subtitle: 'Automatiza cobros y estados',
+    description: 'Conecta pagos, suscripciones y eventos de Stripe con automatizaciones y disparadores internos.',
+    category: 'Automatización',
+    isDefault: false,
+    isFunctional: false,
+    appType: 'installable',
+    features: [],
+    tags: ['stripe', 'pagos', 'automatización'],
+    prices: [
+      { billingType: 'setup', amount: 9900 },
+      { billingType: 'monthly', amount: 3900 },
+      { billingType: 'yearly', amount: 39000 },
+    ],
+  },
+  {
+    title: 'Mercado Pago Checkout',
+    subtitle: 'Cobros y checkout en LATAM',
+    description: 'Integra checkout y estados de pago de Mercado Pago para ventas regionales con validación de webhook.',
+    category: 'Automatización',
+    isDefault: false,
+    isFunctional: false,
+    appType: 'installable',
+    features: [],
+    tags: ['mercado pago', 'checkout', 'pagos'],
+    prices: [
+      { billingType: 'setup', amount: 9900 },
+      { billingType: 'monthly', amount: 3900 },
+      { billingType: 'yearly', amount: 39000 },
+    ],
+  },
+  {
+    title: 'Calendly + Google Calendar',
+    subtitle: 'Agenda y reservas sincronizadas',
+    description: 'Convierte reservas en citas reales, sincroniza disponibilidad y evita dobles reservas.',
+    category: 'Herramientas',
+    isDefault: false,
+    isFunctional: false,
+    appType: 'installable',
+    features: [],
+    tags: ['calendly', 'calendar', 'reservas'],
+    prices: [
+      { billingType: 'monthly', amount: 2900 },
+      { billingType: 'yearly', amount: 29000 },
+    ],
+  },
+  {
+    title: 'Slack / Microsoft Teams Alerts',
+    subtitle: 'Alertas operativas a tu equipo',
+    description: 'Recibe avisos de leads, tickets y pagos en Slack o Teams con reglas por canal y prioridad.',
+    category: 'Herramientas',
+    isDefault: false,
+    isFunctional: false,
+    appType: 'installable',
+    features: [],
+    tags: ['slack', 'teams', 'alertas'],
+    prices: [
+      { billingType: 'monthly', amount: 1900 },
+      { billingType: 'yearly', amount: 19000 },
+    ],
+  },
+  {
+    title: 'Zapier / Make Bridge',
+    subtitle: 'Conexión con miles de apps',
+    description: 'Expone eventos y acciones para conectar WhatsaaS con automatizadores externos sin tocar código.',
+    category: 'Automatización',
+    isDefault: false,
+    isFunctional: false,
+    appType: 'installable',
+    features: [],
+    tags: ['zapier', 'make', 'bridge'],
+    prices: [
+      { billingType: 'monthly', amount: 2900 },
+      { billingType: 'yearly', amount: 29000 },
+    ],
+  },
+  {
+    title: 'OpenAI / Gemini Agent Pack',
+    subtitle: 'Asistentes IA para atención y ventas',
+    description: 'Despliega asistentes de IA con prompts, límites y conexión a fuentes internas para soporte y cierre.',
+    category: 'Mejoras',
+    isDefault: false,
+    isFunctional: false,
+    appType: 'installable',
+    features: [],
+    tags: ['openai', 'gemini', 'ia'],
+    prices: [
+      { billingType: 'setup', amount: 19900 },
+      { billingType: 'monthly', amount: 7900 },
+      { billingType: 'yearly', amount: 79000 },
+    ],
+  },
+  {
+    title: 'Knowledge Base / RAG Setup',
+    subtitle: 'Base de conocimiento para IA',
+    description: 'Implementa búsqueda semántica sobre tus documentos, FAQs y contenidos internos para respuestas consistentes.',
+    category: 'Mejoras',
+    isDefault: false,
+    isFunctional: false,
+    appType: 'installable',
+    features: [],
+    tags: ['rag', 'knowledge base', 'ia'],
+    prices: [
+      { billingType: 'setup', amount: 29900 },
+      { billingType: 'monthly', amount: 4900 },
+    ],
+  },
+  {
+    title: 'Advanced Webhooks',
+    subtitle: 'Enrutado y reintentos de eventos',
+    description: 'Publica eventos, reintenta envíos y administra webhooks con observabilidad y trazabilidad.',
+    category: 'Automatización',
+    isDefault: false,
+    isFunctional: false,
+    appType: 'installable',
+    features: [],
+    tags: ['webhooks', 'eventos', 'reintentos'],
+    prices: [
+      { billingType: 'monthly', amount: 2900 },
+      { billingType: 'yearly', amount: 29000 },
+    ],
+  },
+  {
+    title: 'Custom API Connector',
+    subtitle: 'Conecta APIs internas y externas',
+    description: 'Servicio para integrar APIs con autenticación, mapeo de payloads y manejo de errores.',
+    category: 'Nodos',
+    isDefault: false,
+    isFunctional: false,
+    appType: 'installable',
+    features: [],
+    tags: ['api', 'connector', 'integraciones'],
+    prices: [
+      { billingType: 'setup', amount: 39900 },
+      { billingType: 'monthly', amount: 4900 },
+    ],
+  },
+  {
+    title: 'WABA Onboarding Service',
+    subtitle: 'Alta y validación de WhatsApp Business',
+    description: 'Acompañamiento para configurar números, plantillas y requisitos iniciales de WhatsApp Business API.',
+    category: 'Herramientas',
+    isDefault: false,
+    isFunctional: false,
+    appType: 'installable',
+    features: [],
+    tags: ['waba', 'onboarding', 'whatsapp'],
+    prices: [
+      { billingType: 'setup', amount: 19900 },
+    ],
+  },
+  {
+    title: 'Data Migration WhatsApp/CRM',
+    subtitle: 'Migración de datos y contactos',
+    description: 'Servicio puntual para migrar contactos, etiquetas y metadatos entre sistemas sin perder trazabilidad.',
+    category: 'Mejoras',
+    isDefault: false,
+    isFunctional: false,
+    appType: 'installable',
+    features: [],
+    tags: ['migración', 'crm', 'datos'],
+    prices: [
+      { billingType: 'one_time', amount: 24900 },
+    ],
+  },
+  {
+    title: 'Premium Support SLA',
+    subtitle: 'Soporte prioritario y más rápido',
+    description: 'Canal prioritario, tiempos de respuesta cortos y seguimiento dedicado para equipos que no pueden parar.',
+    category: 'Herramientas',
+    isDefault: false,
+    isFunctional: false,
+    appType: 'installable',
+    features: [],
+    tags: ['soporte', 'sla', 'prioridad'],
+    prices: [
+      { billingType: 'monthly', amount: 9900 },
+      { billingType: 'yearly', amount: 99000 },
+    ],
+  },
+  {
+    title: 'Security & Access Audit',
+    subtitle: 'Revisión de accesos y permisos',
+    description: 'Auditoría puntual de usuarios, roles, llaves y accesos para reducir exposición innecesaria.',
+    category: 'Herramientas',
+    isDefault: false,
+    isFunctional: false,
+    appType: 'installable',
+    features: [],
+    tags: ['seguridad', 'auditoría', 'accesos'],
+    prices: [
+      { billingType: 'one_time', amount: 14900 },
+    ],
+  },
+  {
+    title: 'BI Dashboard + Exports',
+    subtitle: 'Tableros ejecutivos y exportaciones',
+    description: 'Dashboards operativos con exportación CSV/PDF y reportes listos para dirección o clientes.',
+    category: 'Productividad',
+    isDefault: false,
+    isFunctional: false,
+    appType: 'installable',
+    features: [],
+    tags: ['bi', 'dashboard', 'reportes'],
+    prices: [
+      { billingType: 'setup', amount: 19900 },
+      { billingType: 'monthly', amount: 5900 },
+      { billingType: 'yearly', amount: 59000 },
+    ],
+  },
+  {
+    title: 'Flow Builder Pro Templates',
+    subtitle: 'Plantillas listas para flujos',
+    description: 'Pack de plantillas para onboarding, ventas y soporte que acelera la puesta en marcha de flujos.',
+    category: 'Apps',
+    isDefault: false,
+    isFunctional: false,
+    appType: 'installable',
+    features: [],
+    tags: ['flows', 'plantillas', 'automatización'],
+    prices: [
+      { billingType: 'one_time', amount: 9900 },
+    ],
+  },
+];
+
+async function upsertSeedMarketplaceItem(item: SeedMarketplaceItem) {
+  const existing = await db.query.marketplaceItems.findFirst({
+    where: and(eq(marketplaceItems.title, item.title), eq(marketplaceItems.category, item.category)),
+  });
+
+  const payload = {
+    title: item.title,
+    subtitle: item.subtitle,
+    description: item.description,
+    category: item.category,
+    isDefault: item.isDefault,
+    isFunctional: item.isFunctional,
+    appType: item.appType,
+    iconUrl: item.iconUrl ?? null,
+    imageUrl: item.imageUrl ?? null,
+    features: item.features,
+    tags: item.tags,
+    status: 'active' as const,
+    updatedAt: new Date(),
+  };
+
+  const itemId = existing
+    ? (
+        await db
+          .update(marketplaceItems)
+          .set(payload)
+          .where(eq(marketplaceItems.id, existing.id))
+          .returning({ id: marketplaceItems.id })
+      )[0]?.id ?? existing.id
+    : (
+        await db
+          .insert(marketplaceItems)
+          .values({ ...payload, createdAt: new Date() })
+          .returning({ id: marketplaceItems.id })
+      )[0]?.id;
+
+  if (!itemId) {
+    throw new Error(`No se pudo guardar el item seed: ${item.title}`);
+  }
+
+  await db.delete(marketplaceItemPrices).where(eq(marketplaceItemPrices.itemId, itemId));
+  if (item.prices.length > 0) {
+    await db.insert(marketplaceItemPrices).values(
+      item.prices.map((price) => ({
+        itemId,
+        billingType: price.billingType,
+        amount: price.amount,
+        currency: (price.currency ?? 'usd').toLowerCase(),
+        enabled: price.enabled ?? true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })),
+    );
+  }
+}
 
 export async function seedApps() {
   try {
     // Primero, crear las apps de ejemplo
     for (const app of SEED_APPS) {
-      await db.insert(marketplaceItems).values({
-        title: app.title,
-        subtitle: app.subtitle,
-        description: app.description,
-        category: app.category,
-        isDefault: app.isDefault,
-        isFunctional: app.isFunctional,
-        appType: app.appType,
-        iconUrl: app.iconUrl,
-        imageUrl: app.imageUrl,
-        features: app.features,
-        tags: app.tags,
-        status: "active",
+      await upsertSeedMarketplaceItem({
+        ...app,
+        prices: [],
       });
     }
 
@@ -355,10 +750,24 @@ export async function seedApps() {
   }
 }
 
+export async function seedMarketplaceServices() {
+  try {
+    for (const item of SEED_MARKETPLACE_SERVICES) {
+      await upsertSeedMarketplaceItem(item);
+    }
+
+    console.log("✅ Servicios del marketplace cargados exitosamente");
+    return true;
+  } catch (error) {
+    console.error("❌ Error cargando servicios del marketplace:", error);
+    throw error;
+  }
+}
+
 export async function seedDefaultApps() {
   try {
     // Crear Notas app por defecto
-    await db.insert(marketplaceItems).values({
+    await upsertSeedMarketplaceItem({
       title: "Notas",
       subtitle: "Toma notas rápidas",
       description:
@@ -367,7 +776,6 @@ export async function seedDefaultApps() {
       isDefault: true,
       isFunctional: false,
       appType: "default",
-      status: "active",
       features: [
         {
           id: "note-creation",
@@ -380,10 +788,12 @@ export async function seedDefaultApps() {
           description: "Sincronización en tiempo real",
         },
       ],
+      tags: [],
+      prices: [],
     });
 
     // Crear Calendario app por defecto
-    await db.insert(marketplaceItems).values({
+    await upsertSeedMarketplaceItem({
       title: "Calendario",
       subtitle: "Gestiona eventos y citas",
       description:
@@ -392,7 +802,6 @@ export async function seedDefaultApps() {
       isDefault: true,
       isFunctional: false,
       appType: "default",
-      status: "active",
       features: [
         {
           id: "event-creation",
@@ -410,6 +819,8 @@ export async function seedDefaultApps() {
           description: "Notificaciones de eventos próximos",
         },
       ],
+      tags: [],
+      prices: [],
     });
 
     console.log("✅ Apps por defecto cargadas exitosamente");

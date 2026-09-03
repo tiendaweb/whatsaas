@@ -157,7 +157,11 @@ export type SignalStatus = (typeof SIGNAL_STATUSES)[number];
 
 export const ACTION_KINDS = [
   'send_message',
+  /** Deja un mensaje programado (plugin Mensajes programados) para una fecha y hora. */
+  'schedule_message',
   'create_task',
+  /** Tarea en el workspace "Demos" de Tareas OS con la investigación del chat y el prompt para generar la web. */
+  'request_demo',
   'register_sale',
   'mark_pre_descarte',
   'mark_descarte',

@@ -1,0 +1,39 @@
+import { z } from 'zod';
+import type { AppPluginManifest } from '@/lib/plugins/core/types';
+import { MODELO_GEMINI_POR_DEFECTO } from '@/lib/gemini/models';
+
+const geminiSettingsSchema = z.object({
+  /**
+   * Límites del free tier con los que se dibujan las barras. Son editables por
+   * key, pero estos son los valores con los que se crea una nueva: Google los
+   * cambia sin avisar y no hay forma de consultarlos por API.
+   */
+  defaultLimitRpm: z.number().default(10),
+  defaultLimitRpd: z.number().default(20),
+  defaultModel: z.string().default(MODELO_GEMINI_POR_DEFECTO),
+});
+
+const manifest: AppPluginManifest<typeof geminiSettingsSchema> = {
+  id: 'gemini',
+  displayName: 'Gemini',
+  // 'global' = se activa equipo por equipo desde Admin → Apps. Hoy sólo está
+  // encendido en el de noelia@whatspro.uno.
+  activationMode: 'global',
+  scopes: ['dashboard.nav', 'dashboard.page'],
+  routes: [
+    { path: '/plugins/gemini', title: 'Gemini', scope: 'dashboard.page' },
+  ],
+  navItems: [
+    {
+      label: 'Gemini',
+      href: '/plugins/gemini',
+      icon: 'Sparkles',
+      order: 92,
+      requiredPermission: 'gemini.manage',
+    },
+  ],
+  settingsSchema: geminiSettingsSchema,
+  featureFlags: [],
+};
+
+export default manifest;

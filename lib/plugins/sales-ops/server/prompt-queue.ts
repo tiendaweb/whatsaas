@@ -1,17 +1,37 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import 'server-only';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
-import { activityLogs, chats, teamPromptRuns, teamPrompts } from '@/lib/db/schema';
+import { activityLogs, chats, teamCommercialActions, teamPromptRuns } from '@/lib/db/schema';
 import { maskJid } from '@/lib/desktop/command-center/types';
+import {
+  allowsMode,
+  allowsTarget,
+  defaultMode,
+  isRunMode,
+  missingVariables,
+  renderSkillText,
+  type RunMode,
+  type Skill,
+  type SkillVariable,
+} from '../shared/skills';
 import { promptFingerprint } from './prompts';
+import { getSkill, markSkillUsed } from './skills';
+import { buildChatContext, runSkillWithApi } from './skill-runner';
 
 /**
- * Prompt Studio: acciones rápidas (prompts guardados) y la cola de corridas
- * que ejecutan los conectores a voluntad.
+ * Corridas del Prompt Studio: lanzar una skill y seguirle el rastro.
  *
- * Una "corrida" (`team_prompt_runs`) nace `queued` cuando alguien aprieta un
- * botón en la UI o deja un prompt manual en la ficha; el conector la toma por
- * `whatspro_sales_work_queue`, la ejecuta y la cierra con
- * `whatspro_sales_prompt_result`. El servidor nunca ejecuta estos prompts.
+ * Una corrida (`team_prompt_runs`) guarda el texto **ya resuelto** con el que
+ * se lanzó, no la plantilla: si mañana alguien edita la skill, lo que se
+ * ejecutó sigue siendo legible tal como se ejecutó.
+ *
+ * Dos motores, misma fila:
+ *  - `queue`: nace `queued`, el conector la toma por `whatspro_sales_work_queue`
+ *    (kind `run_prompt`) y la cierra con `whatspro_sales_prompt_result`.
+ *  - `api`: la corre el servidor con la IA del equipo y queda `completed` con
+ *    la salida en `output`. Este motor no escribe fuera de la corrida.
+ *
+ * Ninguno de los dos toca el CRM.
  */
 export const PROMPT_RUN_STATUSES = ['queued', 'in_progress', 'completed', 'failed', 'cancelled', 'blocked'] as const;
 export type PromptRunStatus = (typeof PROMPT_RUN_STATUSES)[number];
@@ -27,25 +47,21 @@ export type PromptRunRow = {
   targetId: string;
   targetName: string | null;
   status: PromptRunStatus;
+  mode: RunMode;
   connector: string;
+  variables: Record<string, string>;
   summary: string | null;
+  output: string | null;
   createdBy: number | null;
   createdAt: string;
   completedAt: string | null;
-};
-
-export type QuickActionRow = {
-  id: number;
-  key: string;
-  title: string;
-  purpose: string;
-  audience: string;
-  version: number;
-  status: string;
-  text: string;
-  toolChain: string[];
-  notes: string | null;
-  updatedAt: string;
+  /**
+   * Cuándo una persona la aprobó para que la tome un conector (vive en
+   * metadata: sin migración). Sin esto la corrida espera en "En revisión" y
+   * el conector no la ve.
+   */
+  approvedAt: string | null;
+  approvedBy: number | null;
 };
 
 function rowToRun(r: typeof teamPromptRuns.$inferSelect, targetName: string | null): PromptRunRow {
@@ -61,11 +77,17 @@ function rowToRun(r: typeof teamPromptRuns.$inferSelect, targetName: string | nu
     targetId: r.targetId,
     targetName,
     status: r.status as PromptRunStatus,
+    mode: isRunMode(r.mode) ? r.mode : 'queue',
     connector: r.connector,
+    variables: (r.variables ?? {}) as Record<string, string>,
     summary: r.summary,
+    output: r.output,
     createdBy: r.createdBy,
     createdAt: r.createdAt.toISOString(),
-    completedAt: typeof meta.completedAt === 'string' ? meta.completedAt : null,
+    // La columna es nueva; las corridas viejas todavía lo tienen en `metadata`.
+    completedAt: r.completedAt ? r.completedAt.toISOString() : typeof meta.completedAt === 'string' ? meta.completedAt : null,
+    approvedAt: typeof meta.approvedAt === 'string' ? meta.approvedAt : null,
+    approvedBy: typeof meta.approvedBy === 'number' ? meta.approvedBy : null,
   };
 }
 
@@ -86,160 +108,305 @@ async function audit(teamId: number, userId: number | null, action: string, meta
   }
 }
 
-/** Acciones rápidas = prompts del equipo con audiencia conector (todas las versiones activas o borradores). */
-export async function listQuickActions(teamId: number): Promise<QuickActionRow[]> {
-  const rows = await db.query.teamPrompts.findMany({
-    where: and(eq(teamPrompts.teamId, teamId), inArray(teamPrompts.status, ['active', 'draft'])),
-    orderBy: (t, { asc, desc: d }) => [asc(t.purpose), asc(t.title), d(t.version)],
-  });
-  const seen = new Set<string>();
-  return rows
-    .filter((r) => {
-      if (seen.has(r.key)) return false;
-      seen.add(r.key);
-      return true;
-    })
-    .map((r) => ({
-      id: r.id,
-      key: r.key,
-      title: r.title,
-      purpose: r.purpose,
-      audience: r.audience,
-      version: r.version,
-      status: r.status,
-      text: [r.systemPrompt, r.userTemplate].filter(Boolean).join('\n\n'),
-      toolChain: r.toolChain ?? [],
-      notes: r.notes,
-      updatedAt: r.updatedAt.toISOString(),
-    }));
-}
+// ── Lanzar ─────────────────────────────────────────────────────────────────
 
-export type CreateQuickActionInput = { key?: string; title: string; text: string; toolChain?: string[]; notes?: string | null; purpose?: string };
-
-function slugify(input: string): string {
-  return input
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48);
-}
-
-/** Crea (o versiona) una acción rápida. La versión nueva queda `active` y la anterior `retired`. */
-export async function upsertQuickAction(teamId: number, userId: number, input: CreateQuickActionInput): Promise<QuickActionRow> {
-  const key = (input.key?.trim() || `qa.${slugify(input.title)}`).slice(0, 64);
-  const previous = await db.query.teamPrompts.findMany({ where: and(eq(teamPrompts.teamId, teamId), eq(teamPrompts.key, key)) });
-  const version = previous.reduce((max, p) => Math.max(max, p.version), 0) + 1;
-  const result = await db.transaction(async (tx) => {
-    if (previous.length) {
-      await tx.update(teamPrompts).set({ status: 'retired', updatedAt: new Date() }).where(and(eq(teamPrompts.teamId, teamId), eq(teamPrompts.key, key)));
-    }
-    const [row] = await tx
-      .insert(teamPrompts)
-      .values({
-        teamId,
-        key,
-        title: input.title.trim().slice(0, 160),
-        purpose: input.purpose ?? 'custom',
-        audience: 'connector',
-        version,
-        status: 'active',
-        systemPrompt: '',
-        userTemplate: input.text,
-        toolChain: input.toolChain ?? [],
-        notes: input.notes ?? null,
-        createdBy: userId,
-      })
-      .returning();
-    return row;
-  });
-  await audit(teamId, userId, 'SALES_OPS_PROMPT_SAVED', { key, version, promptId: result.id });
-  return {
-    id: result.id,
-    key: result.key,
-    title: result.title,
-    purpose: result.purpose,
-    audience: result.audience,
-    version: result.version,
-    status: result.status,
-    text: result.userTemplate,
-    toolChain: result.toolChain ?? [],
-    notes: result.notes,
-    updatedAt: result.updatedAt.toISOString(),
-  };
-}
-
-export async function retireQuickAction(teamId: number, userId: number, key: string): Promise<number> {
-  const rows = await db
-    .update(teamPrompts)
-    .set({ status: 'retired', updatedAt: new Date() })
-    .where(and(eq(teamPrompts.teamId, teamId), eq(teamPrompts.key, key)))
-    .returning({ id: teamPrompts.id });
-  await audit(teamId, userId, 'SALES_OPS_PROMPT_RETIRED', { key, count: rows.length });
-  return rows.length;
-}
-
-export type EnqueueInput = {
-  /** Prompt guardado (por id) o texto manual. Si vienen los dos, el texto manual se agrega al final. */
+export type LaunchInput = {
+  /**
+   * true = ya la aprobó una persona (la lanzó a mano desde la interfaz): va
+   * directo a la cola. false (default) = espera en "En revisión" hasta que
+   * alguien la apruebe: es lo que corresponde cuando la propone un conector o
+   * nace de un programado.
+   */
+  approved?: boolean;
+  /** Skill guardada. Si no viene, `text` es obligatorio (prompt suelto). */
+  skillId?: number | null;
+  /** Alias histórico de `skillId` (la ruta vieja mandaba `promptId`). */
   promptId?: number | null;
+  /** Texto libre. Con `skillId` se agrega al final como indicación extra. */
   text?: string | null;
   title?: string | null;
-  targetKind: 'chat' | 'team';
+  targetKind: 'chat' | 'team' | 'batch';
   targetId?: number | null;
+  /** Identificador del lote cuando `targetKind` es `batch`. */
+  targetRef?: string | null;
+  /** Valores del formulario de datos dinámicos. */
+  variables?: Record<string, string>;
+  /** `queue` (conector) o `api` (IA del equipo). Por defecto, el de la skill. */
+  mode?: RunMode;
 };
 
-/** Deja una corrida en cola para que la ejecute un conector. */
-export async function enqueuePromptRun(teamId: number, userId: number | null, input: EnqueueInput): Promise<PromptRunRow> {
-  let prompt: typeof teamPrompts.$inferSelect | undefined;
-  if (input.promptId) {
-    prompt = await db.query.teamPrompts.findFirst({ where: and(eq(teamPrompts.teamId, teamId), eq(teamPrompts.id, input.promptId)) });
-    if (!prompt) throw new Error('Prompt no encontrado');
+export class LaunchError extends Error {
+  constructor(
+    message: string,
+    readonly missing: SkillVariable[] = [],
+  ) {
+    super(message);
+    this.name = 'LaunchError';
   }
+}
+
+async function resolveTarget(
+  teamId: number,
+  targetKind: 'chat' | 'team' | 'batch',
+  targetId: number | null | undefined,
+  targetRef: string | null | undefined,
+) {
+  if (targetKind === 'team') return { targetId: 'team', targetName: null as string | null, chatId: null as number | null };
+
+  if (targetKind === 'batch') {
+    // Una instrucción "para todo el lote" antes de ejecutarlo: se guarda como
+    // corrida apuntada al lote, así el conector la ve en su cola junto al resto
+    // del trabajo en vez de en una tabla aparte que nadie mira.
+    const ref = (targetRef ?? '').trim();
+    if (!ref) throw new LaunchError('Falta el lote sobre el que dejar la instrucción.');
+    const fila = await db.query.teamCommercialActions.findFirst({
+      where: and(eq(teamCommercialActions.teamId, teamId), eq(teamCommercialActions.batchId, ref)),
+      columns: { batchLabel: true },
+    });
+    if (!fila) throw new LaunchError('Ese lote no pertenece al equipo.');
+    return { targetId: ref, targetName: fila.batchLabel, chatId: null as number | null };
+  }
+
+  if (!targetId) throw new LaunchError('Falta el chat sobre el que lanzar la skill.');
+  const chat = await db.query.chats.findFirst({
+    where: and(eq(chats.teamId, teamId), eq(chats.id, targetId)),
+    columns: { id: true, name: true, pushName: true, remoteJid: true },
+  });
+  if (!chat) throw new LaunchError('El chat no pertenece al equipo.');
+  return { targetId: String(chat.id), targetName: chat.name || chat.pushName || maskJid(chat.remoteJid), chatId: chat.id };
+}
+
+/**
+ * Arma el texto definitivo de una corrida: la skill con sus variables
+ * resueltas, la indicación manual y el contexto del destino.
+ *
+ * El bloque CONTEXTO va al final y siempre dice el `chat_id`, porque es lo
+ * único que un conector necesita para pedir el expediente por su cuenta.
+ */
+export function composeRunText(
+  skill: Skill | null,
+  manual: string,
+  values: Record<string, string>,
+  target: { kind: 'chat' | 'team' | 'batch'; id: string; name: string | null },
+): string {
+  const base = skill ? renderSkillText(skill.text, skill.variables, values) : '';
+  const extra = manual.trim();
+  const contexto =
+    target.kind === 'chat'
+      ? `CONTEXTO: chat_id ${target.id}${target.name ? ` (${target.name})` : ''}. Usá whatspro_sales_dossier {chat_id: ${target.id}} si necesitás el historial.`
+      : target.kind === 'batch'
+        ? `CONTEXTO: lote ${target.id}${target.name ? ` ("${target.name}")` : ''}. Mirá sus acciones con whatspro_sales_queue_get {batch_id: "${target.id}"} antes de tocar nada. Esta indicación aplica a TODO el lote.`
+        : '';
+  const tools = skill?.toolChain.length ? `TOOLS SUGERIDAS: ${skill.toolChain.join(' → ')}` : '';
+  return [base, extra, tools, contexto].filter(Boolean).join('\n\n');
+}
+
+export type LaunchResult = { run: PromptRunRow; skill: Skill | null };
+
+/**
+ * Lanza una skill (o un prompt suelto) y devuelve la corrida.
+ *
+ * En modo `api` se inserta primero como `in_progress` y recién después se llama
+ * al modelo: si el proceso se cae en el medio, queda el rastro de que se
+ * intentó, en vez de una corrida que nunca existió.
+ */
+export async function launchRun(teamId: number, userId: number | null, input: LaunchInput): Promise<LaunchResult> {
+  const skillId = input.skillId ?? input.promptId ?? null;
+  const skill = skillId ? await getSkill(teamId, { id: skillId }) : null;
+  if (skillId && !skill) throw new LaunchError('Skill no encontrada.');
+
   const manual = (input.text ?? '').trim();
-  if (!prompt && manual.length < 5) throw new Error('El prompt es obligatorio (mínimo 5 caracteres).');
+  if (!skill && manual.length < 5) throw new LaunchError('El prompt es obligatorio (mínimo 5 caracteres).');
 
-  let targetId = 'team';
-  let targetName: string | null = null;
-  if (input.targetKind === 'chat') {
-    if (!input.targetId) throw new Error('Falta el chat.');
-    const chat = await db.query.chats.findFirst({ where: and(eq(chats.teamId, teamId), eq(chats.id, input.targetId)), columns: { id: true, name: true, pushName: true, remoteJid: true } });
-    if (!chat) throw new Error('El chat no pertenece al equipo.');
-    targetId = String(chat.id);
-    targetName = chat.name || chat.pushName || maskJid(chat.remoteJid);
+  if (skill && input.targetKind !== 'batch' && !allowsTarget(skill, input.targetKind)) {
+    throw new LaunchError(`"${skill.title}" está configurada para ${input.targetKind === 'chat' ? 'todo el equipo' : 'un chat'}, no para este destino.`);
   }
 
-  const base = prompt ? [prompt.systemPrompt, prompt.userTemplate].filter(Boolean).join('\n\n') : '';
-  const contexto = input.targetKind === 'chat' ? `\n\nCONTEXTO: chat_id ${targetId}${targetName ? ` (${targetName})` : ''}. Usá whatspro_sales_dossier {chat_id: ${targetId}} si necesitás el historial.` : '';
-  const text = [base, manual].filter(Boolean).join('\n\n') + contexto;
-  const title = (input.title ?? prompt?.title ?? manual.slice(0, 60)).trim().slice(0, 160);
+  const values = input.variables ?? {};
+  if (skill) {
+    const missing = missingVariables(skill.variables, values);
+    if (missing.length) throw new LaunchError(`Faltan datos: ${missing.map((v) => v.label).join(', ')}.`, missing);
+  }
 
-  const [row] = await db
+  const mode: RunMode = input.mode && isRunMode(input.mode) ? input.mode : skill ? defaultMode(skill) : 'queue';
+  if (skill && !allowsMode(skill, mode)) {
+    throw new LaunchError(`"${skill.title}" sólo se puede ejecutar con ${skill.execution === 'api' ? 'la IA del equipo' : 'la cola de conectores'}.`);
+  }
+
+  const target = await resolveTarget(teamId, input.targetKind, input.targetId, input.targetRef);
+  const text = composeRunText(skill, manual, values, { kind: input.targetKind, id: target.targetId, name: target.targetName });
+  const title = (input.title ?? skill?.title ?? manual.slice(0, 60)).trim().slice(0, 160);
+
+  const [inserted] = await db
     .insert(teamPromptRuns)
     .values({
       teamId,
-      promptId: prompt?.id ?? null,
-      promptKey: prompt?.key ?? 'manual',
-      promptVersion: prompt?.version ?? 0,
+      promptId: skill?.id ?? null,
+      promptKey: skill?.key ?? 'manual',
+      promptVersion: skill?.version ?? 0,
       promptFingerprint: promptFingerprint('', text),
       promptSnapshot: text,
       targetKind: input.targetKind,
-      targetId,
-      connector: 'pending',
-      status: 'queued',
-      metadata: { title, manual: manual.length > 0 },
+      targetId: target.targetId,
+      connector: mode === 'api' ? 'server' : 'pending',
+      status: mode === 'api' ? 'in_progress' : 'queued',
+      mode,
+      variables: values,
+      metadata: {
+        title,
+        manual: manual.length > 0,
+        skillKey: skill?.key ?? null,
+        ...(mode === 'api' || input.approved ? { approvedAt: new Date().toISOString(), approvedBy: userId } : {}),
+      },
       createdBy: userId,
     })
     .returning();
-  await audit(teamId, userId, 'SALES_OPS_PROMPT_QUEUED', { runId: row.id, promptKey: row.promptKey, targetKind: input.targetKind, targetId });
-  return rowToRun(row, targetName);
+
+  if (skill) void markSkillUsed(teamId, skill.id);
+  await audit(teamId, userId, 'SALES_OPS_PROMPT_QUEUED', { runId: inserted.id, promptKey: inserted.promptKey, mode, targetKind: input.targetKind, targetId: target.targetId });
+
+  if (mode !== 'api') return { run: rowToRun(inserted, target.targetName), skill };
+
+  const context = target.chatId ? await buildChatContext(teamId, target.chatId) : null;
+  const outcome = await runSkillWithApi(teamId, text, context);
+  const [updated] = await db
+    .update(teamPromptRuns)
+    .set(
+      outcome.ok
+        ? {
+            status: 'completed',
+            output: outcome.output,
+            summary: outcome.output.slice(0, 400),
+            connector: 'server',
+            completedAt: new Date(),
+            metadata: { ...(inserted.metadata as Record<string, unknown>), provider: outcome.provider, model: outcome.model },
+          }
+        : {
+            status: 'failed',
+            summary: outcome.error.slice(0, 4000),
+            connector: 'server',
+            completedAt: new Date(),
+            metadata: { ...(inserted.metadata as Record<string, unknown>) },
+          },
+    )
+    .where(eq(teamPromptRuns.id, inserted.id))
+    .returning();
+
+  await audit(teamId, userId, 'SALES_OPS_PROMPT_RESULT', { runId: inserted.id, status: updated.status, connector: 'server', mode: 'api' });
+  return { run: rowToRun(updated, target.targetName), skill };
 }
 
-export async function listPromptRuns(teamId: number, opts: { status?: PromptRunStatus | 'open' | 'all'; chatId?: number; limit?: number } = {}): Promise<PromptRunRow[]> {
+/**
+ * Repite una corrida con el **texto ya resuelto** de la original (no se
+ * re-renderiza la skill: si alguien la editó en el medio, lo que se relanza
+ * sigue siendo lo que la persona quiso ejecutar). `api` la corre ya con la IA
+ * del equipo; `queue` la deja para un conector.
+ */
+export async function relaunchRun(teamId: number, userId: number | null, runId: number, mode: RunMode, opts: { approved?: boolean } = {}): Promise<LaunchResult & { from: number }> {
+  const original = await getPromptRun(teamId, runId);
+  if (!original) throw new LaunchError('Corrida no encontrada.');
+  const result = await launchRun(teamId, userId, {
+    text: original.text,
+    title: original.title,
+    targetKind: original.targetKind === 'chat' ? 'chat' : original.targetKind === 'batch' ? 'batch' : 'team',
+    targetId: original.targetKind === 'chat' ? Number(original.targetId) : null,
+    targetRef: original.targetKind === 'batch' ? original.targetId : null,
+    variables: original.variables,
+    mode,
+    approved: opts.approved ?? true,
+  });
+  return { ...result, from: runId };
+}
+
+/**
+ * Corrige el texto o el título de una corrida que todavía nadie tomó.
+ *
+ * Sólo `queued`: una vez que un conector la tiene (`in_progress`) o terminó,
+ * cambiar el texto haría que el registro no coincida con lo que se ejecutó.
+ */
+export async function editQueuedRun(teamId: number, userId: number | null, runId: number, patch: { text?: string; title?: string }): Promise<PromptRunRow> {
+  const existing = await db.query.teamPromptRuns.findFirst({ where: and(eq(teamPromptRuns.teamId, teamId), eq(teamPromptRuns.id, runId)) });
+  if (!existing) throw new LaunchError('Corrida no encontrada.');
+  if (existing.status !== 'queued') throw new LaunchError(`La corrida ya está ${existing.status}: sólo se edita mientras espera en la cola.`);
+  const text = patch.text?.trim();
+  if (text !== undefined && text.length < 5) throw new LaunchError('El texto es obligatorio (mínimo 5 caracteres).');
+  if (text === undefined && patch.title === undefined) throw new LaunchError('No hay nada que cambiar: pasá text o title.');
+  const meta = { ...((existing.metadata ?? {}) as Record<string, unknown>) };
+  if (patch.title !== undefined) meta.title = patch.title.trim().slice(0, 160);
+  meta.editedBy = userId;
+  const [row] = await db
+    .update(teamPromptRuns)
+    .set({
+      promptSnapshot: text ?? existing.promptSnapshot,
+      promptFingerprint: text !== undefined ? promptFingerprint('', text) : existing.promptFingerprint,
+      metadata: meta,
+    })
+    .where(eq(teamPromptRuns.id, runId))
+    .returning();
+  await audit(teamId, userId, 'SALES_OPS_PROMPT_EDITED', { runId, fields: Object.keys(patch) });
+  const names = row.targetKind === 'chat' ? await chatNames(teamId, [Number(row.targetId)]) : new Map<number, string>();
+  return rowToRun(row, names.get(Number(row.targetId)) ?? null);
+}
+
+/**
+ * Aprueba una corrida que espera en revisión: desde ese momento la ve el
+ * conector. Sólo `queued`; lo demás ya está decidido.
+ */
+export async function approveRun(teamId: number, userId: number | null, runId: number): Promise<PromptRunRow> {
+  const existing = await db.query.teamPromptRuns.findFirst({ where: and(eq(teamPromptRuns.teamId, teamId), eq(teamPromptRuns.id, runId)) });
+  if (!existing) throw new LaunchError('Corrida no encontrada.');
+  if (existing.status !== 'queued') throw new LaunchError(`La corrida ya está ${existing.status}.`);
+  const meta = { ...((existing.metadata ?? {}) as Record<string, unknown>) };
+  if (!meta.approvedAt) {
+    meta.approvedAt = new Date().toISOString();
+    meta.approvedBy = userId;
+  }
+  const [row] = await db.update(teamPromptRuns).set({ metadata: meta }).where(eq(teamPromptRuns.id, runId)).returning();
+  await audit(teamId, userId, 'SALES_OPS_PROMPT_APPROVED', { runId, promptKey: row.promptKey });
+  const names = row.targetKind === 'chat' ? await chatNames(teamId, [Number(row.targetId)]) : new Map<number, string>();
+  return rowToRun(row, names.get(Number(row.targetId)) ?? null);
+}
+
+/** Borra una corrida descartada (cancelada, fallida o bloqueada). Lo hecho o en curso se conserva. */
+export async function deletePromptRun(teamId: number, userId: number | null, runId: number): Promise<{ id: number }> {
+  const existing = await db.query.teamPromptRuns.findFirst({ where: and(eq(teamPromptRuns.teamId, teamId), eq(teamPromptRuns.id, runId)), columns: { id: true, status: true, promptKey: true } });
+  if (!existing) throw new LaunchError('Corrida no encontrada.');
+  if (!['cancelled', 'failed', 'blocked'].includes(existing.status)) throw new LaunchError(`La corrida está ${existing.status}: sólo se eliminan las descartadas (cancelada, fallida o bloqueada).`);
+  await db.delete(teamPromptRuns).where(eq(teamPromptRuns.id, runId));
+  await audit(teamId, userId, 'SALES_OPS_PROMPT_DELETED', { runId, status: existing.status, promptKey: existing.promptKey });
+  return { id: runId };
+}
+
+/** Compatibilidad: encolar sin elegir motor sigue significando "para el conector". */
+export async function enqueuePromptRun(teamId: number, userId: number | null, input: Omit<LaunchInput, 'mode'>): Promise<PromptRunRow> {
+  const { run } = await launchRun(teamId, userId, { ...input, mode: 'queue' });
+  return run;
+}
+
+// ── Lectura y cierre ───────────────────────────────────────────────────────
+
+export type ListRunsOptions = {
+  status?: PromptRunStatus | 'open' | 'all';
+  chatId?: number;
+  mode?: RunMode;
+  promptKey?: string;
+  /** `exclude` deja afuera las corridas del motor (`sales-ops.*`): en la Cola tapaban las indicaciones humanas. */
+  engine?: 'exclude';
+  /** true = sólo aprobadas (lo que un conector puede tomar); false = sólo sin aprobar. */
+  approved?: boolean;
+  limit?: number;
+};
+
+export async function listPromptRuns(teamId: number, opts: ListRunsOptions = {}): Promise<PromptRunRow[]> {
   const status = opts.status ?? 'open';
   const conditions = [eq(teamPromptRuns.teamId, teamId)];
   if (status === 'open') conditions.push(inArray(teamPromptRuns.status, ['queued', 'in_progress']));
   else if (status !== 'all') conditions.push(eq(teamPromptRuns.status, status));
+  if (opts.mode) conditions.push(eq(teamPromptRuns.mode, opts.mode));
+  if (opts.promptKey) conditions.push(eq(teamPromptRuns.promptKey, opts.promptKey));
+  if (opts.engine === 'exclude') conditions.push(sql`${teamPromptRuns.promptKey} NOT LIKE 'sales-ops.%'`);
+  if (opts.approved === true) conditions.push(sql`${teamPromptRuns.metadata} ->> 'approvedAt' IS NOT NULL`);
+  if (opts.approved === false) conditions.push(sql`${teamPromptRuns.metadata} ->> 'approvedAt' IS NULL`);
   if (opts.chatId) {
     conditions.push(eq(teamPromptRuns.targetKind, 'chat'));
     conditions.push(eq(teamPromptRuns.targetId, String(opts.chatId)));
@@ -254,7 +421,20 @@ export async function listPromptRuns(teamId: number, opts: { status?: PromptRunS
   return rows.map((r) => rowToRun(r, r.targetKind === 'chat' ? (names.get(Number(r.targetId)) ?? null) : null));
 }
 
-export type CompleteInput = { status: 'in_progress' | 'completed' | 'failed' | 'blocked' | 'cancelled'; summary?: string | null; connector?: string | null; metadata?: Record<string, unknown> };
+export async function getPromptRun(teamId: number, runId: number): Promise<PromptRunRow | null> {
+  const row = await db.query.teamPromptRuns.findFirst({ where: and(eq(teamPromptRuns.teamId, teamId), eq(teamPromptRuns.id, runId)) });
+  if (!row) return null;
+  const names = row.targetKind === 'chat' ? await chatNames(teamId, [Number(row.targetId)]) : new Map<number, string>();
+  return rowToRun(row, names.get(Number(row.targetId)) ?? null);
+}
+
+export type CompleteInput = {
+  status: 'in_progress' | 'completed' | 'failed' | 'blocked' | 'cancelled';
+  summary?: string | null;
+  output?: string | null;
+  connector?: string | null;
+  metadata?: Record<string, unknown>;
+};
 
 /** El conector (o una persona) cierra la corrida. */
 export async function completePromptRun(teamId: number, userId: number | null, runId: number, input: CompleteInput): Promise<PromptRunRow> {
@@ -264,18 +444,19 @@ export async function completePromptRun(teamId: number, userId: number | null, r
     throw new Error(`La corrida ya está ${existing.status}.`);
   }
   const meta = { ...(existing.metadata ?? {}), ...(input.metadata ?? {}) } as Record<string, unknown>;
-  if (input.status !== 'in_progress') meta.completedAt = new Date().toISOString();
   const [row] = await db
     .update(teamPromptRuns)
     .set({
       status: input.status,
       summary: input.summary ?? existing.summary,
+      output: input.output ?? existing.output,
       connector: input.connector ?? existing.connector,
+      completedAt: input.status === 'in_progress' ? existing.completedAt : new Date(),
       metadata: meta,
     })
     .where(eq(teamPromptRuns.id, runId))
     .returning();
   await audit(teamId, userId, 'SALES_OPS_PROMPT_RESULT', { runId, status: input.status, connector: row.connector });
-  const names = row.targetKind === 'chat' ? await chatNames(teamId, [Number(row.targetId)]) : new Map();
+  const names = row.targetKind === 'chat' ? await chatNames(teamId, [Number(row.targetId)]) : new Map<number, string>();
   return rowToRun(row, names.get(Number(row.targetId)) ?? null);
 }

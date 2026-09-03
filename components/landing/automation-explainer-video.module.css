@@ -1,0 +1,174 @@
+.canvasGrid {
+  background-image: radial-gradient(circle, var(--border) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+.canvasMotion {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 50%;
+  animation: canvas-focus 11.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mobileCanvasMotion {
+  transform-origin: 50% 18%;
+  animation: mobile-focus 11.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.nodeStage,
+.mobileNodeStage {
+  opacity: 0;
+  animation:
+    node-arrive 1.25s cubic-bezier(0.16, 1, 0.3, 1) var(--node-delay) both,
+    node-glow 1.8s ease-in-out calc(var(--node-delay) + 900ms) 1;
+}
+
+.edgeStage {
+  opacity: 0;
+  animation: edge-arrive 900ms ease-out var(--edge-delay) both;
+}
+
+.titleStage {
+  opacity: 0;
+  animation: title-arrive 1s cubic-bezier(0.16, 1, 0.3, 1) 120ms both;
+}
+
+.menuGuide {
+  opacity: 0;
+  animation: guide-arrive 1.1s cubic-bezier(0.16, 1, 0.3, 1) 4.6s both;
+}
+
+.edgeBase {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+
+.edgeSignal {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 3 7;
+  animation: flow-dash 1.3s linear infinite;
+}
+
+.edgeLabel {
+  fill: var(--primary);
+  font-size: 2.3px;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: var(--background);
+  stroke-width: 0.8px;
+  stroke-linejoin: round;
+}
+
+@keyframes flow-dash {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+@keyframes canvas-focus {
+  0% {
+    transform: scale(0.92) translateY(8px);
+  }
+  28% {
+    transform: scale(0.975) translateY(0);
+  }
+  66% {
+    transform: scale(1) translateY(0);
+  }
+  100% {
+    transform: scale(0.965) translateY(-3px);
+  }
+}
+
+@keyframes mobile-focus {
+  0% {
+    transform: scale(0.965) translateY(8px);
+  }
+  40% {
+    transform: scale(1) translateY(0);
+  }
+  100% {
+    transform: scale(0.985) translateY(-2px);
+  }
+}
+
+@keyframes node-arrive {
+  0% {
+    opacity: 0;
+    filter: blur(7px);
+    transform: translateY(20px) scale(0.84);
+  }
+  62% {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(-3px) scale(1.025);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes node-glow {
+  0%, 100% {
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  45% {
+    filter: drop-shadow(0 0 12px color-mix(in srgb, var(--primary) 35%, transparent));
+  }
+}
+
+@keyframes edge-arrive {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes title-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes guide-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .edgeSignal {
+    animation: none;
+  }
+
+  .canvasMotion,
+  .mobileCanvasMotion,
+  .nodeStage,
+  .mobileNodeStage,
+  .edgeStage,
+  .titleStage,
+  .menuGuide {
+    opacity: 1;
+    animation: none;
+    filter: none;
+    transform: none;
+  }
+}

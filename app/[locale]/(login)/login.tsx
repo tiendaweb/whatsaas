@@ -12,10 +12,13 @@ import { ActionState } from '@/lib/auth/middleware';
 import Logo from '@/components/interface/Logo';
 import { useBranding } from '@/providers/branding-provider'; 
 import { useTranslations } from 'next-intl';
+import { useLocale } from 'next-intl';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { brandName } from '@/lib/branding/constants';
 
 export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
   const t = useTranslations('Auth');
+  const locale = useLocale();
   
   const searchParams = useSearchParams();
   const redirect = searchParams.get('redirect');
@@ -33,7 +36,7 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
   const switchHref = `${mode === 'signin' ? '/sign-up' : '/sign-in'}${switchParams.toString() ? `?${switchParams.toString()}` : ''}`;
 
   const { branding } = useBranding();
-  const siteName = branding?.name || 'WhatsPro';
+  const siteName = brandName(branding);
 
   return (
     <main className="relative min-h-screen flex flex-col items-center justify-center bg-background p-4 overflow-hidden font-sans">
@@ -71,6 +74,7 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
           <input type="hidden" name="priceId" value={priceId || ''} />
           <input type="hidden" name="planId" value={planId || ''} />
           <input type="hidden" name="inviteId" value={inviteId || ''} />
+          <input type="hidden" name="locale" value={locale} />
 
           <div className="space-y-2">
             <Label htmlFor="email">{t('email_label')}</Label>

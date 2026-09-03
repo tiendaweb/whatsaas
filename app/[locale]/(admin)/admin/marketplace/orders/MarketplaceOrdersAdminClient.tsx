@@ -90,7 +90,7 @@ function OrderReviewCard({ order, onReviewed }: { order: Order; onReviewed: () =
           <Badge variant={order.status === 'approved' ? 'default' : 'outline'}>{order.status}</Badge>
         </CardTitle>
         <CardDescription>
-          Team: {order.team?.name ?? 'N/A'} · Creado {new Date(order.createdAt).toLocaleString()} · Total {order.total / 100}
+          Equipo: {order.team?.name ?? 'N/A'} · Creado {new Date(order.createdAt).toLocaleString()} · Total {order.total / 100}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

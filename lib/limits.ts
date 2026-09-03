@@ -8,7 +8,7 @@ import {
 } from '@/lib/db/queries';
 
 export type LimitResource = 'users' | 'contacts' | 'instances';
-export type FeatureFlag = 'isAiEnabled' | 'isFlowBuilderEnabled' | 'isCampaignsEnabled' | 'isTemplatesEnabled';
+export type FeatureFlag = 'isAiEnabled' | 'isFlowBuilderEnabled' | 'isCampaignsEnabled' | 'isTemplatesEnabled' | 'isSocialPublisherEnabled';
 
 export async function enforceLimit(teamId: number, resource: LimitResource) {
   const team = await db.query.teams.findFirst({

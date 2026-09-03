@@ -31,6 +31,7 @@ type FlowLikeEdge = Partial<ReactFlowEdge> & {
   target?: string;
   sourceHandle?: string | null;
   targetHandle?: string | null;
+  styleVariant?: AutomationFlowEdge["styleVariant"];
 };
 
 export type AutomationFlowNormalizationWarningCode =
@@ -132,11 +133,16 @@ function trimString(value: unknown) {
   return normalized || undefined;
 }
 
+function referenceNameFrom(data: Partial<AutomationCanvasNodeData>) {
+  return trimString(data.referenceName);
+}
+
 function normalizeNodeData(
   node: AutomationFlowNode,
 ): AutomationFlowNode["data"] {
   const defaults = getAutomationNodeDefaults(node.type);
   const merged = mergeAutomationNodeDataWithDefaults(node.type, node.data);
+  const referenceName = referenceNameFrom(merged);
   switch (node.type) {
     case "start": {
       const defaultData = defaults as {
@@ -157,6 +163,7 @@ function normalizeNodeData(
 
       return {
         label: trimString(merged.label) ?? defaultData.label,
+        referenceName,
         triggerType,
         keywords,
         conditions:
@@ -169,7 +176,7 @@ function normalizeNodeData(
     case "message": {
       const fallback = requiredString(defaults.label, "Hello!");
       const label = requiredString(merged.label, fallback);
-      return { label };
+      return { label, referenceName };
     }
     case "media": {
       return {
@@ -178,6 +185,7 @@ function normalizeNodeData(
         caption: trimString(merged.caption) ?? "",
         fileName: trimString(merged.fileName) ?? "",
         mediaMimetype: trimString(merged.mediaMimetype),
+        referenceName,
       };
     }
     case "options": {
@@ -194,6 +202,7 @@ function normalizeNodeData(
         : fallbackOptions;
       return {
         label: requiredString(merged.label, fallbackLabel),
+        referenceName,
         options: options.length > 0 ? options : fallbackOptions,
       };
     }
@@ -208,6 +217,7 @@ function normalizeNodeData(
         label:
           trimString(merged.label) ?? (defaults.label as string | undefined),
         seconds,
+        referenceName,
       };
     }
     case "collect": {
@@ -218,7 +228,71 @@ function normalizeNodeData(
       const fallbackVariable = requiredString(defaults.variable, "user_name");
       const label = requiredString(merged.label, fallbackLabel);
       const variable = requiredString(merged.variable, fallbackVariable);
-      return { label, variable };
+      return { label, variable, referenceName };
+    }
+    case "form": {
+      const defaultFields = Array.isArray(defaults.fields)
+        ? defaults.fields
+        : [];
+      const sourceFields = Array.isArray(merged.fields)
+        ? merged.fields
+        : defaultFields;
+      const usedFieldIds = new Set<string>();
+      const fields = sourceFields.slice(0, 20).map((field, fieldIndex) => {
+        const fieldId = createUniqueId(
+          requiredString(field?.id, `${node.id}-field-${fieldIndex + 1}`),
+          usedFieldIds,
+        );
+        const type = field?.type === "menu" ? "menu" : "text";
+        const options = Array.isArray(field?.menuOptions)
+          ? field.menuOptions
+              .slice(0, 10)
+              .map((option, optionIndex) => ({
+                id: requiredString(
+                  option?.id,
+                  `${fieldId}-option-${optionIndex + 1}`,
+                ),
+                text: requiredString(option?.text, `Opción ${optionIndex + 1}`),
+                matchType: trimString(option?.matchType),
+                matchOperator: trimString(option?.matchOperator),
+                matchValue: trimString(option?.matchValue),
+                matchValue2: trimString(option?.matchValue2),
+              }))
+          : [];
+
+        return {
+          id: fieldId,
+          type,
+          label: requiredString(field?.label, `Pregunta ${fieldIndex + 1}`),
+          variable: requiredString(
+            field?.variable,
+            `respuesta_${fieldIndex + 1}`,
+          ),
+          markerStyle: field?.markerStyle ?? "emoji_number",
+          menuOptions:
+            type === "menu"
+              ? options.length > 0
+                ? options
+                : [{ id: `${fieldId}-option-1`, text: "Opción 1" }]
+              : undefined,
+        };
+      });
+
+      return {
+        referenceName,
+        fields:
+          fields.length > 0
+            ? fields
+            : [
+                {
+                  id: `${node.id}-field-1`,
+                  type: "text",
+                  label: "¿Cuál es tu nombre?",
+                  variable: "nombre",
+                  markerStyle: "emoji_number",
+                },
+              ],
+      };
     }
     case "save_contact": {
       return {
@@ -241,10 +315,17 @@ function normalizeNodeData(
           merged.customFields !== null
             ? merged.customFields
             : {},
+        referenceName,
       };
     }
     case "end": {
-      return {};
+      return {
+        referenceName,
+        disableAutomation:
+          typeof merged.disableAutomation === "boolean"
+            ? merged.disableAutomation
+            : undefined,
+      };
     }
     case "button_message": {
       const fallbackBodyText = requiredString(
@@ -267,6 +348,7 @@ function normalizeNodeData(
         bodyText: requiredString(merged.bodyText, fallbackBodyText),
         footerText: trimString(merged.footerText),
         buttonText: trimString(merged.buttonText),
+        referenceName,
         buttons:
           trimmedButtons.length > 0
             ? trimmedButtons
@@ -308,6 +390,7 @@ function normalizeNodeData(
         bodyText: requiredString(merged.bodyText, fallbackBodyText),
         footerText: trimString(merged.footerText),
         buttonText: requiredString(merged.buttonText, fallbackButtonText),
+        referenceName,
         items:
           trimmedItems.length > 0
             ? trimmedItems
@@ -339,6 +422,7 @@ function normalizeNodeData(
         footerText: trimString(merged.footerText),
         buttonText,
         url,
+        referenceName,
       };
     }
     case "ai_control": {
@@ -347,6 +431,7 @@ function normalizeNodeData(
           merged.action ??
           (defaults.action as "active" | "paused" | undefined) ??
           "active",
+        referenceName,
       };
     }
     case "condition": {
@@ -370,10 +455,12 @@ function normalizeNodeData(
         operator: requiredString(condition?.operator, "equals"),
         value: requiredString(condition?.value, `value_${index + 1}`),
         value2: trimString(condition?.value2),
+        label: trimString(condition?.label),
       }));
 
       return {
         label: trimString(merged.label),
+        referenceName,
         conditions,
       };
     }
@@ -403,6 +490,14 @@ function normalizeNodeData(
             : trimString(merged.targetAutomationId),
         fallbackAction,
         fallbackNodeId: fallbackAction === "node" ? fallbackNodeId : undefined,
+        referenceName,
+      };
+    }
+    case "sticky_note": {
+      return {
+        title: trimString(merged.title) ?? "Nota sticky",
+        bodyText: trimString(merged.bodyText) ?? "",
+        referenceName,
       };
     }
     default: {
@@ -611,18 +706,24 @@ export function normalizeAutomationFlow(input: {
         idMap.get(edge.source ?? "") ?? normalizeText(edge.source);
       const normalizedTarget =
         idMap.get(edge.target ?? "") ?? normalizeText(edge.target);
+      const stableEdge = {
+        id: edge.id ?? "",
+        source: normalizedSource,
+        target: normalizedTarget,
+        sourceHandle: edge.sourceHandle ?? null,
+        targetHandle: edge.targetHandle ?? null,
+        styleVariant: edge.styleVariant,
+      };
       return {
         id: createUniqueId(
-          buildStableEdgeId(
-            { ...edge, source: normalizedSource, target: normalizedTarget },
-            index,
-          ),
+          buildStableEdgeId(stableEdge, index),
           usedEdgeIds,
         ),
         source: normalizedSource,
         target: normalizedTarget,
         sourceHandle: edge.sourceHandle ?? null,
         targetHandle: edge.targetHandle ?? null,
+        styleVariant: edge.styleVariant,
       } satisfies AutomationFlowEdge;
     })
     .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target));
@@ -654,15 +755,17 @@ export function normalizeAutomationFlow(input: {
 
   const createAutoEdge = (edge: Omit<AutomationFlowEdge, "id">) => {
     const nextEdge = {
-      ...edge,
-      sourceHandle: edge.sourceHandle ?? null,
-      targetHandle: edge.targetHandle ?? null,
       id: createUniqueId(
         `edge-${slugify(edge.source)}-${slugify(edge.sourceHandle ?? "default")}-${slugify(edge.target)}`,
         usedIdsForAutoEdges,
       ),
-    } satisfies AutomationFlowEdge;
-    normalizedEdges.push(nextEdge);
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle ?? null,
+      targetHandle: edge.targetHandle ?? null,
+      styleVariant: edge.styleVariant,
+    } as AutomationFlowEdge;
+    normalizedEdges.push(nextEdge as any);
   };
 
   for (const conditionNode of normalizedNodes.filter(

@@ -35,7 +35,15 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    ".next\\dev/types/**/*.ts"
+    ".next\\dev/types/**/*.ts",
+    ".next-deploy/types/**/*.ts",
+    ".next-deploy/dev/types/**/*.ts",
+    ".next-verify/types/**/*.ts",
+    ".next-verify/dev/types/**/*.ts",
+    ".next-build/types/**/*.ts",
+    ".next-build/dev/types/**/*.ts",
+    ".next-smoke/types/**/*.ts",
+    ".next-smoke/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

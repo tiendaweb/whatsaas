@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -8,7 +9,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, X, Loader2, Zap, ZapOff, Bot, BotOff, ChevronLeft, ChevronRight, Workflow } from 'lucide-react';
+import { Search, X, Loader2, Zap, ZapOff, Bot, BotOff, ChevronLeft, Workflow, Menu, LayoutDashboard, Users, Info } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ChatDetails } from './types';
 import { ServiceWindowTimer } from './ServiceWindowTimer';
 import { toast } from 'sonner';
@@ -80,6 +88,7 @@ const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 export function ChatHeader({ chatDetails, showSearch, setShowSearch, searchQuery, setSearchQuery, isSidebarCollapsed, onToggleSidebar, isGroup }: ChatHeaderProps) {
   const t = useTranslations('Chat');
+  const router = useRouter();
   const isWaba = chatDetails.integration === 'WHATSAPP-BUSINESS';
   const { mutate } = useSWRConfig();
   const [isClosing, setIsClosing] = useState(false);
@@ -134,7 +143,7 @@ export function ChatHeader({ chatDetails, showSearch, setShowSearch, searchQuery
     }
   };
 
-  const handleToggleAi = async () => {
+  const handleToggleAi = useCallback(async () => {
       if (!activeChat?.id) return;
       setIsTogglingAi(true);
       const newStatus = aiData?.isActive ? 'paused' : 'active';
@@ -152,7 +161,7 @@ export function ChatHeader({ chatDetails, showSearch, setShowSearch, searchQuery
       } finally {
           setIsTogglingAi(false);
       }
-  };
+  }, [activeChat?.id, aiData?.isActive, mutateAi, t]);
 
   const handleSetFunnelStage = async (stageId: string) => {
     if (!contact) return;
@@ -190,13 +199,13 @@ export function ChatHeader({ chatDetails, showSearch, setShowSearch, searchQuery
     }
   };
 
-  const handleOpenTriggerModal = () => {
+  const handleOpenTriggerModal = useCallback(() => {
     if (!activeChat || isGroup) return;
     setIsTriggerModalOpen(true);
     setSelectedAutomationId('');
     setSelectedStartNodeId('start');
     mutateTriggerData();
-  };
+  }, [activeChat, isGroup, mutateTriggerData]);
 
   const handleTriggerAutomation = async () => {
     if (!activeChat?.id || !selectedAutomationId) return;
@@ -228,6 +237,7 @@ export function ChatHeader({ chatDetails, showSearch, setShowSearch, searchQuery
     if (isGroup) return;
 
     const openModalShortcut = () => handleOpenTriggerModal();
+    const toggleAiShortcut = () => { void handleToggleAi(); };
 
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.code === 'Space') {
@@ -238,151 +248,168 @@ export function ChatHeader({ chatDetails, showSearch, setShowSearch, searchQuery
 
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('chat:open-trigger-automation', openModalShortcut);
+    window.addEventListener('chat:toggle-ai-agent', toggleAiShortcut);
 
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('chat:open-trigger-automation', openModalShortcut);
+      window.removeEventListener('chat:toggle-ai-agent', toggleAiShortcut);
     };
-  }, [activeChat, isGroup]);
+  }, [activeChat, handleOpenTriggerModal, handleToggleAi, isGroup]);
 
   return (
-    <header className="flex items-center justify-between p-3 border-b bg-card shadow-sm z-10 shrink-0 h-[60px]">
-      <div className="flex items-center gap-3">
+    <header className="flex h-[60px] min-w-0 shrink-0 items-center justify-between border-b bg-card p-3 shadow-sm z-10">
+      <div className="flex min-w-0 items-center gap-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="md:hidden -ml-1 shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={() => router.push('/dashboard')}
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </Button>
         <Avatar>
           <AvatarImage src={chatDetails?.profilePicUrl || undefined} alt={chatDetails?.name ?? undefined} />
           <AvatarFallback>{chatDetails?.name?.substring(0, 2).toUpperCase() || '?'}</AvatarFallback>
         </Avatar>
-        <div className="flex flex-col">
+        <div className="flex min-w-0 flex-col">
           <span className="font-medium truncate text-sm">{chatDetails?.name || t('loading_chat_name')}</span>
-          <span className="text-xs text-muted-foreground">{isGroup ? t('group_label') : (chatDetails.remoteJid ? `+${chatDetails.remoteJid.split('@')[0]}` : '')}</span>
+          <span className="truncate text-xs text-muted-foreground">{isGroup ? t('group_label') : (chatDetails.remoteJid ? `+${chatDetails.remoteJid.split('@')[0]}` : '')}</span>
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-1.5">
+        {/* Service window timer - hidden on small mobile */}
         {!isGroup && isWaba && chatDetails.lastCustomerInteraction && (
+          <div className="hidden sm:flex">
             <ServiceWindowTimer lastInteraction={chatDetails.lastCustomerInteraction} />
+          </div>
         )}
 
+        {/* Funnel stage — desktop only */}
         {!isGroup && contact && funnelStages && funnelStages.length > 0 && (
-          <Select
-            onValueChange={handleSetFunnelStage}
-            value={contact.funnelStage?.id?.toString() || 'null'}
-            disabled={isSettingFunnel}
-          >
-            <SelectTrigger size="sm" className="h-8 w-auto px-2 py-0 text-xs [&>span]:truncate">
-              <SelectValue placeholder={t('funnel_stage_placeholder')} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="null">{t('funnel_no_stage')}</SelectItem>
-              {funnelStages.map((stage) => (
-                <SelectItem key={stage.id} value={stage.id.toString()}>
-                  {stage.emoji} {stage.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="hidden md:flex">
+            <Select
+              onValueChange={handleSetFunnelStage}
+              value={contact.funnelStage?.id?.toString() || 'null'}
+              disabled={isSettingFunnel}
+            >
+              <SelectTrigger size="sm" className="h-8 w-auto px-2 py-0 text-xs [&>span]:truncate">
+                <SelectValue placeholder={t('funnel_stage_placeholder')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="null">{t('funnel_no_stage')}</SelectItem>
+                {funnelStages.map((stage) => (
+                  <SelectItem key={stage.id} value={stage.id.toString()}>
+                    {stage.emoji} {stage.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         )}
 
+        {/* Workflow trigger — desktop only (visible in "more" on mobile) */}
         {!isGroup && (
+          <div className="hidden md:flex">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    onClick={handleOpenTriggerModal}
+                    disabled={!activeChat}
+                  >
+                    <Workflow className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{t('trigger_automation_tooltip')}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        )}
+
+        {/* AI toggle — desktop only (visible in "more" on mobile) */}
+        {!isGroup && (
+          <div className="hidden md:flex">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className={`h-8 w-8 transition-colors ${aiData?.isActive
+                      ? 'text-purple-600 border-purple-200 bg-purple-50 hover:bg-purple-100 dark:bg-purple-900/20 dark:border-purple-800'
+                      : 'text-muted-foreground hover:text-purple-600'}`}
+                    onClick={handleToggleAi}
+                    disabled={isTogglingAi || !activeChat}
+                  >
+                    {isTogglingAi ? <Loader2 className="h-4 w-4 animate-spin" /> : (
+                      aiData?.isActive ? <Bot className="h-4 w-4" /> : <BotOff className="h-4 w-4" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{aiData?.isActive ? t('disable_ai_agent_tooltip') : t('enable_ai_agent_tooltip')}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        )}
+
+        {/* Session button — always visible (critical action) */}
+        {!isGroup && sessionData?.hasActiveSession ? (
+          <AlertDialog>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8 text-green-600 border-green-200 hover:bg-green-50 dark:text-green-400 dark:border-green-900 dark:hover:bg-green-900/20"
+                      disabled={isClosing || !activeChat}
+                    >
+                      {isClosing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                    </Button>
+                  </AlertDialogTrigger>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{t('end_automation_session_tooltip')}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t('end_automation_dialog_title')}</AlertDialogTitle>
+                <AlertDialogDescription>{t('end_automation_dialog_desc')}</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t('cancel_btn')}</AlertDialogCancel>
+                <AlertDialogAction onClick={handleEndChat} className="bg-green-600 hover:bg-green-700">{t('confirm_btn')}</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        ) : !isGroup ? (
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  onClick={handleOpenTriggerModal}
-                  disabled={!activeChat}
-                >
-                  <Workflow className="h-4 w-4" />
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground opacity-50 cursor-not-allowed" disabled>
+                  <ZapOff className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>{t('trigger_automation_tooltip')}</p>
+                <p>{t('no_active_automation_tooltip')}</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
-        )}
-
-        {!isGroup && (
-        <TooltipProvider>
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <Button
-                        variant="outline"
-                        size="icon"
-                        className={`h-8 w-8 transition-colors ${aiData?.isActive
-                            ? 'text-purple-600 border-purple-200 bg-purple-50 hover:bg-purple-100 dark:bg-purple-900/20 dark:border-purple-800'
-                            : 'text-muted-foreground hover:text-purple-600'}`}
-                        onClick={handleToggleAi}
-                        disabled={isTogglingAi || !activeChat}
-                    >
-                        {isTogglingAi ? <Loader2 className="h-4 w-4 animate-spin" /> : (
-                            aiData?.isActive ? <Bot className="h-4 w-4" /> : <BotOff className="h-4 w-4" />
-                        )}
-                    </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                    <p>{aiData?.isActive ? t('disable_ai_agent_tooltip') : t('enable_ai_agent_tooltip')}</p>
-                </TooltipContent>
-            </Tooltip>
-        </TooltipProvider>
-        )}
-
-        {!isGroup && sessionData?.hasActiveSession ? (
-            <AlertDialog>
-                <TooltipProvider>
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <AlertDialogTrigger asChild>
-                                <Button 
-                                    variant="outline" 
-                                    size="icon" 
-                                    className="h-8 w-8 text-green-600 border-green-200 hover:bg-green-50 dark:text-green-400 dark:border-green-900 dark:hover:bg-green-900/20" 
-                                    disabled={isClosing || !activeChat}
-                                >
-                                    {isClosing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-                                </Button>
-                            </AlertDialogTrigger>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                            <p>{t('end_automation_session_tooltip')}</p>
-                        </TooltipContent>
-                    </Tooltip>
-                </TooltipProvider>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>{t('end_automation_dialog_title')}</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            {t('end_automation_dialog_desc')}
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>{t('cancel_btn')}</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleEndChat} className="bg-green-600 hover:bg-green-700">{t('confirm_btn')}</AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
-        ) : !isGroup ? (
-            <TooltipProvider>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground opacity-50 cursor-not-allowed"
-                            disabled
-                        >
-                            <ZapOff className="h-4 w-4" />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                        <p>{t('no_active_automation_tooltip')}</p>
-                    </TooltipContent>
-                </Tooltip>
-            </TooltipProvider>
         ) : null}
 
+        {/* Search — always visible */}
         {showSearch ? (
           <div className="flex items-center bg-muted rounded-md px-2 py-1 animate-in slide-in-from-right-5">
             <Search className="h-4 w-4 text-muted-foreground mr-2" />
@@ -390,7 +417,7 @@ export function ChatHeader({ chatDetails, showSearch, setShowSearch, searchQuery
               autoFocus
               type="text"
               placeholder={t('search_placeholder')}
-              className="bg-transparent border-none focus:outline-none text-sm text-foreground w-32"
+              className="bg-transparent border-none focus:outline-none text-sm text-foreground w-28"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -399,14 +426,72 @@ export function ChatHeader({ chatDetails, showSearch, setShowSearch, searchQuery
             </button>
           </div>
         ) : (
-          <Button variant="ghost" size="icon" onClick={() => setShowSearch(true)} className="text-muted-foreground hover:text-foreground">
-            <Search className="h-5 w-5" />
+          <Button variant="ghost" size="icon" onClick={() => setShowSearch(true)} className="text-muted-foreground hover:text-foreground h-8 w-8">
+            <Search className="h-4 w-4" />
           </Button>
         )}
 
-        <Button variant="ghost" size="icon" onClick={onToggleSidebar} className="text-muted-foreground hover:text-foreground">
-          {isSidebarCollapsed ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-        </Button>
+        {/* Sidebar toggle — now visible on mobile too (contact info) */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" onClick={onToggleSidebar} className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                <Info className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{isSidebarCollapsed ? t('show_contact_info') || 'Ver info del contacto' : t('hide_contact_info') || 'Ocultar info'}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+
+        {/* Mobile "more" dropdown — secondary actions */}
+        {!isGroup && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="md:hidden h-8 w-8 text-muted-foreground hover:text-foreground" aria-label="Abrir menú">
+                <Menu className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onClick={() => router.push('/dashboard')}>
+                <LayoutDashboard className="mr-2 h-4 w-4" />
+                {t('dashboard_nav')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push('/contacts')}>
+                <Users className="mr-2 h-4 w-4" />
+                CRM
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {/* Funnel stage */}
+              {contact && funnelStages && funnelStages.length > 0 && (
+                <>
+                  <div className="px-2 py-1.5">
+                    <p className="text-xs text-muted-foreground mb-1.5">{t('funnel_stage_placeholder')}</p>
+                    <Select
+                      onValueChange={handleSetFunnelStage}
+                      value={contact.funnelStage?.id?.toString() || 'null'}
+                      disabled={isSettingFunnel}
+                    >
+                      <SelectTrigger size="sm" className="h-8 w-full text-xs">
+                        <SelectValue placeholder={t('funnel_stage_placeholder')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="null">{t('funnel_no_stage')}</SelectItem>
+                        {funnelStages.map((stage) => (
+                          <SelectItem key={stage.id} value={stage.id.toString()}>
+                            {stage.emoji} {stage.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
       </div>
 
       <Dialog open={isTriggerModalOpen} onOpenChange={setIsTriggerModalOpen}>

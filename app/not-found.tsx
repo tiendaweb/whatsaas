@@ -6,17 +6,16 @@ export default function NotFound() {
     <div className="flex items-center justify-center min-h-[100dvh]">
       <div className="max-w-md space-y-8 p-4 text-center">
         <h1 className="text-4xl font-bold text-foreground tracking-tight">
-          Page Not Found
+          Página no encontrada
         </h1>
         <p className="text-base text-muted-foreground">
-          The page you are looking for might have been removed, had its name
-          changed, or is temporarily unavailable.
+          La página que buscas pudo haber sido eliminada, cambiado de nombre o estar temporalmente no disponible.
         </p>
         <Link
           href="/"
           className="max-w-48 mx-auto flex justify-center py-2 px-4 border border-border rounded-full shadow-sm text-sm font-medium text-foreground bg-background hover:bg-muted focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
         >
-          Back to Home
+          Volver al inicio
         </Link>
       </div>
     </div>

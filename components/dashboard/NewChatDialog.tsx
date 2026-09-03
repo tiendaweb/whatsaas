@@ -207,7 +207,7 @@ export function NewChatDialog({ isOpen, onClose, instances }: NewChatDialogProps
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-[500px] lg:max-w-[600px]">
+        <DialogContent className="max-h-[92dvh] w-[calc(100vw-2rem)] overflow-y-auto max-md:bottom-0 max-md:left-0 max-md:top-auto max-md:w-full max-md:max-w-none max-md:translate-x-0 max-md:translate-y-0 max-md:rounded-b-none max-md:rounded-t-2xl max-md:p-4 md:max-w-[500px] lg:max-w-[600px]">
             <DialogHeader>
                 <DialogTitle>{t('new_chat_dialog_title')}</DialogTitle>
                 <DialogDescription>{t('new_chat_dialog_desc')}</DialogDescription>
@@ -225,7 +225,7 @@ export function NewChatDialog({ isOpen, onClose, instances }: NewChatDialogProps
                 <div className="space-y-2">
                     <Label>{t('from_instance_label')}</Label>
                     <Select value={selectedInstanceId} onValueChange={setSelectedInstanceId}>
-                        <SelectTrigger>
+                        <SelectTrigger className="w-full">
                             <SelectValue placeholder={t('select_instance_placeholder')} />
                         </SelectTrigger>
                         <SelectContent>
@@ -263,17 +263,17 @@ export function NewChatDialog({ isOpen, onClose, instances }: NewChatDialogProps
                                     <CommandEmpty>
                                         {isQueryNumber ? (
                                             <div 
-                                                className="flex items-center gap-2 p-2 text-sm cursor-pointer hover:bg-gray-100 rounded-sm"
+                                                className="flex cursor-pointer items-center gap-2 rounded-sm p-2 text-sm hover:bg-muted"
                                                 onClick={() => {
                                                     setRecipient(searchQuery);
                                                     setIsContactPopoverOpen(false);
                                                 }}
                                             >
-                                                <Plus className="h-4 w-4 text-green-600"/>
+                                                <Plus className="h-4 w-4 text-primary"/>
                                                 <span>{t('use_number_text')} <strong>{searchQuery}</strong></span>
                                             </div>
                                         ) : (
-                                            <span className="p-2 text-sm text-gray-500">
+                                            <span className="p-2 text-sm text-muted-foreground">
                                                 {t('type_full_number_hint')}
                                             </span>
                                         )}
@@ -285,7 +285,7 @@ export function NewChatDialog({ isOpen, onClose, instances }: NewChatDialogProps
                                                 setRecipient(searchQuery);
                                                 setIsContactPopoverOpen(false);
                                             }}
-                                            className="text-green-700 bg-green-50"
+                                            className="bg-primary/10 text-primary"
                                         >
                                             <Plus className="mr-2 h-4 w-4" />
                                             {t('use_number_text')} {searchQuery}
@@ -306,7 +306,7 @@ export function NewChatDialog({ isOpen, onClose, instances }: NewChatDialogProps
                                             >
                                                 <div className="flex flex-col">
                                                     <span className="font-medium">{contact.name}</span>
-                                                    <span className="text-xs text-gray-500">{contact.phone}</span>
+                                                    <span className="text-xs text-muted-foreground">{contact.phone}</span>
                                                 </div>
                                                 {recipient === contact.phone && <Check className="ml-auto h-4 w-4" />}
                                             </CommandItem>
@@ -323,7 +323,7 @@ export function NewChatDialog({ isOpen, onClose, instances }: NewChatDialogProps
                         <div className="space-y-2">
                             <Label>{t('select_template_label')}</Label>
                             <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
-                                <SelectTrigger>
+                                <SelectTrigger className="w-full">
                                     <SelectValue placeholder={t('choose_template_placeholder')} />
                                 </SelectTrigger>
                                 <SelectContent>

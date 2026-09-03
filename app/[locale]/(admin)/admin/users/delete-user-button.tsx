@@ -16,7 +16,7 @@ export function DeleteUserButton({ id }: DeleteUserButtonProps) {
   const router = useRouter();
 
   const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+    if (!confirm('¿Estás seguro de que deseas eliminar este usuario? Esta acción no se puede deshacer.')) {
       return;
     }
 
@@ -26,7 +26,7 @@ export function DeleteUserButton({ id }: DeleteUserButtonProps) {
       if (result.error) {
         toast.error(result.error);
       } else {
-        toast.success('User deleted successfully');
+        toast.success('Usuario eliminado correctamente');
         router.refresh();
       }
     });

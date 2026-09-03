@@ -610,6 +610,55 @@
       "when": 1788100000000,
       "tag": "0095_sales_ops",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1788200000000,
+      "tag": "0096_gemini_default_model",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1788300000000,
+      "tag": "0097_sales_ops_skills",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1788400000000,
+      "tag": "0098_sales_ops_crm_y_limpieza",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1788400100000,
+      "tag": "0099_ai_builtin_tools",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1788400200000,
+      "tag": "0100_calendario_os",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1788400300000,
+      "tag": "0101_notificaciones_area",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1788400400000,
+      "tag": "0102_avisos_por_sector",
+      "breakpoints": true
     }
   ]
 }

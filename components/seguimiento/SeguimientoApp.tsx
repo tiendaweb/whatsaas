@@ -3,9 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { DragDropContext, type DropResult } from '@hello-pangea/dnd';
 import { Users } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { MenuTarjeta } from './MenuTarjeta';
 import { SeccionEtapa } from './SeccionEtapa';
 import { Toolbar } from './Toolbar';
 import {
@@ -16,6 +19,7 @@ import {
   LS_PLEGADAS,
   type ContactoCard,
   type Densidad,
+  type Etapa,
   type Orden,
   type Seccion,
   type Segmento,
@@ -46,7 +50,7 @@ export function SeguimientoApp() {
   const searchParams = useSearchParams();
   const searchRef = useRef<HTMLInputElement>(null);
 
-  const { contactos, etapas, grupos, etiquetas, isLoading, error, recargar } = useSeguimientoData();
+  const { contactos, etapas, grupos, etiquetas, puede, isLoading, error, recargar, mutateChats } = useSeguimientoData();
 
   // La URL manda; localStorage sólo recuerda grupo, densidad y secciones plegadas.
   const q = searchParams.get('q') ?? '';
@@ -60,6 +64,7 @@ export function SeguimientoApp() {
   const [plegadas, setPlegadas] = useState<string[]>([]);
   const [seleccionadoJid, setSeleccionadoJid] = useState<string | null>(null);
   const [esMovil, setEsMovil] = useState(false);
+  const [moviendoChatId, setMoviendoChatId] = useState<number | null>(null);
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)');
@@ -157,14 +162,18 @@ export function SeguimientoApp() {
     });
   }, [porSegmento, segmento, q, tagsSel]);
 
-  // Secciones por etapa del grupo elegido.
-  const secciones = useMemo<Seccion[]>(() => {
-    const etapasGrupo =
+  const etapasGrupo = useMemo<Etapa[]>(
+    () =>
       grupo === GRUPO_TODAS
         ? etapas
         : grupo === GRUPO_SIN
           ? etapas.filter((e) => e.groupId === null)
-          : etapas.filter((e) => String(e.groupId) === grupo);
+          : etapas.filter((e) => String(e.groupId) === grupo),
+    [etapas, grupo],
+  );
+
+  // Secciones por etapa del grupo elegido.
+  const secciones = useMemo<Seccion[]>(() => {
     const idsGrupo = new Set(etapasGrupo.map((e) => e.id));
     const ordenados = ordenar(filtrados, orden);
 
@@ -196,7 +205,7 @@ export function SeguimientoApp() {
       out.push({ key: 'sinFicha', tipo: 'sinFicha', etapa: null, contactos: sinFicha });
     }
     return out;
-  }, [etapas, grupo, filtrados, orden, segmento]);
+  }, [etapasGrupo, filtrados, orden, segmento]);
 
   const totalVisible = secciones.reduce((acc, s) => acc + s.contactos.length, 0);
   const hayFiltros = Boolean(q) || tagsSel.length > 0;
@@ -208,6 +217,93 @@ export function SeguimientoApp() {
       router.push(`/dashboard/chat/${c.numero}${query}`);
     },
     [router],
+  );
+
+  /**
+   * Cambia la etapa del contacto: primero en pantalla, después en el servidor.
+   *
+   * La lista se pinta desde `/api/chats?scope=kanban`, así que el optimismo se
+   * escribe sobre esa caché; si el PUT falla se revalida y la tarjeta vuelve
+   * sola a su sección, que es más honesto que dejarla donde el usuario la soltó.
+   *
+   * Un chat sin ficha en `contacts` no tiene a quién moverle la etapa: se le
+   * crea la ficha con la etapa ya puesta (un solo POST) y por eso es la única
+   * forma de sacarlo de "Sin ficha".
+   */
+  const moverContacto = useCallback(
+    async (c: ContactoCard, etapaId: number | null) => {
+      if (c.etapaId === etapaId && c.contactId !== null) return;
+      const etapa = etapaId === null ? null : etapas.find((e) => e.id === etapaId) ?? null;
+      const nombreEtapa = etapa ? `${etapa.emoji ?? ''} ${etapa.name}`.trim() : t('section.unassigned');
+
+      setMoviendoChatId(c.chatId);
+      await mutateChats(
+        (actual) =>
+          actual?.map((chat) =>
+            chat.id === c.chatId && chat.contact
+              ? { ...chat, contact: { ...chat.contact, funnelStage: etapaId === null ? null : { id: etapaId } } }
+              : chat,
+          ),
+        { revalidate: false },
+      );
+
+      try {
+        const res = c.contactId
+          ? await fetch(`/api/contacts/${c.contactId}/funnel-stage`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ stageId: etapaId }),
+            })
+          : await fetch('/api/contacts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ jid: c.remoteJid, name: c.nombre, funnelStageId: etapaId }),
+            });
+        if (!res.ok) throw new Error(String(res.status));
+        toast.success(t('toast.moved', { stage: nombreEtapa }));
+      } catch {
+        toast.error(t('toast.moveError'));
+      } finally {
+        setMoviendoChatId(null);
+        void mutateChats();
+      }
+    },
+    [etapas, mutateChats, t],
+  );
+
+  // Soltar en otra sección = cambiar de etapa. Dentro de la misma no hay orden
+  // que guardar, así que no hace nada.
+  const onDragEnd = useCallback(
+    (result: DropResult) => {
+      const destino = result.destination?.droppableId;
+      if (!destino || destino === result.source.droppableId) return;
+      const chatId = Number(result.draggableId.slice(1));
+      const contacto = contactos.find((c) => c.chatId === chatId);
+      if (!contacto) return;
+      if (destino === 'sinFicha') return;
+      const etapaId = destino === 'sinEtapa' ? null : Number(destino);
+      if (destino !== 'sinEtapa' && !Number.isInteger(etapaId)) return;
+      void moverContacto(contacto, etapaId);
+    },
+    [contactos, moverContacto],
+  );
+
+  // En móvil el arrastre pelea con el scroll y con la barra inferior: ahí la
+  // etapa se cambia desde el menú de la tarjeta.
+  const puedeArrastrar = puede.contactos && !esMovil;
+
+  const renderMenu = useCallback(
+    (c: ContactoCard) =>
+      puede.contactos ? (
+        <MenuTarjeta
+          contacto={c}
+          etapas={etapasGrupo}
+          moviendo={moviendoChatId === c.chatId}
+          onAbrirChat={onAbrirChat}
+          onMover={(contacto, etapaId) => void moverContacto(contacto, etapaId)}
+        />
+      ) : null,
+    [puede.contactos, etapasGrupo, moviendoChatId, onAbrirChat, moverContacto],
   );
 
   return (
@@ -271,19 +367,23 @@ export function SeguimientoApp() {
             </Button>
           </div>
         ) : (
-          <div className="pb-8">
-            {secciones.map((s) => (
-              <SeccionEtapa
-                key={s.key}
-                seccion={s}
-                densidad={esMovil ? 'lista' : densidad}
-                plegada={plegadas.includes(s.key)}
-                onTogglePlegada={onTogglePlegada}
-                seleccionadoJid={seleccionadoJid}
-                onAbrirChat={onAbrirChat}
-              />
-            ))}
-          </div>
+          <DragDropContext onDragEnd={onDragEnd}>
+            <div className="pb-8">
+              {secciones.map((s) => (
+                <SeccionEtapa
+                  key={s.key}
+                  seccion={s}
+                  densidad={esMovil ? 'lista' : densidad}
+                  plegada={plegadas.includes(s.key)}
+                  onTogglePlegada={onTogglePlegada}
+                  seleccionadoJid={seleccionadoJid}
+                  onAbrirChat={onAbrirChat}
+                  renderMenu={renderMenu}
+                  arrastrable={puedeArrastrar}
+                />
+              ))}
+            </div>
+          </DragDropContext>
         )}
       </div>
     </div>

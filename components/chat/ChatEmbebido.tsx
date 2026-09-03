@@ -26,6 +26,10 @@ import { cn } from '@/lib/utils';
  *   plugin Tareas para que esa app no cambie de aspecto.
  * - `chatId`: si viene, marca leído al montar y con cada mensaje nuevo del JID.
  * - `puedeEnviar === false` reemplaza la caja por un aviso para conectar WhatsApp.
+ * - `ocultarEnviados`: deja sólo lo que escribió el cliente (y las notas
+ *   internas, que son anotaciones nuestras, no mensajes que le llegaron). Sirve
+ *   para leer una conversación larga sin la mitad propia; no cambia lo que se
+ *   trae del servidor, sólo lo que se dibuja.
  */
 
 export type ChatEmbebidoProps = {
@@ -35,6 +39,7 @@ export type ChatEmbebidoProps = {
   nombre: string;
   teamId: number | null;
   puedeEnviar?: boolean;
+  ocultarEnviados?: boolean;
   tokens?: 'core' | 'tareas';
   className?: string;
 };
@@ -76,6 +81,7 @@ const TEXTOS = {
   ubicacion: 'Ubicación',
   verMapa: 'Ver en el mapa',
   sinWhatsapp: 'Conectá WhatsApp para responder.',
+  soloEnviados: 'En esta conversación sólo hay mensajes nuestros. Marcá "Enviados" para verlos.',
 };
 
 /** Textos de los eventos de sistema (`@@syslog_*`), calcados de messages/es.json → Chat. */
@@ -172,7 +178,7 @@ const ESTILOS = {
 } as const;
 
 export function ChatEmbebido(props: ChatEmbebidoProps) {
-  const { remoteJid, instanceId, chatId, nombre, teamId, puedeEnviar = true, tokens = 'core', className } = props;
+  const { remoteJid, instanceId, chatId, nombre, teamId, puedeEnviar = true, ocultarEnviados = false, tokens = 'core', className } = props;
   const S = ESTILOS[tokens];
   const pusher = usePusher();
 
@@ -206,6 +212,16 @@ export function ChatEmbebido(props: ChatEmbebidoProps) {
     const vistos = new Set(recientes.map((m) => m.id));
     return [...anteriores.filter((m) => !vistos.has(m.id)), ...recientes];
   }, [data, anteriores]);
+
+  /**
+   * Lo que se dibuja. La paginación y el scroll siguen contando `mensajes`
+   * completos: si filtrar cambiara el total, "Cargar anteriores" desaparecería
+   * en una conversación donde casi todo lo escribimos nosotros.
+   */
+  const visibles = useMemo(
+    () => (ocultarEnviados ? mensajes.filter((m) => !m.fromMe || m.isInternal) : mensajes),
+    [mensajes, ocultarEnviados],
+  );
 
   const estaCercaDelFondo = useCallback(() => {
     const el = listaRef.current;
@@ -326,7 +342,9 @@ export function ChatEmbebido(props: ChatEmbebidoProps) {
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div ref={listaRef} onScroll={onScroll} className={S.lista}>
           {isLoading && <p className={S.muted}>{TEXTOS.cargando}</p>}
-          {!isLoading && mensajes.length === 0 && <p className={S.muted}>{TEXTOS.sinMensajes}</p>}
+          {!isLoading && visibles.length === 0 && (
+            <p className={S.muted}>{mensajes.length === 0 ? TEXTOS.sinMensajes : TEXTOS.soloEnviados}</p>
+          )}
           {!isLoading && mensajes.length >= LIMITE && hayMas && (
             <div className="flex justify-center pb-1">
               <button type="button" onClick={() => void cargarAnteriores()} disabled={cargandoMas} className={S.botonSecundario}>
@@ -334,7 +352,7 @@ export function ChatEmbebido(props: ChatEmbebidoProps) {
               </button>
             </div>
           )}
-          {mensajes.map((msg) => (
+          {visibles.map((msg) => (
             <Mensaje key={msg.id} msg={msg} S={S} tokens={tokens} />
           ))}
           <div ref={finRef} />

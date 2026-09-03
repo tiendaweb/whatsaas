@@ -16,7 +16,7 @@ export function DeleteTeamButton({ id }: DeleteTeamButtonProps) {
   const router = useRouter();
 
   const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this team? This action cannot be undone.')) {
+    if (!confirm('¿Estás seguro de que deseas eliminar este equipo? Esta acción no se puede deshacer.')) {
       return;
     }
 
@@ -26,7 +26,7 @@ export function DeleteTeamButton({ id }: DeleteTeamButtonProps) {
       if (result.error) {
         toast.error(result.error);
       } else {
-        toast.success('Team deleted successfully');
+        toast.success('Equipo eliminado correctamente');
         router.refresh();
       }
     });

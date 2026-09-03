@@ -28,6 +28,7 @@ type Connection = {
   createdAt: string;
   lastUsedAt: string | null;
   expiresAt: string;
+  scopes: string[];
 };
 
 type Status = {
@@ -142,6 +143,8 @@ export function ChatGPTConnectorDashboard() {
         </header>
 
         {error ? <Alert variant="destructive"><Unplug /><AlertTitle>{t('error_title')}</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
+
+        {status?.connections.some((connection) => ['whatspro:write', 'appmaker:read', 'appmaker:write', 'appmaker:publish', 'appmaker:media'].some((scope) => !connection.scopes?.includes(scope))) ? <Alert><RefreshCw /><AlertTitle>{t('reconnect_title')}</AlertTitle><AlertDescription>{t('reconnect_description')}</AlertDescription></Alert> : null}
 
         <section className="grid gap-4 sm:grid-cols-3">
           <Card><CardContent className="p-5"><p className="text-xs font-semibold text-muted-foreground">{t('authorized_account')}</p><p className="mt-2 break-all font-mono text-sm font-semibold">{status?.targetEmail}</p></CardContent></Card>

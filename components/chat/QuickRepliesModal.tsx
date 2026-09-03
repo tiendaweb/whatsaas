@@ -36,9 +36,9 @@ export function QuickRepliesModal({ open, onOpenChange }: { open: boolean, onOpe
       setNewShortcut('');
       setNewContent('');
       mutate('/api/quick-replies');
-      toast.success('Shortcut added');
+      toast.success('Atajo agregado');
     } catch {
-      toast.error('Error adding shortcut');
+      toast.error('Error al agregar atajo');
     }
   };
 
@@ -51,9 +51,9 @@ export function QuickRepliesModal({ open, onOpenChange }: { open: boolean, onOpe
       });
       setShortcuts(shortcuts.filter(s => s.id !== id));
       mutate('/api/quick-replies');
-      toast.success('Shortcut deleted');
+      toast.success('Atajo eliminado');
     } catch {
-      toast.error('Error deleting');
+      toast.error('Error al eliminar');
     }
   };
 
@@ -61,16 +61,16 @@ export function QuickRepliesModal({ open, onOpenChange }: { open: boolean, onOpe
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-[500px] lg:max-w-[700px] max-h-[90dvh] overflow-hidden p-0 flex flex-col">
         <DialogHeader className="sticky top-0 z-10 border-b bg-background px-6 py-4">
-          <DialogTitle>Quick Replies</DialogTitle>
-          <DialogDescription>Manage your shortcuts. Type /shortcut to use them.</DialogDescription>
+          <DialogTitle>Respuestas rápidas</DialogTitle>
+          <DialogDescription>Administra tus atajos. Escribe /atajo para usarlos.</DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         <div className="grid gap-4">
           <div className="grid grid-cols-4 gap-2">
-            <Input placeholder="Shortcut (e.g. hi)" value={newShortcut} onChange={(e) => setNewShortcut(e.target.value)} className="col-span-1" />
-            <Input placeholder="Full message content..." value={newContent} onChange={(e) => setNewContent(e.target.value)} className="col-span-3" />
+            <Input placeholder="Atajo (ej. hola)" value={newShortcut} onChange={(e) => setNewShortcut(e.target.value)} className="col-span-1" />
+            <Input placeholder="Contenido completo del mensaje..." value={newContent} onChange={(e) => setNewContent(e.target.value)} className="col-span-3" />
           </div>
-          <Button onClick={handleAdd} disabled={!newShortcut || !newContent}>Add New</Button>
+          <Button onClick={handleAdd} disabled={!newShortcut || !newContent}>Agregar nuevo</Button>
           <div className="min-h-0 max-h-[300px] overflow-y-auto space-y-2 mt-2">
             {shortcuts.map(s => (
               <div key={s.id} className="flex items-center justify-between p-2 border rounded bg-muted">

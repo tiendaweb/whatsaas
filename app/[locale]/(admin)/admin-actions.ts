@@ -11,6 +11,7 @@ import { getStripeClient } from '@/lib/payments/stripe';
 import { getSession, hashPassword, setSession } from '@/lib/auth/session';
 import { sendPasswordResetEmail } from '@/lib/email';
 import { randomUUID } from 'crypto';
+import { chargePlanActivation } from '@/lib/resellers/billing';
 
 export type ActionState = {
   error?: string;
@@ -30,6 +31,8 @@ const planSchema = z.object({
   isFlowBuilderEnabled: z.boolean(),
   isCampaignsEnabled: z.boolean(),
   isTemplatesEnabled: z.boolean(),
+  isSocialPublisherEnabled: z.boolean(),
+  isHidden: z.boolean().default(false),
   pricingCustomItems: z.array(z.object({
     text: z.string().min(1).max(120),
     included: z.boolean(),
@@ -37,17 +40,17 @@ const planSchema = z.object({
 });
 
 const createAdminUserSchema = z.object({
-  name: z.string().trim().min(1, 'Name is required.').max(100),
-  email: z.string().email('Invalid email address.'),
-  password: z.string().min(8, 'Password must be at least 8 characters.'),
+  name: z.string().trim().min(1, 'El nombre es obligatorio.').max(100),
+  email: z.string().email('Correo electrónico inválido.'),
+  password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres.'),
   role: z.enum(['admin', 'owner', 'member']),
-  planId: z.coerce.number().int().positive('Select a valid plan.'),
+  planId: z.coerce.number().int().positive('Selecciona un plan válido.'),
 });
 
 async function verifyAdmin() {
   const user = await getUser();
   if (!user || user.role !== 'admin') {
-    throw new Error('Unauthorized');
+    throw new Error('No autorizado');
   }
   return user;
 }
@@ -64,19 +67,19 @@ export async function updateUserRole(userId: number, role: string): Promise<Acti
     const currentUser = await verifyAdmin();
 
     if (currentUser.id === userId) {
-      return { error: 'Cannot change your own role.' };
+      return { error: 'No puedes cambiar tu propio rol.' };
     }
 
     const validRoles = ['admin', 'member', 'owner'];
     if (!validRoles.includes(role)) {
-      return { error: 'Invalid role.' };
+      return { error: 'Rol inválido.' };
     }
 
     await db.update(users).set({ role, updatedAt: new Date() }).where(eq(users.id, userId));
     revalidatePath('/admin/users');
-    return { success: 'Role updated successfully' };
+    return { success: 'Rol actualizado correctamente' };
   } catch (error: any) {
-    return { error: error.message || 'Failed to update role' };
+    return { error: error.message || 'No se pudo actualizar el rol' };
   }
 }
 
@@ -92,7 +95,7 @@ export async function createUserFromAdmin(payload: {
     const validated = createAdminUserSchema.safeParse(payload);
 
     if (!validated.success) {
-      return { error: validated.error.issues[0]?.message || 'Invalid input.' };
+      return { error: validated.error.issues[0]?.message || 'Datos inválidos.' };
     }
 
     const { name, email, password, role, planId } = validated.data;
@@ -104,7 +107,7 @@ export async function createUserFromAdmin(payload: {
       .limit(1);
 
     if (existingUser) {
-      return { error: 'A user with this email already exists.' };
+      return { error: 'Ya existe un usuario con este correo.' };
     }
 
     const [selectedPlan] = await db
@@ -114,7 +117,7 @@ export async function createUserFromAdmin(payload: {
       .limit(1);
 
     if (!selectedPlan) {
-      return { error: 'Selected plan was not found.' };
+      return { error: 'No se encontró el plan seleccionado.' };
     }
 
     const passwordHash = await hashPassword(password);
@@ -134,7 +137,7 @@ export async function createUserFromAdmin(payload: {
       const [createdTeam] = await tx
         .insert(teams)
         .values({
-          name: `${name}'s Team`,
+          name: `Equipo de ${name}`,
           planId: selectedPlan.id,
           planName: selectedPlan.name,
           subscriptionStatus: 'active',
@@ -158,18 +161,30 @@ export async function createUserFromAdmin(payload: {
     });
 
     revalidatePath('/admin/users');
-    return { success: `User created successfully (ID: ${createdUser.id}).` };
+    return { success: `Usuario creado correctamente (ID: ${createdUser.id}).` };
   } catch (error: any) {
-    return { error: error.message || 'Failed to create user.' };
+    return { error: error.message || 'No se pudo crear el usuario.' };
   }
 }
 
-export async function assignPlanToUserTeam(userId: number, planId: number): Promise<ActionState> {
+/**
+ * Asignación manual de un plan por el admin de la plataforma.
+ *
+ * `debitReseller` está en false a propósito: si el equipo pertenece a un reseller,
+ * una asignación hecha a mano desde aquí es una cortesía o una corrección, y cobrarle
+ * el mayorista por ella sería una sorpresa. Se pasa true solo para reponer un cobro
+ * que debería haber ocurrido.
+ */
+export async function assignPlanToUserTeam(
+  userId: number,
+  planId: number,
+  debitReseller = false,
+): Promise<ActionState> {
   try {
     const adminUser = await verifyAdmin();
 
     if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(planId) || planId <= 0) {
-      return { error: 'Invalid user or plan.' };
+      return { error: 'Usuario o plan inválido.' };
     }
 
     const [selectedPlan] = await db
@@ -179,7 +194,7 @@ export async function assignPlanToUserTeam(userId: number, planId: number): Prom
       .limit(1);
 
     if (!selectedPlan) {
-      return { error: 'Plan not found.' };
+      return { error: 'Plan no encontrado.' };
     }
 
     const [membership] = await db
@@ -189,7 +204,7 @@ export async function assignPlanToUserTeam(userId: number, planId: number): Prom
       .limit(1);
 
     if (!membership) {
-      return { error: 'User has no team assigned.' };
+      return { error: 'El usuario no tiene un equipo asignado.' };
     }
 
     await db
@@ -201,6 +216,15 @@ export async function assignPlanToUserTeam(userId: number, planId: number): Prom
       })
       .where(eq(teams.id, membership.teamId));
 
+    if (debitReseller) {
+      await chargePlanActivation({
+        teamId: membership.teamId,
+        planId: selectedPlan.id,
+        idempotencyKey: `admin:${membership.teamId}:${selectedPlan.id}:${Date.now()}`,
+        allowDebt: true,
+      });
+    }
+
     await db.insert(activityLogs).values({
       teamId: membership.teamId,
       userId: adminUser.id,
@@ -209,9 +233,9 @@ export async function assignPlanToUserTeam(userId: number, planId: number): Prom
 
     revalidatePath('/admin/users');
     revalidatePath('/admin/teams');
-    return { success: 'Plan assigned successfully.' };
+    return { success: 'Plan asignado correctamente.' };
   } catch (error: any) {
-    return { error: error.message || 'Failed to assign plan.' };
+    return { error: error.message || 'No se pudo asignar el plan.' };
   }
 }
 
@@ -225,7 +249,7 @@ export async function adminSendResetLink(userId: number): Promise<ActionState> {
       .where(eq(users.id, userId))
       .limit(1);
 
-    if (!user) return { error: 'User not found.' };
+    if (!user) return { error: 'Usuario no encontrado.' };
 
     const token = randomUUID();
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
@@ -237,9 +261,9 @@ export async function adminSendResetLink(userId: number): Promise<ActionState> {
     });
 
     await sendPasswordResetEmail(user.email, token);
-    return { success: 'Reset link sent successfully.' };
+    return { success: 'Enlace de restablecimiento enviado correctamente.' };
   } catch (error: any) {
-    return { error: error.message || 'Failed to send reset link.' };
+    return { error: error.message || 'No se pudo enviar el enlace de restablecimiento.' };
   }
 }
 
@@ -248,14 +272,14 @@ export async function adminSetPassword(userId: number, newPassword: string): Pro
     const currentUser = await verifyAdmin();
 
     if (newPassword.length < 8) {
-      return { error: 'Password must be at least 8 characters.' };
+      return { error: 'La contraseña debe tener al menos 8 caracteres.' };
     }
 
     const passwordHash = await hashPassword(newPassword);
     await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, userId));
-    return { success: 'Password updated successfully.' };
+    return { success: 'Contraseña actualizada correctamente.' };
   } catch (error: any) {
-    return { error: error.message || 'Failed to update password.' };
+    return { error: error.message || 'No se pudo actualizar la contraseña.' };
   }
 }
 
@@ -264,11 +288,11 @@ export async function adminStartImpersonation(userId: number): Promise<ActionSta
     const adminUser = await verifyAdmin();
 
     if (!Number.isInteger(userId) || userId <= 0) {
-      return { error: 'Invalid user.' };
+      return { error: 'Usuario inválido.' };
     }
 
     if (adminUser.id === userId) {
-      return { error: 'You cannot impersonate yourself.' };
+      return { error: 'No puedes suplantarte a ti mismo.' };
     }
 
     const [targetUser] = await db
@@ -281,13 +305,13 @@ export async function adminStartImpersonation(userId: number): Promise<ActionSta
       .limit(1);
 
     if (!targetUser || targetUser.deletedAt) {
-      return { error: 'User not found.' };
+      return { error: 'Usuario no encontrado.' };
     }
 
     await setSession({ id: targetUser.id }, adminUser.id);
-    return { success: 'Impersonation started.' };
+    return { success: 'Suplantación iniciada.' };
   } catch (error: any) {
-    return { error: error.message || 'Failed to start impersonation.' };
+    return { error: error.message || 'No se pudo iniciar la suplantación.' };
   }
 }
 
@@ -297,7 +321,7 @@ export async function adminStopImpersonation(): Promise<ActionState> {
     const impersonatorId = session?.impersonatedBy?.id;
 
     if (!impersonatorId) {
-      return { error: 'No active impersonation session.' };
+      return { error: 'No hay una sesión de suplantación activa.' };
     }
 
     const [adminUser] = await db
@@ -311,13 +335,13 @@ export async function adminStopImpersonation(): Promise<ActionState> {
       .limit(1);
 
     if (!adminUser || adminUser.deletedAt || adminUser.role !== 'admin') {
-      return { error: 'Original admin user is not available.' };
+      return { error: 'El usuario admin original no está disponible.' };
     }
 
     await setSession({ id: adminUser.id });
-    return { success: 'Impersonation stopped.' };
+    return { success: 'Suplantación detenida.' };
   } catch (error: any) {
-    return { error: error.message || 'Failed to stop impersonation.' };
+    return { error: error.message || 'No se pudo detener la suplantación.' };
   }
 }
 
@@ -326,7 +350,7 @@ export async function deleteUser(userId: number): Promise<ActionState> {
     const currentUser = await verifyAdmin();
 
     if (currentUser.id === userId) {
-      return { error: 'Cannot delete your own account.' };
+      return { error: 'No puedes eliminar tu propia cuenta.' };
     }
 
     await db.delete(teamMembers).where(eq(teamMembers.userId, userId));
@@ -334,9 +358,9 @@ export async function deleteUser(userId: number): Promise<ActionState> {
     
     await db.delete(users).where(eq(users.id, userId));
     revalidatePath('/admin/users');
-    return { success: 'User deleted successfully' };
+    return { success: 'Usuario eliminado correctamente' };
   } catch (error: any) {
-    return { error: error.message || 'Failed to delete user' };
+    return { error: error.message || 'No se pudo eliminar el usuario' };
   }
 }
 
@@ -345,7 +369,7 @@ export async function deleteTeam(teamId: number): Promise<ActionState> {
     await verifyAdmin();
 
     if (teamId === 1) {
-      return { error: 'Cannot delete the system admin team.' };
+      return { error: 'No se puede eliminar el equipo administrador del sistema.' };
     }
 
     await db.delete(teamMembers).where(eq(teamMembers.teamId, teamId));
@@ -355,10 +379,10 @@ export async function deleteTeam(teamId: number): Promise<ActionState> {
     await db.delete(teams).where(eq(teams.id, teamId));
     
     revalidatePath('/admin/teams');
-    return { success: 'Team deleted successfully' };
+    return { success: 'Equipo eliminado correctamente' };
   } catch (error: any) {
     console.error('Delete team error:', error);
-    return { error: error.message || 'Failed to delete team' };
+    return { error: error.message || 'No se pudo eliminar el equipo' };
   }
 }
 
@@ -402,6 +426,8 @@ export async function upsertPlan(prevState: ActionState, formData: FormData): Pr
       isFlowBuilderEnabled: formData.get('isFlowBuilderEnabled') === 'on',
       isCampaignsEnabled: formData.get('isCampaignsEnabled') === 'on',
       isTemplatesEnabled: formData.get('isTemplatesEnabled') === 'on',
+      isSocialPublisherEnabled: formData.get('isSocialPublisherEnabled') === 'on',
+      isHidden: formData.get('isHidden') === 'on',
       pricingCustomItems,
     };
 
@@ -421,7 +447,7 @@ export async function upsertPlan(prevState: ActionState, formData: FormData): Pr
         where: eq(plans.id, parseInt(id))
       });
 
-      if (!existingPlan) return { error: 'Plan not found' };
+      if (!existingPlan) return { error: 'Plan no encontrado' };
 
       stripeProductId = existingPlan.stripeProductId || '';
 
@@ -500,7 +526,7 @@ export async function deletePlan(planId: number): Promise<ActionState> {
     await verifyAdmin();
     
     if (planId === 1) {
-      return { error: 'Cannot delete the default system plan.' };
+      return { error: 'No se puede eliminar el plan predeterminado del sistema.' };
     }
 
     const teamsUsingPlan = await db.query.teams.findFirst({
@@ -508,7 +534,7 @@ export async function deletePlan(planId: number): Promise<ActionState> {
     });
 
     if (teamsUsingPlan) {
-      return { error: 'Cannot delete this plan because it is assigned to one or more teams.' };
+      return { error: 'No se puede eliminar este plan porque está asignado a uno o más equipos.' };
     }
 
     const plan = await db.query.plans.findFirst({ where: eq(plans.id, planId) });
@@ -527,8 +553,8 @@ export async function deletePlan(planId: number): Promise<ActionState> {
 
     await db.delete(plans).where(eq(plans.id, planId));
     revalidatePath('/admin/plans');
-    return { success: 'Plan deleted successfully' };
+    return { success: 'Plan eliminado correctamente' };
   } catch (error: any) {
-    return { error: error.message || 'Failed to delete plan' };
+    return { error: error.message || 'No se pudo eliminar el plan' };
   }
 }

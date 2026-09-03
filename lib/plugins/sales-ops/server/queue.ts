@@ -76,6 +76,8 @@ export type PayloadTemplate = {
   textB?: string;
   taskTitle?: string;
   dueInDays?: number;
+  /** schedule_message: fecha y hora de salida en ISO 8601 (hora local del negocio o con zona). */
+  sendAt?: string;
   /** Datos libres que acompañan la acción (assign_owner: { owner }, etc.). */
   extra?: Record<string, unknown>;
 };
@@ -339,7 +341,8 @@ async function warningsFor(teamId: number, actions: ActionRecord[], cooldownHour
 
 // ── Proponer ─────────────────────────────────────────────────────────────────
 
-const SEND_KINDS: ActionKind[] = ['send_message'];
+/** Lotes que le llegan al cliente por WhatsApp: pasan por las mismas exclusiones y exigen texto. */
+const SEND_KINDS: ActionKind[] = ['send_message', 'schedule_message'];
 
 export async function proposeBatch(teamId: number, input: ProposeInput): Promise<ProposeResult> {
   if (!input.label?.trim()) throw new QueueError('invalid', 'El lote necesita un nombre.');
@@ -356,6 +359,12 @@ export async function proposeBatch(teamId: number, input: ProposeInput): Promise
   }
   if (input.variantSplit && isSend && !input.payloadTemplate?.textB?.trim()) {
     throw new QueueError('invalid', 'Un lote A/B necesita los dos textos (text y textB).');
+  }
+  let sendAt: Date | null = null;
+  if (input.kind === 'schedule_message') {
+    sendAt = input.payloadTemplate?.sendAt ? new Date(input.payloadTemplate.sendAt) : null;
+    if (!sendAt || Number.isNaN(sendAt.getTime())) throw new QueueError('invalid', 'Un lote de mensajes programados necesita sendAt (fecha y hora de salida).');
+    if (sendAt.getTime() < Date.now() + 5 * 60_000) throw new QueueError('invalid', 'sendAt tiene que ser al menos 5 minutos en el futuro.');
   }
 
   const settings = await getSalesOpsSettings(teamId);
@@ -540,8 +549,10 @@ export async function proposeBatch(teamId: number, input: ProposeInput): Promise
         ...(candidate.text != null ? { text: candidate.text } : {}),
         ...(template.taskTitle ? { taskTitle: resolveTemplate(template.taskTitle, { name: candidate.name, need: null, quotedPrice: null, quotedCurrency: null }) } : {}),
         ...(dueAt ? { dueAt } : {}),
+        ...(sendAt ? { sendAt: sendAt.toISOString() } : {}),
         ...(candidate.warnings.length ? { warningsAtProposal: candidate.warnings } : {}),
       },
+      scheduledFor: sendAt,
       gateAtCreation: candidate.gate,
       status: 'proposed' as const,
       requiresRole: input.requiresRole,
@@ -581,10 +592,12 @@ function summarize(actions: ActionRecord[], responded: number, recovered: number
   const first = actions[0];
   const byStatus: Partial<Record<ActionStatus, number>> = {};
   let createdAt = first.createdAt;
+  let lastActivityAt = first.createdAt;
   let approvedBy: number | null = null;
   for (const a of actions) {
     byStatus[a.status as ActionStatus] = (byStatus[a.status as ActionStatus] ?? 0) + 1;
     if (a.createdAt < createdAt) createdAt = a.createdAt;
+    for (const t of [a.updatedAt, a.executedAt, a.approvedAt]) if (t && t > lastActivityAt) lastActivityAt = t;
     if (a.approvedBy != null) approvedBy = a.approvedBy;
   }
   return {
@@ -596,6 +609,7 @@ function summarize(actions: ActionRecord[], responded: number, recovered: number
     total: actions.length,
     byStatus,
     createdAt: createdAt.toISOString(),
+    lastActivityAt: lastActivityAt.toISOString(),
     approvedBy,
     responded,
     recovered,
@@ -827,6 +841,95 @@ export async function rejectBatch(teamId: number, userId: number, batchId: strin
   return { batchId, rejected: targets.length };
 }
 
+/** Sólo se edita antes de aprobar: aprobar es firmar un texto concreto. */
+const EDITABLE_STATUSES = ['proposed', 'pending_approval'];
+
+/**
+ * Corrige el texto (o el título de tarea) de una fila propuesta.
+ *
+ * Revisar un lote era todo o nada: si un mensaje de veinte tenía una palabra
+ * mal, había que excluir ese contacto y armar otro lote para él. Se corta en
+ * `approved` a propósito: si después de aprobar se pudiera editar, la firma no
+ * querría decir nada.
+ */
+export async function editAction(
+  teamId: number,
+  userId: number,
+  actionId: number,
+  patch: { text?: string; taskTitle?: string },
+): Promise<{ actionId: number; batchId: string; chatId: number; payload: Record<string, unknown> }> {
+  const [existing] = await db
+    .select()
+    .from(teamCommercialActions)
+    .where(and(eq(teamCommercialActions.teamId, teamId), eq(teamCommercialActions.id, actionId)))
+    .limit(1);
+  if (!existing) throw new QueueError('not_found', 'La acción no existe en este equipo.');
+  if (!EDITABLE_STATUSES.includes(existing.status)) {
+    throw new QueueError('invalid', `Ya está ${existing.status}: sólo se edita antes de aprobar.`);
+  }
+  if (patch.text === undefined && patch.taskTitle === undefined) throw new QueueError('invalid', 'No hay nada que cambiar: pasá text o task_title.');
+  const payload = { ...((existing.payload ?? {}) as Record<string, unknown>) };
+  if (patch.text !== undefined) payload.text = patch.text;
+  if (patch.taskTitle !== undefined) payload.taskTitle = patch.taskTitle;
+  await db
+    .update(teamCommercialActions)
+    .set({ payload, updatedAt: new Date() })
+    .where(and(eq(teamCommercialActions.teamId, teamId), eq(teamCommercialActions.id, actionId)));
+  await audit(teamId, 'EDITED', { actionId, chatId: existing.chatId, batchId: existing.batchId, fields: Object.keys(patch) }, userId);
+  return { actionId, batchId: existing.batchId, chatId: existing.chatId, payload };
+}
+
+/**
+ * Saca un contacto del lote: la fila pasa a `rejected` en el momento, sin
+ * esperar a la aprobación.
+ *
+ * Antes la única forma era destildarlo y aprobar el resto: hasta ese clic el
+ * contacto seguía contando como parte del lote, y en un lote ya aprobado no
+ * había manera de sacar a uno solo sin rechazar todo. Se puede quitar mientras
+ * no haya salido nada (`proposed`, `pending_approval` o `approved`); lo
+ * ejecutado no se toca porque ya le llegó al cliente.
+ */
+export async function removeFromBatch(teamId: number, userId: number, actionId: number): Promise<{ actionId: number; batchId: string; chatId: number }> {
+  const [action] = await db
+    .select()
+    .from(teamCommercialActions)
+    .where(and(eq(teamCommercialActions.teamId, teamId), eq(teamCommercialActions.id, actionId)))
+    .limit(1);
+  if (!action) throw new QueueError('not_found', 'La acción no existe en este equipo.');
+  if (!['proposed', 'pending_approval', 'approved'].includes(action.status)) {
+    throw new QueueError('invalid', `Ya está ${action.status}: sólo se puede quitar antes de ejecutar.`);
+  }
+  if (action.status === 'approved') await assertRole(teamId, userId, action.requiresRole as ActionRole);
+  const now = new Date();
+  await db
+    .update(teamCommercialActions)
+    .set({ status: 'rejected', result: { reason: 'removed_from_batch', by: userId }, updatedAt: now })
+    .where(and(eq(teamCommercialActions.teamId, teamId), eq(teamCommercialActions.id, actionId)));
+  await audit(teamId, 'REMOVED', { batchId: action.batchId, actionId, chatId: action.chatId, previousStatus: action.status, userId }, userId);
+  return { actionId, batchId: action.batchId, chatId: action.chatId };
+}
+
+/**
+ * Elimina un lote por completo. Sólo si ya no tiene nada vivo ni nada que haya
+ * salido: un lote con filas ejecutadas es historial de lo que le llegó al
+ * cliente y no se borra. Es la salida de "Descartados" cuando el rastro ya no
+ * sirve para nada.
+ */
+export async function deleteBatch(teamId: number, userId: number, batchId: string): Promise<{ batchId: string; deleted: number }> {
+  const actions = await batchActions(teamId, batchId);
+  if (!actions.length) throw new QueueError('not_found', `El lote ${batchId} no existe en este equipo.`);
+  const vivo = actions.find((a) => ['proposed', 'pending_approval', 'approved', 'executing'].includes(a.status));
+  if (vivo) throw new QueueError('invalid', 'El lote todavía tiene filas vivas: descartalo primero.');
+  const salido = actions.find((a) => ['executed', 'resulted'].includes(a.status));
+  if (salido) throw new QueueError('invalid', 'El lote tiene envíos que ya salieron: se conserva como historial.');
+  const rows = await db
+    .delete(teamCommercialActions)
+    .where(and(eq(teamCommercialActions.teamId, teamId), eq(teamCommercialActions.batchId, batchId)))
+    .returning({ id: teamCommercialActions.id });
+  await audit(teamId, 'DELETED', { batchId, count: rows.length, label: actions[0].batchLabel, userId }, userId);
+  return { batchId, deleted: rows.length };
+}
+
 // ── Expirar / cancelar ───────────────────────────────────────────────────────
 
 /** Propuestas vencidas (expires_at pasado) → expired. La comparación la hace Postgres con now(). */
@@ -909,6 +1012,17 @@ export async function markResult(teamId: number, actionId: number, input: MarkRe
     .set(patch)
     .where(and(eq(teamCommercialActions.teamId, teamId), eq(teamCommercialActions.id, actionId)))
     .returning();
+
+  // Le salió algo: el análisis vigente ya no describe el chat (ahora tiene
+  // nuestro mensaje encima). Se marca viejo para que el próximo pase del
+  // clasificador lo vuelva a auditar y, si vuelve a merecer una acción, entre
+  // solo en las listas y en un lote nuevo, pasado el enfriamiento.
+  if (input.status === 'executed' || input.status === 'resulted') {
+    await db
+      .update(teamCommercialAnalysis)
+      .set({ stale: true, updatedAt: now })
+      .where(and(eq(teamCommercialAnalysis.teamId, teamId), eq(teamCommercialAnalysis.chatId, action.chatId)));
+  }
 
   if (action.experimentId && input.status !== 'failed') {
     const memberPatch: Partial<typeof teamCommercialExperimentMembers.$inferInsert> = {};

@@ -1,26 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureCustomFieldsTable } from '@/lib/contacts/custom-fields';
 import { db } from '@/lib/db/drizzle';
-import { contacts, chats, tags, contactTags, customFields, funnelStages, teamMembers, departments } from '@/lib/db/schema';
+import { contacts, chats, tags, contactTags, customFields, funnelStages, teamMembers, departments, evolutionInstances } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
-import { getSession } from '@/lib/auth/session';
+import { checkRoutePermission } from '@/lib/auth/permissions-guard';
 
 export async function POST(req: NextRequest) {
   try {
     await ensureCustomFieldsTable();
 
-    const session = await getSession();
-    if (!session || !session.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { error, context } = await checkRoutePermission('contacts');
+    if (error || !context) return error ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const data = await req.json();
     const contactList = data.contacts || [];
-    const currentTeamId = data.teamId;
+    const currentTeamId = context.teamId;
     const instanceId = data.instanceId || null;
 
-    if (!currentTeamId) {
-       return NextResponse.json({ error: 'Team ID required' }, { status: 400 });
+    if (data.teamId && Number(data.teamId) !== currentTeamId) {
+       return NextResponse.json({ error: 'Forbidden for this team.' }, { status: 403 });
+    }
+
+    if (instanceId) {
+      const instance = await db.query.evolutionInstances.findFirst({
+        where: and(eq(evolutionInstances.id, Number(instanceId)), eq(evolutionInstances.teamId, currentTeamId)),
+        columns: { id: true },
+      });
+      if (!instance) {
+        return NextResponse.json({ error: 'Invalid instance for this team.' }, { status: 400 });
+      }
     }
 
     const teamCustomFields = await db.query.customFields.findMany({

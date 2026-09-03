@@ -12,10 +12,11 @@ import { sendContactMessage } from './actions';
 import { useEffect } from 'react';
 import { toast } from 'sonner';
 import { useBranding } from '@/providers/branding-provider';
+import { useTranslations } from 'next-intl';
 
 export default function ContactPage() {
-  const { branding } = useBranding();
-  const siteName = branding?.name || 'WhatsPro';
+  const t = useTranslations('ContactPage');
+  const { identity } = useBranding();
 
   const [state, formAction, isPending] = useActionState(sendContactMessage, {});
 
@@ -34,17 +35,16 @@ export default function ContactPage() {
         <div className="relative flex flex-col justify-center p-8 md:p-12 lg:p-20 bg-muted/30 border-r border-border min-h-[50vh] lg:min-h-screen">
           <Link href="/">
             <Button variant="ghost" className="absolute top-6 left-6 pl-0 hover:bg-transparent hover:text-primary">
-              <ArrowLeft className="mr-2 h-4 w-4" /> Back to Home
+              <ArrowLeft className="mr-2 h-4 w-4" /> {t('back_home')}
             </Button>
           </Link>
 
           <div className="max-w-md mx-auto lg:mx-0 mt-10 lg:mt-0">
             <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">
-              Get in touch
+              {t('title')}
             </h1>
             <p className="text-lg text-muted-foreground mb-12">
-              Have questions about plans, integrations, or enterprise features? 
-              Our team is ready to help you scale your business.
+              {t('subtitle')}
             </p>
 
             <div className="space-y-8">
@@ -53,8 +53,8 @@ export default function ContactPage() {
                   <Mail className="h-5 w-5 text-primary" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-foreground">Email</h3>
-                  <p className="text-sm text-muted-foreground mt-1">support@{siteName.toLowerCase().replace(/\s+/g, '')}.com</p>
+                  <h3 className="font-semibold text-foreground">{t('email_title')}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">{identity.supportEmail}</p>
                 </div>
               </div>
 
@@ -63,8 +63,8 @@ export default function ContactPage() {
                   <MessageSquare className="h-5 w-5 text-primary" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-foreground">Live Chat</h3>
-                  <p className="text-sm text-muted-foreground mt-1">Available Mon-Fri, 9am - 6pm EST.</p>
+                  <h3 className="font-semibold text-foreground">{t('live_chat_title')}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">{t('live_chat_hours')}</p>
                 </div>
               </div>
 
@@ -73,7 +73,7 @@ export default function ContactPage() {
                   <MapPin className="h-5 w-5 text-primary" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-foreground">Office</h3>
+                  <h3 className="font-semibold text-foreground">{t('office_title')}</h3>
                   <p className="text-sm text-muted-foreground mt-1">
                     456 University Ave.<br />
                     Palo Alto, CA 94301
@@ -88,40 +88,40 @@ export default function ContactPage() {
           <Card className="w-full max-w-lg border-none shadow-none lg:border lg:shadow-sm">
             <CardContent className="p-0 lg:p-8">
               <div className="mb-8">
-                <h2 className="text-2xl font-bold">Send us a message</h2>
+                <h2 className="text-2xl font-bold">{t('form_title')}</h2>
                 <p className="text-muted-foreground text-sm mt-2">
-                  Fill out the form below and we'll get back to you as soon as possible.
+                  {t('form_subtitle')}
                 </p>
               </div>
 
               <form action={formAction} className="space-y-5">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="firstName">First name</Label>
-                    <Input id="firstName" name="firstName" placeholder="John" required disabled={isPending} />
+                    <Label htmlFor="firstName">{t('first_name')}</Label>
+                    <Input id="firstName" name="firstName" placeholder={t('first_name_placeholder')} required disabled={isPending} />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="lastName">Last name</Label>
-                    <Input id="lastName" name="lastName" placeholder="Doe" required disabled={isPending} />
+                    <Label htmlFor="lastName">{t('last_name')}</Label>
+                    <Input id="lastName" name="lastName" placeholder={t('last_name_placeholder')} required disabled={isPending} />
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email address</Label>
-                  <Input id="email" name="email" type="email" placeholder="john@example.com" required disabled={isPending} />
+                  <Label htmlFor="email">{t('email_label')}</Label>
+                  <Input id="email" name="email" type="email" placeholder={t('email_placeholder')} required disabled={isPending} />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="subject">Subject</Label>
-                  <Input id="subject" name="subject" placeholder="How can we help?" required disabled={isPending} />
+                  <Label htmlFor="subject">{t('subject')}</Label>
+                  <Input id="subject" name="subject" placeholder={t('subject_placeholder')} required disabled={isPending} />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="message">Message</Label>
+                  <Label htmlFor="message">{t('message')}</Label>
                   <Textarea 
                     id="message"
                     name="message" 
-                    placeholder="Tell us more about your inquiry..." 
+                    placeholder={t('message_placeholder')} 
                     className="min-h-[150px] resize-none"
                     required
                     disabled={isPending}
@@ -131,11 +131,11 @@ export default function ContactPage() {
                 <Button type="submit" className="w-full h-11" disabled={isPending}>
                   {isPending ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t('sending')}
                     </>
                   ) : (
                     <>
-                      <Send className="mr-2 h-4 w-4" /> Send Message
+                      <Send className="mr-2 h-4 w-4" /> {t('send_message')}
                     </>
                   )}
                 </Button>

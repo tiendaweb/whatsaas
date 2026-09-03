@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "rootDir": ".",
+    "outDir": "/tmp/whatsaas-automation-tests",
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": false
+  },
+  "include": [
+    "lib/automation/flow-schema.ts",
+    "lib/automation/flow-navigator.ts",
+    "lib/automation/map-layout.ts",
+    "lib/automation/simulator-runtime.ts",
+    "lib/automation/subflow-extraction.ts",
+    "tests/automation/*.test.ts"
+  ]
+}

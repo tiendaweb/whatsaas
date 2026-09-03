@@ -16,7 +16,7 @@ export function DeletePlanButton({ id }: DeletePlanButtonProps) {
   const router = useRouter();
 
   const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this plan? This action cannot be undone.')) {
+    if (!confirm('¿Estás seguro de que deseas eliminar este plan? Esta acción no se puede deshacer.')) {
       return;
     }
 
@@ -26,7 +26,7 @@ export function DeletePlanButton({ id }: DeletePlanButtonProps) {
       if (result.error) {
         toast.error(result.error);
       } else {
-        toast.success('Plan deleted successfully');
+        toast.success('Plan eliminado correctamente');
         router.refresh();
       }
     });
