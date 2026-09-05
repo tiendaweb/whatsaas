@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
-import { Menu, X } from 'lucide-react';
+import { Menu, Timer, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
@@ -12,6 +12,7 @@ import { OwnerFilter, isOwnerFilterValue, type OwnerFilterValue } from './compon
 import { MobileBar, Sidebar, type SidebarUser } from './components/Sidebar';
 import { VISTA_LABELS, isVista, type Vista } from './components/vistas';
 import { LS_OWNER, SALES_OPS_API, fetcher, fmtInt } from './components/format';
+import { FocusView } from './focus/FocusView';
 import { ColaView } from './views/ColaView';
 import { ExperimentosView } from './views/ExperimentosView';
 import { PromptStudioView } from './views/PromptStudioView';
@@ -108,6 +109,17 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
     },
     [setParams],
   );
+  /**
+   * Focus recuerda de dónde se entró (`?desde=`): salir devuelve a la lista que
+   * se estaba mirando, no a Hoy. Entrar desde otro lado y volver siempre al
+   * mismo lugar hacía perder el hilo de la tanda.
+   */
+  const entrarFocus = useCallback(() => setParams({ vista: 'focus', desde: vista === 'hoy' ? null : vista, chat: null, sec: null }), [setParams, vista]);
+  const salirFocus = useCallback(() => {
+    const desde = searchParams.get('desde');
+    setParams({ vista: isVista(desde) && desde !== 'focus' ? desde : null, desde: null });
+  }, [setParams, searchParams]);
+
   const onOpen = useCallback((id: number) => setParams({ chat: String(id), sec: null }), [setParams]);
   /** Abre la ficha directamente en el chat del contacto. */
   const onOpenChat = useCallback((id: number) => setParams({ chat: String(id), sec: 'chat' }), [setParams]);
@@ -176,6 +188,10 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
 
   const sidebarProps = { vista, counts, owner, user: user ?? null, onNav, onOwner };
 
+  // Focus se dibuja solo: ni rail, ni encabezado, ni barra inferior. No es un
+  // overlay encima del shell — el shell directamente no se monta.
+  if (vista === 'focus') return <FocusView owner={owner} onSalir={salirFocus} />;
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
       <Sidebar {...sidebarProps} collapsed={collapsed} onToggleCollapse={onToggleCollapse} className="hidden lg:flex" />
@@ -197,6 +213,10 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
             <h1 className="truncate text-base font-semibold leading-tight lg:text-lg">{VISTA_LABELS[vista]}</h1>
             <p className="truncate text-[11px] text-muted-foreground lg:text-xs">{subtitle}</p>
           </div>
+          <Button variant="outline" size="sm" className="h-8 shrink-0 gap-1.5" onClick={entrarFocus} title="Trabajar de a un cliente, en bloques de 25 minutos">
+            <Timer className="size-4" aria-hidden />
+            <span className="hidden sm:inline">Focus</span>
+          </Button>
           <div className="lg:hidden">
             <OwnerFilter value={owner} onChange={onOwner} />
           </div>

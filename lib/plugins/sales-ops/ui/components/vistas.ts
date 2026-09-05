@@ -1,4 +1,4 @@
-export const VISTAS = ['hoy', 'dinero', 'oportunidades', 'barrido', 'limpieza', 'respuestas', 'cola', 'audios', 'programados', 'produccion', 'todos', 'clientes', 'experimentos', 'prompts', 'metricas', 'ayuda'] as const;
+export const VISTAS = ['hoy', 'focus', 'dinero', 'oportunidades', 'barrido', 'limpieza', 'respuestas', 'cola', 'audios', 'programados', 'produccion', 'todos', 'clientes', 'experimentos', 'prompts', 'metricas', 'ayuda'] as const;
 export type Vista = (typeof VISTAS)[number];
 
 /**
@@ -11,17 +11,22 @@ export type Vista = (typeof VISTAS)[number];
  * textos distintos.
  */
 /**
+ * `focus` tampoco: no es un lugar del menú sino un modo de trabajo que se toma
+ * a pantalla completa desde el botón de la barra. Ponerlo en el rail lo dejaría
+ * al lado de las listas, como si fuera otra lista.
+ *
  * `ayuda` tampoco: vive en el pie del menú, junto a Plegar y Volver a WhatsPro.
  * `clientes` (Contactos) se llega desde un botón dentro de Todos: es un corte de
  * la misma lista, no otro lugar.
  */
-export const VISTAS_OCULTAS: readonly Vista[] = ['experimentos', 'ayuda', 'clientes'];
+export const VISTAS_OCULTAS: readonly Vista[] = ['experimentos', 'ayuda', 'clientes', 'focus'];
 
 /** Las que se dibujan en el rail y en la barra inferior. */
 export const VISTAS_VISIBLES = VISTAS.filter((v) => !VISTAS_OCULTAS.includes(v));
 
 export const VISTA_LABELS: Record<Vista, string> = {
   hoy: 'Hoy',
+  focus: 'Focus',
   dinero: 'Dinero',
   oportunidades: 'Oportunidades',
   barrido: 'Barrido',

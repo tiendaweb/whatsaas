@@ -92,7 +92,8 @@ export async function listWorkQueue(teamId: number, opts: { kinds?: WorkKind[]; 
           `whatspro_sales_prompt_result {run_id: ${run.id}, status: "in_progress"} (opcional, para marcar que lo tomaste)`,
           'ejecutar el texto del prompt tal cual, con las tools whatspro_* que pida; respetar las reglas del Command Center',
           'si el pedido no dice qué forma tiene el resultado, leé el chat y elegí: mensaje programado (whatspro_manage_scheduled_message / whatspro_sales_queue_propose), demo web (whatspro_sales_tareas_from_chat action "demo") o proyecto del cliente en Tareas OS (whatspro_sales_tareas_from_chat action "project")',
-          `whatspro_sales_prompt_result {run_id: ${run.id}, status: "completed"|"failed"|"blocked", summary: "<qué hiciste, 1-3 líneas>", output: "<el resultado completo, si lo hay>"}`,
+          'si falta una decisión humana, no la inventes: devolvé status="blocked" y human_request con 1–8 campos (buttons, select, text, textarea o code); el Command Center mostrará el formulario y reencolará esta corrida con la respuesta',
+          `whatspro_sales_prompt_result {run_id: ${run.id}, status: "completed"|"failed"|"blocked", summary: "<qué hiciste o qué falta, 1-3 líneas>", output: "<el resultado completo, si lo hay>", human_request: "<sólo si blocked>"}`,
         ],
       });
     }

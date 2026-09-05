@@ -26,6 +26,10 @@ import {
   type Skill,
 } from '@/lib/plugins/sales-ops/shared/skills';
 import { ANALYSIS_STATUSES, GATES, OWNERS, SIGNAL_KINDS } from '@/lib/plugins/sales-ops/shared/taxonomy';
+import {
+  HUMAN_DECISION_FIELD_TYPES,
+  humanDecisionRequestSchema,
+} from '@/lib/plugins/sales-ops/shared/human-decision';
 
 /**
  * Prompt Studio por MCP: el gestor completo de skills para conectores.
@@ -67,6 +71,46 @@ const recommendForJson = {
     signals: { type: 'array', items: { type: 'string', enum: [...SIGNAL_KINDS] }, maxItems: 12 },
     owners: { type: 'array', items: { type: 'string', enum: [...OWNERS] }, maxItems: 5 },
   },
+  additionalProperties: false,
+} as const;
+
+const humanDecisionOptionJson = {
+  type: 'object',
+  properties: {
+    label: { type: 'string', minLength: 1, maxLength: 80 },
+    value: { type: 'string', minLength: 1, maxLength: 120 },
+    description: { type: 'string', maxLength: 240 },
+  },
+  required: ['label', 'value'],
+  additionalProperties: false,
+} as const;
+
+const humanDecisionFieldJson = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', minLength: 1, maxLength: 48, pattern: '^[a-z][a-z0-9_]*$', description: 'Identificador estable en snake_case.' },
+    type: { type: 'string', enum: [...HUMAN_DECISION_FIELD_TYPES], description: 'buttons = opciones visibles; select = desplegable; text = una línea; textarea = respuesta extensa; code = texto monoespaciado.' },
+    label: { type: 'string', minLength: 1, maxLength: 160 },
+    description: { type: 'string', maxLength: 600 },
+    placeholder: { type: 'string', maxLength: 240 },
+    required: { type: 'boolean' },
+    options: { type: 'array', items: humanDecisionOptionJson, minItems: 2, maxItems: 8, description: 'Obligatorio para buttons y select.' },
+    allow_other: { type: 'boolean', description: 'Permite que la persona elija “Otra respuesta” y escriba un valor propio.' },
+    language: { type: 'string', maxLength: 32, description: 'Lenguaje sugerido para type=code, por ejemplo json o sql.' },
+  },
+  required: ['id', 'type', 'label'],
+  additionalProperties: false,
+} as const;
+
+const humanDecisionRequestJson = {
+  type: 'object',
+  properties: {
+    title: { type: 'string', minLength: 1, maxLength: 160, description: 'La decisión concreta que tiene que tomar la persona.' },
+    description: { type: 'string', maxLength: 2000, description: 'Contexto suficiente para decidir sin releer toda la corrida.' },
+    fields: { type: 'array', items: humanDecisionFieldJson, minItems: 1, maxItems: 8 },
+    submit_label: { type: 'string', maxLength: 60, description: 'Texto opcional del botón que devuelve la corrida a la cola.' },
+  },
+  required: ['title', 'fields'],
   additionalProperties: false,
 } as const;
 
@@ -178,7 +222,7 @@ export const promptActionTools: GrokActionTool[] = [
   {
     name: 'whatspro_sales_prompt_result',
     description:
-      'Cierra (o marca en curso) una corrida del Prompt Studio que tomaste de whatspro_sales_work_queue (ítems kind=run_prompt). status: in_progress (la tomaste), completed (hecha; contá en summary qué hiciste en 1-3 líneas y dejá el resultado completo en output si lo hay), failed (no se pudo; motivo en summary), blocked (falta algo de una persona; qué falta en summary). Es la única forma de que la interfaz sepa que el prompt se ejecutó: sin esto queda encolado para siempre. No toca el CRM.',
+      'Cierra (o marca en curso) una corrida del Prompt Studio que tomaste de whatspro_sales_work_queue (ítems kind=run_prompt). status: in_progress (la tomaste), completed (hecha; contá en summary qué hiciste en 1-3 líneas y dejá el resultado completo en output si lo hay), failed (no se pudo; motivo en summary), blocked (falta criterio humano). Cuando blocked, mandá human_request para que el Command Center dibuje la pregunta como botones, select, texto, área de texto o código. La persona responde ahí y la misma corrida vuelve a queued con su respuesta anexada; no inventes la decisión ni crees otra corrida. Es la única forma de que la interfaz sepa qué pasó. No toca el CRM.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -187,6 +231,7 @@ export const promptActionTools: GrokActionTool[] = [
         summary: { type: 'string', maxLength: 4000, description: 'Qué se hizo o por qué no.' },
         output: { type: 'string', maxLength: 60000, description: 'Resultado completo (el texto redactado, el informe, la tabla).' },
         connector: { type: 'string', enum: ['claude', 'chatgpt', 'grok'], description: 'Quién ejecutó.' },
+        human_request: humanDecisionRequestJson,
         dry_run: { type: 'boolean' },
       },
       required: ['run_id', 'status'],
@@ -310,7 +355,31 @@ const resultSchema = z.object({
   summary: z.string().max(4000).optional(),
   output: z.string().max(60000).optional(),
   connector: z.enum(['claude', 'chatgpt', 'grok']).optional(),
+  human_request: z.object({
+    title: z.string().trim().min(1).max(160),
+    description: z.string().trim().max(2000).optional(),
+    fields: z.array(z.object({
+      id: z.string().trim().min(1).max(48),
+      type: z.enum(HUMAN_DECISION_FIELD_TYPES),
+      label: z.string().trim().min(1).max(160),
+      description: z.string().trim().max(600).optional(),
+      placeholder: z.string().trim().max(240).optional(),
+      required: z.boolean().optional(),
+      options: z.array(z.object({
+        label: z.string().trim().min(1).max(80),
+        value: z.string().trim().min(1).max(120),
+        description: z.string().trim().max(240).optional(),
+      })).min(2).max(8).optional(),
+      allow_other: z.boolean().optional(),
+      language: z.string().trim().max(32).optional(),
+    })).min(1).max(8),
+    submit_label: z.string().trim().max(60).optional(),
+  }).optional(),
   dry_run: z.boolean().optional(),
+}).superRefine((value, ctx) => {
+  if (value.human_request && value.status !== 'blocked') {
+    ctx.addIssue({ code: 'custom', path: ['human_request'], message: 'human_request sólo corresponde con status=blocked.' });
+  }
 });
 
 // ── Serialización para el conector ─────────────────────────────────────────
@@ -488,14 +557,27 @@ export async function executePromptTool(name: string, input: Record<string, unkn
 
   if (name === 'whatspro_sales_prompt_result') {
     const args = parse(resultSchema, input);
-    if (args.dry_run) return { dryRun: true, runId: args.run_id, status: args.status };
+    const humanRequest = args.human_request
+      ? humanDecisionRequestSchema.parse({
+          title: args.human_request.title,
+          description: args.human_request.description,
+          fields: args.human_request.fields.map((field) => ({
+            ...field,
+            allowOther: field.allow_other,
+            allow_other: undefined,
+          })),
+          submitLabel: args.human_request.submit_label,
+        })
+      : null;
+    if (args.dry_run) return { dryRun: true, runId: args.run_id, status: args.status, humanRequest };
     const existing = await getPromptRun(context.teamId, args.run_id);
     if (!existing) throw new Error(`No existe la corrida ${args.run_id} en este equipo.`);
     return completePromptRun(context.teamId, context.userId ?? null, args.run_id, {
       status: args.status,
-      summary: args.summary ?? null,
+      summary: args.summary ?? humanRequest?.description ?? humanRequest?.title ?? null,
       output: args.output ?? null,
       connector: args.connector ?? 'connector',
+      metadata: humanRequest ? { humanRequest, humanRequestedAt: new Date().toISOString() } : undefined,
     });
   }
 

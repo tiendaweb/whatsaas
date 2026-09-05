@@ -287,7 +287,12 @@ export type ListQuery = {
    */
   queued?: 'con' | 'sin';
   q?: string;
-  sort?: 'priority' | 'age' | 'lastFollowup' | 'name';
+  /**
+   * `age` = más nuevos primero, `oldest` = más viejos primero (el mismo campo al
+   * revés), `gate` = por grado del embudo, de G11 a GX. Los dos últimos los pide
+   * el Focus, donde ordenar por antigüedad al revés es media rutina de trabajo.
+   */
+  sort?: 'priority' | 'age' | 'oldest' | 'lastFollowup' | 'name' | 'gate';
   cursor?: string;
   limit?: number;
 };

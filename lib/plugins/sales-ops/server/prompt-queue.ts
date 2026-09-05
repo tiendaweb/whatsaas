@@ -17,6 +17,12 @@ import {
 import { promptFingerprint } from './prompts';
 import { getSkill, markSkillUsed } from './skills';
 import { buildChatContext, runSkillWithApi } from './skill-runner';
+import {
+  humanDecisionRequestSchema,
+  validateHumanDecisionAnswers,
+  type HumanDecisionAnswers,
+  type HumanDecisionRequest,
+} from '../shared/human-decision';
 
 /**
  * Corridas del Prompt Studio: lanzar una skill y seguirle el rastro.
@@ -62,10 +68,13 @@ export type PromptRunRow = {
    */
   approvedAt: string | null;
   approvedBy: number | null;
+  humanRequest: HumanDecisionRequest | null;
+  humanRequestedAt: string | null;
 };
 
 function rowToRun(r: typeof teamPromptRuns.$inferSelect, targetName: string | null): PromptRunRow {
   const meta = (r.metadata ?? {}) as Record<string, unknown>;
+  const humanRequest = humanDecisionRequestSchema.safeParse(meta.humanRequest);
   return {
     id: r.id,
     promptId: r.promptId,
@@ -88,6 +97,8 @@ function rowToRun(r: typeof teamPromptRuns.$inferSelect, targetName: string | nu
     completedAt: r.completedAt ? r.completedAt.toISOString() : typeof meta.completedAt === 'string' ? meta.completedAt : null,
     approvedAt: typeof meta.approvedAt === 'string' ? meta.approvedAt : null,
     approvedBy: typeof meta.approvedBy === 'number' ? meta.approvedBy : null,
+    humanRequest: humanRequest.success ? humanRequest.data : null,
+    humanRequestedAt: typeof meta.humanRequestedAt === 'string' ? meta.humanRequestedAt : null,
   };
 }
 
@@ -457,6 +468,83 @@ export async function completePromptRun(teamId: number, userId: number | null, r
     .where(eq(teamPromptRuns.id, runId))
     .returning();
   await audit(teamId, userId, 'SALES_OPS_PROMPT_RESULT', { runId, status: input.status, connector: row.connector });
+  const names = row.targetKind === 'chat' ? await chatNames(teamId, [Number(row.targetId)]) : new Map<number, string>();
+  return rowToRun(row, names.get(Number(row.targetId)) ?? null);
+}
+
+/**
+ * Responde el formulario que dejó un conector y devuelve la misma corrida a la
+ * cola. El texto original no se reemplaza: la decisión se anexa para que el
+ * próximo conector vea pedido + contexto + respuesta humana en una sola pieza.
+ */
+export async function answerHumanDecision(
+  teamId: number,
+  userId: number,
+  runId: number,
+  answers: HumanDecisionAnswers,
+): Promise<PromptRunRow> {
+  const existing = await db.query.teamPromptRuns.findFirst({
+    where: and(eq(teamPromptRuns.teamId, teamId), eq(teamPromptRuns.id, runId)),
+  });
+  if (!existing) throw new LaunchError('Corrida no encontrada.');
+  if (existing.status !== 'blocked') throw new LaunchError('Esta corrida ya no está esperando una decisión humana.');
+
+  const previousMeta = (existing.metadata ?? {}) as Record<string, unknown>;
+  const request = humanDecisionRequestSchema.safeParse(previousMeta.humanRequest);
+  if (!request.success) throw new LaunchError('El conector no dejó un formulario válido para esta corrida.');
+
+  const validated = validateHumanDecisionAnswers(request.data, answers);
+  if (!validated.ok) throw new LaunchError(validated.error);
+
+  const answeredAt = new Date().toISOString();
+  const answerLines = request.data.fields
+    .filter((field) => (validated.values[field.id] ?? '').trim())
+    .map((field) => `${field.label}:\n${validated.values[field.id]}`);
+  const answerBlock = [
+    `RESPUESTA HUMANA — ${request.data.title}`,
+    ...answerLines,
+  ].join('\n\n');
+  const previousHistory = Array.isArray(previousMeta.humanDecisionHistory) ? previousMeta.humanDecisionHistory : [];
+  const metadata = {
+    ...previousMeta,
+    humanRequest: null,
+    humanRequestedAt: null,
+    humanDecisionHistory: [
+      ...previousHistory,
+      {
+        request: request.data,
+        values: validated.values,
+        requestedAt: typeof previousMeta.humanRequestedAt === 'string' ? previousMeta.humanRequestedAt : null,
+        answeredAt,
+        answeredBy: userId,
+      },
+    ],
+    lastHumanAnsweredAt: answeredAt,
+    lastHumanAnsweredBy: userId,
+  };
+
+  const nextText = `${existing.promptSnapshot.trimEnd()}\n\n---\n\n${answerBlock}`;
+  const [row] = await db
+    .update(teamPromptRuns)
+    .set({
+      status: 'queued',
+      connector: 'pending',
+      promptSnapshot: nextText,
+      promptFingerprint: promptFingerprint('', nextText),
+      summary: null,
+      output: null,
+      completedAt: null,
+      metadata,
+    })
+    .where(and(eq(teamPromptRuns.teamId, teamId), eq(teamPromptRuns.id, runId), eq(teamPromptRuns.status, 'blocked')))
+    .returning();
+  if (!row) throw new LaunchError('La corrida cambió mientras respondías. Actualizá la cola para ver su estado.');
+
+  await audit(teamId, userId, 'SALES_OPS_HUMAN_DECISION_ANSWERED', {
+    runId,
+    fields: Object.keys(validated.values),
+    connector: existing.connector,
+  });
   const names = row.targetKind === 'chat' ? await chatNames(teamId, [Number(row.targetId)]) : new Map<number, string>();
   return rowToRun(row, names.get(Number(row.targetId)) ?? null);
 }

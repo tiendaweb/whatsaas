@@ -1,6 +1,7 @@
 'use client';
 
 import { ExternalLink, Pause, Play, Sparkles, Trash2, UserSquare2 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -138,12 +139,14 @@ export function ProgramadoRow({ item, chatId, onOpen, onChanged }: { item: Progr
 
 /** Título, destino y estado de una corrida. Igual en todos los lugares que las muestran. */
 export function FilaRun({ run, onOpen, compact }: { run: SkillRun; onOpen?: (chatId: number) => void; compact?: boolean }) {
+  const tQueue = useTranslations('SalesOpsQueue');
+  const needsDecision = run.status === 'blocked' && Boolean(run.humanRequest);
   return (
     <>
       <div className="flex items-start justify-between gap-2">
-        <p className="min-w-0 flex-1 truncate text-sm font-medium">{run.title}</p>
-        <span className={cn('shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium', RUN_STATUS_TONE[run.status] ?? 'bg-muted text-muted-foreground')}>
-          {RUN_STATUS_LABELS[run.status] ?? run.status}
+        <p className="min-w-0 flex-1 line-clamp-2 text-sm font-medium leading-snug" title={run.title}>{run.title}</p>
+        <span className={cn('shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium', needsDecision ? 'bg-primary/10 text-primary' : RUN_STATUS_TONE[run.status] ?? 'bg-muted text-muted-foreground')}>
+          {needsDecision ? tQueue('decisionStatus') : RUN_STATUS_LABELS[run.status] ?? run.status}
         </span>
       </div>
       <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-muted-foreground">

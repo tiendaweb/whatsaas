@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
-import { Archive, Ban, Check, CheckCircle2, ClipboardCheck, Clock, Inbox, Layers, Loader2, MessageSquareText, Pencil, Plus, Save, Trash2, Wand2, X, type LucideIcon } from 'lucide-react';
+import { Archive, Ban, Check, CheckCircle2, ChevronDown, ChevronUp, CircleHelp, ClipboardCheck, Clock, Inbox, Layers, Loader2, MessageSquareText, Pencil, Plus, Save, Trash2, Wand2, X, type LucideIcon } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,8 +22,9 @@ import { FichaDock, type DockItem } from '../components/FichaDock';
 import { SALES_OPS_API, fetcher as jsonFetcher, fmtInt, tiempoRelativo } from '../components/format';
 import { approveRun, cancelRun, deleteRun, editRun, type SkillRun } from '../skills/api';
 import { FallaCorrida } from '../skills/FallaCorrida';
+import { HumanDecisionCard } from '../cola/HumanDecisionCard';
 
-type Seccion = 'revision' | 'cola' | 'hechos' | 'descartados';
+type Seccion = 'decision' | 'revision' | 'cola' | 'hechos' | 'descartados';
 type Tipo = 'lote' | 'indicacion' | 'prompt' | 'programado';
 
 type Item =
@@ -37,6 +39,7 @@ const TIPOS: Tipo[] = ['lote', 'indicacion', 'prompt', 'programado'];
 const ARCHIVO_MS = 2 * 24 * 60 * 60 * 1000;
 
 const SECCION_HELP: Record<Seccion, string> = {
+  decision: '',
   revision: 'Espera una decisión tuya: aprobar un lote, leer lo que volvió, reintentar lo que falló o reactivar un programado.',
   cola: 'Ya decidido: sale solo o lo toma un conector. Acá no se decide nada.',
   hechos: 'Lo que ya salió o ya cerró el conector. Lo de hace más de dos días queda archivado.',
@@ -44,6 +47,7 @@ const SECCION_HELP: Record<Seccion, string> = {
 };
 
 const VACIO: Record<Seccion, string> = {
+  decision: '',
   revision: 'Nada esperando tu decisión. Armá un lote con “Nuevo lote”, proponé una acción desde la ficha de un contacto, o pedíselo al conector.',
   cola: 'Nada en cola. Lo que apruebes o encoles cae acá.',
   hechos: 'Todavía no hay nada hecho.',
@@ -71,6 +75,7 @@ const VACIO: Record<Seccion, string> = {
  * muestra la Actividad del Studio.
  */
 export function ColaView({ presetChatIds, onOpen, selectedChatId }: { presetChatIds?: number[]; onOpen?: (chatId: number) => void; selectedChatId?: number | null } = {}) {
+  const tQueue = useTranslations('SalesOpsQueue');
   const { data, isLoading, error, mutate } = useSWR<QueueListPayload>(QUEUE_ENDPOINT, fetcher, { refreshInterval: 60_000 });
   const runs = useSWR<{ runs: SkillRun[] }>(`${SALES_OPS_API}/prompts/queue?status=all&engine=exclude&limit=200`, jsonFetcher, { refreshInterval: 60_000 });
   const programados = useSWR(PROGRAMADOS_API, programadosFetcher, { revalidateOnFocus: false, refreshInterval: 120_000 });
@@ -105,7 +110,8 @@ export function ColaView({ presetChatIds, onOpen, selectedChatId }: { presetChat
       // el conector la cierra → hechos; falló → revisión (hay que decidir);
       // cancelada → descartados.
       let sec: Seccion;
-      if (run.status === 'queued') sec = run.approvedAt ? 'cola' : 'revision';
+      if (run.status === 'blocked' && run.humanRequest) sec = 'decision';
+      else if (run.status === 'queued') sec = run.approvedAt ? 'cola' : 'revision';
       else if (run.status === 'in_progress') sec = 'cola';
       else if (run.status === 'completed') sec = 'hechos';
       else if (run.status === 'cancelled') sec = 'descartados';
@@ -120,7 +126,7 @@ export function ColaView({ presetChatIds, onOpen, selectedChatId }: { presetChat
   }, [data?.batches, runs.data?.runs, programados.data?.rows]);
 
   const porSeccion = useMemo(() => {
-    const map: Record<Seccion, Item[]> = { revision: [], cola: [], hechos: [], descartados: [] };
+    const map: Record<Seccion, Item[]> = { decision: [], revision: [], cola: [], hechos: [], descartados: [] };
     for (const item of items) map[item.seccion].push(item);
     // En cola lo más próximo primero (programados por hora de salida); en el resto lo más nuevo arriba.
     for (const sec of Object.keys(map) as Seccion[]) map[sec].sort((a, b) => (sec === 'cola' ? a.fecha.localeCompare(b.fecha) : b.fecha.localeCompare(a.fecha)));
@@ -168,6 +174,7 @@ export function ColaView({ presetChatIds, onOpen, selectedChatId }: { presetChat
   };
 
   const secciones: Array<DockItem<Seccion>> = [
+    { id: 'decision', label: tQueue('decisionLabel'), icon: CircleHelp, badge: porSeccion.decision.length },
     { id: 'revision', label: 'En revisión', icon: ClipboardCheck, badge: porSeccion.revision.length },
     { id: 'cola', label: 'En cola', icon: Inbox, badge: porSeccion.cola.length },
     { id: 'hechos', label: 'Hechos', icon: CheckCircle2, badge: porSeccion.hechos.length },
@@ -177,8 +184,14 @@ export function ColaView({ presetChatIds, onOpen, selectedChatId }: { presetChat
   return (
     <div className="flex min-h-[60dvh] flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="min-w-0 text-xs text-muted-foreground">{SECCION_HELP[seccion]}</p>
-        {seccion === 'descartados' ? (
+        <p className="min-w-0 text-xs text-muted-foreground">{seccion === 'decision' ? tQueue('decisionHelp') : SECCION_HELP[seccion]}</p>
+        {seccion === 'decision' ? (
+          porSeccion.decision.length > 0 && (
+            <span className="shrink-0 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary">
+              {tQueue('decisionCount', { count: porSeccion.decision.length })}
+            </span>
+          )
+        ) : seccion === 'descartados' ? (
           <Button type="button" size="sm" variant="outline" disabled={limpiando || porSeccion.descartados.length === 0} onClick={() => void limpiarDescartados()} className="h-8 shrink-0 gap-1.5">
             {limpiando ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Trash2 className="size-4" aria-hidden />}
             <span className="hidden sm:inline">Limpiar descartados</span>
@@ -220,7 +233,7 @@ export function ColaView({ presetChatIds, onOpen, selectedChatId }: { presetChat
             <div className="space-y-4">
               {visibles.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-                  {filtro === 'todos' ? VACIO[seccion] : `Sin ${TIPO_LABELS[filtro].toLowerCase()} en esta sección.`}
+                  {filtro === 'todos' ? (seccion === 'decision' ? tQueue('decisionEmpty') : VACIO[seccion]) : `Sin ${TIPO_LABELS[filtro].toLowerCase()} en esta sección.`}
                 </div>
               ) : (
                 <ul className="space-y-2">
@@ -291,13 +304,15 @@ function Chip({ activo, onClick, label, n, Icon, atenuado }: { activo: boolean; 
  * a hechos con su respuesta; descartada, se puede eliminar del todo.
  */
 function RunItem({ run, tipo, seccion, onOpen, onChanged }: { run: SkillRun; tipo: 'indicacion' | 'prompt'; seccion: Seccion; onOpen?: (chatId: number) => void; onChanged: () => void }) {
+  const tQueue = useTranslations('SalesOpsQueue');
   const [abierta, setAbierta] = useState(false);
   const [editando, setEditando] = useState(false);
   const [titulo, setTitulo] = useState(run.title);
   const [texto, setTexto] = useState(run.text);
   const [ocupado, setOcupado] = useState<'guardar' | 'aprobar' | 'descartar' | 'eliminar' | null>(null);
   const Icon = TIPO_ICONS[tipo];
-  const fallida = run.status === 'failed' || run.status === 'blocked';
+  const pideDecision = run.status === 'blocked' && Boolean(run.humanRequest);
+  const fallida = run.status === 'failed' || (run.status === 'blocked' && !run.humanRequest);
   const enRevisionSinAprobar = seccion === 'revision' && run.status === 'queued' && !run.approvedAt;
   const cuerpo = run.output ?? run.summary;
 
@@ -342,10 +357,10 @@ function RunItem({ run, tipo, seccion, onOpen, onChanged }: { run: SkillRun; tip
           {editando ? (
             <Input value={titulo} onChange={(e) => setTitulo(e.target.value)} className="h-8 text-sm" maxLength={160} />
           ) : (
-            <FilaRun run={run} onOpen={onOpen} compact={seccion === 'revision'} />
+            <FilaRun run={run} onOpen={onOpen} compact={seccion === 'revision' || seccion === 'cola' || seccion === 'decision'} />
           )}
         </div>
-        {(seccion === 'cola' || seccion === 'revision') && !editando && (
+        {(seccion === 'cola' || seccion === 'revision' || seccion === 'decision') && !editando && (
           <button type="button" className="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label="Descartar" title="Descartar" disabled={ocupado !== null} onClick={descartar}>
             {ocupado === 'descartar' ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <X className="size-3.5" aria-hidden />}
           </button>
@@ -397,6 +412,30 @@ function RunItem({ run, tipo, seccion, onOpen, onChanged }: { run: SkillRun; tip
             </div>
           </div>
         </div>
+      )}
+
+      {(seccion === 'cola' || seccion === 'decision') && (
+        <div className="mt-2 rounded-lg border border-border/70 bg-muted/35 p-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{tQueue('promptFull')}</p>
+            {run.text.length > 240 && (
+              <button
+                type="button"
+                className="inline-flex min-h-7 items-center gap-1 rounded-md px-2 text-[11px] font-medium text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-expanded={abierta}
+                onClick={() => setAbierta((value) => !value)}
+              >
+                {abierta ? <ChevronUp className="size-3" aria-hidden /> : <ChevronDown className="size-3" aria-hidden />}
+                {abierta ? tQueue('seeLess') : tQueue('seeFull')}
+              </button>
+            )}
+          </div>
+          <pre className={cn('mt-1 whitespace-pre-wrap break-words font-sans text-xs leading-relaxed text-foreground/85', !abierta && 'line-clamp-4')}>{run.text}</pre>
+        </div>
+      )}
+
+      {pideDecision && run.humanRequest && (
+        <HumanDecisionCard run={run} onAnswered={() => onChanged()} />
       )}
 
       {fallida && (

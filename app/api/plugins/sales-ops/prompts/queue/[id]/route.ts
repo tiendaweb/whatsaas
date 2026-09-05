@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getSalesOpsContext } from '@/lib/plugins/sales-ops/server/access';
-import { LaunchError, approveRun, completePromptRun, deletePromptRun, editQueuedRun } from '@/lib/plugins/sales-ops/server/prompt-queue';
+import { LaunchError, answerHumanDecision, approveRun, completePromptRun, deletePromptRun, editQueuedRun } from '@/lib/plugins/sales-ops/server/prompt-queue';
+import { humanDecisionAnswersSchema } from '@/lib/plugins/sales-ops/shared/human-decision';
 
 export const dynamic = 'force-dynamic';
 
 const schema = z.union([
   z.object({ approved: z.literal(true) }),
+  z.object({ humanResponse: humanDecisionAnswersSchema }),
   z.object({ text: z.string().max(20000).optional(), title: z.string().max(160).optional() }).refine((v) => v.text !== undefined || v.title !== undefined, { message: 'text o title' }),
   z.object({
     status: z.enum(['in_progress', 'completed', 'failed', 'blocked', 'cancelled']),
@@ -15,7 +17,7 @@ const schema = z.union([
   }),
 ]);
 
-/** PATCH { status, summary? } → cierra o cancela. PATCH { approved: true } → la aprueba para el conector. PATCH { text?, title? } → la edita mientras espera en revisión. */
+/** PATCH cierra, edita, aprueba o responde una decisión humana de la corrida. */
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await getSalesOpsContext('salesOpsWrite');
   if (!ctx.ok) return NextResponse.json({ error: ctx.message }, { status: ctx.status });
@@ -26,6 +28,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (!parsed.success) return NextResponse.json({ error: 'Body inválido' }, { status: 400 });
   try {
     if ('approved' in parsed.data) return NextResponse.json(await approveRun(ctx.team.id, ctx.user.id, runId));
+    if ('humanResponse' in parsed.data) return NextResponse.json(await answerHumanDecision(ctx.team.id, ctx.user.id, runId, parsed.data.humanResponse));
     if (!('status' in parsed.data)) return NextResponse.json(await editQueuedRun(ctx.team.id, ctx.user.id, runId, parsed.data));
     return NextResponse.json(await completePromptRun(ctx.team.id, ctx.user.id, runId, { ...parsed.data, connector: 'manual' }));
   } catch (error) {

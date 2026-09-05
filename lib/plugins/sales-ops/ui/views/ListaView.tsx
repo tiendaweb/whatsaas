@@ -38,8 +38,10 @@ const DEFAULT_SORT: Record<ListaVista, NonNullable<ListQuery['sort']>> = {
 const SORT_LABELS: Record<NonNullable<ListQuery['sort']>, string> = {
   priority: 'Prioridad',
   age: 'Más recientes primero',
+  oldest: 'Más antiguos primero',
   lastFollowup: 'Último impacto',
   name: 'Nombre',
+  gate: 'Grado',
 };
 
 const AGE_LABELS: Record<NonNullable<ListQuery['ageBucket']>, string> = {

@@ -1,6 +1,7 @@
 'use client';
 
 import type { RunMode, Skill, SkillCategory, SkillInput, SkillVariable } from '../../shared/skills';
+import type { HumanDecisionRequest } from '../../shared/human-decision';
 import { SALES_OPS_API } from '../components/format';
 
 /** Cliente del Prompt Studio. Una sola forma de hablar con la API desde la vista. */
@@ -25,6 +26,8 @@ export type SkillRun = {
   completedAt: string | null;
   approvedAt: string | null;
   approvedBy: number | null;
+  humanRequest: HumanDecisionRequest | null;
+  humanRequestedAt: string | null;
 };
 
 export type SkillsPayload = {
@@ -90,6 +93,10 @@ export const approveRun = (id: number) => send<SkillRun>(`${SALES_OPS_API}/promp
 
 /** Edita texto y/o título de una corrida que todavía espera en revisión. */
 export const editRun = (id: number, patch: { text?: string; title?: string }) => send<SkillRun>(`${SALES_OPS_API}/prompts/queue/${id}`, 'PATCH', patch);
+
+/** Responde una solicitud de criterio humano y devuelve la misma corrida a la cola. */
+export const answerRun = (id: number, values: Record<string, string>) =>
+  send<SkillRun>(`${SALES_OPS_API}/prompts/queue/${id}`, 'PATCH', { humanResponse: { values } });
 
 /** Elimina una corrida descartada (cancelada, fallida o bloqueada). */
 export const deleteRun = (id: number) => send<{ id: number }>(`${SALES_OPS_API}/prompts/queue/${id}`, 'DELETE');

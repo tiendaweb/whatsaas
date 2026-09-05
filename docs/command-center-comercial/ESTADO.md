@@ -75,6 +75,14 @@ La ficha suma una pestaña **Radar** al lado de Acciones (las señales del conta
 
 En la pestaña **Chat** de la ficha se agregó el bloque **Programados** (`ui/components/ProgramadosContacto.tsx`): lista los mensajes programados apuntados al teléfono del contacto, deja editarlos, pausarlos, borrarlos y crear uno nuevo sin salir del Command Center. Usa la API del plugin `scheduled-messages`; si el usuario no tiene `scheduledMessagesRead` la sección no se dibuja.
 
+## Focus: bloques de trabajo de 25 minutos (2026-09-05)
+
+Pantalla propia (`?vista=focus`, botón **Focus** en la barra del Command Center) para procesar clientes de a uno contra reloj, sin volver a una lista. Tres columnas: resumen con el radar y las señales a la izquierda, programados editables y el hilo con la IA en el centro, chat del contacto a la derecha; abajo un prompt con dos botones — **Ejecutar ahora** (la IA del equipo redacta en el servidor y la pantalla se queda, con el texto bajado al editor de programados) y **Listo para conector** (encola el pedido y pasa al siguiente). Bloques de 25 minutos con el vencimiento guardado en `localStorage`, barra de progreso por etapa, contadores de sesión, filtros multiselect por tipo y grado, órdenes nuevos `oldest` y `gate`, y confeti al vaciar una etapa antes de saltar a la siguiente.
+
+Lo que **no** hace, a propósito: "Ejecutar ahora" nunca envía un WhatsApp (redacta y programa; el envío sigue pasando por proponer → aprobar → ejecutar con clave idempotente) y Focus no escribe en el CRM. El motor (`server/focus.ts`) devuelve `{modo:"texto"}` o `{modo:"conector", motivo}`: el servidor no tiene herramientas y lo dice, en vez de contestar un texto que promete haber hecho algo.
+
+Sin tablas nuevas ni migraciones: todo lo que muestra ya existía. El detalle es el que ya usaba la ficha (`GET /contacts/{chatId}`), los programados son los del plugin `scheduled-messages` (`ProgramadosContacto` con `soloSiHay`, así que no ocupa espacio si el contacto no tiene ninguno) y el hilo con la IA es la cola del Prompt Studio filtrada por chat, con `HumanDecisionCard` para lo bloqueado. Plan completo en `08-FOCUS.md`; smoke contra la base en `scripts/smoke-focus.mts` y contra Gemini en `scripts/smoke-focus-ia.mts`.
+
 ## Fases
 
 | Fase | Estado |
@@ -88,6 +96,7 @@ En la pestaña **Chat** de la ficha se agregó el bloque **Programados** (`ui/co
 | 5 Radar | ✅ 2026-08-29 (sin desplegar) |
 | 6 Ejecución aprobada desde el servidor | ⏳ (hoy la ejecuta el conector vía P9) |
 | 7 Leads nuevos | ⏳ |
+| 8 Focus (bloques de 25 min) | ✅ 2026-09-05 · doc `08-FOCUS.md` |
 
 ## Relación con otros trabajos en curso
 

@@ -42,7 +42,7 @@ const querySchema = z.object({
   snoozed: z.enum(['con', 'sin']).optional().catch(undefined),
   queued: z.enum(['con', 'sin']).optional().catch(undefined),
   q: z.string().max(120).optional().catch(undefined),
-  sort: z.enum(['priority', 'age', 'lastFollowup', 'name']).optional().catch(undefined),
+  sort: z.enum(['priority', 'age', 'oldest', 'lastFollowup', 'name', 'gate']).optional().catch(undefined),
   cursor: z.string().max(400).optional().catch(undefined),
   limit: z.coerce.number().int().min(1).max(200).optional().catch(undefined),
 });

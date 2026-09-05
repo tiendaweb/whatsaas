@@ -45,6 +45,37 @@ export const TEMAS: Partial<Record<Vista, Tema>> = {
     conectores: ['El Muro se llena con whatspro_sales_prompt_result y whatspro_sales_queue_result: si un conector no cierra su corrida, no aparece.'],
     verTambien: ['cola', 'dinero', 'respuestas'],
   },
+  focus: {
+    enUnaFrase: 'Trabajar de a un cliente, contra reloj.',
+    titulo: 'Focus',
+    queEs: 'Una pantalla completa donde se procesa un cliente por vez en bloques de 25 minutos. Todo lo que hace falta para decidir está a la vista: el resumen con el radar y las señales a la izquierda, los mensajes programados y el hilo con la IA en el centro, y el chat a la derecha.',
+    cuando: 'Cuando hay una tanda que hacer y no querés estar saltando entre la lista, la ficha, Programados y la Cola. Las listas son para elegir a quién; Focus es para hacerlo.',
+    comoSeUsa: [
+      'Se entra con el botón Focus de la barra. Arranca solo un bloque de 25 minutos; al terminar ofrece otro, un descanso de 5, o salir.',
+      'Abajo se escribe qué hacer con este cliente y se elige uno de los dos botones. Ejecutar ahora lo resuelve la IA del equipo y se queda en la pantalla con el borrador arriba; Listo para conector lo encola y pasa al siguiente.',
+      'Los filtros (arriba a la derecha) eligen qué tipos entran a la ronda y en qué orden: prioridad, más viejo, más nuevo o grado.',
+      'Cuando se vacía una etapa hay confeti y se pasa a la siguiente. La barra de arriba dice cuántos van y cuántos faltan.',
+    ],
+    primerUso: [
+      'Entrá con el botón Focus estando en Dinero.',
+      'Leé la acción recomendada arriba a la izquierda y escribí abajo, por ejemplo, "recordale el pago en dos renglones, tono amable".',
+      'Apretá Ejecutar ahora: el texto aparece arriba en el editor del programado. Corregilo, poné la fecha y guardá.',
+      'Apretá Listo para conector para lo que la IA no puede hacer sola. La pantalla pasa al siguiente cliente.',
+    ],
+    ejemplos: [
+      { situacion: 'El pedido es "mandale esto ahora".', queHacer: 'Ejecutar ahora avisa que necesita un conector: el servidor redacta, no envía. Se aprieta Listo para conector.' },
+      { situacion: 'La IA del equipo se quedó sin cuota.', queHacer: 'Aparece el motivo arriba del prompt y queda resaltado Listo para conector. El trabajo no se pierde: queda encolado.' },
+      { situacion: 'Un pedido anterior volvió bloqueado.', queHacer: 'Aparece primero en el Chat IA, con el formulario que armó el conector. Se contesta ahí y la corrida vuelve a la cola.' },
+    ],
+    reglas: [
+      'Ejecutar ahora NUNCA envía un WhatsApp: redacta y deja programado. Un envío sigue pasando por proponer, aprobar y ejecutar.',
+      'Focus no toca el CRM: ni etapas, ni etiquetas, ni campos.',
+      'Todo lo que devuelve la IA es un borrador hasta que una persona lo guarda.',
+      'Los contadores de la sesión son de la sesión: las métricas del equipo viven en Métricas.',
+    ],
+    conectores: ['Lo que se deja acá sale por whatspro_sales_work_queue como un run_prompt, igual que lo que se encola desde el Prompt Studio.'],
+    verTambien: ['dinero', 'cola', 'programados'],
+  },
   dinero: {
     enUnaFrase: 'Quién está a un paso de pagar.',
     titulo: 'Dinero',

@@ -342,6 +342,18 @@ function orderFor(sort: ListQuery['sort']): SQL[] {
   switch (sort) {
     case 'age':
       return [sql`${a.lastCustomerMessageAt} desc nulls last`, desc(a.id)];
+    case 'oldest':
+      // El que hace más que no escribe primero. Los que nunca escribieron van al
+      // final: "sin fecha" no es "muy viejo", es que no hay dato.
+      return [sql`${a.lastCustomerMessageAt} asc nulls last`, desc(a.id)];
+    case 'gate':
+      // Por grado del embudo: G11 arriba, GX abajo. El gate es texto ('G7',
+      // 'GX'), así que se ordena por el número y GX queda fuera de la escala.
+      return [
+        sql`(case when ${a.currentGate} = 'GX' then -1 else coalesce(nullif(regexp_replace(${a.currentGate}, '[^0-9]', '', 'g'), '')::int, -1) end) desc`,
+        desc(a.priorityScore),
+        desc(a.id),
+      ];
     case 'lastFollowup':
       return [sql`${a.lastFollowupAt} desc nulls last`, desc(a.id)];
     case 'name':

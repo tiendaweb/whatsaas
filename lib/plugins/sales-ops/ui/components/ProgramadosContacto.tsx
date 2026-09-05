@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import useSWR from 'swr';
 import { ChevronDown, ChevronRight, Clock, Inbox, Loader2, Pause, Play, Plus, Save, Sparkles, Trash2, Wand2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -136,6 +136,7 @@ export function ProgramadosContacto({
   inicialAbierto = false,
   avisarSinPermiso = false,
   soloSiHay = false,
+  borradorExterno = null,
   onCambio,
 }: {
   remoteJid: string | null;
@@ -151,6 +152,13 @@ export function ProgramadosContacto({
    * que dice "ninguno" en cada ficha es ruido en la pantalla que más se mira.
    */
   soloSiHay?: boolean;
+  /**
+   * Texto que llega de afuera para editar acá (el Focus, con lo que devolvió
+   * "Ejecutar ahora"). `token` cambia en cada pedido: sin él, pedir dos veces el
+   * mismo texto no reabriría el editor, y con `texto` en las dependencias
+   * cualquier re-render lo pisaría mientras la persona lo está corrigiendo.
+   */
+  borradorExterno?: { texto: string; token: number } | null;
   /** Se llama después de crear, editar, pausar o borrar (para refrescar la lista). */
   onCambio?: () => void;
 }) {
@@ -184,6 +192,39 @@ export function ProgramadosContacto({
 
   const pendientes = propios.filter((item) => item.status === 'active' || item.status === 'paused');
   const proximo = pendientes.find((item) => item.status === 'active')?.nextRunAt ?? null;
+
+  /**
+   * El texto que redactó la IA desde afuera entra como borrador.
+   *
+   * Si ya hay un editor abierto, le cambia el mensaje y respeta lo demás (el
+   * nombre y la fecha que la persona ya eligió). Si no, edita el primer
+   * programado vivo del contacto —corregir el que va a salir es el caso normal—
+   * y sólo crea uno nuevo cuando no hay ninguno.
+   */
+  const tokenAplicado = useRef<number | null>(null);
+  useEffect(() => {
+    const texto = borradorExterno?.texto?.trim();
+    if (!texto || !borradorExterno) return;
+    if (tokenAplicado.current === borradorExterno.token) return;
+    tokenAplicado.current = borradorExterno.token;
+    setAbierto(true);
+    setError(null);
+    setBorrador((actual) => {
+      if (actual) return { ...actual, message: texto };
+      const vivo = pendientes[0];
+      if (vivo) {
+        return {
+          id: vivo.id,
+          name: vivo.name,
+          message: texto,
+          scheduledAt: paraInput(vivo.scheduledAt ?? vivo.nextRunAt),
+          scheduleType: vivo.scheduleType,
+          aiPrompt: vivo.aiPrompt ?? '',
+        };
+      }
+      return { id: null, name: `Seguimiento a ${nombre}`.slice(0, 200), message: texto, scheduledAt: '', scheduleType: 'once', aiPrompt: '' };
+    });
+  }, [borradorExterno, pendientes, nombre]);
 
   if (data && !data.disponible) {
     return avisarSinPermiso ? (
