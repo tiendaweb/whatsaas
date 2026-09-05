@@ -25,6 +25,7 @@ import {
   extractAutomationSubflow,
   type AutomationFlowSnapshot,
 } from "@/lib/automation/subflow-extraction";
+import { assertTeamInstance } from '@/lib/instances/ownership';
 
 export async function getAutomations() {
   const team = await getTeamForUser();
@@ -258,13 +259,18 @@ export async function createAutomation(
   if (folderId != null) {
     await getOwnedFolderOrThrow(team.id, folderId);
   }
+  // La instancia venía sin validar. `triggerAutomationManually` se defiende
+  // exigiendo que la automatización coincida en equipo E instancia, pero esa
+  // defensa se caía si acá se podía crear una automatización propia apuntando a
+  // la instancia de otro equipo: el motor después mandaba con ese token.
+  const ownedInstance = await assertTeamInstance(team.id, instanceId);
 
   const [newBot] = await db
     .insert(automations)
     .values({
       teamId: team.id,
       folderId: folderId ?? null,
-      instanceId: instanceId,
+      instanceId: ownedInstance.id,
       name: name,
       nodes: [],
       edges: [],

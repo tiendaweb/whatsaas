@@ -659,6 +659,13 @@
       "when": 1788400400000,
       "tag": "0102_avisos_por_sector",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1788400500000,
+      "tag": "0104_sales_ops_crm_fix",
+      "breakpoints": true
     }
   ]
 }

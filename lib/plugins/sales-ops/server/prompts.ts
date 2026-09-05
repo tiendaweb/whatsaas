@@ -42,7 +42,7 @@ const CLASSIFY_SYSTEM = `Sos el analista comercial del equipo. Auditás UN chat 
 ${COMMON_RULES}
 
 Aplicá las REGLAS en este orden y detenete en la primera que decida el gate. Los RULE_FACTS del servidor ya calcularon R1–R11: si traen forced_gate, ese gate manda; si traen min_gate, no podés bajar de ahí.
-R1 cliente existente → is_existing_customer=true (customer_link, sale_paid o subscription): G11. Si customer_evidence es custom_data o tag_product NO es prueba: decidí por el chat (buscá pago, comprobante, "listo", "publicado", dominio, entregado) y anotá la contradicción en crm_to_fix.
+R1 cliente existente → is_existing_customer=true (customer_link, sale_paid o subscription): G11. Si customer_evidence es custom_data o tag_product NO es prueba: decidí por el chat (buscá pago, comprobante, "listo", "publicado", dominio, entregado) y anotá la contradicción en crm_to_fix (y en crm_fix si se arregla con una etapa, una etiqueta o un campo).
 R2 entrada muerta → un solo mensaje del cliente (el del anuncio) + respuesta nuestra + silencio: G0, drop_reason sin_respuesta.
 R3 nunca contestado → mensajes del cliente y cero nuestros: G0, recommended_owner noelia, recommended_action "Responder — nunca se le contestó".
 R4 perdido → rechazo explícito, "no contactar", número inválido: GX (suggested_status pre_descarte; el descarte definitivo lo aprueba una persona).
@@ -81,7 +81,13 @@ Contrato de salida (JSON, todas las claves):
   "collection_speed": "inmediata|dias|semanas|meses|indefinida",
   "recommended_action": "<imperativa, ≤200 caracteres>", "recommended_owner": "${OWNERS.join('|')}",
   "suggested_status": "recuperado|cobro|pendiente_con_fecha|pre_descarte|descarte_definitivo|cliente|en_proceso",
-  "next_action_at": "YYYY-MM-DD" | null, "notes_for_human": "" | null, "crm_to_fix": "" | null }`;
+  "next_action_at": "YYYY-MM-DD" | null, "notes_for_human": "" | null, "crm_to_fix": "" | null,
+  "crm_fix": { "stage": "<nombre exacto del catálogo>" | null, "add_tags": [], "remove_tags": [], "fields": { "<nombre exacto>": "valor" | null }, "reason": "" } | null }
+
+CORRECCIÓN DEL CRM. Si lo que leíste contradice la etapa del embudo, las etiquetas o los campos que tiene el contacto, escribí las dos cosas:
+- "crm_to_fix": qué está mal y por qué, en una o dos líneas, para que lo lea una persona.
+- "crm_fix": la MISMA corrección lista para aplicar. Los nombres tienen que salir TAL CUAL del catálogo del equipo (crm_catalog del expediente: stages, tags, fields). Si el nombre que querés no está en el catálogo, no lo inventes: dejalo sólo en crm_to_fix.
+Poné "crm_fix": null cuando el CRM está bien o cuando lo que hay que corregir no es una etapa, una etiqueta ni un campo. Sólo lo que contradice ESTE chat: no aproveches para ordenar la ficha.`;
 
 const RADAR_SYSTEM = `Sos el radar de respuestas del equipo comercial. Clasificás UN mensaje entrante del cliente con el contexto de los últimos mensajes del chat.
 
@@ -157,6 +163,34 @@ export async function getActivePrompt(teamId: number, key: SalesOpsPromptKey): P
   const fallback = SALES_OPS_DEFAULT_PROMPTS.find((p) => p.key === key);
   if (!fallback) throw new Error(`Prompt desconocido: ${key}`);
   return { id: null, key: fallback.key, version: 0, title: fallback.title, systemPrompt: fallback.systemPrompt, userTemplate: fallback.userTemplate, source: 'default' };
+}
+
+/**
+ * El contrato de la corrección de CRM, para pegárselo al prompt activo.
+ *
+ * El equipo puede tener su propio `sales-ops.classify` guardado en la base, y
+ * ese pisa a la constante de este archivo. Si la instrucción de `crm_fix`
+ * viviera sólo en la constante, la función no existiría para nadie que haya
+ * editado su prompt alguna vez — y editarlo es exactamente lo que hace el
+ * Prompt Studio. Así que se agrega al componer, y sólo si el prompt activo no
+ * lo trae ya: quien quiera escribir su propia versión la escribe y ésta se
+ * calla.
+ */
+export const CRM_FIX_CONTRACT = `
+CORRECCIÓN DEL CRM (obligatorio, aunque no esté en el resto del prompt).
+Sumá dos claves al JSON que devolvés:
+  "crm_to_fix": "" | null → qué está mal en el CRM y por qué, en una o dos líneas, para que lo lea una persona.
+  "crm_fix": { "stage": "<nombre exacto>" | null, "add_tags": [], "remove_tags": [], "fields": { "<nombre exacto>": "valor" | null }, "reason": "" } | null → la MISMA corrección lista para aplicar de un botón.
+Los nombres salen TAL CUAL del catálogo del equipo (crm_catalog del expediente: stages, tags, fields). Si el que querés no está en el catálogo, no lo inventes: dejalo sólo en crm_to_fix.
+"crm_fix": null cuando el CRM está bien, o cuando lo que hay que corregir no es una etapa, una etiqueta ni un campo.
+Sólo lo que contradice ESTE chat: no aproveches para ordenar la ficha.`.trim();
+
+/**
+ * System prompt final de la clasificación: el activo del equipo más el contrato
+ * de `crm_fix` si le falta.
+ */
+export function composeClassifySystem(systemPrompt: string): string {
+  return /crm_fix/.test(systemPrompt) ? systemPrompt : `${systemPrompt}\n\n${CRM_FIX_CONTRACT}`;
 }
 
 /** Reemplaza `{{var}}`; las variables que no existen quedan vacías (nunca se filtra la llave). */

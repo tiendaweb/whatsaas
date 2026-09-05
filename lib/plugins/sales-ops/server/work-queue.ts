@@ -15,7 +15,14 @@ import { listPromptRuns } from './prompt-queue';
  * envíos aprobados no salen del servidor hasta la Fase 6)— queda acá, con la
  * cadena de tools `whatspro_*` que lo resuelve. Un conector (Claude / ChatGPT /
  * Grok) pide la cola, ejecuta ítem por ítem y devuelve el resultado con las
- * tools de escritura. Nada de acá toca el CRM.
+ * tools de escritura.
+ *
+ * Desde el 2026-09-05 el conector SÍ puede corregir el CRM del contacto que
+ * está trabajando. La regla vieja ("no tocar el CRM") lo obligaba a anotar en
+ * `crm_to_fix` una contradicción que él mismo acababa de detectar y a esperar a
+ * que una persona la leyera y repitiera el cambio a mano; casi nunca pasaba. Lo
+ * que se conserva es el límite que importaba de verdad: de a un contacto por
+ * vez y sólo lo que contradice ese chat, nunca en lote sin que alguien lo pida.
  */
 export type WorkKind = 'run_prompt' | 'classify' | 'execute_action' | 'classify_signal' | 'transcribe';
 export const WORK_KINDS: WorkKind[] = ['run_prompt', 'classify', 'execute_action', 'classify_signal', 'transcribe'];
@@ -35,7 +42,9 @@ export type WorkQueue = {
 };
 
 const RULES = [
-  'No tocar el CRM: nada de etapas, etiquetas, campos, automatizaciones ni clientes.',
+  'Podés corregir el CRM del contacto que estás trabajando —etapa del embudo, etiquetas, campos y notas— con whatspro_change_crm_stage, whatspro_set_contact_tags y whatspro_set_custom_fields. Todo queda auditado con tu nombre de conector.',
+  'Corregí SÓLO lo que contradice lo que leíste en ese chat, y de a un contacto por vez: nada de whatspro_crm_bulk_stage ni whatspro_crm_bulk_tags sin que una persona lo haya pedido explícitamente. Una etapa mal puesta en 200 contactos no se nota y no se deshace.',
+  'Automatizaciones y registro de clientes siguen siendo de las personas: no las prendas, no las apagues y no conviertas a nadie en cliente por tu cuenta.',
   'Un envío por llamada, con la idempotency_key que viene en el ítem; nunca reintentar un envío con timeout.',
   'Antes de ejecutar un envío aprobado, verificá que el cliente no haya escrito después de la aprobación (whatspro_list_records messages fromMe=false limit=1); si escribió, reportá el resultado como skipped.',
   'Todo resultado vuelve por la tool de escritura del ítem; sin eso el servidor no se entera.',
@@ -52,11 +61,12 @@ function classifyItem(p: PendingChat, index: number): WorkItem {
     signals: p.signals,
     automationActive: p.automationActive,
     pendingAudios: p.pendingAudios,
-    tools: ['whatspro_sales_dossier', 'whatspro_sales_classification_write'],
+    tools: ['whatspro_sales_dossier', 'whatspro_sales_classification_write', 'whatspro_change_crm_stage', 'whatspro_set_contact_tags', 'whatspro_set_custom_fields'],
     steps: [
       `whatspro_sales_dossier {chat_id: ${p.chatId}} → leer expediente y facts`,
       'aplicar el prompt sales-ops.classify (whatspro_sales_prompts o doc 07 P2) y armar el JSON del contrato',
       `whatspro_sales_classification_write {chat_id: ${p.chatId}, classification, connector}`,
+      'si el CRM contradice lo que leíste, corregilo en el mismo paso (whatspro_change_crm_stage / whatspro_set_contact_tags / whatspro_set_custom_fields) y dejá el detalle en crm_fix para que quede a la vista en la ficha; sólo este contacto, nunca en lote',
     ],
   };
 }

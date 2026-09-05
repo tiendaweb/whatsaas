@@ -7,6 +7,7 @@
  * que entra a `team_commercial_analysis` pasa por `classificationSchema`.
  */
 import { z } from 'zod';
+import { crmFixSchema } from './crm-fix';
 import {
   ANALYSIS_STATUSES,
   COLLECTION_SPEEDS,
@@ -71,6 +72,8 @@ export const classificationSchema = z.object({
   next_action_at: isoDate.nullable().optional(),
   notes_for_human: z.string().max(1000).nullable().optional(),
   crm_to_fix: z.string().max(600).nullable().optional(),
+  /** La misma corrección, accionable: la ficha la aplica de un botón. */
+  crm_fix: crmFixSchema.nullable().optional(),
 });
 export type Classification = z.infer<typeof classificationSchema>;
 
@@ -131,6 +134,20 @@ export const dossierSchema = z.object({
       customData: z.record(z.string(), z.unknown()),
     })
     .nullable(),
+  /**
+   * Qué etapas, etiquetas y campos EXISTEN en el equipo.
+   *
+   * Sin esto, quien propone una corrección de CRM sólo ve lo que el contacto ya
+   * tiene y no puede saber a qué se lo puede mover: proponía nombres inventados
+   * que después el servidor saltea. Son nombres y no ids a propósito.
+   */
+  crmCatalog: z
+    .object({
+      stages: z.array(z.string()),
+      tags: z.array(z.string()),
+      fields: z.array(z.string()),
+    })
+    .optional(),
   commercial: z.unknown().nullable(),
   counts: z.object({
     total: z.number(),

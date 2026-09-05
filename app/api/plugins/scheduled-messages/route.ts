@@ -5,6 +5,7 @@ import { db } from '@/lib/db/drizzle';
 import { automations, evolutionInstances, teamScheduledMessages } from '@/lib/db/schema';
 import { MessagingError, resolveSendingInstance } from '@/lib/messaging/send';
 import { getPluginRequestContext } from '@/lib/plugins/core/runtime-permissions';
+import { InstanceOwnershipError, assertTeamInstance } from '@/lib/instances/ownership';
 import { computeNextRunAt } from '@/lib/plugins/scheduled-messages/schedule';
 
 export const dynamic = 'force-dynamic';
@@ -18,7 +19,9 @@ const createSchema = z.object({
   instanceId: z.number().int().nullable().optional(),
   targetNumbers: z.array(z.string()).default([]),
   scheduleType: z.enum(['once', 'daily', 'weekly']).default('once'),
-  scheduledAt: z.string().nullable().optional(),
+  // Sin `.datetime()`, un "mañana 10:00" llegaba como Invalid Date y drizzle
+  // tiraba RangeError al serializarlo: 500 sin mensaje útil.
+  scheduledAt: z.string().datetime().nullable().optional(),
   hour: z.number().int().min(0).max(23).nullable().optional(),
   minute: z.number().int().min(0).max(59).nullable().optional(),
   weekdays: z.array(z.number().int().min(0).max(6)).default([]),
@@ -97,16 +100,20 @@ export async function POST(request: Request) {
 
   // Sin instancia el programado no falla acá: falla recién cuando el cron lo
   // ejecuta, y hasta entonces se ve como si hubiera quedado bien guardado.
-  let instanceId = d.instanceId ?? null;
-  if (instanceId === null) {
-    try {
-      instanceId = (await resolveSendingInstance(ctx.team.id)).instance.id;
-    } catch (error) {
-      if (error instanceof MessagingError) {
-        return NextResponse.json({ error: error.message }, { status: 400 });
-      }
-      throw error;
+  //
+  // El `instanceId` del body se valida contra el equipo: sin eso se podía
+  // programar un envío desde el número de WhatsApp de otro tenant, y el cron lo
+  // ejecutaba con el token ajeno.
+  let instanceId: number | null = null;
+  try {
+    instanceId = d.instanceId != null
+      ? (await assertTeamInstance(ctx.team.id, d.instanceId)).id
+      : (await resolveSendingInstance(ctx.team.id)).instance.id;
+  } catch (error) {
+    if (error instanceof MessagingError || error instanceof InstanceOwnershipError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
+    throw error;
   }
 
   const [created] = await db

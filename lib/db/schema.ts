@@ -5847,6 +5847,19 @@ export const teamCommercialAnalysis = pgTable(
     nextActionAt: date("next_action_at"),
     notesForHuman: text("notes_for_human"),
     crmToFix: text("crm_to_fix"),
+    /**
+     * La misma corrección de `crm_to_fix`, pero accionable: qué etapa, qué
+     * etiquetas y qué campos habría que tocar. Texto para leer y esto para
+     * aplicar de un botón. Nombres, no ids: los escribe un conector que no
+     * conoce los ids internos del equipo, y el servidor los resuelve al aplicar.
+     */
+    crmFix: jsonb("crm_fix").$type<{
+      stage?: string | null;
+      addTags?: string[];
+      removeTags?: string[];
+      fields?: Record<string, string | null>;
+      reason?: string | null;
+    }>(),
     priorRadar: jsonb("prior_radar").$type<Record<string, unknown>>(),
     /** Siguientes acciones que la IA propuso para ESTE cliente (ver server/suggestions.ts). */
     aiSuggestions: jsonb("ai_suggestions").$type<Record<string, unknown>[]>().notNull().default([]),

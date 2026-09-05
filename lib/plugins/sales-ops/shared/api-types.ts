@@ -26,6 +26,7 @@ import type {
   Temperature,
 } from './taxonomy';
 import type { DossierEntry, Evidence } from './contract';
+import type { CrmFix } from './crm-fix';
 
 /** Fila de lista y cabecera de ficha. Nunca lleva el teléfono completo. */
 export type AnalysisRow = {
@@ -100,6 +101,8 @@ export type AnalysisDetail = AnalysisRow & {
   statusReason: string | null;
   notesForHuman: string | null;
   crmToFix: string | null;
+  /** La misma corrección, accionable. `null` = sólo hay texto (o nada que tocar). */
+  crmFix: CrmFix | null;
   evidence: Evidence;
   priorRadar: Record<string, unknown> | null;
   sourceDetail: string | null;

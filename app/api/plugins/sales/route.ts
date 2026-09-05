@@ -28,7 +28,7 @@ const saleSchema = z.object({
   taxAmount: z.number().int().min(0).default(0),
   total: z.number().int().min(0).default(0),
   notes: z.string().default(''),
-  dueDate: z.string().optional().nullable(),
+  dueDate: z.string().datetime().optional().nullable(),
 });
 
 function parseDate(v: string | null | undefined) {

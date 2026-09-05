@@ -1,3 +1,4 @@
+import { normalizeCurrency } from '@/lib/format/money';
 import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import {
@@ -19,6 +20,13 @@ import {
 import { AappError, aappFetchAllPages } from './client';
 
 type Row = Record<string, unknown>;
+
+/**
+ * La API de AAPP devuelve, en algunas transacciones, el nombre de la acción
+ * dentro de `currency` ("enable_disable_nfc_card_order_website"). Guardarlo tal
+ * cual dejaba filas que después tumbaban cualquier pantalla que las formateara
+ * con `Intl`. Lo que no tiene forma de ISO-4217 no se guarda.
+ */
 
 /**
  * Moneda de las membresías importadas.
@@ -150,7 +158,10 @@ export async function syncTeamAapp(teamId: number, apiKey: string): Promise<Aapp
       const mappedBilling = billing(value(row, 'validity', 'plan_validity'));
       const price = Math.round(Number(value(row, 'plan_price', 'price') ?? 0) * 100) || 0;
       const planName = stringValue(row, 'plan_name', 'name') || `Plan ${id}`;
-      const currency = stringValue(row, 'currency') || monedaEquipo;
+      // Mismo caso que las transacciones: la API mete texto que no es ISO-4217
+      // en `currency`. Acá además la columna es varchar(3), así que un valor
+      // largo no ensucia una fila: hace fallar el sync ENTERO del equipo.
+      const currency = normalizeCurrency(stringValue(row, 'currency')) ?? monedaEquipo;
       const [plan] = await db.insert(teamMembershipPlans).values({
         teamId, companyId: company.id, name: planName,
         description: stringValue(row, 'description'), price, currency,
@@ -264,12 +275,12 @@ export async function syncTeamAapp(teamId: number, apiKey: string): Promise<Aapp
       const paymentStatus = stringValue(row, 'payment_status', 'status') || null;
       await db.insert(teamCustomerTransactions).values({ teamId, customerId, externalId: id,
         planExternalId: stringValue(row, 'plan_id') || null, amount: stringValue(row, 'transaction_amount', 'amount', 'total') || null,
-        currency: stringValue(row, 'transaction_currency', 'currency') || null, paymentStatus,
+        currency: normalizeCurrency(stringValue(row, 'transaction_currency', 'currency')), paymentStatus,
         gateway: stringValue(row, 'payment_gateway_name', 'gateway', 'payment_method') || null,
         transactionDate: timestamp(value(row, 'transaction_date', 'created_at', 'date')), externalData: row,
       }).onConflictDoUpdate({ target: [teamCustomerTransactions.teamId, teamCustomerTransactions.externalId], set: {
         customerId, planExternalId: stringValue(row, 'plan_id') || null, amount: stringValue(row, 'transaction_amount', 'amount', 'total') || null,
-        currency: stringValue(row, 'transaction_currency', 'currency') || null, paymentStatus,
+        currency: normalizeCurrency(stringValue(row, 'transaction_currency', 'currency')), paymentStatus,
         gateway: stringValue(row, 'payment_gateway_name', 'gateway', 'payment_method') || null,
         transactionDate: timestamp(value(row, 'transaction_date', 'created_at', 'date')), externalData: row,
       }});

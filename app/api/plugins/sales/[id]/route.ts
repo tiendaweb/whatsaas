@@ -27,8 +27,8 @@ const updateSchema = z.object({
   taxAmount: z.number().int().min(0).optional(),
   total: z.number().int().min(0).optional(),
   notes: z.string().optional(),
-  dueDate: z.string().optional().nullable(),
-  paidAt: z.string().optional().nullable(),
+  dueDate: z.string().datetime().optional().nullable(),
+  paidAt: z.string().datetime().optional().nullable(),
 });
 
 function parseDate(v: string | null | undefined) {

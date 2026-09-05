@@ -177,6 +177,7 @@ function toDetail(r: JoinedRow, now: number): AnalysisDetail {
     statusReason: a.statusReason,
     notesForHuman: a.notesForHuman,
     crmToFix: a.crmToFix,
+    crmFix: a.crmFix ?? null,
     evidence: {
       gate: ev.gate ?? [],
       price: ev.price,

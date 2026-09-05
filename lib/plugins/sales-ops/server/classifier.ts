@@ -15,6 +15,7 @@ import { aiConfigs } from '@/lib/db/schema';
 import { analizarTextoConBanco } from '@/lib/gemini/key-bank';
 import { encolarAudios } from '@/lib/audio-insights';
 import { classificationSchema, type Classification, type Dossier, type RuleFacts } from '../shared/contract';
+import { normalizeCrmFix } from '../shared/crm-fix';
 import {
   DEFAULT_SPEED_BY_GATE,
   NEED_VALUE_USD,
@@ -33,7 +34,7 @@ import { buildChatDossierFull, isExcludedChat, type DossierBuildResult } from '.
 import { computeFingerprint } from './fingerprint';
 import { maskJid } from '@/lib/desktop/command-center/types';
 import { computePriority, type PriorityFactors } from './priority';
-import { SALES_OPS_PROMPT_KEYS, getActivePrompt, recordPromptRun, renderTemplate, type ActivePrompt } from './prompts';
+import { SALES_OPS_PROMPT_KEYS, composeClassifySystem, getActivePrompt, recordPromptRun, renderTemplate, type ActivePrompt } from './prompts';
 import { getSalesOpsSettings } from './settings';
 
 /**
@@ -377,6 +378,7 @@ function reconcile(input: ReconcileInput): Reconciled {
     nextActionAt,
     notesForHuman: c?.notes_for_human ?? null,
     crmToFix: c?.crm_to_fix ?? null,
+    crmFix: normalizeCrmFix(c?.crm_fix),
   };
 
   return { values, factors: priority.factors, warnings, humanOverrideKept };
@@ -529,7 +531,7 @@ export async function classifyChat(teamId: number, chatId: number, opts: Classif
   if (opts.engine === 'server') {
     // Con gate forzado por R1 fuerte / R2 / R3 igual se consulta la IA (rellena
     // necesidad y acción), pero si no hay IA el resultado sigue siendo útil.
-    ai = await runServerAi(teamId, prompt.systemPrompt, userPrompt);
+    ai = await runServerAi(teamId, composeClassifySystem(prompt.systemPrompt), userPrompt);
     classification = ai.classification;
   } else if (opts.engine === 'connector') {
     analyzedBy = opts.connector;

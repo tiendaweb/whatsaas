@@ -24,9 +24,23 @@ export async function GET(request: Request) {
                 lte(campaigns.scheduledAt, now)
             ));
 
-        const activeCampaigns = await db.query.campaigns.findMany({
+        const loaded = await db.query.campaigns.findMany({
             where: eq(campaigns.status, 'PROCESSING'),
             with: { template: true, instance: true }
+        });
+
+        // Segunda barrera: aunque `create` ya valida, en la base pueden quedar
+        // campañas de antes de ese arreglo apuntando a la instancia o a la
+        // plantilla de otro equipo. Mandar con ese token es lo que hay que
+        // evitar, así que la campaña se descarta acá en vez de enviarse.
+        const activeCampaigns = loaded.filter((campaign) => {
+            const instanceOk = campaign.instance && campaign.instance.teamId === campaign.teamId;
+            const templateOk = !campaign.template || campaign.template.teamId === campaign.teamId;
+            if (!instanceOk || !templateOk) {
+                console.error(`[campaigns/process] campaña ${campaign.id} del equipo ${campaign.teamId} apunta a recursos de otro equipo: se omite`);
+                return false;
+            }
+            return true;
         });
 
         if (activeCampaigns.length === 0) {

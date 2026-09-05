@@ -5,6 +5,7 @@ import { db } from '@/lib/db/drizzle';
 import { teamScheduledMessages } from '@/lib/db/schema';
 import { getPluginRequestContext } from '@/lib/plugins/core/runtime-permissions';
 import { computeNextRunAt } from '@/lib/plugins/scheduled-messages/schedule';
+import { InstanceOwnershipError, assertTeamInstance } from '@/lib/instances/ownership';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +15,9 @@ const updateSchema = z.object({
   instanceId: z.number().int().nullable().optional(),
   targetNumbers: z.array(z.string()).optional(),
   scheduleType: z.enum(['once', 'daily', 'weekly']).optional(),
-  scheduledAt: z.string().nullable().optional(),
+  // Sin `.datetime()`, un "mañana 10:00" llegaba como Invalid Date y drizzle
+  // tiraba RangeError al serializarlo: 500 sin mensaje útil.
+  scheduledAt: z.string().datetime().nullable().optional(),
   hour: z.number().int().min(0).max(23).nullable().optional(),
   minute: z.number().int().min(0).max(59).nullable().optional(),
   weekdays: z.array(z.number().int().min(0).max(6)).optional(),
@@ -70,7 +73,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const vals: Record<string, unknown> = { updatedAt: new Date() };
   if (d.name !== undefined) vals.name = d.name;
   if (d.status !== undefined) vals.status = d.status;
-  if ('instanceId' in d) vals.instanceId = d.instanceId ?? null;
+  // Ídem el POST: reasignar el programado a la instancia de otro equipo era
+  // otra puerta al mismo envío con credenciales ajenas.
+  if ('instanceId' in d) {
+    if (d.instanceId == null) {
+      vals.instanceId = null;
+    } else {
+      try {
+        vals.instanceId = (await assertTeamInstance(ctx.team.id, d.instanceId)).id;
+      } catch (error) {
+        if (error instanceof InstanceOwnershipError) {
+          return NextResponse.json({ error: error.message }, { status: 400 });
+        }
+        throw error;
+      }
+    }
+  }
   if (d.targetNumbers !== undefined) vals.targetNumbers = d.targetNumbers;
   if (d.scheduleType !== undefined) vals.scheduleType = d.scheduleType;
   if ('scheduledAt' in d) vals.scheduledAt = d.scheduledAt ? new Date(d.scheduledAt) : null;

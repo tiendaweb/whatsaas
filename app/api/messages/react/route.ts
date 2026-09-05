@@ -29,20 +29,25 @@ export async function POST(request: NextRequest) {
 
     const chat = await db.query.chats.findFirst({
       where: and(eq(chats.id, message.chatId), eq(chats.teamId, team.id)),
-      columns: { id: true, instanceId: true },
+      columns: { id: true, instanceId: true, remoteJid: true },
     });
 
     if (!chat) {
       return NextResponse.json({ error: 'Chat not found' }, { status: 404 });
     }
 
-    const resolvedInstanceId = instanceId || chat.instanceId;
+    // La instancia y el destinatario salen del CHAT ya validado, no del body.
+    // Antes se tomaba `instanceId` del cliente y se cargaba la instancia por id
+    // solo: eso permitía reaccionar desde el WhatsApp de otro equipo. Y como el
+    // `remoteJid` también venía del body sin contrastarlo con el chat, el
+    // destinatario era libre.
+    const resolvedInstanceId = chat.instanceId;
     if (!resolvedInstanceId) {
       return NextResponse.json({ error: 'No instance found' }, { status: 400 });
     }
 
     const instance = await db.query.evolutionInstances.findFirst({
-      where: eq(evolutionInstances.id, resolvedInstanceId),
+      where: and(eq(evolutionInstances.id, resolvedInstanceId), eq(evolutionInstances.teamId, team.id)),
       columns: { instanceName: true, accessToken: true },
     });
 
@@ -52,7 +57,7 @@ export async function POST(request: NextRequest) {
 
     const payload = {
       key: {
-        remoteJid: remoteJid,
+        remoteJid: chat.remoteJid,
         fromMe: message.fromMe,
         id: messageId,
       },

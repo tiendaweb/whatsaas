@@ -8,6 +8,7 @@ import {
   chats,
   contactTags,
   contacts,
+  customFields,
   funnelStages,
   messageAudioInsights,
   messages,
@@ -166,7 +167,7 @@ export async function buildChatDossierFull(teamId: number, chatId: number, opts:
     columns: { id: true, name: true, funnelStageId: true, customData: true },
   });
 
-  const [messageRows, insightRows, sessions, stage, tagRows, existing, repeated] = await Promise.all([
+  const [messageRows, insightRows, sessions, stage, tagRows, existing, repeated, catalogoEtapas, catalogoTags, catalogoCampos] = await Promise.all([
     db
       .select({
         id: messages.id,
@@ -216,6 +217,12 @@ export async function buildChatDossierFull(teamId: number, chatId: number, opts:
       columns: { id: true, version: true, fingerprint: true, analyzedBy: true, currentGate: true, stale: true },
     }),
     repeatedTextsForTeam(teamId),
+    // Catálogo del equipo: sin esto, quien propone una corrección de CRM no
+    // sabe a qué etapa se puede mover ni qué etiquetas existen, y termina
+    // inventando nombres que el servidor después saltea.
+    db.select({ name: funnelStages.name }).from(funnelStages).where(eq(funnelStages.teamId, teamId)).orderBy(asc(funnelStages.order)),
+    db.select({ name: tags.name }).from(tags).where(eq(tags.teamId, teamId)).orderBy(asc(tags.name)),
+    db.select({ name: customFields.name }).from(customFields).where(eq(customFields.teamId, teamId)).orderBy(asc(customFields.position)),
   ]);
 
   if (messageRows.length > MAX_MESSAGES) {
@@ -396,6 +403,11 @@ export async function buildChatDossierFull(teamId: number, chatId: number, opts:
           customData: contact.customData ?? {},
         }
       : null,
+    crmCatalog: {
+      stages: catalogoEtapas.map((x) => x.name),
+      tags: catalogoTags.map((x) => x.name),
+      fields: catalogoCampos.map((x) => x.name),
+    },
     commercial,
     counts,
     timeline,

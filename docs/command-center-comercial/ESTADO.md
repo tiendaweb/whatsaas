@@ -83,6 +83,22 @@ Lo que **no** hace, a propósito: "Ejecutar ahora" nunca envía un WhatsApp (red
 
 Sin tablas nuevas ni migraciones: todo lo que muestra ya existía. El detalle es el que ya usaba la ficha (`GET /contacts/{chatId}`), los programados son los del plugin `scheduled-messages` (`ProgramadosContacto` con `soloSiHay`, así que no ocupa espacio si el contacto no tiene ninguno) y el hilo con la IA es la cola del Prompt Studio filtrada por chat, con `HumanDecisionCard` para lo bloqueado. Plan completo en `08-FOCUS.md`; smoke contra la base en `scripts/smoke-focus.mts` y contra Gemini en `scripts/smoke-focus-ia.mts`.
 
+## El CRM: la IA pasa de anotar a corregir (2026-09-05)
+
+Hasta acá la primera regla de la cola de conectores era *"No tocar el CRM"*, y el clasificador tenía prohibido escribir etapas, etiquetas y campos: cuando detectaba que el CRM contradecía el chat lo anotaba en `crm_to_fix`, texto libre, y esperaba a que una persona lo leyera y repitiera el cambio a mano. Casi nunca pasaba: el texto quedaba en la ficha como un párrafo más.
+
+**Cambian dos cosas.**
+
+**1. La corrección se aplica de un botón.** El clasificador ahora emite, además del texto, la misma corrección estructurada en `crm_fix` (columna `jsonb` nueva, migración `0104`): `{stage?, addTags?, removeTags?, fields?, reason?}`, **por nombre y no por id** —lo escribe un conector que leyó el expediente, no la base—. La ficha muestra el bloque «CRM a corregir» con qué va a cambiar exactamente y un botón **Aplicar** (`POST /contacts/{chatId}/crm/apply` → `applyCrmFix` en `server/crm.ts`). El aplicador traduce nombres contra el catálogo del equipo ignorando mayúsculas y acentos, arma UN patch y lo pasa por `updateCrm` —el mismo camino que el editor a mano, con sus mismas validaciones y su misma auditoría—, saltea sin fallar lo que no existe (una etiqueta inventada no puede tirar abajo una corrección que además arreglaba la etapa) y borra la propuesta al aplicarla. Las clasificaciones viejas no tienen `crm_fix`: muestran el texto y un atajo a la pestaña CRM.
+
+Para que la propuesta sea aplicable, el expediente ahora lleva `crmCatalog` (los nombres de etapas, etiquetas y campos que EXISTEN en el equipo): sin eso quien propone sólo veía lo que el contacto ya tiene y terminaba inventando nombres.
+
+**2. Los conectores pueden escribir el CRM.** La regla nueva de `work-queue.ts` los habilita a corregir etapa, etiquetas, campos y notas del contacto que están trabajando, con `whatspro_change_crm_stage`, `whatspro_set_contact_tags` y `whatspro_set_custom_fields`. Se conserva el límite que importaba de verdad: **de a un contacto por vez y sólo lo que contradice ese chat, nunca en lote** (`crm_bulk_*` sigue necesitando que lo pida una persona), y automatizaciones y registro de clientes siguen siendo humanos.
+
+El contrato de `crm_fix` se agrega al prompt activo en tiempo de composición (`composeClassifySystem`) y no sólo a la constante: el equipo puede tener su propio `sales-ops.classify` guardado, y si la instrucción viviera únicamente en el default la función no existiría para nadie que haya editado su prompt. Si el prompt activo ya menciona `crm_fix`, no se le agrega nada.
+
+Smoke contra la base en `scripts/smoke-crm-fix.mts`: verifica que los nombres inexistentes no escriban y dejen la propuesta en pie, que resuelva sin mayúsculas ni acentos, y que aplicar borre la propuesta — todo sin cambiarle el CRM a nadie (propone la etapa que el contacto ya tiene).
+
 ## Fases
 
 | Fase | Estado |
@@ -97,6 +113,7 @@ Sin tablas nuevas ni migraciones: todo lo que muestra ya existía. El detalle es
 | 6 Ejecución aprobada desde el servidor | ⏳ (hoy la ejecuta el conector vía P9) |
 | 7 Leads nuevos | ⏳ |
 | 8 Focus (bloques de 25 min) | ✅ 2026-09-05 · doc `08-FOCUS.md` |
+| 9 CRM corregible por la IA (`crm_fix`, migración 0104) | ✅ 2026-09-05 |
 
 ## Relación con otros trabajos en curso
 

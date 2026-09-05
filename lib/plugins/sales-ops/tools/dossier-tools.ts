@@ -87,7 +87,11 @@ export const dossierActionTools: GrokActionTool[] = [
       'vigente conserva su gate. Después calcula valor USD (quoted_price con fx del plugin, o tabla por necesidad), ' +
       'prioridad, y guarda una versión nueva con snapshot y diff (reason initial|chat_changed|prompt_changed). ' +
       'Devuelve gate final, estado, prioridad, versión, advertencias y el diff. Con dry_run=true muestra el resultado ' +
-      'reconciliado sin guardar. Nunca toca etapas, etiquetas ni campos del CRM: lo que haya que corregir va en crm_to_fix.',
+      'reconciliado sin guardar. Esta tool no escribe el CRM por su cuenta: lo que haya que corregir va en crm_to_fix ' +
+      '(el texto que explica qué está mal) y en crm_fix (la corrección accionable: {stage?, add_tags?, remove_tags?, ' +
+      'fields?, reason?}, por NOMBRE y no por id). Con crm_fix la ficha muestra un botón "Aplicar" que lo ejecuta. ' +
+      'Si además querés dejarlo corregido vos mismo, usá whatspro_change_crm_stage / whatspro_set_contact_tags / ' +
+      'whatspro_set_custom_fields sobre ESTE contacto: de a uno, sólo lo que contradice el chat, nunca en lote.',
     inputSchema: {
       type: 'object',
       required: ['chat_id', 'classification', 'connector'],

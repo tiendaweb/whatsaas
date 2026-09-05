@@ -186,8 +186,11 @@ export async function GET(request: Request) {
         continue;
       }
 
+      // El filtro por `teamId` es la barrera final: en la base pueden quedar
+      // programados de antes del arreglo apuntando a la instancia de otro
+      // equipo. Sin esta condición, el cron mandaba con ese token ajeno.
       const instance = await db.query.evolutionInstances.findFirst({
-        where: eq(evolutionInstances.id, msg.instanceId),
+        where: and(eq(evolutionInstances.id, msg.instanceId), eq(evolutionInstances.teamId, msg.teamId)),
         columns: { accessToken: true, instanceName: true, id: true, teamId: true },
       });
 

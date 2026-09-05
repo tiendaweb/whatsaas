@@ -12,9 +12,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const { id } = await params;
     const chatId = parseInt(id);
 
+    // `team.id` se obtenía y no se usaba en ninguna consulta: iterando ids se
+    // podía averiguar qué chats de otros equipos tienen una automatización
+    // corriendo. La sesión guarda su propio `teamId`, así que alcanza con
+    // filtrarlo.
     const session = await db.query.automationSessions.findFirst({
       where: and(
         eq(automationSessions.chatId, chatId),
+        eq(automationSessions.teamId, team.id),
         eq(automationSessions.status, 'active')
       ),
       columns: { id: true }

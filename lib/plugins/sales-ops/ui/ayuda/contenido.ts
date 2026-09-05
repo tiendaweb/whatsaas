@@ -66,6 +66,7 @@ export const TEMAS: Partial<Record<Vista, Tema>> = {
       { situacion: 'El pedido es "mandale esto ahora".', queHacer: 'Ejecutar ahora avisa que necesita un conector: el servidor redacta, no envía. Se aprieta Listo para conector.' },
       { situacion: 'La IA del equipo se quedó sin cuota.', queHacer: 'Aparece el motivo arriba del prompt y queda resaltado Listo para conector. El trabajo no se pierde: queda encolado.' },
       { situacion: 'Un pedido anterior volvió bloqueado.', queHacer: 'Aparece primero en el Chat IA, con el formulario que armó el conector. Se contesta ahí y la corrida vuelve a la cola.' },
+      { situacion: 'La clasificación detectó que la etapa del embudo está mal.', queHacer: 'En la ficha, el bloque «CRM a corregir» dice qué cambiaría y lo aplica de un botón. Focus no toca el CRM: eso se hace desde la ficha.' },
     ],
     reglas: [
       'Ejecutar ahora NUNCA envía un WhatsApp: redacta y deja programado. Un envío sigue pasando por proponer, aprobar y ejecutar.',
@@ -213,8 +214,17 @@ export const TEMAS: Partial<Record<Vista, Tema>> = {
       { situacion: 'Un conector propuso un prompt que no entiendo.', queHacer: 'Está en En revisión: leelo completo; si no sirve, Descartar. No sale nada sin tu aprobación.' },
       { situacion: 'Hechos está lleno de cosas viejas.', queHacer: 'Lo de más de dos días se archiva solo; con el chip Archivados se ve todo.' },
     ],
-    reglas: ['Proponer no envía. Aprobar no envía. Sólo Ejecutar le llega al cliente.', 'Un envío aprobado por contacto a la vez.', 'Lo que propone un conector espera aprobación.'],
-    conectores: ['whatspro_sales_work_queue entrega sólo lo aprobado. Para editar, quitar o rechazar: whatspro_sales_queue_edit / _remove / _reject, y whatspro_sales_run_manage para las corridas.'],
+    reglas: [
+      'Proponer no envía. Aprobar no envía. Sólo Ejecutar le llega al cliente.',
+      'Un envío aprobado por contacto a la vez.',
+      'Lo que propone un conector espera aprobación.',
+      'Un conector SÍ puede corregir el CRM del contacto que está trabajando (etapa, etiquetas, campos), de a uno y sólo lo que contradice ese chat. En lote, no: eso lo pide una persona.',
+      'Automatizaciones y registro de clientes siguen siendo de las personas.',
+    ],
+    conectores: [
+      'whatspro_sales_work_queue entrega sólo lo aprobado. Para editar, quitar o rechazar: whatspro_sales_queue_edit / _remove / _reject, y whatspro_sales_run_manage para las corridas.',
+      'Para corregir el CRM: whatspro_change_crm_stage, whatspro_set_contact_tags y whatspro_set_custom_fields. Todo queda auditado con el nombre del conector.',
+    ],
     verTambien: ['programados', 'audios', 'prompts'],
   },
   audios: {

@@ -1,7 +1,8 @@
 import 'server-only';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
-import { activityLogs, chats, contactTags, contacts, customFields, funnelStages, tags } from '@/lib/db/schema';
+import { activityLogs, chats, contactTags, contacts, customFields, funnelStages, tags, teamCommercialAnalysis } from '@/lib/db/schema';
+import type { CrmFix } from '../shared/crm-fix';
 
 /**
  * Pestaña CRM de la ficha: leer y escribir lo que define al contacto.
@@ -164,6 +165,126 @@ export async function updateCrm(teamId: number, userId: number, chatId: number, 
   const payload = await getCrm(teamId, chatId);
   if (!payload) throw new CrmError('No se pudo releer el contacto.');
   return payload;
+}
+
+// ── Aplicar la corrección propuesta ─────────────────────────────────────────
+
+export type ApplyCrmFixResult = {
+  applied: string[];
+  skipped: string[];
+  crm: CrmPayload;
+};
+
+/**
+ * Ejecuta el `crm_fix` que dejó la clasificación.
+ *
+ * Traduce nombres a ids contra el catálogo del equipo y arma UN patch para
+ * `updateCrm`, que es el único camino de escritura del CRM: así la validación
+ * de pertenencia al equipo, el reemplazo de etiquetas por conjunto y la
+ * auditoría son exactamente los mismos que cuando lo edita una persona a mano.
+ *
+ * Lo que no existe se saltea y se informa, no rompe: una etiqueta inventada por
+ * la IA no puede tirar abajo una corrección que además arreglaba la etapa. La
+ * comparación de nombres ignora mayúsculas y acentos, porque "Interesado" y
+ * "interesado" son la misma etiqueta para quien la escribió.
+ *
+ * Al terminar borra la propuesta: ya se aplicó, y un botón que sigue ahí
+ * después de apretarlo invita a aplicarla dos veces.
+ */
+export async function applyCrmFix(teamId: number, userId: number, chatId: number): Promise<ApplyCrmFixResult> {
+  const [analysis] = await db
+    .select({ id: teamCommercialAnalysis.id, crmFix: teamCommercialAnalysis.crmFix })
+    .from(teamCommercialAnalysis)
+    .where(and(eq(teamCommercialAnalysis.teamId, teamId), eq(teamCommercialAnalysis.chatId, chatId)))
+    .limit(1);
+
+  const fix = analysis?.crmFix as CrmFix | null | undefined;
+  if (!fix) throw new CrmError('Este contacto no tiene una corrección de CRM para aplicar.');
+
+  const actual = await getCrm(teamId, chatId);
+  if (!actual) throw new CrmError('No encontramos este chat.');
+  if (!actual.contactId) throw new CrmError('Este chat todavía no tiene una ficha de contacto. Guardalo como contacto antes de aplicar la corrección.');
+
+  const applied: string[] = [];
+  const skipped: string[] = [];
+  const patch: CrmPatch = {};
+
+  if (fix.stage !== undefined) {
+    if (fix.stage === null) {
+      patch.funnelStageId = null;
+      applied.push('Sacado del embudo');
+    } else {
+      const stage = actual.stages.find((s) => igual(s.name, fix.stage as string));
+      if (stage) {
+        patch.funnelStageId = stage.id;
+        applied.push(`Etapa: ${stage.name}`);
+      } else {
+        skipped.push(`No existe la etapa “${fix.stage}”`);
+      }
+    }
+  }
+
+  if (fix.addTags?.length || fix.removeTags?.length) {
+    const ids = new Set(actual.tagIds);
+    for (const nombre of fix.addTags ?? []) {
+      const tag = actual.allTags.find((t) => igual(t.name, nombre));
+      if (!tag) skipped.push(`No existe la etiqueta “${nombre}”`);
+      else if (ids.has(tag.id)) skipped.push(`Ya tenía “${tag.name}”`);
+      else {
+        ids.add(tag.id);
+        applied.push(`+ ${tag.name}`);
+      }
+    }
+    for (const nombre of fix.removeTags ?? []) {
+      const tag = actual.allTags.find((t) => igual(t.name, nombre));
+      if (!tag) skipped.push(`No existe la etiqueta “${nombre}”`);
+      else if (!ids.has(tag.id)) skipped.push(`No tenía “${tag.name}”`);
+      else {
+        ids.delete(tag.id);
+        applied.push(`− ${tag.name}`);
+      }
+    }
+    if (applied.length) patch.tagIds = Array.from(ids);
+  }
+
+  if (fix.fields && Object.keys(fix.fields).length) {
+    const porClave: Record<string, string | null> = {};
+    for (const [nombre, valor] of Object.entries(fix.fields)) {
+      // Acepta el nombre visible o la clave interna: el conector puede haber
+      // leído cualquiera de los dos en el expediente.
+      const campo = actual.fields.find((f) => igual(f.name, nombre) || igual(f.key, nombre));
+      if (!campo) {
+        skipped.push(`No existe el campo “${nombre}”`);
+        continue;
+      }
+      porClave[campo.key] = valor;
+      applied.push(valor == null || valor === '' ? `Borrado ${campo.name}` : `${campo.name}: ${valor}`);
+    }
+    if (Object.keys(porClave).length) patch.fields = porClave;
+  }
+
+  if (!applied.length) {
+    throw new CrmError(`No quedó nada para aplicar. ${skipped.join('. ')}`.trim());
+  }
+
+  const crm = await updateCrm(teamId, userId, chatId, patch);
+
+  await db
+    .update(teamCommercialAnalysis)
+    .set({ crmFix: null, crmToFix: null })
+    .where(and(eq(teamCommercialAnalysis.teamId, teamId), eq(teamCommercialAnalysis.chatId, chatId)));
+
+  await audit(teamId, userId, 'SALES_OPS_CRM_FIX_APPLIED', { chatId, contactId: actual.contactId, applied, skipped, propuesta: fix });
+
+  return { applied, skipped, crm };
+}
+
+/** Compara nombres como los compara una persona: sin mayúsculas ni acentos. */
+function igual(a: string | null | undefined, b: string | null | undefined): boolean {
+  const norm = (v: string | null | undefined) =>
+    (v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  const x = norm(a);
+  return x.length > 0 && x === norm(b);
 }
 
 /** Tipos de campo personalizado que el editor sabe dibujar. */

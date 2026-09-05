@@ -27,6 +27,7 @@ import { TemperatureIcon } from '../components/PriorityPill';
 import { ErrorState } from '../components/States';
 import { SiguienteAccion } from '../skills/SiguienteAccion';
 import { ProponerAccionDialog } from '../cola/ProponerAccionDialog';
+import { CrmFixCard } from '../components/CrmFixCard';
 import { CrmTab } from '../components/CrmTab';
 import { ProgramadosContacto } from '../components/ProgramadosContacto';
 import { ProyectosVinculados } from '../components/ProyectosVinculados';
@@ -133,7 +134,7 @@ export function FichaView({ chatId, seccionInicial }: Props) {
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto py-3">
           {seccion === 'resumen' &&
             (a ? (
-              <Resumen a={a} header={h} timeline={data.timeline} chatHref={data.chatHref} signals={data.signals} onOverride={() => void mutate()} />
+              <Resumen a={a} header={h} timeline={data.timeline} chatHref={data.chatHref} signals={data.signals} onOverride={() => void mutate()} onIrACrm={() => setSeccion('crm')} />
             ) : (
               <SinAnalisis chatId={chatId} header={h} timeline={data.timeline} chatHref={data.chatHref} signals={data.signals} onOverride={() => void mutate()} />
             ))}
@@ -265,6 +266,7 @@ function Resumen({
   chatHref,
   signals,
   onOverride,
+  onIrACrm,
 }: {
   a: AnalysisDetail;
   header: Header;
@@ -272,6 +274,8 @@ function Resumen({
   chatHref: string;
   signals: SignalRow[];
   onOverride: () => void;
+  /** Salta a la pestaña CRM. Sin esto, la corrección a mano no se ofrece. */
+  onIrACrm?: () => void;
 }) {
   const chatName = header.name;
   const analyzedText = a.analyzedAt ? `analizado ${tiempoRelativo(a.analyzedAt)}${a.analyzedBy ? ` por ${humanize(a.analyzedBy)}` : ''}` : 'sin analizar';
@@ -428,12 +432,13 @@ function Resumen({
       )}
 
 
-      {(a.notesForHuman || a.crmToFix) && (
+      {a.notesForHuman && (
         <dl className="space-y-3">
-          {a.notesForHuman && <Field label="Notas para el humano">{a.notesForHuman}</Field>}
-          {a.crmToFix && <Field label="CRM a corregir">{a.crmToFix}</Field>}
+          <Field label="Notas para el humano">{a.notesForHuman}</Field>
         </dl>
       )}
+
+      <CrmFixCard chatId={a.chatId} texto={a.crmToFix} fix={a.crmFix} onAplicado={onOverride} onEditar={onIrACrm} />
 
       <ProyectosVinculados chatId={a.chatId} />
 

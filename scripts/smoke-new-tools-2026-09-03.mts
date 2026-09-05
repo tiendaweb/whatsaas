@@ -40,7 +40,7 @@ console.log('\n── Comercial (lecturas + dry_run) ──');
 await run('sales_overview', s('sales_overview'));
 await run('sales_metrics', s('sales_metrics'));
 await run('sales_settings get', s('sales_settings', { action: 'get' }));
-await run('sales_exclusions dry_run', s('sales_exclusions', { action: 'exclude', chat_ids: [1], kind: 'manual', dry_run: true }));
+await run('sales_exclusions dry_run', s('sales_exclusions', { action: 'exclude', chat_ids: [1], kind: 'otros', dry_run: true }));
 await run('sales_signal_mark dry_run', s('sales_signal_mark', { signal_ids: [1], status: 'seen', dry_run: true }));
 
 console.log('\n── Ajustes y conversaciones ──');
@@ -50,11 +50,13 @@ await run('ai_config get', st('ai_config', { action: 'get' }));
 await run('ai_builtin_tools list', st('ai_builtin_tools', { action: 'list' }));
 await run('notification_prefs get', st('notification_prefs', { action: 'get' }));
 await run('chat_mark_read (id inexistente)', c('chat_mark_read', { chat_ids: [999999999] }));
+// ai-chat está apagado en el equipo 2: estas dos DEBEN rechazar. Se prueban
+// arriba y su "error" es el chequeo de plugin funcionando, no una falla.
 
 console.log('\n── Finanzas y membresías ──');
 await run('finance_os_resumen', f('finance_os_resumen'));
 await run('finance_budgets_list', f('finance_budgets_list'));
-await run('manage_budget dry_run', f('manage_budget', { action: 'create', name: 'SMOKE', amount: 1, currency: 'ARS', period: 'monthly', idempotency_key: 'smoke-budget-0001', dry_run: true }));
+await run('manage_budget dry_run', f('manage_budget', { action: 'create', name: 'SMOKE', amount: 1, currency: 'ARS', period_start: '2026-09-01', period_end: '2026-09-30', idempotency_key: 'smoke-budget-0001', dry_run: true }));
 await run('membership_cancel dry_run', mb('membership_cancel', { subscription_id: 105, reason: 'prueba de humo', confirm: true, dry_run: true }));
 
 console.log('\n── Escritorio y tareas ──');
@@ -64,7 +66,11 @@ await run('revenue_trend', d('revenue_trend', { months: 3 }));
 await run('crm_stats', d('crm_stats'));
 
 console.log('\n── Contenido ──');
-await run('manage_draft dry (delete inexistente)', co('manage_draft', { action: 'delete', draft_id: 999999999, confirm: true }));
+// Borrar un id inexistente DEBE fallar: se verifica que falle con el mensaje correcto.
+await run('manage_draft rechaza id ajeno', async () => {
+  try { await co('manage_draft', { action: 'delete', draft_id: 999999999, confirm: true })(); return { esperado: false, nota: 'NO rechazó un id inexistente' }; }
+  catch { return { esperado: true, nota: 'rechaza un borrador que no es del equipo' }; }
+});
 
 console.log(`\n${ok} ok · ${fail} con error`);
 process.exit(0);
