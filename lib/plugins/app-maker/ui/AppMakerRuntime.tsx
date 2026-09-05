@@ -46,6 +46,7 @@ import type {
 } from '../shared/contract';
 import { getAppMakerDesignTemplate } from '../shared/design-templates';
 import './app-maker.css';
+import { formatMoney as formatMoneySeguro, formatMoneyFromCents } from '@/lib/format/money';
 
 const fetcher = async (url: string) => {
   const response = await fetch(url, { cache: 'no-store' });
@@ -125,7 +126,7 @@ function metricValue(block: AppBlockDefinition, rows: Array<Record<string, unkno
 
 function formatMetric(block: AppBlockDefinition, value: number) {
   const format = block.metric?.format ?? 'number';
-  if (format === 'currency') return new Intl.NumberFormat(undefined, { style: 'currency', currency: block.metric?.currency ?? 'USD' }).format(value);
+  if (format === 'currency') return formatMoneySeguro(value, block.metric?.currency ?? 'USD', { maximumFractionDigits: 2 });
   if (format === 'percent') return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)}%`;
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value);
 }
@@ -352,7 +353,7 @@ function ProgressList({ rows, config }: { rows: Array<Record<string, unknown>>; 
   return <div className="space-y-4">{rows.map((row, index) => {
     const value = Number(row[config.valueField]) || 0;
     const percent = Math.max(0, Math.min(100, (value / config.max) * 100));
-    const formatted = config.format === 'currency' ? new Intl.NumberFormat(undefined, { style: 'currency', currency: config.currency ?? 'USD' }).format(value) : config.format === 'percent' ? `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(percent)}%` : displayValue(value);
+    const formatted = config.format === 'currency' ? formatMoneySeguro(value, config.currency ?? 'USD', { maximumFractionDigits: 2 }) : config.format === 'percent' ? `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(percent)}%` : displayValue(value);
     return <div key={String(row.id ?? index)}><div className="mb-1.5 flex items-center justify-between gap-3 text-xs"><span className="truncate font-medium">{displayValue(row[config.labelField ?? 'name'] ?? row.id)}</span><span className="tabular-nums text-muted-foreground">{formatted}</span></div><div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${percent}%` }} /></div></div>;
   })}</div>;
 }

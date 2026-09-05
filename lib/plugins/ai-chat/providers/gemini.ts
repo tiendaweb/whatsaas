@@ -3,6 +3,24 @@ import { AIProvider, AIProviderConfig, AIMessage, ToolDefinition } from "../type
 import fs from 'fs/promises';
 import path from 'path';
 
+
+/**
+ * Los argumentos de un tool call vienen como texto del modelo y llegan
+ * truncados cuando se corta por `maxOutputTokens`. Un `JSON.parse` pelado tira
+ * y se lleva puesta la respuesta entera del chat; con un objeto vacío la tool
+ * al menos falla por validación y el usuario recibe algo.
+ */
+function parseToolArgs(raw: unknown): Record<string, unknown> {
+  if (typeof raw !== 'string' || !raw.trim()) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    console.error('[ai-chat/gemini] argumentos de tool call ilegibles, se ignoran:', raw.slice(0, 200));
+    return {};
+  }
+}
+
 export class GeminiProvider implements AIProvider {
   private client: GoogleGenAI;
   private modelName: string;
@@ -95,7 +113,7 @@ export class GeminiProvider implements AIProvider {
             parts.push({
               functionCall: {
                 name: call.function.name,
-                args: JSON.parse(call.function.arguments)
+                args: parseToolArgs(call.function.arguments)
               }
             });
           });

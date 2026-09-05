@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { Loader2, PackageCheck, Plus, ShoppingCart, Trash2, Truck } from 'lucide-react';
+import { formatMoney as formatMoneySeguro, formatMoneyFromCents } from '@/lib/format/money';
 
 type Vendor = {
   id: number;
@@ -52,7 +53,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 function formatMoney(amount: number, currency: string) {
-  return new Intl.NumberFormat('es-AR', { style: 'currency', currency, maximumFractionDigits: 2 }).format(amount / 100);
+  return formatMoneyFromCents(amount, currency, { locale: 'es-AR', maximumFractionDigits: 2 });
 }
 
 export function PurchasesDashboard() {

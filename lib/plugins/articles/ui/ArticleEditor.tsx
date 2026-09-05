@@ -21,6 +21,7 @@ import {
 import { ArrowLeft, Loader2, Tag, X } from 'lucide-react';
 import { ArticleVariationsSection } from './ArticleVariationsSection';
 import { ArticlePlansSection } from './ArticlePlansSection';
+import { formatMoney as formatMoneySeguro, formatMoneyFromCents } from '@/lib/format/money';
 import {
   billingModeLabel,
   computeCustomFieldsPriceDelta,
@@ -438,7 +439,7 @@ export function ArticleEditor({ mode, articleId }: { mode: 'new' | 'edit'; artic
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Precio final</span>
                   <span className="font-medium tabular-nums">
-                    {new Intl.NumberFormat('es-ES', { style: 'currency', currency: form.currency, minimumFractionDigits: 2 }).format(totalPriceCents / 100)}
+                    {formatMoneyFromCents(totalPriceCents, form.currency, { locale: 'es-ES', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
                 {priceDelta !== 0 && (

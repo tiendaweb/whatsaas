@@ -1,5 +1,7 @@
 'use client';
 
+import { PROGRAMADOS_API, programadosFetcher as fetchProgramados } from '@/lib/plugins/scheduled-messages/ui/swr';
+
 /** Cliente del plugin de Mensajes programados, visto desde el Command Center. */
 
 export type Programado = {
@@ -25,16 +27,15 @@ export type Programado = {
 
 export type RespuestaProgramados = { disponible: boolean; rows: Programado[] };
 
-export const PROGRAMADOS_API = '/api/plugins/scheduled-messages';
+/**
+ * La clave y el fetcher son los del plugin dueño del endpoint. Había tres copias
+ * de esto —acá, en la ficha y en la app de Programados— y una cuarta que
+ * devolvía el array pelado: SWR cachea por clave y no por fetcher, así que las
+ * formas distintas se pisaban y la que perdía la carrera recibía la del otro.
+ */
+export { PROGRAMADOS_API };
 
-/** 401/403/404 = plugin apagado o sin permiso: no es un error que se pueda arreglar desde acá. */
-export const programadosFetcher = async (url: string): Promise<RespuestaProgramados> => {
-  const res = await fetch(url, { cache: 'no-store' });
-  if (res.status === 401 || res.status === 403 || res.status === 404) return { disponible: false, rows: [] };
-  if (!res.ok) throw new Error(`Error ${res.status}`);
-  const rows = (await res.json()) as Programado[];
-  return { disponible: true, rows: Array.isArray(rows) ? rows : [] };
-};
+export const programadosFetcher = (url: string): Promise<RespuestaProgramados> => fetchProgramados<Programado>(url);
 
 export async function patchProgramado(id: number, cuerpo: Record<string, unknown>): Promise<void> {
   const res = await fetch(`${PROGRAMADOS_API}/${id}`, {

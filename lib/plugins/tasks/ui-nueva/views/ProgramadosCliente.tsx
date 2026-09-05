@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
+import { PROGRAMADOS_API, programadosFetcher } from '@/lib/plugins/scheduled-messages/ui/swr';
 import { Clock, Pause, Play, Plus, Save, Trash2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { C } from '../data/clases';
@@ -78,11 +79,10 @@ export function ProgramadosCliente(props: {
   telefono: string | null;
   nombreCliente: string;
 }) {
-  const { data, isLoading, mutate } = useSWR<Programado[]>(
-    '/api/plugins/scheduled-messages',
-    (url: string) => fetch(url).then((r) => (r.ok ? r.json() : [])),
-    { revalidateOnFocus: false },
-  );
+  // Clave y fetcher compartidos con la app de Programados y con el Command
+  // Center: SWR cachea por clave, y dos fetchers con formas distintas sobre esta
+  // URL se pisan (el que pierde la carrera recibe la forma del otro).
+  const { data, isLoading, mutate } = useSWR(PROGRAMADOS_API, programadosFetcher<Programado>, { revalidateOnFocus: false });
 
   const [borrador, setBorrador] = useState<Borrador | null>(null);
   const [guardando, setGuardando] = useState(false);
@@ -92,7 +92,7 @@ export function ProgramadosCliente(props: {
 
   const propios = useMemo(() => {
     if (!telefono) return [];
-    return (data ?? []).filter((item) =>
+    return (data?.rows ?? []).filter((item) =>
       (item.targetNumbers ?? []).some((numero) => soloDigitos(numero) === telefono));
   }, [data, telefono]);
 

@@ -30,6 +30,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { BILLING_MODES, billingModeLabel, type BillingMode } from '../constants';
+import { formatMoney as formatMoneySeguro, formatMoneyFromCents } from '@/lib/format/money';
 
 type Plan = {
   id: number;
@@ -70,7 +71,7 @@ const EMPTY_PLAN: PlanFormData = {
 const fetcher = (url: string) => fetch(url, { cache: 'no-store' }).then(r => r.json());
 
 function formatPrice(cents: number, currency: string) {
-  return new Intl.NumberFormat('es-ES', { style: 'currency', currency, minimumFractionDigits: 2 }).format(cents / 100);
+  return formatMoneyFromCents(cents, currency, { locale: 'es-ES', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export function ArticlePlansSection({ articleId }: { articleId: number }) {

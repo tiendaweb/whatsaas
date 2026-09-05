@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { getSafeAvatarSrc } from '@/lib/avatar-url';
 import { CustomAudioPlayer } from '@/components/ui/custom-audio-player';
+import { formatMoney as formatMoneySeguro, formatMoneyFromCents } from '@/lib/format/money';
 import type {
   ClientItem, CRMContact, CustomerActivity, ClientProduct,
   DetailSource, FunnelStage, CustomField, TeamMember, CustomerInternalNote, CustomerAttachment,
@@ -44,7 +45,7 @@ const STATUS_CLS: Record<string, string> = {
 };
 
 function fmtMoney(amount: number, currency: string) {
-  return new Intl.NumberFormat('es-MX', { style: 'currency', currency, minimumFractionDigits: 2 }).format(amount);
+  return formatMoneySeguro(amount, currency, { locale: 'es-MX', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function formatDate(d: string | null | undefined) {

@@ -5,6 +5,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PieChart as PieChartIcon, Loader2 } from 'lucide-react';
+import { formatMoney as formatMoneySeguro, formatMoneyFromCents } from '@/lib/format/money';
 
 type OverviewData = {
   finance: { incomePaid: number; expensePaid: number; pending: number } | null;
@@ -41,7 +42,7 @@ const SALE_STATUS_LABEL: Record<string, string> = {
 };
 
 function formatMoney(amount: number, currency = 'ARS') {
-  return new Intl.NumberFormat('es-AR', { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount / 100);
+  return formatMoneyFromCents(amount, currency, { locale: 'es-AR' });
 }
 
 function Kpi({ label, value, detail }: { label: string; value: string; detail?: string }) {

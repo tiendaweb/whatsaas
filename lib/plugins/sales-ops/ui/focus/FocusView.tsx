@@ -8,7 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import type { DetailPayload } from '../../shared/api-types';
 import type { OwnerFilterValue } from '../components/OwnerFilter';
-import { PROGRAMADOS_API, programadosFetcher } from '../cola/PromptsEnCola';
+import { PROGRAMADOS_API, programadosFetcher, type Programado } from '../cola/PromptsEnCola';
 import { ProgramadosContacto } from '../components/ProgramadosContacto';
 import { ErrorState } from '../components/States';
 import { SALES_OPS_API, fetcher } from '../components/format';
@@ -94,7 +94,7 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
    * forma del otro. Con un fetcher propio que devolvía un array pelado, acá
    * llegaba `{disponible, rows}` y `.find` reventaba la pantalla.
    */
-  const { data: programados } = useSWR(PROGRAMADOS_API, programadosFetcher, { revalidateOnFocus: false });
+  const { data: programados } = useSWR(PROGRAMADOS_API, programadosFetcher<Programado>, { revalidateOnFocus: false });
 
   // El siguiente se pide mientras se trabaja el actual: pasar de cliente no
   // puede esperar a la red.

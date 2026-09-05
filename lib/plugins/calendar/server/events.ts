@@ -172,8 +172,13 @@ export async function overlappingEvents(teamId: number, startsAt: Date, endsAt: 
   const conds = [
     eq(teamEvents.teamId, teamId),
     ne(teamEvents.status, 'canceled'),
-    sql`${teamEvents.startsAt} < ${endsAt}`,
-    sql`${teamEvents.endsAt} > ${startsAt}`,
+    // Un `Date` crudo dentro de un template `sql` de drizzle SIEMPRE tira
+    // ("The string argument must be of type string... Received an instance of
+    // Date"): hay que mandarlo como literal ISO con cast. Esta función fallaba
+    // en el 100% de las llamadas, así que la validación de superposición nunca
+    // funcionó y encima impedía crear el evento con un 422 incomprensible.
+    sql`${teamEvents.startsAt} < ${endsAt.toISOString()}::timestamp`,
+    sql`${teamEvents.endsAt} > ${startsAt.toISOString()}::timestamp`,
   ];
   if (exceptId) conds.push(ne(teamEvents.id, exceptId));
   return db

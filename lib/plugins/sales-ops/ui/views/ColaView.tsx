@@ -78,7 +78,7 @@ export function ColaView({ presetChatIds, onOpen, selectedChatId }: { presetChat
   const tQueue = useTranslations('SalesOpsQueue');
   const { data, isLoading, error, mutate } = useSWR<QueueListPayload>(QUEUE_ENDPOINT, fetcher, { refreshInterval: 60_000 });
   const runs = useSWR<{ runs: SkillRun[] }>(`${SALES_OPS_API}/prompts/queue?status=all&engine=exclude&limit=200`, jsonFetcher, { refreshInterval: 60_000 });
-  const programados = useSWR(PROGRAMADOS_API, programadosFetcher, { revalidateOnFocus: false, refreshInterval: 120_000 });
+  const programados = useSWR(PROGRAMADOS_API, programadosFetcher<Programado>, { revalidateOnFocus: false, refreshInterval: 120_000 });
   const [openBatch, setOpenBatch] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [seccion, setSeccion] = useState<Seccion>('revision');

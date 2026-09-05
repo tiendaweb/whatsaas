@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { PROGRAMADOS_API as API, programadosFetcher } from '@/lib/plugins/scheduled-messages/ui/swr';
 import { SALES_OPS_API, fmtDateTime } from './format';
 import { pasarACola } from '../programados/api';
 import { avisarEncolado } from './eventos';
@@ -47,8 +48,6 @@ type Programado = {
 };
 
 type Respuesta = { disponible: boolean; rows: Programado[] };
-
-const API = '/api/plugins/scheduled-messages';
 
 const ESTADO_LABEL: Record<Programado['status'], string> = {
   active: 'Activo',
@@ -101,16 +100,6 @@ function cuando(item: Programado) {
   return `Sale ${fmtDateTime(item.scheduledAt ?? item.nextRunAt)}`;
 }
 
-const fetcher = async (url: string): Promise<Respuesta> => {
-  const res = await fetch(url, { cache: 'no-store' });
-  // 401/403 = plugin apagado o sin permiso: se oculta la sección, no es un error
-  // que el usuario pueda arreglar desde acá.
-  if (res.status === 401 || res.status === 403 || res.status === 404) return { disponible: false, rows: [] };
-  if (!res.ok) throw new Error(`Error ${res.status}`);
-  const rows = (await res.json()) as Programado[];
-  return { disponible: true, rows: Array.isArray(rows) ? rows : [] };
-};
-
 type Borrador = {
   id: number | null;
   name: string;
@@ -162,7 +151,7 @@ export function ProgramadosContacto({
   /** Se llama después de crear, editar, pausar o borrar (para refrescar la lista). */
   onCambio?: () => void;
 }) {
-  const { data, isLoading, mutate } = useSWR<Respuesta>(API, fetcher, { revalidateOnFocus: false });
+  const { data, isLoading, mutate } = useSWR<Respuesta>(API, programadosFetcher<Programado>, { revalidateOnFocus: false });
 
   const [abierto, setAbierto] = useState(inicialAbierto);
   const [borrador, setBorrador] = useState<Borrador | null>(null);

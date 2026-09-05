@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { CheckCircle2, Loader2, Percent, UserCog, Users } from 'lucide-react';
+import { formatMoney as formatMoneySeguro, formatMoneyFromCents } from '@/lib/format/money';
 
 type MemberRow = {
   teamMemberId: number;
@@ -58,7 +59,7 @@ const EMPLOYMENT_LABEL: Record<string, string> = { active: 'Activo', on_leave: '
 const COMMISSION_STATUS_LABEL: Record<string, string> = { pending: 'Pendiente', approved: 'Aprobada', paid: 'Pagada', cancelled: 'Cancelada' };
 
 function formatMoney(amount: number, currency: string) {
-  return new Intl.NumberFormat('es-AR', { style: 'currency', currency, maximumFractionDigits: 2 }).format(amount / 100);
+  return formatMoneyFromCents(amount, currency, { locale: 'es-AR', maximumFractionDigits: 2 });
 }
 
 export function HrDashboard() {

@@ -44,6 +44,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { formatMoney as formatMoneySeguro, formatMoneyFromCents } from '@/lib/format/money';
 
 type Section = 'overview' | 'income' | 'expense' | 'recurring' | 'receipts' | 'treasury';
 type Entry = {
@@ -163,7 +164,7 @@ export function FinanceDashboard() {
     return haystack.includes(query.trim().toLowerCase());
   });
 
-  const formatMoney = (amount: number) => new Intl.NumberFormat(locale, { style: 'currency', currency, maximumFractionDigits: 2 }).format(amount / 100);
+  const formatMoney = (amount: number) => formatMoneyFromCents(amount, currency, { locale, maximumFractionDigits: 2 });
   const formatDate = (value: string | null) => value ? new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${value.slice(0, 10)}T12:00:00Z`)) : t('no_date');
   const formatDateTime = (value: string | null) => value ? new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : t('no_date');
   const selectedEntry = data?.entries.find((entry) => entry.id === selectedEntryId) ?? null;

@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { PROGRAMADOS_API, programadosFetcher } from '@/lib/plugins/scheduled-messages/ui/swr';
 import { fmtDateTime, tiempoRelativo } from '../components/format';
 import { borrarProgramado } from '../programados/api';
 import type { SkillRun } from '../skills/api';
@@ -32,16 +33,12 @@ export type Programado = {
   targetNumbers: string[];
 };
 
-export const PROGRAMADOS_API = '/api/plugins/scheduled-messages';
-
-/** 401/403 = plugin apagado o sin permiso: la sección se oculta, no es un error. */
-export const programadosFetcher = async (url: string): Promise<{ disponible: boolean; rows: Programado[] }> => {
-  const res = await fetch(url, { cache: 'no-store' });
-  if (res.status === 401 || res.status === 403 || res.status === 404) return { disponible: false, rows: [] };
-  if (!res.ok) throw new Error(`Error ${res.status}`);
-  const rows = (await res.json()) as Programado[];
-  return { disponible: true, rows: Array.isArray(rows) ? rows : [] };
-};
+/**
+ * La clave y el fetcher vienen del plugin dueño del endpoint, no de acá: son los
+ * mismos que usan la app de Programados y Tareas. Dos fetchers sobre la misma
+ * clave de SWR se pisan (ver el comentario en ese archivo).
+ */
+export { PROGRAMADOS_API, programadosFetcher };
 
 /** Pausa o reactiva un programado. */
 export async function cambiarEstadoProgramado(item: Programado, status: 'active' | 'paused') {

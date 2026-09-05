@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect, type KeyboardEvent } from 'react';
 import useSWR from 'swr';
+import { PROGRAMADOS_API, programadosFetcher } from './swr';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -690,7 +691,9 @@ function EmptyState({ hasMessages, onNew }: { hasMessages: boolean; onNew: () =>
 // ─── Main Dashboard ──────────────────────────────────────────────────────────
 
 function GeneralScheduledMessagesDashboard() {
-  const { data, mutate } = useSWR<ScheduledMessage[]>('/api/plugins/scheduled-messages', fetcher);
+  // Clave y fetcher compartidos con el Command Center y con Tareas: SWR cachea
+  // por clave, y dos fetchers con formas distintas sobre esta URL se pisan.
+  const { data, mutate } = useSWR(PROGRAMADOS_API, programadosFetcher<ScheduledMessage>);
   const { data: instances } = useSWR<Instance[]>('/api/instance/list', fetcher);
   const { data: automationsData } = useSWR<AutomationOption[]>('/api/automation/templates', fetcher);
 
@@ -700,7 +703,7 @@ function GeneralScheduledMessagesDashboard() {
   const [form, setForm] = useState<FormState>(defaultForm());
   const [saving, setSaving] = useState(false);
 
-  const messages = data ?? [];
+  const messages = data?.rows ?? [];
   const instanceList = instances ?? [];
 
   // Extract automations for dropdown (from templates endpoint)

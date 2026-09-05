@@ -1,4 +1,5 @@
 import type { BillingType, FeatureType, PaymentStatus, PlanVisibility, SubscriptionStatus } from '../constants';
+import { formatMoneyFromCents } from '@/lib/format/money';
 
 export const fetcher = async (url: string) => {
   const response = await fetch(url, { cache: 'no-store' });
@@ -8,12 +9,17 @@ export const fetcher = async (url: string) => {
 
 export const CURRENCIES = ['USD', 'MXN', 'EUR', 'ARS', 'COP', 'CLP', 'PEN'];
 
+/**
+ * `currency || 'USD'` NO alcanzaba: los valores sucios que llegaban del sync de
+ * AAPP son strings truthy y pasaban derecho al `Intl`, que tira `RangeError` y
+ * deja la pantalla de planes en blanco.
+ */
 export function formatPrice(cents: number, currency: string) {
-  return new Intl.NumberFormat('es-ES', {
-    style: 'currency',
-    currency: currency || 'USD',
+  return formatMoneyFromCents(cents ?? 0, currency, {
+    locale: 'es-ES',
     minimumFractionDigits: 2,
-  }).format((cents ?? 0) / 100);
+    maximumFractionDigits: 2,
+  });
 }
 
 export function formatDate(iso: string | null | undefined) {
