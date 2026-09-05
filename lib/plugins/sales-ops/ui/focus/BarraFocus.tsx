@@ -8,7 +8,8 @@ import { cn } from '@/lib/utils';
 import { GATES, type Gate } from '../../shared/taxonomy';
 import { GateBadge } from '../components/GateBadge';
 import { fmtInt } from '../components/format';
-import { ETAPAS, ETAPA_HINTS, ETAPA_LABELS, ORDENES, reloj, type Etapa, type FiltrosFocus, type OrdenFocus } from './tipos';
+import { Reloj } from './Reloj';
+import { ETAPAS, ETAPA_HINTS, ETAPA_LABELS, ORDENES, type Etapa, type FiltrosFocus, type OrdenFocus } from './tipos';
 import type { ResumenSesion } from './useColaFocus';
 
 type Props = {
@@ -19,7 +20,8 @@ type Props = {
   sesion: ResumenSesion;
   filtros: FiltrosFocus;
   onFiltros: (f: FiltrosFocus) => void;
-  restante: number;
+  terminaEn: number | null;
+  pausadoCon: number | null;
   pausado: boolean;
   hayBloque: boolean;
   onReloj: () => void;
@@ -46,7 +48,8 @@ export function BarraFocus({
   sesion,
   filtros,
   onFiltros,
-  restante,
+  terminaEn,
+  pausadoCon,
   pausado,
   hayBloque,
   onReloj,
@@ -91,7 +94,7 @@ export function BarraFocus({
         )}
       >
         {!hayBloque ? <Timer className="size-3.5" aria-hidden /> : pausado ? <Play className="size-3.5" aria-hidden /> : <Pause className="size-3.5" aria-hidden />}
-        {hayBloque ? reloj(restante) : '25:00'}
+        {hayBloque ? <Reloj terminaEn={terminaEn} pausadoCon={pausadoCon} /> : '25:00'}
       </button>
 
       {/* Etapa y progreso: es lo que la persona mira de reojo, así que se queda

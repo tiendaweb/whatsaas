@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { LS_BLOQUE, MINUTOS_BLOQUE, MINUTOS_DESCANSO } from './tipos';
 
 export type TipoBloque = 'foco' | 'descanso';
@@ -48,39 +48,59 @@ const MINUTOS: Record<TipoBloque, number> = { foco: MINUTOS_BLOQUE, descanso: MI
 /**
  * El cronómetro de los bloques de 25 minutos (doc 08 §8).
  *
- * El reloj informa, no manda: nada de la pantalla se bloquea cuando llega a
- * cero. Lo único que pasa es que `vencido` se pone en true y el Focus muestra
- * el aviso con las tres salidas (otro bloque, descanso, salir).
+ * **No hace tic-tac.** Antes tenía un `setInterval` de un segundo que cambiaba
+ * estado, y como este hook vive en el Focus eso volvía a renderizar la pantalla
+ * entera —las tres columnas, el chat embebido y todo— sesenta veces por minuto.
+ * Acá sólo se agenda un `setTimeout` al instante exacto del vencimiento; los
+ * segundos que corren los dibuja `<Reloj>`, que se re-renderiza solo.
+ *
+ * El reloj informa, no manda: nada de la pantalla se bloquea al llegar a cero.
  */
 export function useBloque() {
   const [bloque, setBloque] = useState<BloqueGuardado | null>(null);
-  const [ahora, setAhora] = useState(() => Date.now());
+  const [vencido, setVencido] = useState(false);
   /** El aviso de "se terminó" se cierra a mano: si se cerrara solo, quien
    *  estaba escribiendo un mensaje no se enteraría de que el bloque terminó. */
   const [avisoCerrado, setAvisoCerrado] = useState(false);
-  const montado = useRef(false);
 
   useEffect(() => {
-    montado.current = true;
     setBloque(leer());
   }, []);
 
   useEffect(() => {
-    const id = window.setInterval(() => setAhora(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
+    setVencido(false);
+    if (!bloque || bloque.pausadoCon != null) return;
 
-  const restante = bloque ? (bloque.pausadoCon ?? Math.max(0, bloque.terminaEn - ahora)) : 0;
-  const pausado = Boolean(bloque?.pausadoCon != null);
-  const vencido = Boolean(bloque && !pausado && restante <= 0);
+    let id = 0;
+    const revisar = () => {
+      const falta = bloque.terminaEn - Date.now();
+      if (falta <= 0) {
+        setVencido(true);
+        return;
+      }
+      window.clearTimeout(id);
+      id = window.setTimeout(revisar, falta);
+    };
+    revisar();
+
+    // Con la pestaña en segundo plano el navegador estira los timers: al volver
+    // se revisa contra el reloj real en vez de confiar en cuándo disparó.
+    const alVolver = () => {
+      if (document.visibilityState === 'visible') revisar();
+    };
+    document.addEventListener('visibilitychange', alVolver);
+    return () => {
+      window.clearTimeout(id);
+      document.removeEventListener('visibilitychange', alVolver);
+    };
+  }, [bloque]);
 
   const arrancar = useCallback((tipo: TipoBloque = 'foco') => {
-    const ahoraMs = Date.now();
-    const nuevo: BloqueGuardado = { tipo, terminaEn: ahoraMs + MINUTOS[tipo] * 60_000, pausadoCon: null, desde: ahoraMs };
+    const ahora = Date.now();
+    const nuevo: BloqueGuardado = { tipo, terminaEn: ahora + MINUTOS[tipo] * 60_000, pausadoCon: null, desde: ahora };
     setBloque(nuevo);
     escribir(nuevo);
     setAvisoCerrado(false);
-    setAhora(ahoraMs);
   }, []);
 
   const pausar = useCallback(() => {
@@ -108,16 +128,15 @@ export function useBloque() {
   }, []);
 
   return {
-    /** null hasta que se lee localStorage: en el primer render del servidor no hay reloj. */
+    /** null hasta que se lee localStorage: en el primer render no hay reloj. */
     tipo: bloque?.tipo ?? null,
-    restante,
-    pausado,
-    corriendo: Boolean(bloque) && !pausado && restante > 0,
+    terminaEn: bloque?.terminaEn ?? null,
+    pausadoCon: bloque?.pausadoCon ?? null,
+    pausado: bloque?.pausadoCon != null,
+    hayBloque: Boolean(bloque),
     /** Vencido y todavía sin decidir qué hacer. */
     mostrarAviso: vencido && !avisoCerrado,
-    /** Minutos que duró el bloque que acaba de terminar. */
     minutos: bloque ? MINUTOS[bloque.tipo] : MINUTOS_BLOQUE,
-    hayBloque: Boolean(bloque),
     arrancar,
     pausar,
     reanudar,

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Inbox, Loader2, Play } from 'lucide-react';
+import { Inbox, Loader2, Play, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -120,31 +120,52 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
           {motivoConector}
         </p>
       )}
-      <div className="flex items-end gap-2">
-        <Textarea
-          ref={ref}
-          rows={1}
-          value={texto}
-          onChange={(e) => escribir(e.target.value)}
-          placeholder={accionRecomendada ? `${accionRecomendada.slice(0, 90)}…` : 'Qué querés que haga con este cliente…'}
-          className="max-h-24 min-h-9 flex-1 resize-none py-2 text-sm"
-          disabled={ocupado}
-        />
-        <Button type="button" onClick={() => void ejecutar()} disabled={ocupado || !texto.trim()} className="h-9 shrink-0 gap-1.5" title="La IA del equipo redacta acá mismo (E). No envía nada.">
-          {ejecutando ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Play className="size-4" aria-hidden />}
-          <span className="hidden sm:inline">Ejecutar ahora</span>
-        </Button>
-        <Button
-          type="button"
-          variant={motivoConector ? 'default' : 'outline'}
-          onClick={() => void encolar()}
-          disabled={ocupado}
-          className={cn('h-9 shrink-0 gap-1.5', motivoConector && 'ring-2 ring-primary/40')}
-          title="Deja el pedido en la cola y pasa al siguiente (C)"
-        >
-          {encolando ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Inbox className="size-4" aria-hidden />}
-          <span className="hidden sm:inline">Listo para conector</span>
-        </Button>
+      <div className="flex items-stretch gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Textarea
+            ref={ref}
+            rows={2}
+            value={texto}
+            onChange={(e) => escribir(e.target.value)}
+            placeholder={accionRecomendada ? `${accionRecomendada.slice(0, 90)}…` : 'Qué querés que haga con este cliente…'}
+            className="h-full min-h-[4.75rem] resize-none py-2 pr-8 text-sm"
+            disabled={ocupado}
+          />
+          {/* El pedido se arrastra de un cliente al siguiente a propósito, pero
+              tiene que poder cortarse sin borrar a mano. */}
+          {texto && !ocupado && (
+            <button
+              type="button"
+              onClick={() => escribir('')}
+              className="absolute right-1.5 top-1.5 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              title="Borrar el pedido"
+              aria-label="Borrar el pedido"
+            >
+              <X className="size-3.5" aria-hidden />
+            </button>
+          )}
+        </div>
+
+        {/* Uno abajo del otro: al lado, con el mismo tamaño y el mismo peso, se
+            apretaba el equivocado. Ahora la primera fila es la que se queda en
+            la pantalla y la segunda la que pasa al siguiente. */}
+        <div className="flex w-[168px] shrink-0 flex-col gap-1.5 sm:w-[184px]">
+          <Button type="button" onClick={() => void ejecutar()} disabled={ocupado || !texto.trim()} className="h-9 w-full justify-start gap-1.5" title="La IA del equipo redacta acá mismo. No envía nada.">
+            {ejecutando ? <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden /> : <Play className="size-4 shrink-0" aria-hidden />}
+            <span className="truncate">Ejecutar ahora</span>
+          </Button>
+          <Button
+            type="button"
+            variant={motivoConector ? 'default' : 'outline'}
+            onClick={() => void encolar()}
+            disabled={ocupado}
+            className={cn('h-9 w-full justify-start gap-1.5', motivoConector && 'ring-2 ring-primary/40')}
+            title="Deja el pedido en la cola y pasa al siguiente"
+          >
+            {encolando ? <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden /> : <Inbox className="size-4 shrink-0" aria-hidden />}
+            <span className="truncate">Listo para conector</span>
+          </Button>
+        </div>
       </div>
     </div>
   );

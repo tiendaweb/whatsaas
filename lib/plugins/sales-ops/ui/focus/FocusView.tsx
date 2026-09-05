@@ -16,6 +16,7 @@ import { BarraFocus } from './BarraFocus';
 import { BarraPrompt } from './BarraPrompt';
 import { Confeti } from './Confeti';
 import { FinDeEtapa } from './FinDeEtapa';
+import { LimiteDeError } from './LimiteDeError';
 import { PanelChatIA } from './PanelChatIA';
 import { PanelResumen } from './PanelResumen';
 import { FILTROS_INICIALES, guardarFiltros, leerFiltros, type FiltrosFocus } from './tipos';
@@ -39,8 +40,13 @@ const detalleUrl = (chatId: number) => `${SALES_OPS_API}/contacts/${chatId}`;
 export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir: () => void }) {
   const [filtros, setFiltros] = useState<FiltrosFocus>(FILTROS_INICIALES);
   const [listo, setListo] = useState(false);
-  /** Texto que bajó de "Ejecutar ahora" al editor de programados. */
-  const [borrador, setBorrador] = useState<{ texto: string; token: number } | null>(null);
+  /**
+   * Texto que bajó de "Ejecutar ahora" al editor de programados. Lleva el chat
+   * al que pertenece: limpiarlo con un efecto al cambiar de cliente corría
+   * DESPUÉS del render, y en ese hueco el editor del cliente nuevo podía
+   * quedarse con el texto que se escribió para el anterior.
+   */
+  const [borrador, setBorrador] = useState<{ texto: string; token: number; chatId: number } | null>(null);
   const [verEnviados, setVerEnviados] = useState(true);
   const tokenRef = useRef(0);
 
@@ -89,14 +95,8 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
   // El siguiente se pide mientras se trabaja el actual: pasar de cliente no
   // puede esperar a la red.
   useEffect(() => {
-    if (cola.siguiente) void preload(detalleUrl(cola.siguiente.chatId), fetcher);
+    if (cola.siguiente) preload(detalleUrl(cola.siguiente.chatId), fetcher).catch(() => {});
   }, [cola.siguiente]);
-
-  // Cambiar de cliente descarta el borrador del anterior: bajarle a este el
-  // texto que se escribió para otro sería el peor error posible acá.
-  useEffect(() => {
-    setBorrador(null);
-  }, [chatId]);
 
   const header = detalle?.header ?? null;
   const nombre = header?.name ?? cola.actual?.name ?? '';
@@ -111,10 +111,14 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
     return vivo?.message ?? null;
   }, [header?.remoteJid, programados]);
 
-  const recibirTexto = useCallback((texto: string) => {
-    tokenRef.current += 1;
-    setBorrador({ texto, token: tokenRef.current });
-  }, []);
+  const recibirTexto = useCallback(
+    (texto: string) => {
+      if (!chatId) return;
+      tokenRef.current += 1;
+      setBorrador({ texto, token: tokenRef.current, chatId });
+    },
+    [chatId],
+  );
 
   const saltar = useCallback(() => {
     if (cola.actual) cola.marcar(cola.actual.chatId, 'saltado');
@@ -176,7 +180,8 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
         sesion={cola.sesion}
         filtros={filtros}
         onFiltros={cambiarFiltros}
-        restante={bloque.restante}
+        terminaEn={bloque.terminaEn}
+        pausadoCon={bloque.pausadoCon}
         pausado={bloque.pausado}
         hayBloque={bloque.hayBloque}
         onReloj={() => (!bloque.hayBloque ? bloque.arrancar('foco') : bloque.pausado ? bloque.reanudar() : bloque.pausar())}
@@ -192,25 +197,31 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto xl:flex-row xl:overflow-hidden">
           {/* Izquierda: quién es. */}
           <aside className="shrink-0 border-border p-3 xl:w-[300px] xl:overflow-y-auto xl:border-r" aria-label="Resumen del cliente">
-            {chatId && <PanelResumen chatId={chatId} />}
+            <LimiteDeError nombre="Resumen">{chatId && <PanelResumen chatId={chatId} />}</LimiteDeError>
           </aside>
 
           {/* Centro: lo que le va a salir, y lo que la IA dijo. */}
           <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 p-3">
             {header?.remoteJid && (
-              <ProgramadosContacto
-                key={header.chatId}
-                remoteJid={header.remoteJid}
-                nombre={nombre}
-                chatId={header.chatId}
-                inicialAbierto
-                soloSiHay
-                borradorExterno={borrador}
-              />
+              <LimiteDeError nombre="Programados">
+                <ProgramadosContacto
+                  key={header.chatId}
+                  remoteJid={header.remoteJid}
+                  nombre={nombre}
+                  chatId={header.chatId}
+                  inicialAbierto
+                  soloSiHay
+                  borradorExterno={borrador?.chatId === header.chatId ? borrador : null}
+                />
+              </LimiteDeError>
             )}
             {/* En móvil el hilo con la IA no puede comerse la pantalla: se acota
                 y scrollea adentro, con el prompt siempre pegado abajo. */}
-            {chatId && <PanelChatIA chatId={chatId} className="max-h-[55vh] min-h-0 flex-1 xl:max-h-none" />}
+            {chatId && (
+              <LimiteDeError nombre="Chat IA">
+                <PanelChatIA chatId={chatId} className="max-h-[55vh] min-h-0 flex-1 xl:max-h-none" />
+              </LimiteDeError>
+            )}
             {chatId && (
               <BarraPrompt
                 key={chatId}
@@ -244,7 +255,8 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
             {errorDetalle ? (
               <ErrorState message={errorDetalle instanceof Error ? errorDetalle.message : undefined} />
             ) : header?.remoteJid ? (
-              <ChatEmbebido
+              <LimiteDeError nombre="Chat">
+                <ChatEmbebido
                 key={header.remoteJid}
                 remoteJid={header.remoteJid}
                 instanceId={header.instanceId}
@@ -253,8 +265,9 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
                 teamId={team?.id ?? null}
                 ocultarEnviados={!verEnviados}
                 puedeEnviar
-                className={cn('min-h-0 flex-1')}
-              />
+                  className={cn('min-h-0 flex-1')}
+                />
+              </LimiteDeError>
             ) : (
               <div className="flex flex-1 items-center justify-center text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" aria-hidden />

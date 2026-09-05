@@ -87,9 +87,13 @@ del conector se contesta.
 **Columna derecha — Chat (420 px).** `FichaChat` con `ChatEmbebido`. Se puede
 responder desde ahí.
 
-**Barra de prompt.** Una línea. Escribís qué querés que haga con este cliente y
-elegís uno de los dos botones. Recuerda el último texto por etapa (no por
-cliente): el 80 % de los pedidos de una tanda son el mismo.
+**Barra de prompt.** Escribís qué querés que haga con este cliente y elegís uno
+de los dos botones, que van **uno debajo del otro** y no lado a lado: con el
+mismo tamaño y el mismo peso, en fila, se apretaba el equivocado. Arriba el que
+se queda en la pantalla, abajo el que pasa al siguiente.
+
+Recuerda el último texto por etapa (no por cliente): el 80 % de los pedidos de
+una tanda son el mismo. Tiene una × para cortar esa herencia sin borrar a mano.
 
 ## 5. Los dos botones
 
@@ -147,9 +151,10 @@ Los clientes salen de `GET /contacts` (ya existe, con cursor). Focus le agrega:
 - **Prefetch**: al pintar el cliente N se pide el detalle del N+1. Pasar de
   cliente tiene que ser instantáneo.
 
-Navegación: `⏵ Siguiente`, `⏴ Anterior`, `Saltar`. Teclado: `→` / `←` navegan,
-`S` saltea, `E` ejecuta, `C` deja para conector. Sin `Enter` global: no hay una
-tecla que mande algo sin querer.
+Navegación: `⏵ Siguiente` (sin anotar nada), `⏴ Anterior`, `Saltar` (queda
+anotado como saltado). Teclado: `→` / `←` navegan y `S` saltea, y sólo eso — los
+dos botones se aprietan a mano a propósito: no hay una tecla que ejecute ni que
+encole sin querer.
 
 ## 7. Etapas y confeti
 
@@ -166,6 +171,11 @@ queda ninguna, dice que terminó la ronda.
 
 - Al entrar arranca un bloque de 25:00. El cronómetro es chico, arriba, y no
   parpadea ni suena mientras corre.
+- El tic-tac vive en `<Reloj>`, aparte del hook. `useBloque` no cuenta segundos:
+  agenda un `setTimeout` al instante exacto del vencimiento (y revisa contra el
+  reloj real al volver a la pestaña, porque en segundo plano los timers se
+  estiran). Con el intervalo adentro del hook, cada segundo se volvía a
+  renderizar el Focus entero —las tres columnas y el chat embebido incluidos—.
 - Se guarda el **instante de vencimiento** en `localStorage`, no los segundos
   restantes: así una recarga o una pestaña en segundo plano no lo desincronizan.
 - Al llegar a cero: modal con lo hecho en el bloque y tres salidas —**Otro
@@ -185,9 +195,14 @@ queda ninguna, dice que terminó la ronda.
 | `server/focus.ts` | **nuevo**: `ejecutarPedidoFocus` (redacta o dice que no puede) |
 | `api/…/focus/run/route.ts` | **nuevo**: `POST { chatId, prompt, message? }` |
 
-**UI (nuevo, en `ui/focus/`):** `FocusView`, `BarraFocus`, `PanelResumen`,
-`PanelProgramados`, `PanelChatIA`, `BarraPrompt`, `FinDeEtapa`, `Confeti`,
-`useBloque`, `useColaFocus`, `api.ts`.
+**UI (nuevo, en `ui/focus/`):** `FocusView`, `BarraFocus`, `Reloj`,
+`PanelResumen`, `PanelChatIA`, `BarraPrompt`, `FinDeEtapa`, `AvisoBloque`,
+`Confeti`, `LimiteDeError`, `useBloque`, `useColaFocus`, `tipos.ts`, `api.ts`.
+
+Cada columna va adentro de `LimiteDeError`. Sin eso, cualquier excepción de
+render sube al boundary genérico de la app ("No se pudo cargar la página"), que
+no dice qué pasó, pierde el bloque en curso y obliga a recargar. Con eso, el
+resto de la pantalla sigue viva y se lee el motivo.
 
 **Enganches:** `vistas.ts` (vista `focus`, oculta del rail), `SalesOpsApp.tsx`
 (render sin chrome cuando `vista === 'focus'`), y el botón de entrada.
