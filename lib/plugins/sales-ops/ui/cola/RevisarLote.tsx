@@ -26,14 +26,22 @@ export function RevisarLote({
   onChanged,
   onOpen,
   selectedChatId,
+  embebido,
 }: {
   batchId: string;
-  onBack: () => void;
+  /** Sin esto (modo embebido) no hay a dónde volver: el lote ya está a la vista. */
+  onBack?: () => void;
   onChanged?: () => void;
   /** Abre la ficha del contacto en el panel derecho (misma que en las listas). */
   onOpen?: (chatId: number) => void;
   /** Chat abierto ahora mismo en el panel derecho, para marcar su fila. */
   selectedChatId?: number | null;
+  /**
+   * Dentro del Focus de supervisión el lote se muestra entero, sin puerta: no
+   * hay botón de volver ni alto mínimo, porque no es una pantalla aparte sino
+   * el cuerpo de la tarjeta que se está revisando.
+   */
+  embebido?: boolean;
 }) {
   const { data, isLoading, error, mutate } = useSWR<QueueBatchPayload>(`${QUEUE_ENDPOINT}/${encodeURIComponent(batchId)}`, fetcher);
   const [excluded, setExcluded] = useState<Set<number>>(new Set());
@@ -226,11 +234,13 @@ export function RevisarLote({
   }
 
   return (
-    <div className="flex min-h-[60dvh] flex-col">
+    <div className={cn('flex flex-col', !embebido && 'min-h-[60dvh]')}>
       <div className="flex items-center gap-2 pb-3">
-        <Button type="button" variant="ghost" size="icon" onClick={onBack} aria-label="Volver a la cola">
-          <ArrowLeft className="size-4" aria-hidden />
-        </Button>
+        {!embebido && onBack && (
+          <Button type="button" variant="ghost" size="icon" onClick={onBack} aria-label="Volver a la cola">
+            <ArrowLeft className="size-4" aria-hidden />
+          </Button>
+        )}
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-base font-semibold text-foreground">{data?.batch.batchLabel ?? 'Lote'}</h2>
           {data && (

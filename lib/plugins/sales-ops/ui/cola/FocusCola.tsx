@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import type { BatchSummary } from '../../shared/api-types';
 import { HumanDecisionCard } from './HumanDecisionCard';
-import { QUEUE_ENDPOINT, KIND_LABELS, PHASE_LABELS, batchPhase, formatDate, postJson } from './api';
+import { ContactosDelLote } from './ContactosDelLote';
 import { RevisarLote } from './RevisarLote';
 import { TarjetaProgramado } from '../programados/TarjetaProgramado';
 import type { Programado } from '../programados/api';
@@ -91,8 +91,15 @@ export function FocusCola({ items, onSalir, onCambio }: Props) {
    * de nuevo. Ahora la misma pantalla se monta acá adentro y "Volver" devuelve
    * a la tarjeta del lote, en el mismo lugar de la cola.
    */
-  const [detalleLote, setDetalleLote] = useState<string | null>(null);
   const [solapa, setSolapa] = useState<SolapaContacto>('chat');
+  /**
+   * Chat elegido a mano dentro de un lote.
+   *
+   * Un lote no cuelga de un chat —toca veinte a la vez— y por eso el panel
+   * quedaba vacío justo donde más falta hace mirar la conversación. Se elige de
+   * la lista del lote, o clickeando una fila en el detalle.
+   */
+  const [chatDelLote, setChatDelLote] = useState<{ chatId: number; nombre: string } | null>(null);
   /** En el celular no entra el panel al lado: el ítem y el contacto son pestañas. */
   const [pestanaMovil, setPestanaMovil] = useState<'item' | SolapaContacto>('item');
   const [esMovil, setEsMovil] = useState(false);
@@ -111,13 +118,21 @@ export function FocusCola({ items, onSalir, onCambio }: Props) {
   }, []);
 
   const actual = cola[idx] ?? null;
+  const actualKey = actual?.key ?? null;
   const total = cola.length;
+  /** El chat que alimenta el panel: el del ítem, o el elegido dentro del lote. */
+  const chatDelPanel = actual?.chatId ?? chatDelLote?.chatId ?? null;
+
+  // Cambiar de ítem descarta el contacto elegido del lote anterior.
+  useEffect(() => {
+    setChatDelLote(null);
+  }, [actualKey]);
   const revisados = useMemo(() => Object.values(resueltos).filter((v) => v !== 'saltado').length, [resueltos]);
   const pct = porcentaje(revisados, total);
 
   const marcar = (clave: string, como: 'aprobado' | 'descartado' | 'supervisado' | 'saltado') => {
     setResueltos((prev) => ({ ...prev, [clave]: como }));
-    setDetalleLote(null);
+    setChatDelLote(null);
     setPestanaMovil('item');
     setIdx((i) => i + 1);
     if (como !== 'saltado') onCambio();
@@ -128,13 +143,12 @@ export function FocusCola({ items, onSalir, onCambio }: Props) {
       const t = e.target as HTMLElement | null;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
-      if (detalleLote) return;
       if (e.key === 'ArrowRight') setIdx((i) => Math.min(i + 1, total));
       else if (e.key === 'ArrowLeft') setIdx((i) => Math.max(0, i - 1));
     };
     window.addEventListener('keydown', escuchar);
     return () => window.removeEventListener('keydown', escuchar);
-  }, [total, detalleLote]);
+  }, [total]);
 
   return (
     <div className="fixed inset-0 z-50 flex h-dvh w-full flex-col bg-background text-foreground">
@@ -178,15 +192,6 @@ export function FocusCola({ items, onSalir, onCambio }: Props) {
       {(() => {
         // El detalle de un lote se lleva la pantalla entera: es una tabla larga
         // y al lado no entra nada útil.
-        if (detalleLote) {
-          return (
-            <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
-              <div className="mx-auto w-full max-w-[1000px]">
-                <RevisarLote batchId={detalleLote} onBack={() => setDetalleLote(null)} onChanged={onCambio} />
-              </div>
-            </div>
-          );
-        }
         if (!actual) {
           return (
             <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
@@ -197,6 +202,44 @@ export function FocusCola({ items, onSalir, onCambio }: Props) {
           );
         }
 
+/**
+         * El panel de la derecha. Un lote no tiene chat propio: primero se elige
+         * de cuál de sus contactos, y desde ahí se puede volver a la lista.
+         */
+        const panelContacto = (conSolapas: boolean, clase: string) => {
+          if (chatDelPanel) {
+            return (
+              <div className={cn('flex min-h-0 flex-col', clase)}>
+                {actual.tipo === 'lote' && (
+                  <button
+                    type="button"
+                    onClick={() => setChatDelLote(null)}
+                    className="mb-1.5 flex shrink-0 items-center gap-1 self-start text-[11px] text-muted-foreground hover:text-foreground"
+                  >
+                    <ChevronLeft className="size-3.5" aria-hidden />
+                    Contactos del lote
+                  </button>
+                )}
+                <PanelContacto chatId={chatDelPanel} solapa={solapa} onSolapa={setSolapa} conSolapas={conSolapas} className="min-h-0 flex-1" />
+              </div>
+            );
+          }
+          if (actual.tipo === 'lote') {
+            return (
+              <ContactosDelLote
+                batchId={actual.batch.batchId}
+                seleccionado={null}
+                onElegir={(chatId, nombre) => {
+                  setChatDelLote({ chatId, nombre });
+                  setSolapa('chat');
+                }}
+                className={clase}
+              />
+            );
+          }
+          return <p className="p-6 text-center text-xs text-muted-foreground">Este ítem no cuelga de ningún chat.</p>;
+        };
+
         const tarjeta = (
           <TarjetaSupervision
             key={actual.key}
@@ -204,7 +247,12 @@ export function FocusCola({ items, onSalir, onCambio }: Props) {
             onResuelto={(como) => marcar(actual.key, como)}
             onSaltar={() => marcar(actual.key, 'saltado')}
             onSupervisado={() => marcar(actual.key, 'supervisado')}
-            onAbrirLote={setDetalleLote}
+            chatElegido={chatDelLote?.chatId ?? null}
+            onElegirChat={(chatId) => {
+              setChatDelLote({ chatId, nombre: '' });
+              setSolapa('chat');
+              setPestanaMovil('chat');
+            }}
             onCambio={onCambio}
           />
         );
@@ -216,23 +264,22 @@ export function FocusCola({ items, onSalir, onCambio }: Props) {
               <div className="min-h-0 flex-1 overflow-hidden">
                 {pestanaMovil === 'item' ? (
                   <div className="h-full overflow-y-auto p-3">{tarjeta}</div>
-                ) : actual.chatId ? (
-                  <PanelContacto chatId={actual.chatId} solapa={pestanaMovil} onSolapa={setPestanaMovil} conSolapas={false} className="h-full p-3" />
                 ) : (
-                  <p className="p-6 text-center text-xs text-muted-foreground">Este ítem no cuelga de un chat: un lote toca varios contactos a la vez.</p>
+                  panelContacto(false, 'h-full p-3')
                 )}
               </div>
 
               <nav className="flex shrink-0 border-t border-border bg-background pb-[env(safe-area-inset-bottom)]" aria-label="Secciones">
                 {(['item', ...SOLAPAS_CONTACTO] as const).map((id) => {
                   const activa = pestanaMovil === id;
-                  const deshabilitada = id !== 'item' && !actual.chatId;
                   return (
                     <button
                       key={id}
                       type="button"
-                      disabled={deshabilitada}
-                      onClick={() => setPestanaMovil(id)}
+                      onClick={() => {
+                        setPestanaMovil(id);
+                        if (id !== 'item') setSolapa(id);
+                      }}
                       aria-current={activa ? 'page' : undefined}
                       className={cn(
                         'relative flex-1 py-2.5 text-[11px] font-medium capitalize transition-colors disabled:opacity-35',
@@ -253,13 +300,11 @@ export function FocusCola({ items, onSalir, onCambio }: Props) {
         return (
           <div className="flex min-h-0 flex-1">
             <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
-              <div className="mx-auto w-full max-w-[720px]">{tarjeta}</div>
+              <div className={cn('mx-auto w-full', actual.tipo === 'lote' ? 'max-w-[900px]' : 'max-w-[720px]')}>{tarjeta}</div>
             </div>
-            {actual.chatId && (
-              <aside className="hidden w-[360px] shrink-0 flex-col border-l border-border p-3 lg:flex xl:w-[420px]" aria-label="Contacto">
-                <PanelContacto chatId={actual.chatId} solapa={solapa} onSolapa={setSolapa} className="h-full" />
-              </aside>
-            )}
+            <aside className="hidden w-[360px] shrink-0 flex-col border-l border-border p-3 lg:flex xl:w-[420px]" aria-label="Contacto">
+              {panelContacto(true, 'h-full')}
+            </aside>
           </div>
         );
       })()}
@@ -304,7 +349,8 @@ function TarjetaSupervision({
   onResuelto,
   onSaltar,
   onSupervisado,
-  onAbrirLote,
+  chatElegido,
+  onElegirChat,
   onCambio,
 }: {
   item: ItemSupervision;
@@ -312,7 +358,9 @@ function TarjetaSupervision({
   onSaltar: () => void;
   /** "Lo miré y está bien": no cambia nada, cuenta como revisado y avanza. */
   onSupervisado: () => void;
-  onAbrirLote: (batchId: string) => void;
+  /** Contacto del lote que está abierto en el panel de la derecha. */
+  chatElegido: number | null;
+  onElegirChat: (chatId: number) => void;
   onCambio: () => void;
 }) {
   const { label, icon: Icon } = TIPO_META[item.tipo];
@@ -328,7 +376,7 @@ function TarjetaSupervision({
 
       <div className="mt-3">
         {item.tipo === 'lote' ? (
-          <CuerpoLote batch={item.batch} onResuelto={onResuelto} onAbrirLote={onAbrirLote} />
+          <CuerpoLote batch={item.batch} onResuelto={onResuelto} chatElegido={chatElegido} onElegirChat={onElegirChat} onCambio={onCambio} />
         ) : item.tipo === 'programado' ? (
           <CuerpoProgramado programado={item.programado} onResuelto={onResuelto} />
         ) : (
@@ -527,69 +575,46 @@ function CuerpoCorrida({ run, onResuelto, onCambio }: { run: SkillRun; onResuelt
   );
 }
 
-/** Un lote: el resumen y la decisión. El detalle fila por fila vive en Revisar lote. */
-function CuerpoLote({ batch, onResuelto, onAbrirLote }: { batch: BatchSummary; onResuelto: (como: 'aprobado' | 'descartado') => void; onAbrirLote: (batchId: string) => void }) {
-  const [ocupado, setOcupado] = useState(false);
-  const phase = batchPhase(batch.byStatus);
-  const pendientes = (batch.byStatus.proposed ?? 0) + (batch.byStatus.pending_approval ?? 0);
-
-  const correr = async (accion: 'approve' | 'reject') => {
-    if (accion === 'reject' && !window.confirm(`¿Descartar el lote “${batch.batchLabel}”? Se rechaza lo que todavía no salió.`)) return;
-    setOcupado(true);
-    try {
-      await postJson(`${QUEUE_ENDPOINT}/${encodeURIComponent(batch.batchId)}/${accion}`, {});
-      toast.success(accion === 'approve' ? 'Lote aprobado.' : 'Lote descartado.');
-      onResuelto(accion === 'approve' ? 'aprobado' : 'descartado');
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'No se pudo.');
-    } finally {
-      setOcupado(false);
-    }
-  };
-
+/**
+ * Un lote, entero, acá adentro.
+ *
+ * Antes esto era un resumen con un botón "Abrir en detalle" que llevaba a otra
+ * pantalla. Pero aprobar un lote es justamente leer fila por fila —qué le va a
+ * salir a cada uno— y obligar a entrar y salir para eso convertía la
+ * supervisión en un trámite: se aprobaba desde el resumen, sin mirar. Ahora la
+ * tabla completa es el cuerpo de la tarjeta, con sus checkboxes, sus textos
+ * editables y sus botones de aprobar y rechazar.
+ *
+ * Clickear un contacto de la tabla lo abre en el panel de la derecha, así el
+ * chat acompaña la fila que se está mirando en vez de quedarse en el primero.
+ */
+function CuerpoLote({
+  batch,
+  onResuelto,
+  chatElegido,
+  onElegirChat,
+  onCambio,
+}: {
+  batch: BatchSummary;
+  onResuelto: (como: 'aprobado' | 'descartado') => void;
+  chatElegido: number | null;
+  onElegirChat: (chatId: number) => void;
+  onCambio: () => void;
+}) {
+  const vivas = (batch.byStatus.proposed ?? 0) + (batch.byStatus.pending_approval ?? 0);
   return (
-    <>
-      <h2 className="text-sm font-semibold leading-snug">{batch.batchLabel}</h2>
-      <p className="mt-0.5 text-[11px] text-muted-foreground">
-        {KIND_LABELS[batch.kind] ?? batch.kind} · {fmtInt(batch.total)} acciones · {PHASE_LABELS[phase]} · creado {formatDate(batch.createdAt, true)}
-      </p>
-
-      <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
-        <div className="rounded-lg border border-border py-2">
-          <dd className="font-mono text-base font-semibold tabular-nums">{fmtInt(pendientes)}</dd>
-          <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Sin aprobar</dt>
-        </div>
-        <div className="rounded-lg border border-border py-2">
-          <dd className="font-mono text-base font-semibold tabular-nums">{fmtInt(batch.responded)}</dd>
-          <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Respondieron</dt>
-        </div>
-        <div className="rounded-lg border border-border py-2">
-          <dd className="font-mono text-base font-semibold tabular-nums">{fmtInt(batch.recovered)}</dd>
-          <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Recuperados</dt>
-        </div>
-      </dl>
-
-      <p className="mt-3 text-[11px] leading-snug text-muted-foreground">
-        Aprobar acá aprueba el lote entero. Si querés mirar fila por fila —corregir un texto, sacar un contacto— abrilo en detalle.
-      </p>
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        {pendientes > 0 && (
-          <Button size="sm" className={cn('h-9 gap-1.5', TONO.boton)} onClick={() => void correr('approve')} disabled={ocupado}>
-            {ocupado ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Check className="size-4" aria-hidden />}
-            Aprobar las {fmtInt(pendientes)}
-          </Button>
-        )}
-        <Button size="sm" variant="outline" className="h-9 gap-1.5" onClick={() => onAbrirLote(batch.batchId)}>
-          <Layers className="size-4" aria-hidden />
-          Abrir en detalle
-        </Button>
-        <Button size="sm" variant="ghost" className="h-9 gap-1.5 text-muted-foreground hover:text-destructive" onClick={() => void correr('reject')} disabled={ocupado}>
-          <Ban className="size-4" aria-hidden />
-          Descartar
-        </Button>
-      </div>
-    </>
+    <RevisarLote
+      embebido
+      batchId={batch.batchId}
+      selectedChatId={chatElegido}
+      onOpen={onElegirChat}
+      onChanged={() => {
+        onCambio();
+        // Aprobar o rechazar saca el lote de la cola de supervisión: ya no hay
+        // nada que decidir sobre él.
+        if (vivas > 0) onResuelto('aprobado');
+      }}
+    />
   );
 }
 

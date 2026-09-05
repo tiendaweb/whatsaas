@@ -1,13 +1,15 @@
 'use client';
 
+import { useState } from 'react';
 import useSWR from 'swr';
-import { AlertTriangle, Clock, Coins, Flame, Repeat2 } from 'lucide-react';
+import { AlertTriangle, ChevronRight, Clock, Coins, Flame, Repeat2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { DetailPayload } from '../../shared/api-types';
+import type { DetailPayload, TimelineGap, TimelineHit } from '../../shared/api-types';
 import { GateBadge } from '../components/GateBadge';
+import { ProgramadosContacto } from '../components/ProgramadosContacto';
 import { ScoreRadar, ejesDeAnalisis } from '../components/ScoreRadar';
 import { ErrorState, LoadingRows } from '../components/States';
-import { OWNER_LABELS, SIGNAL_LABELS, STATUS_LABELS, SALES_OPS_API, diasTexto, fetcher, fmtInt, humanize, tiempoRelativo } from '../components/format';
+import { ACTION_KIND_LABELS, ACTION_STATUS_LABELS, OWNER_LABELS, SIGNAL_LABELS, STATUS_LABELS, SALES_OPS_API, WHO_LABELS, diasTexto, fetcher, fmtInt, humanize, tiempoRelativo } from '../components/format';
 
 /**
  * Columna izquierda del Focus: quién es este cliente, en una pantalla sin
@@ -18,8 +20,10 @@ import { OWNER_LABELS, SIGNAL_LABELS, STATUS_LABELS, SALES_OPS_API, diasTexto, f
  * campos del análisis quedan los seis que hacen falta para decidir qué hacer en
  * los próximos treinta segundos.
  */
+type DetalleConCabecera = DetailPayload & { header?: { remoteJid: string } | null };
+
 export function PanelResumen({ chatId, className }: { chatId: number; className?: string }) {
-  const { data, error, isLoading, mutate } = useSWR<DetailPayload>(`${SALES_OPS_API}/contacts/${chatId}`, fetcher, {
+  const { data, error, isLoading, mutate } = useSWR<DetalleConCabecera>(`${SALES_OPS_API}/contacts/${chatId}`, fetcher, {
     revalidateOnFocus: false,
     keepPreviousData: false,
   });
@@ -37,6 +41,8 @@ export function PanelResumen({ chatId, className }: { chatId: number; className?
   }
 
   const sinAtender = data.signals.filter((s) => s.status === 'new' || s.status === 'seen');
+  const todasLasSenales = data.signals;
+  const header = data.header;
 
   return (
     <div className={cn('space-y-3', className)}>
@@ -94,7 +100,127 @@ export function PanelResumen({ chatId, className }: { chatId: number; className?
       {a.notesForHuman && (
         <p className="rounded-xl border border-border bg-card p-3 text-[11px] leading-snug text-muted-foreground">{a.notesForHuman}</p>
       )}
+
+      {/* Lo que le va a salir. `soloSiHay`: si no tiene ninguno no ocupa nada. */}
+      {header?.remoteJid && (
+        <ProgramadosContacto key={chatId} remoteJid={header.remoteJid} nombre={a.name} chatId={chatId} soloSiHay />
+      )}
+
+      {data.actions.length > 0 && (
+        <Plegable titulo="Acciones del Command Center" cuantos={data.actions.length}>
+          <ul className="space-y-1.5">
+            {data.actions.slice(0, 8).map((accion) => (
+              <li key={accion.id} className="text-[11px] leading-snug">
+                <span className="font-medium text-foreground">{ACTION_KIND_LABELS[accion.kind] ?? humanize(accion.kind)}</span>
+                <span className="text-muted-foreground">
+                  {' · '}
+                  {ACTION_STATUS_LABELS[accion.status] ?? humanize(accion.status)}
+                  {' · '}
+                  {tiempoRelativo(accion.executedAt ?? accion.approvedAt ?? accion.createdAt)}
+                </span>
+                {typeof accion.payload?.text === 'string' && accion.payload.text.trim() && (
+                  <span className="mt-0.5 block line-clamp-2 text-muted-foreground/90">{String(accion.payload.text)}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Plegable>
+      )}
+
+      {todasLasSenales.length > 0 && (
+        <Plegable titulo="Radar" cuantos={todasLasSenales.length}>
+          <ul className="space-y-1.5">
+            {todasLasSenales.slice(0, 10).map((s) => (
+              <li key={s.id} className="text-[11px] leading-snug">
+                <span className="font-medium text-foreground">{SIGNAL_LABELS[s.kind] ?? humanize(s.kind)}</span>
+                <span className="text-muted-foreground">
+                  {' · '}
+                  {SIGNAL_STATUS_LABEL[s.status] ?? s.status} · {tiempoRelativo(s.createdAt)}
+                </span>
+                {s.excerpt && <span className="mt-0.5 block line-clamp-2 text-muted-foreground/90">“{s.excerpt}”</span>}
+              </li>
+            ))}
+          </ul>
+        </Plegable>
+      )}
+
+      {/* La conversación tal como la leyó el análisis: quién dijo qué y dónde
+          hubo silencios. Es lo que explica el gate, y sin esto había que abrir
+          el chat entero para entender de dónde salió. */}
+      {data.timeline.length > 0 && (
+        <Plegable titulo="Línea de tiempo" cuantos={data.timeline.length}>
+          <ol className="space-y-1.5">
+            {data.timeline.slice(-14).map((item, i) =>
+              esHueco(item) ? (
+                <li key={`gap-${i}`} className="py-0.5 text-center text-[10px] uppercase tracking-wide text-muted-foreground/70">
+                  ── {item.kind === 'silence' ? `silencio · ${diasEntre(item.from, item.to)} días` : `${item.count} mensajes omitidos`} ──
+                </li>
+              ) : (
+                <li key={item.id} className="text-[11px] leading-snug">
+                  <span className={cn('font-semibold tracking-wide', TONO_QUIEN[item.who] ?? 'text-muted-foreground')}>{WHO_LABELS[item.who] ?? item.who}</span>
+                  <span className="text-muted-foreground"> · {tiempoRelativo(item.at)}</span>
+                  {item.flags.length > 0 && <span className="text-muted-foreground"> · {item.flags.map((f) => humanize(f)).join(', ')}</span>}
+                  <span className="mt-0.5 block line-clamp-3 text-foreground/85">{item.text}</span>
+                </li>
+              ),
+            )}
+          </ol>
+        </Plegable>
+      )}
     </div>
+  );
+}
+
+/** Cuántos días hay entre dos fechas ISO, para el cartel de silencio. */
+function diasEntre(desde: string, hasta: string): number {
+  const a = Date.parse(desde);
+  const b = Date.parse(hasta);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 0;
+  return Math.max(0, Math.round((b - a) / 86_400_000));
+}
+
+function esHueco(item: TimelineHit | TimelineGap): item is TimelineGap {
+  return 'kind' in item && (item.kind === 'silence' || item.kind === 'omitted');
+}
+
+const TONO_QUIEN: Record<string, string> = {
+  cliente: 'text-sky-600 dark:text-sky-400',
+  humano: 'text-emerald-600 dark:text-emerald-400',
+  bot: 'text-muted-foreground',
+  ia: 'text-violet-600 dark:text-violet-400',
+  nota: 'text-amber-600 dark:text-amber-400',
+};
+
+const SIGNAL_STATUS_LABEL: Record<string, string> = {
+  new: 'nueva',
+  seen: 'vista',
+  handled: 'atendida',
+  dismissed: 'descartada',
+};
+
+/**
+ * Una sección que arranca cerrada.
+ *
+ * En una columna de 300 px, cuatro bloques abiertos son un muro y nadie los
+ * lee. El encabezado dice cuántos hay, que suele ser el dato que se busca; el
+ * detalle se abre cuando hace falta.
+ */
+function Plegable({ titulo, cuantos, children }: { titulo: string; cuantos: number; children: React.ReactNode }) {
+  const [abierto, setAbierto] = useState(false);
+  return (
+    <section className="rounded-xl border border-border bg-card">
+      <button
+        type="button"
+        onClick={() => setAbierto((v) => !v)}
+        aria-expanded={abierto}
+        className="flex w-full items-center gap-1.5 px-3 py-2 text-left"
+      >
+        <ChevronRight className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', abierto && 'rotate-90')} aria-hidden />
+        <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{titulo}</span>
+        <span className="font-mono text-[10px] tabular-nums text-muted-foreground">{fmtInt(cuantos)}</span>
+      </button>
+      {abierto && <div className="border-t border-border px-3 py-2">{children}</div>}
+    </section>
   );
 }
 
