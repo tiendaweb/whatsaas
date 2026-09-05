@@ -147,16 +147,38 @@ Qué se puede hacer en cada ítem:
 
 | Ítem | Qué se ve | Qué se puede hacer |
 |---|---|---|
-| Prompt / indicación | El texto **completo**, no recortado | Corregirlo ahí mismo, aprobar (guarda antes si se editó), volver a encolar si falló, descartar |
+| Prompt / indicación | El texto **completo**, no recortado | Corregirlo ahí mismo, aprobar (guarda antes si se editó), descartar |
+| Fallida | `FallaCorrida`: el motivo en castellano, nunca el JSON del SDK | Reintentar con la IA del equipo o dejarla en la cola de conectores |
 | Bloqueado | El formulario que armó el conector | Contestarlo (`HumanDecisionCard`) |
-| Lote | Resumen, cuántas sin aprobar, respondidas y recuperadas | Aprobar el lote entero, abrirlo en detalle fila por fila, descartar |
-| Programado | La indicación para la IA y el texto que va a salir | Activar, pasar a la cola como pedido, borrar |
+| Lote | Resumen, y **el lote entero fila por fila** sin salir | Aprobar todo, o abrir el detalle y corregir el texto de cada contacto, sacar filas, aprobar los que quedan, rechazar |
+| Programado | La tarjeta completa de la app de Programados | Editar texto y fecha, guardar el prompt, reescribirlo con IA, pausar, activar, pasarlo a la cola, borrar |
+
+**No se sale del Focus para gestionar nada.** El detalle de un lote monta la
+misma pantalla de "Revisar lote" acá adentro, y "Volver" devuelve a la tarjeta en
+el mismo lugar de la cola; el programado usa la misma `TarjetaProgramado` de la
+app de Programados, entera. Antes "Abrir en detalle" cerraba la supervisión y
+llevaba a otra pantalla: se perdían el índice, el progreso y el bloque, y volver
+era empezar de nuevo.
+
+Las dos se reusan enteras en vez de repetir un editor recortado: un segundo
+editor con la mitad de los campos es la forma segura de que uno de los dos se
+quede viejo. Mientras el detalle de un lote está abierto, las flechas no navegan
+—adentro se está editando—.
 
 Ese primer renglón es el que justifica la pantalla: en la Cola el texto de un
 prompt se ve en dos renglones y corregirlo abre un editor chico. Acá se lee
 entero y se corrige donde se lee, que es cuando uno se da cuenta de lo que está
 mal. Y "Aprobar" con cambios sin guardar **guarda primero**: aprobar lo viejo
 después de haberlo editado es el peor final posible.
+
+**El error crudo no se muestra nunca.** Una corrida fallida guarda en `summary`
+el error del SDK —el 429 de Gemini son 900 caracteres de JSON— y eso no lo lee
+nadie. Va por `FallaCorrida`, igual que en la Cola, la ficha y la Actividad: el
+motivo en castellano, qué hacer, y el detalle técnico a un clic. Cuando hay
+muchas iguales, `ReintentarFallidas` las reintenta juntas —de a una y en orden,
+50 por tanda— y antes muestra el desglose por tipo de falla, porque la salida
+depende de eso: si todas son de cuota, reintentar con la misma cuota vuelve a
+fallar y la buena es la cola de conectores.
 
 **La lista se congela al entrar.** Resolver un ítem lo saca del servidor, y si
 se recalculara sola el siguiente se correría un lugar justo cuando la persona va

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft, Ban, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock, Layers, Loader2, MessageSquareText,
-  Pause, Pencil, Play, RotateCcw, Save, SkipForward, Timer, Trash2, Wand2, X, type LucideIcon,
+  Pause, Pencil, Play, Save, SkipForward, Timer, Wand2, X, type LucideIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -13,15 +13,15 @@ import { cn } from '@/lib/utils';
 import type { BatchSummary } from '../../shared/api-types';
 import { HumanDecisionCard } from './HumanDecisionCard';
 import { QUEUE_ENDPOINT, KIND_LABELS, PHASE_LABELS, batchPhase, formatDate, postJson } from './api';
-import type { Programado } from './PromptsEnCola';
-import { cambiarEstadoProgramado } from './PromptsEnCola';
-import { borrarProgramado, pasarACola } from '../programados/api';
+import { RevisarLote } from './RevisarLote';
+import { TarjetaProgramado } from '../programados/TarjetaProgramado';
+import type { Programado } from '../programados/api';
 import { fmtDateTime, fmtInt, tiempoRelativo } from '../components/format';
 import { Reloj } from '../focus/Reloj';
 import { porcentaje } from '../focus/useColaFocus';
 import { useBloque } from '../focus/useBloque';
 import { FallaCorrida } from '../skills/FallaCorrida';
-import { approveRun, cancelRun, editRun, retryRun, type SkillRun } from '../skills/api';
+import { approveRun, cancelRun, editRun, type SkillRun } from '../skills/api';
 import { RUN_STATUS_LABELS } from '../skills/skill-meta';
 
 /**
@@ -60,8 +60,6 @@ type Props = {
   onSalir: () => void;
   /** Se resolvió algo: la Cola vuelve a pedir sus listas. */
   onCambio: () => void;
-  /** Abre el lote en la pantalla de revisión detallada. */
-  onAbrirLote: (batchId: string) => void;
 };
 
 /**
@@ -77,10 +75,19 @@ type Props = {
  * lista se recalculara sola el siguiente se correría un lugar justo cuando la
  * persona va a apretar: se marca lo resuelto y se avanza el índice, nada más.
  */
-export function FocusCola({ items, onSalir, onCambio, onAbrirLote }: Props) {
+export function FocusCola({ items, onSalir, onCambio }: Props) {
   const [idx, setIdx] = useState(0);
   const [resueltos, setResueltos] = useState<Record<string, 'aprobado' | 'descartado' | 'saltado'>>({});
   const [cola] = useState<ItemSupervision[]>(items);
+  /**
+   * Lote abierto fila por fila, SIN salir del Focus.
+   *
+   * Antes "Abrir en detalle" cerraba la supervisión y llevaba a la pantalla de
+   * revisión: se perdía el índice, el progreso y el bloque, y volver era empezar
+   * de nuevo. Ahora la misma pantalla se monta acá adentro y "Volver" devuelve
+   * a la tarjeta del lote, en el mismo lugar de la cola.
+   */
+  const [detalleLote, setDetalleLote] = useState<string | null>(null);
   const bloque = useBloque();
 
   const actual = cola[idx] ?? null;
@@ -90,6 +97,7 @@ export function FocusCola({ items, onSalir, onCambio, onAbrirLote }: Props) {
 
   const marcar = (clave: string, como: 'aprobado' | 'descartado' | 'saltado') => {
     setResueltos((prev) => ({ ...prev, [clave]: como }));
+    setDetalleLote(null);
     setIdx((i) => i + 1);
     if (como !== 'saltado') onCambio();
   };
@@ -99,12 +107,13 @@ export function FocusCola({ items, onSalir, onCambio, onAbrirLote }: Props) {
       const t = e.target as HTMLElement | null;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
+      if (detalleLote) return;
       if (e.key === 'ArrowRight') setIdx((i) => Math.min(i + 1, total));
       else if (e.key === 'ArrowLeft') setIdx((i) => Math.max(0, i - 1));
     };
     window.addEventListener('keydown', escuchar);
     return () => window.removeEventListener('keydown', escuchar);
-  }, [total]);
+  }, [total, detalleLote]);
 
   return (
     <div className="fixed inset-0 z-50 flex h-dvh w-full flex-col bg-background text-foreground">
@@ -146,8 +155,14 @@ export function FocusCola({ items, onSalir, onCambio, onAbrirLote }: Props) {
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
-        <div className="mx-auto w-full max-w-[720px]">
-          {!actual ? (
+        <div className={cn('mx-auto w-full', detalleLote ? 'max-w-[1000px]' : 'max-w-[720px]')}>
+          {detalleLote ? (
+            <RevisarLote
+              batchId={detalleLote}
+              onBack={() => setDetalleLote(null)}
+              onChanged={onCambio}
+            />
+          ) : !actual ? (
             <FinDeRevision total={total} revisados={revisados} onSalir={onSalir} onVolver={() => setIdx(0)} />
           ) : (
             <TarjetaSupervision
@@ -155,7 +170,7 @@ export function FocusCola({ items, onSalir, onCambio, onAbrirLote }: Props) {
               item={actual}
               onResuelto={(como) => marcar(actual.key, como)}
               onSaltar={() => marcar(actual.key, 'saltado')}
-              onAbrirLote={onAbrirLote}
+              onAbrirLote={setDetalleLote}
               onCambio={onCambio}
             />
           )}
@@ -267,7 +282,7 @@ function CuerpoCorrida({ run, onResuelto, onCambio }: { run: SkillRun; onResuelt
     }
   };
 
-  const correr = async (accion: 'aprobar' | 'descartar' | 'reintentar') => {
+  const correr = async (accion: 'aprobar' | 'descartar') => {
     setOcupado(true);
     try {
       if (accion === 'aprobar') {
@@ -277,14 +292,10 @@ function CuerpoCorrida({ run, onResuelto, onCambio }: { run: SkillRun; onResuelt
         await approveRun(run.id);
         toast.success('Aprobada. La toma el próximo conector.');
         onResuelto('aprobado');
-      } else if (accion === 'descartar') {
+      } else {
         await cancelRun(run.id);
         toast.success('Descartada.');
         onResuelto('descartado');
-      } else {
-        await retryRun(run.id, 'queue');
-        toast.success('Volvió a la cola.');
-        onResuelto('aprobado');
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'No se pudo.');
@@ -438,72 +449,23 @@ function CuerpoLote({ batch, onResuelto, onAbrirLote }: { batch: BatchSummary; o
   );
 }
 
-/** Un programado detenido: se reactiva, se pasa a la cola como pedido, o se borra. */
+/**
+ * Un programado, con su editor completo adentro del Focus.
+ *
+ * Es la misma tarjeta de la app de Programados (`TarjetaProgramado`): edita el
+ * texto y la fecha, guarda el prompt, lo reescribe con la IA del equipo, pausa,
+ * activa, lo pasa a la cola como pedido y lo borra. Se reusa entera en vez de
+ * repetir un editor recortado: un segundo editor con la mitad de los campos es
+ * la forma segura de que uno de los dos se quede viejo.
+ *
+ * `onResuelto` se dispara cuando la tarjeta avisa que cambió algo: en esta
+ * pantalla, tocarlo ya es haberlo supervisado.
+ */
 function CuerpoProgramado({ programado, onResuelto }: { programado: Programado; onResuelto: (como: 'aprobado' | 'descartado') => void }) {
-  const [ocupado, setOcupado] = useState(false);
-
-  const correr = async (accion: 'activar' | 'cola' | 'borrar') => {
-    if (accion === 'borrar' && !window.confirm(`¿Borrar el programado “${programado.name}”?`)) return;
-    setOcupado(true);
-    try {
-      if (accion === 'activar') {
-        await cambiarEstadoProgramado(programado, 'active');
-        toast.success('Activado.');
-        onResuelto('aprobado');
-      } else if (accion === 'cola') {
-        await pasarACola(programado.id, (programado.aiPrompt ?? '').trim());
-        toast.success('Pasó a la cola como pedido para el conector.');
-        onResuelto('aprobado');
-      } else {
-        await borrarProgramado(programado.id);
-        toast.success('Borrado.');
-        onResuelto('descartado');
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'No se pudo.');
-    } finally {
-      setOcupado(false);
-    }
-  };
-
   return (
-    <>
-      <h2 className="text-sm font-semibold leading-snug">{programado.name}</h2>
-      <p className="mt-0.5 text-[11px] text-muted-foreground">
-        {programado.status === 'paused' ? 'Pausado' : programado.status === 'failed' ? `Falló${programado.lastError ? ` · ${programado.lastError}` : ''}` : `Sale ${fmtDateTime(programado.nextRunAt)}`}
-        {(programado.targetNumbers?.length ?? 0) > 1 && ` · ${programado.targetNumbers.length} destinatarios`}
-      </p>
-
-      {programado.aiPrompt && (
-        <div className="mt-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Indicación para la IA</p>
-          <p className="mt-1 rounded-lg border border-border p-3 text-[12px] italic leading-relaxed">{programado.aiPrompt}</p>
-        </div>
-      )}
-
-      <div className="mt-3">
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Texto que va a salir</p>
-        <pre className="mt-1 max-h-72 overflow-y-auto whitespace-pre-wrap rounded-lg bg-muted/50 p-3 text-[12px] leading-relaxed">{programado.message || '(vacío)'}</pre>
-      </div>
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        {programado.status !== 'active' && (
-          <Button size="sm" className={cn('h-9 gap-1.5', TONO.boton)} onClick={() => void correr('activar')} disabled={ocupado}>
-            {ocupado ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Play className="size-4" aria-hidden />}
-            Activar
-          </Button>
-        )}
-        {(programado.aiPrompt ?? '').trim().length >= 5 && (
-          <Button size="sm" variant="outline" className="h-9 gap-1.5" onClick={() => void correr('cola')} disabled={ocupado}>
-            <Wand2 className="size-4" aria-hidden />
-            Pasar a la cola
-          </Button>
-        )}
-        <Button size="sm" variant="ghost" className="h-9 gap-1.5 text-muted-foreground hover:text-destructive" onClick={() => void correr('borrar')} disabled={ocupado}>
-          <Trash2 className="size-4" aria-hidden />
-          Borrar
-        </Button>
-      </div>
-    </>
+    <TarjetaProgramado
+      item={programado}
+      onCambio={() => onResuelto('aprobado')}
+    />
   );
 }

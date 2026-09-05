@@ -23,6 +23,7 @@ export type Programado = {
   runCount: number;
   lastError: string | null;
   aiPrompt: string | null;
+  createdAt?: string | null;
 };
 
 export type RespuestaProgramados = { disponible: boolean; rows: Programado[] };

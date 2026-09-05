@@ -13,8 +13,8 @@ import { cn } from '@/lib/utils';
 import type { BatchSummary, QueueListPayload } from '../../shared/api-types';
 import { BatchCard } from '../cola/BatchCard';
 import { NuevoLoteDialog } from '../cola/NuevoLoteDialog';
-import { FilaRun, PROGRAMADOS_API, ProgramadoRow, programadosFetcher, type Programado } from '../cola/PromptsEnCola';
-import { claveTelefono, resolverChats, type ChatDeTelefono } from '../programados/api';
+import { FilaRun, PROGRAMADOS_API, ProgramadoRow, programadosFetcher } from '../cola/PromptsEnCola';
+import { claveTelefono, resolverChats, type ChatDeTelefono, type Programado } from '../programados/api';
 import { RevisarLote } from '../cola/RevisarLote';
 import { ConectoresCard } from '../cola/ConectoresCard';
 import { FocusCola, type ItemSupervision } from '../cola/FocusCola';
@@ -183,10 +183,6 @@ export function ColaView({ presetChatIds, onOpen, selectedChatId }: { presetChat
           refrescar();
         }}
         onCambio={refrescar}
-        onAbrirLote={(batchId) => {
-          setSupervisando(false);
-          setOpenBatch(batchId);
-        }}
       />
     );
   }
