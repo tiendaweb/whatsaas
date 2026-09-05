@@ -10,6 +10,25 @@ export type TipoProceso = 'ejecutado' | 'encolado' | 'saltado';
 
 export type ResumenSesion = { ejecutados: number; encolados: number; saltados: number };
 
+/**
+ * Cuántos de esta etapa quedaron resueltos.
+ *
+ * Cuenta sobre TODAS las filas cargadas y no sólo hasta el cursor: contando
+ * hasta el índice, volver atrás con la flecha hacía retroceder la barra, como si
+ * el trabajo se deshiciera por mirarlo de nuevo. Saltear no cuenta: saltear es
+ * justamente no haberlo resuelto.
+ */
+export function contarProcesados(rows: Array<{ chatId: number }>, procesados: Record<number, TipoProceso>): number {
+  return rows.filter((r) => procesados[r.chatId] && procesados[r.chatId] !== 'saltado').length;
+}
+
+/** El porcentaje de la barra. Nunca NaN, nunca más de 100. */
+export function porcentaje(procesados: number, total: number): number {
+  if (!Number.isFinite(total) || total <= 0) return 0;
+  const pct = Math.round((Math.max(0, procesados) / total) * 100);
+  return Math.min(100, Math.max(0, pct));
+}
+
 const PAGINA = 50;
 /** Cuántos clientes antes del final se pide la página siguiente. */
 const MARGEN_PREFETCH = 6;
@@ -55,6 +74,15 @@ export function useColaFocus(filtros: FiltrosFocus, owner: OwnerFilterValue) {
   const [sesion, setSesion] = useState<ResumenSesion>({ ejecutados: 0, encolados: 0, saltados: 0 });
   /** Lo hecho dentro del bloque de 25 en curso; se pone a cero al arrancar otro. */
   const [enBloque, setEnBloque] = useState(0);
+  /**
+   * Clientes resueltos seguidos, sin saltear ninguno.
+   *
+   * Es lo único con forma de juego que hay acá, y está para una razón concreta:
+   * en el celular la tentación es saltear al primero que da trabajo, y después
+   * al siguiente. Ver el número volver a cero cuesta lo justo.
+   */
+  const [racha, setRacha] = useState(0);
+  const [mejorRacha, setMejorRacha] = useState(0);
 
   const pedido = useRef(0);
   const clave = url(etapa, filtros, owner, null);
@@ -77,7 +105,11 @@ export function useColaFocus(filtros: FiltrosFocus, owner: OwnerFilterValue) {
         const payload = await fetcher<ListPayload>(url(etapa, filtros, owner, desdeCursor));
         if (id !== pedido.current) return;
         setRows((prev) => (desdeCursor ? [...prev, ...payload.rows] : payload.rows));
-        setTotal(payload.total);
+        // El total se fija con la PRIMERA página y no se toca más. En las
+        // siguientes el servidor ya cuenta menos —lo que se trabajó dejó de
+        // cumplir `queued=sin`— y repisarlo hacía saltar la barra para adelante
+        // sola, como si se hubiera avanzado sin hacer nada.
+        if (!desdeCursor) setTotal(payload.total);
         setCursor(payload.nextCursor);
         setClaveCargada(url(etapa, filtros, owner, null));
       } catch (e) {
@@ -117,10 +149,7 @@ export function useColaFocus(filtros: FiltrosFocus, owner: OwnerFilterValue) {
   const siguiente = sincronizada ? (rows[idx + 1] ?? null) : null;
   const terminada = sincronizada && !cargando && !cargandoMas && !cursor && idx >= rows.length;
 
-  const procesadosEtapa = useMemo(
-    () => rows.slice(0, Math.max(idx, 0)).filter((r) => procesados[r.chatId] && procesados[r.chatId] !== 'saltado').length,
-    [rows, idx, procesados],
-  );
+  const procesadosEtapa = useMemo(() => contarProcesados(rows, procesados), [rows, procesados]);
 
   const avanzar = useCallback(() => setIdx((i) => i + 1), []);
   const retroceder = useCallback(() => setIdx((i) => Math.max(0, i - 1)), []);
@@ -134,7 +163,16 @@ export function useColaFocus(filtros: FiltrosFocus, owner: OwnerFilterValue) {
         encolados: prev.encolados + (tipo === 'encolado' ? 1 : 0),
         saltados: prev.saltados + (tipo === 'saltado' ? 1 : 0),
       }));
-      if (tipo !== 'saltado') setEnBloque((n) => n + 1);
+      if (tipo !== 'saltado') {
+        setEnBloque((n) => n + 1);
+        setRacha((n) => {
+          const siguiente = n + 1;
+          setMejorRacha((mejor) => Math.max(mejor, siguiente));
+          return siguiente;
+        });
+      } else {
+        setRacha(0);
+      }
       setIdx((i) => i + 1);
     },
     [],
@@ -163,6 +201,8 @@ export function useColaFocus(filtros: FiltrosFocus, owner: OwnerFilterValue) {
     error,
     sesion,
     enBloque,
+    racha,
+    mejorRacha,
     reiniciarBloque: () => setEnBloque(0),
     avanzar,
     retroceder,

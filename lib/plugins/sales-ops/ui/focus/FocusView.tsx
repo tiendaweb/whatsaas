@@ -2,11 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useSWR, { preload } from 'swr';
-import { ExternalLink, Loader2 } from 'lucide-react';
-import { ChatEmbebido } from '@/components/chat/ChatEmbebido';
-import { Checkbox } from '@/components/ui/checkbox';
-import { cn } from '@/lib/utils';
+import { ArrowLeft, Loader2, SlidersHorizontal } from 'lucide-react';
 import type { DetailPayload } from '../../shared/api-types';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import type { OwnerFilterValue } from '../components/OwnerFilter';
 import { PROGRAMADOS_API, programadosFetcher, type Programado } from '../cola/PromptsEnCola';
 import { ProgramadosContacto } from '../components/ProgramadosContacto';
@@ -16,11 +14,15 @@ import { AvisoBloque } from './AvisoBloque';
 import { BarraFocus } from './BarraFocus';
 import { BarraPrompt } from './BarraPrompt';
 import { Confeti } from './Confeti';
+import { FocusMovil, type PestanaMovil } from './FocusMovil';
+import { PanelChat } from './PanelChat';
+import { PanelFiltros } from './PanelFiltros';
 import { FinDeEtapa } from './FinDeEtapa';
 import { LimiteDeError } from './LimiteDeError';
 import { PanelChatIA } from './PanelChatIA';
 import { PanelResumen } from './PanelResumen';
-import { FILTROS_INICIALES, guardarFiltros, leerFiltros, type FiltrosFocus } from './tipos';
+import { Button } from '@/components/ui/button';
+import { ETAPA_LABELS, FILTROS_INICIALES, guardarFiltros, leerFiltros, type FiltrosFocus } from './tipos';
 import { useBloque } from './useBloque';
 import { useColaFocus } from './useColaFocus';
 
@@ -46,12 +48,24 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
    * quedarse con el texto que se escribió para el anterior.
    */
   const [borrador, setBorrador] = useState<{ texto: string; token: number; chatId: number } | null>(null);
-  const [verEnviados, setVerEnviados] = useState(true);
+  const [pestana, setPestana] = useState<PestanaMovil>('accion');
+  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
+  const [esMovil, setEsMovil] = useState(false);
   const tokenRef = useRef(0);
 
   useEffect(() => {
     setFiltros(leerFiltros());
     setListo(true);
+  }, []);
+
+  // El corte es el mismo `xl` de Tailwind con el que se dibujan las tres
+  // columnas: abajo de eso no entra ninguna, así que manda la pantalla táctil.
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1279px)');
+    const aplicar = () => setEsMovil(mq.matches);
+    aplicar();
+    mq.addEventListener('change', aplicar);
+    return () => mq.removeEventListener('change', aplicar);
   }, []);
 
   const cambiarFiltros = useCallback((f: FiltrosFocus) => {
@@ -83,7 +97,6 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
 
   const chatId = cola.actual?.chatId ?? null;
   const { data: detalle, error: errorDetalle } = useSWR<Detalle>(chatId ? detalleUrl(chatId) : null, fetcher, { revalidateOnFocus: false });
-  const { data: team } = useSWR<{ id: number } | null>('/api/team', fetcher);
   /**
    * Los programados del equipo, para saber qué texto está por salirle a este
    * contacto.
@@ -116,13 +129,37 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
     return vivo?.message ?? null;
   }, [header?.remoteJid, programados]);
 
+  /**
+   * Los avisos de las pestañas. Comparten clave SWR con los paneles que ya los
+   * piden, así que no agregan ni una llamada: sin esto, para saber que un pedido
+   * volvió bloqueado había que entrar a la pestaña a mirar.
+   */
+  const { data: corridas } = useSWR<{ runs: Array<{ status: string; humanRequest: unknown }> }>(
+    chatId ? `${SALES_OPS_API}/prompts/queue?chatId=${chatId}&status=all&limit=20` : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+
+  const avisos = useMemo(() => {
+    const telefono = (header?.remoteJid ?? '').split('@')[0].replace(/\D/g, '');
+    const filas = programados?.rows;
+    const vivos = telefono && Array.isArray(filas)
+      ? filas.filter((p) => (p.status === 'active' || p.status === 'paused') && (p.targetNumbers ?? []).some((n) => String(n).replace(/\D/g, '') === telefono)).length
+      : 0;
+    const bloqueadas = (corridas?.runs ?? []).filter((r) => r.status === 'blocked' && r.humanRequest).length;
+    return { programados: vivos, accion: bloqueadas };
+  }, [header?.remoteJid, programados, corridas?.runs]);
+
   const recibirTexto = useCallback(
     (texto: string) => {
       if (!chatId) return;
       tokenRef.current += 1;
       setBorrador({ texto, token: tokenRef.current, chatId });
+      // En el celular el borrador aterriza en otra pestaña: sin esto, "Ejecutar
+      // ahora" parecía no haber hecho nada.
+      if (esMovil) setPestana('programados');
     },
-    [chatId],
+    [chatId, esMovil],
   );
 
   const saltar = useCallback(() => {
@@ -149,6 +186,57 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
   }, [cola, saltar]);
 
   const siguienteEtapa = cola.hayOtraEtapa ? cola.etapas[cola.etapaIdx + 1] : null;
+
+  const barraPrompt = chatId ? (
+    <BarraPrompt
+      key={chatId}
+      chatId={chatId}
+      nombre={nombre}
+      etapa={cola.etapa}
+      mensajeActual={mensajeActual}
+      accionRecomendada={cola.actual?.recommendedAction ?? null}
+      onTexto={recibirTexto}
+      onEncolado={encolado}
+      movil={esMovil}
+    />
+  ) : null;
+
+  const programadosDelContacto = header?.remoteJid ? (
+    <LimiteDeError nombre="Programados">
+      <ProgramadosContacto
+        key={header.chatId}
+        remoteJid={header.remoteJid}
+        nombre={nombre}
+        chatId={header.chatId}
+        inicialAbierto
+        soloSiHay={!esMovil}
+        borradorExterno={borrador?.chatId === header.chatId ? borrador : null}
+      />
+    </LimiteDeError>
+  ) : null;
+
+  /** El contenido de la pestaña abierta en el celular. */
+  const panelMovil = (() => {
+    if (!chatId) return null;
+    if (pestana === 'chat') return <PanelChat header={header} chatHref={detalle?.chatHref ?? null} className="min-h-0 flex-1 p-3" />;
+    if (pestana === 'programados') return <div className="min-h-0 flex-1 overflow-y-auto p-3">{programadosDelContacto}</div>;
+    if (pestana === 'datos') {
+      return (
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          <LimiteDeError nombre="Resumen">
+            <PanelResumen chatId={chatId} />
+          </LimiteDeError>
+        </div>
+      );
+    }
+    return (
+      <div className="flex min-h-0 flex-1 flex-col px-3 pt-2">
+        <LimiteDeError nombre="Chat IA">
+          <PanelChatIA chatId={chatId} className="min-h-0 flex-1" />
+        </LimiteDeError>
+      </div>
+    );
+  })();
 
   const centro = (() => {
     if (cola.error) return <ErrorState className="m-4" message={cola.error} onRetry={cola.recargar} />;
@@ -177,28 +265,69 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
 
   return (
     <div className="fixed inset-0 z-50 flex h-dvh w-full flex-col bg-background text-foreground">
-      <BarraFocus
-        etapa={cola.etapa}
-        procesados={cola.procesadosEtapa}
-        total={cola.total}
-        posicion={Math.min(cola.idx + 1, Math.max(cola.total, 1))}
-        sesion={cola.sesion}
-        filtros={filtros}
-        onFiltros={cambiarFiltros}
-        terminaEn={bloque.terminaEn}
-        pausadoCon={bloque.pausadoCon}
-        pausado={bloque.pausado}
-        hayBloque={bloque.hayBloque}
-        onReloj={() => (!bloque.hayBloque ? bloque.arrancar('foco') : bloque.pausado ? bloque.reanudar() : bloque.pausar())}
-        onSalir={onSalir}
-        onAnterior={cola.retroceder}
-        onSiguiente={cola.avanzar}
-        onSaltar={saltar}
-        puedeRetroceder={cola.idx > 0}
-        hayActual={Boolean(cola.actual)}
-      />
+      {!esMovil && (
+          <BarraFocus
+            etapa={cola.etapa}
+          procesados={cola.procesadosEtapa}
+          total={cola.total}
+          posicion={Math.min(cola.idx + 1, Math.max(cola.total, 1))}
+          sesion={cola.sesion}
+          filtros={filtros}
+          onFiltros={cambiarFiltros}
+          terminaEn={bloque.terminaEn}
+          pausadoCon={bloque.pausadoCon}
+          pausado={bloque.pausado}
+          hayBloque={bloque.hayBloque}
+          onReloj={() => (!bloque.hayBloque ? bloque.arrancar('foco') : bloque.pausado ? bloque.reanudar() : bloque.pausar())}
+          onSalir={onSalir}
+          onAnterior={cola.retroceder}
+          onSiguiente={cola.avanzar}
+          onSaltar={saltar}
+          puedeRetroceder={cola.idx > 0}
+          hayActual={Boolean(cola.actual)}
+        />
+      )}
 
-      {centro ?? (
+      {esMovil && centro && (
+        <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border px-2">
+          <Button variant="ghost" size="sm" className="h-9 gap-1.5 px-2 text-muted-foreground" onClick={onSalir}>
+            <ArrowLeft className="size-5" aria-hidden />
+            Salir
+          </Button>
+          <span className="truncate text-sm font-medium">{ETAPA_LABELS[cola.etapa]}</span>
+          <Button variant="ghost" size="icon" className="size-9" onClick={() => setFiltrosAbiertos(true)} aria-label="Filtros y orden">
+            <SlidersHorizontal className="size-4" aria-hidden />
+          </Button>
+        </header>
+      )}
+
+      {centro ?? (esMovil && cola.actual ? (
+        <FocusMovil
+          etapa={cola.etapa}
+          actual={cola.actual}
+          posicion={Math.min(cola.idx + 1, Math.max(cola.total, 1))}
+          total={cola.total}
+          procesados={cola.procesadosEtapa}
+          racha={cola.racha}
+          terminaEn={bloque.terminaEn}
+          pausadoCon={bloque.pausadoCon}
+          pausado={bloque.pausado}
+          hayBloque={bloque.hayBloque}
+          pestana={pestana}
+          onPestana={setPestana}
+          avisos={avisos}
+          onReloj={() => (!bloque.hayBloque ? bloque.arrancar('foco') : bloque.pausado ? bloque.reanudar() : bloque.pausar())}
+          onSalir={onSalir}
+          onFiltros={() => setFiltrosAbiertos(true)}
+          onAnterior={cola.retroceder}
+          onSiguiente={cola.avanzar}
+          onSaltar={saltar}
+          puedeRetroceder={cola.idx > 0}
+          prompt={barraPrompt}
+        >
+          {panelMovil}
+        </FocusMovil>
+      ) : (
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto xl:flex-row xl:overflow-hidden">
           {/* Izquierda: quién es. */}
           <aside className="shrink-0 border-border p-3 xl:w-[300px] xl:overflow-y-auto xl:border-r" aria-label="Resumen del cliente">
@@ -207,80 +336,35 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
 
           {/* Centro: lo que le va a salir, y lo que la IA dijo. */}
           <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 p-3">
-            {header?.remoteJid && (
-              <LimiteDeError nombre="Programados">
-                <ProgramadosContacto
-                  key={header.chatId}
-                  remoteJid={header.remoteJid}
-                  nombre={nombre}
-                  chatId={header.chatId}
-                  inicialAbierto
-                  soloSiHay
-                  borradorExterno={borrador?.chatId === header.chatId ? borrador : null}
-                />
-              </LimiteDeError>
-            )}
-            {/* En móvil el hilo con la IA no puede comerse la pantalla: se acota
-                y scrollea adentro, con el prompt siempre pegado abajo. */}
+            {programadosDelContacto}
+            {/* Las clases responsive quedan porque `esMovil` recién se sabe
+                después de montar: cubren ese primer frame en un teléfono. */}
             {chatId && (
               <LimiteDeError nombre="Chat IA">
                 <PanelChatIA chatId={chatId} className="max-h-[55vh] min-h-0 flex-1 xl:max-h-none" />
               </LimiteDeError>
             )}
-            {chatId && (
-              <BarraPrompt
-                key={chatId}
-                chatId={chatId}
-                nombre={nombre}
-                etapa={cola.etapa}
-                mensajeActual={mensajeActual}
-                accionRecomendada={cola.actual?.recommendedAction ?? null}
-                onTexto={recibirTexto}
-                onEncolado={encolado}
-              />
-            )}
+            {barraPrompt}
           </main>
 
           {/* Derecha: la conversación, para responder sin salir. */}
           <aside className="flex min-h-[50vh] shrink-0 flex-col border-border p-3 xl:min-h-0 xl:w-[420px] xl:border-l" aria-label="Chat del contacto">
-            <div className="flex shrink-0 items-center justify-between gap-2 pb-1.5">
-              <h2 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Chat</h2>
-              <div className="flex items-center gap-3">
-                <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground">
-                  <Checkbox checked={verEnviados} onCheckedChange={(v) => setVerEnviados(v === true)} className="size-3.5" aria-label="Ver los mensajes enviados" />
-                  Enviados
-                </label>
-                {detalle?.chatHref && (
-                  <a href={detalle.chatHref} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
-                    Abrir <ExternalLink className="size-3" aria-hidden />
-                  </a>
-                )}
-              </div>
-            </div>
             {errorDetalle ? (
               <ErrorState message={errorDetalle instanceof Error ? errorDetalle.message : undefined} />
-            ) : header?.remoteJid ? (
-              <LimiteDeError nombre="Chat">
-                <ChatEmbebido
-                key={header.remoteJid}
-                remoteJid={header.remoteJid}
-                instanceId={header.instanceId}
-                chatId={header.chatId}
-                nombre={nombre}
-                teamId={team?.id ?? null}
-                ocultarEnviados={!verEnviados}
-                puedeEnviar
-                  className={cn('min-h-0 flex-1')}
-                />
-              </LimiteDeError>
             ) : (
-              <div className="flex flex-1 items-center justify-center text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" aria-hidden />
-              </div>
+              <PanelChat header={header} chatHref={detalle?.chatHref ?? null} className="flex-1" />
             )}
           </aside>
         </div>
-      )}
+      ))}
+
+      {/* Los mismos filtros de la barra de escritorio, en una hoja desde abajo. */}
+      <Sheet open={filtrosAbiertos} onOpenChange={setFiltrosAbiertos}>
+        <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          <SheetTitle className="mb-2 text-sm">Filtros y orden</SheetTitle>
+          <PanelFiltros filtros={filtros} onFiltros={cambiarFiltros} />
+        </SheetContent>
+      </Sheet>
 
       <Confeti activo={cola.terminada && !cola.cargando} />
 

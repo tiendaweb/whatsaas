@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Inbox, Loader2, Play, X } from 'lucide-react';
+import { Inbox, Loader2, Play, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { classifyRunError } from '../../shared/run-errors';
 import { avisarEncolado } from '../components/eventos';
+import { atajosDe, recordarAtajo, type Atajo } from './atajos';
 import { LS_PROMPT, type Etapa } from './tipos';
 import { dejarParaConector, ejecutarAhora } from './api';
 
@@ -23,6 +24,11 @@ type Props = {
   onTexto: (texto: string) => void;
   /** Se encoló: el Focus pasa al siguiente cliente. */
   onEncolado: () => void;
+  /**
+   * En el celular los botones van a lo ancho y más altos: se aprietan con el
+   * pulgar, con el teléfono en una mano, y el margen de error es otro.
+   */
+  movil?: boolean;
 };
 
 /**
@@ -38,8 +44,9 @@ type Props = {
  * la acción recomendada del análisis, así pasar de largo igual deja trabajo
  * hecho en vez de nada.
  */
-export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecomendada, onTexto, onEncolado }: Props) {
+export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecomendada, onTexto, onEncolado, movil = false }: Props) {
   const [texto, setTexto] = useState('');
+  const [atajos, setAtajos] = useState<Atajo[]>([]);
   const [ejecutando, setEjecutando] = useState(false);
   const [encolando, setEncolando] = useState(false);
   /** Motivo por el que lo último pedido no se pudo hacer acá. Se limpia al escribir. */
@@ -58,6 +65,12 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
     setMotivoConector(null);
   }, [etapa]);
 
+  // Los atajos se recalculan por cliente: el primero es su acción recomendada,
+  // que es el único que mira a ESTE y no a la tanda.
+  useEffect(() => {
+    setAtajos(atajosDe(etapa, accionRecomendada));
+  }, [etapa, accionRecomendada, chatId]);
+
   const escribir = (v: string) => {
     setTexto(v);
     setMotivoConector(null);
@@ -75,7 +88,9 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
     setEjecutando(true);
     setMotivoConector(null);
     try {
-      const res = await ejecutarAhora({ chatId, prompt: texto.trim(), message: mensajeActual ?? null, name: nombre });
+      const pedido = texto.trim();
+      const res = await ejecutarAhora({ chatId, prompt: pedido, message: mensajeActual ?? null, name: nombre });
+      recordarAtajo(etapa, pedido);
       if (res.mode === 'texto') {
         onTexto(res.text);
         toast.success('Texto listo arriba. Revisalo y guardá el programado.');
@@ -103,6 +118,7 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
     setEncolando(true);
     try {
       await dejarParaConector({ chatId, text: pedido, title: `Focus · ${nombre}` });
+      recordarAtajo(etapa, pedido);
       avisarEncolado(chatId);
       toast.success('En la cola. Lo toma el próximo conector.');
       onEncolado();
@@ -113,8 +129,89 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
     }
   };
 
+  const chips = atajos.length > 0 && (
+    <div className="-mx-0.5 flex gap-1.5 overflow-x-auto px-0.5 pb-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]{display:none}">
+      {atajos.map((atajo) => (
+        <button
+          key={atajo.texto}
+          type="button"
+          disabled={ocupado}
+          onClick={() => escribir(atajo.texto)}
+          title={atajo.texto}
+          className={cn(
+            'shrink-0 rounded-full border px-2.5 py-1 text-left text-[11px] leading-tight transition-colors disabled:opacity-50',
+            atajo.texto === texto
+              ? 'border-primary bg-primary/10 text-foreground'
+              : atajo.origen === 'analisis'
+                ? 'border-primary/40 bg-primary/5 text-foreground hover:bg-primary/10'
+                : 'border-border bg-card text-muted-foreground hover:text-foreground',
+          )}
+        >
+          {atajo.origen === 'analisis' && <Sparkles className="mr-1 inline size-2.5 text-primary" aria-hidden />}
+          <span className={cn('inline-block truncate align-middle', movil ? 'max-w-[62vw]' : 'max-w-[240px]')}>{atajo.texto}</span>
+        </button>
+      ))}
+    </div>
+  );
+
+  if (movil) {
+    return (
+      <div className="shrink-0 border-t border-border bg-background p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        {motivoConector && (
+          <p className="mb-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-800 dark:text-amber-200">
+            {motivoConector}
+          </p>
+        )}
+
+        {chips}
+
+        <div className="relative">
+          <Textarea
+            ref={ref}
+            rows={2}
+            value={texto}
+            onChange={(e) => escribir(e.target.value)}
+            placeholder="Tocá un atajo o escribí qué hacer…"
+            className="min-h-[3.5rem] resize-none py-2 pr-9 text-sm"
+            disabled={ocupado}
+          />
+          {texto && !ocupado && (
+            <button
+              type="button"
+              onClick={() => escribir('')}
+              className="absolute right-1.5 top-1.5 rounded-md p-1.5 text-muted-foreground active:bg-muted"
+              aria-label="Borrar el pedido"
+            >
+              <X className="size-4" aria-hidden />
+            </button>
+          )}
+        </div>
+
+        {/* A lo ancho y altos: se aprietan con el pulgar. El de arriba se queda
+            en este cliente; el de abajo pasa al siguiente. */}
+        <div className="mt-2 grid gap-2">
+          <Button type="button" onClick={() => void ejecutar()} disabled={ocupado || !texto.trim()} className="h-11 w-full gap-2 text-sm">
+            {ejecutando ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Play className="size-4" aria-hidden />}
+            Ejecutar ahora
+          </Button>
+          <Button
+            type="button"
+            variant={motivoConector ? 'default' : 'outline'}
+            onClick={() => void encolar()}
+            disabled={ocupado}
+            className={cn('h-11 w-full gap-2 text-sm', motivoConector && 'ring-2 ring-primary/40')}
+          >
+            {encolando ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Inbox className="size-4" aria-hidden />}
+            Listo para conector
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="sticky bottom-0 shrink-0 border-t border-border bg-background pt-2">
+      {chips}
       {motivoConector && (
         <p className="mb-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-800 dark:text-amber-200">
           {motivoConector}

@@ -43,9 +43,41 @@ con la URL como fuente de la etapa (`&etapa=`).
 Una sola salida: **← Salir de Focus**, arriba a la izquierda, que vuelve a la
 vista de la etapa. `Esc` no sale (cierra popovers); salir es deliberado.
 
-Móvil: no hay tres columnas. Se degrada a una sola columna con las mismas
-secciones apiladas en el orden Resumen → Programados → Chat IA → Chat, la barra
-de prompt fija abajo y el cronómetro en el encabezado.
+## 4-bis. El celular no es la pantalla chica del escritorio
+
+En el teléfono no entra ni una de las tres columnas, así que no se apilan: la
+pantalla se parte en cuatro pestañas con una barra abajo, al alcance del pulgar.
+
+**Acción · Chat · Programados · Datos.** Arriba queda fija la tarjeta del
+cliente —grado, nombre y qué hay que hacerle—, porque eso es lo que no se puede
+perder al cambiar de pestaña: es la razón por la que uno entró. Se pasa de
+cliente **arrastrando la tarjeta** hacia el costado, como un mazo; las flechas
+siguen ahí para quien no descubra el gesto, porque un gesto que no se anuncia no
+puede ser la única forma de hacer algo.
+
+**Los atajos son la función principal, no un adorno.** En el celular escribir el
+prompt es el cuello de botella: entre teclado, autocorrector y una mano sola,
+tipear "recordale el pago en dos renglones" cuesta más que leer el chat entero. Y
+en una tanda el pedido es casi siempre el mismo, cambiando el cliente. Así que
+arriba del cuadro de texto hay una fila de fichas que se tocan: primero la acción
+recomendada de ESTE cliente, después lo que esta persona ya usó en esta etapa, y
+al final una lista fija por etapa para el primer día. Un toque llena el pedido,
+otro lo ejecuta.
+
+**Las pestañas avisan.** Programados muestra cuántos tiene vivos; Acción, cuántos
+pedidos volvieron pidiendo criterio humano. Sin eso había que entrar a mirar.
+
+**La racha.** Clientes resueltos seguidos, sin saltear. Aparece a partir de dos.
+Es lo único con forma de juego que hay, y está por una razón concreta: en el
+celular la tentación es saltear al primero que da trabajo, y después al
+siguiente. Ver el número volver a cero cuesta lo justo.
+
+Detalles que se ganan o se pierden acá: "Ejecutar ahora" salta solo a la pestaña
+Programados, porque el borrador aterriza ahí y si no parecía que no hubiera hecho
+nada; cambiar de cliente vuelve a Acción, porque seguir en Chat mostraría otra
+conversación sin aviso; y los filtros, que en escritorio viven en un popover de
+la barra, en el celular se abren en una hoja desde abajo con **los mismos
+controles** (`PanelFiltros`) — antes el teléfono simplemente no los tenía.
 
 ## 4. Layout de escritorio (≥ 1280 px)
 
@@ -145,7 +177,14 @@ Los clientes salen de `GET /contacts` (ya existe, con cursor). Focus le agrega:
   son nuevos en el backend (`sort: 'oldest' | 'gate'`).
 - **Progreso**: `procesados / total` de la etapa, barra fina arriba. "Procesado"
   = se le ejecutó algo o se lo dejó para conector en esta sesión; saltar no
-  cuenta.
+  cuenta. Dos cosas que la barra tiene que cumplir y que se probaron rompiendo:
+  el denominador se fija con la PRIMERA página y no se toca más (en las
+  siguientes el servidor ya cuenta menos, porque lo trabajado dejó de cumplir
+  `queued=sin`, y repisarlo la hacía saltar sola), y el numerador se cuenta sobre
+  todas las filas cargadas y no hasta el cursor (contando hasta el índice, volver
+  atrás con la flecha hacía **retroceder** la barra, como si el trabajo se
+  deshiciera por mirarlo de nuevo). `scripts/smoke-focus-progreso.mts` prueba las
+  dos, más que el total declarado sea el que efectivamente se puede recorrer.
 - **Sesión**: cuántos ejecutados, cuántos encolados, cuántos saltados, desde que
   se abrió Focus.
 - **Prefetch**: al pintar el cliente N se pide el detalle del N+1. Pasar de
@@ -195,9 +234,15 @@ queda ninguna, dice que terminó la ronda.
 | `server/focus.ts` | **nuevo**: `ejecutarPedidoFocus` (redacta o dice que no puede) |
 | `api/…/focus/run/route.ts` | **nuevo**: `POST { chatId, prompt, message? }` |
 
-**UI (nuevo, en `ui/focus/`):** `FocusView`, `BarraFocus`, `Reloj`,
-`PanelResumen`, `PanelChatIA`, `BarraPrompt`, `FinDeEtapa`, `AvisoBloque`,
-`Confeti`, `LimiteDeError`, `useBloque`, `useColaFocus`, `tipos.ts`, `api.ts`.
+**UI (nuevo, en `ui/focus/`):** `FocusView` (elige pantalla y guarda el estado),
+`BarraFocus` + `PanelFiltros` + `Reloj`, `FocusMovil`, `PanelResumen`,
+`PanelChat`, `PanelChatIA`, `BarraPrompt` + `atajos.ts`, `FinDeEtapa`,
+`AvisoBloque`, `Confeti`, `LimiteDeError`, `useBloque`, `useColaFocus`,
+`tipos.ts`, `api.ts`.
+
+Los paneles son los mismos en las dos pantallas: lo único que cambia es cómo se
+acomodan. Cuando el chat estaba escrito adentro del layout de escritorio, la
+versión del celular era una copia que se iba quedando atrás.
 
 Cada columna va adentro de `LimiteDeError`. Sin eso, cualquier excepción de
 render sube al boundary genérico de la app ("No se pudo cargar la página"), que
@@ -234,4 +279,5 @@ sola migración. Focus no agrega tablas: todo lo que muestra ya existe.
 - **F5 · Filtros, orden y progreso** — multiselect, `oldest`/`gate`, barra,
   contadores de sesión.
 - **F6 · Etapas y confeti** — fin de etapa, salto a la siguiente, celebración.
-- **F7 · Móvil y teclado** — apilado, atajos, QA.
+- **F7 · Móvil y teclado** — ✅ pestañas, tarjeta con arrastre, atajos de prompt,
+  racha, filtros en hoja, avisos por pestaña.
