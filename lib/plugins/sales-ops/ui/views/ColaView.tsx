@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
-import { Archive, Ban, Check, CheckCircle2, ChevronDown, ChevronUp, CircleHelp, ClipboardCheck, Clock, Inbox, Layers, Loader2, MessageSquareText, Pencil, Plus, Save, Trash2, Wand2, X, type LucideIcon } from 'lucide-react';
+import { Archive, Ban, Check, CheckCircle2, ChevronDown, ChevronUp, CircleHelp, ClipboardCheck, Clock, Inbox, Layers, Loader2, MessageSquareText, Pencil, Plus, Save, Timer, Trash2, Wand2, X, type LucideIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,8 @@ import { FilaRun, PROGRAMADOS_API, ProgramadoRow, programadosFetcher, type Progr
 import { claveTelefono, resolverChats, type ChatDeTelefono } from '../programados/api';
 import { RevisarLote } from '../cola/RevisarLote';
 import { ConectoresCard } from '../cola/ConectoresCard';
+import { FocusCola, type ItemSupervision } from '../cola/FocusCola';
+import { ReintentarFallidas } from '../cola/ReintentarFallidas';
 import { QUEUE_ENDPOINT, batchPhase, fetcher } from '../cola/api';
 import { FichaDock, type DockItem } from '../components/FichaDock';
 import { SALES_OPS_API, fetcher as jsonFetcher, fmtInt, tiempoRelativo } from '../components/format';
@@ -85,6 +87,7 @@ export function ColaView({ presetChatIds, onOpen, selectedChatId }: { presetChat
   const [filtro, setFiltro] = useState<Tipo | 'todos'>('todos');
   const [verArchivados, setVerArchivados] = useState(false);
   const [limpiando, setLimpiando] = useState(false);
+  const [supervisando, setSupervisando] = useState(false);
 
   // Los teléfonos de los programados cruzados con los chats, para abrir la ficha desde la fila.
   const numeros = useMemo(() => Array.from(new Set((programados.data?.rows ?? []).flatMap((p) => p.targetNumbers ?? []))), [programados.data?.rows]);
@@ -151,8 +154,41 @@ export function ColaView({ presetChatIds, onOpen, selectedChatId }: { presetChat
     void programados.mutate();
   };
 
+  /**
+   * Lo que espera una decisión de una persona, en el orden en que conviene
+   * mirarlo: primero lo bloqueado (sin eso el conector no avanza), después el
+   * resto de la revisión. Es exactamente lo que el Focus de supervisión recorre.
+   */
+  /** Las corridas que fallaron, para poder reintentarlas todas juntas. */
+  const fallidas = useMemo(
+    () => (runs.data?.runs ?? []).filter((r) => r.status === 'failed'),
+    [runs.data?.runs],
+  );
+
+  const paraSupervisar = useMemo<ItemSupervision[]>(
+    () => [...porSeccion.decision, ...porSeccion.revision].map(({ key, tipo, fecha, ...resto }) => ({ key, tipo, fecha, ...resto }) as ItemSupervision),
+    [porSeccion.decision, porSeccion.revision],
+  );
+
   if (openBatch) {
     return <RevisarLote batchId={openBatch} onBack={() => setOpenBatch(null)} onChanged={refrescar} onOpen={onOpen} selectedChatId={selectedChatId} />;
+  }
+
+  if (supervisando) {
+    return (
+      <FocusCola
+        items={paraSupervisar}
+        onSalir={() => {
+          setSupervisando(false);
+          refrescar();
+        }}
+        onCambio={refrescar}
+        onAbrirLote={(batchId) => {
+          setSupervisando(false);
+          setOpenBatch(batchId);
+        }}
+      />
+    );
   }
 
   /** Vacía Descartados: borra lotes y corridas descartadas, uno por uno, con lo que falle a la vista. */
@@ -185,6 +221,24 @@ export function ColaView({ presetChatIds, onOpen, selectedChatId }: { presetChat
     <div className="flex min-h-[60dvh] flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <p className="min-w-0 text-xs text-muted-foreground">{seccion === 'decision' ? tQueue('decisionHelp') : SECCION_HELP[seccion]}</p>
+        {/* Violeta y no el color de la app: es el mismo botón que el Focus de
+            trabajo pero lleva a otro lado, y en un rail de acciones iguales el
+            color es lo único que lo distingue antes de apretarlo. */}
+        <ReintentarFallidas runs={fallidas} onListo={refrescar} />
+        <Button
+          type="button"
+          size="sm"
+          disabled={paraSupervisar.length === 0}
+          onClick={() => setSupervisando(true)}
+          title="Revisar de a uno todo lo que espera una decisión"
+          className="h-8 shrink-0 gap-1.5 bg-violet-600 text-white hover:bg-violet-700 disabled:bg-violet-600/40"
+        >
+          <Timer className="size-4" aria-hidden />
+          <span className="hidden sm:inline">Focus</span>
+          {paraSupervisar.length > 0 && (
+            <span className="rounded-full bg-white/20 px-1.5 font-mono text-[10px] tabular-nums">{paraSupervisar.length}</span>
+          )}
+        </Button>
         {seccion === 'decision' ? (
           porSeccion.decision.length > 0 && (
             <span className="shrink-0 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary">

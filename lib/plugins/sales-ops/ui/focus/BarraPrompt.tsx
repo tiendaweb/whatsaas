@@ -53,9 +53,9 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
   const [motivoConector, setMotivoConector] = useState<string | null>(null);
   const ref = useRef<HTMLTextAreaElement | null>(null);
 
-  // El pedido se recuerda por etapa y no por cliente: en una tanda de Dinero el
-  // 80 % de las veces se pide lo mismo, y volver a tipearlo es el trabajo que
-  // esta pantalla vino a sacar.
+  // Al cambiar de etapa se recupera lo último que quedó escrito sin encolar: un
+  // borrador a medias no se pierde por cambiar de lista. Lo que SÍ se limpia es
+  // el pedido ya encolado, apenas se manda (ver `encolar`).
   useEffect(() => {
     try {
       setTexto(window.localStorage.getItem(`${LS_PROMPT}:${etapa}`) ?? '');
@@ -120,6 +120,11 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
       await dejarParaConector({ chatId, text: pedido, title: `Focus · ${nombre}` });
       recordarAtajo(etapa, pedido);
       avisarEncolado(chatId);
+      // Se limpia al encolar: la pantalla pasa al siguiente cliente y un pedido
+      // heredado que quedó ahí se manda sin querer al que viene. Repetirlo no
+      // cuesta escribirlo de nuevo — `recordarAtajo` lo dejó primero en las
+      // fichas de arriba, a un toque.
+      escribir('');
       toast.success('En la cola. Lo toma el próximo conector.');
       onEncolado();
     } catch (e) {

@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, Ban, CheckCircle2, Inbox, Info, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { ReintentarFallidas } from '../cola/ReintentarFallidas';
 import { classifyRunError, type RunFailure } from '../../shared/run-errors';
 import { fmtInt, tiempoRelativo } from '../components/format';
 import { cancelRun, type SkillRun } from './api';
@@ -143,13 +144,27 @@ export function Actividad({ runs, onOpen, onChanged }: Props) {
                 La IA del equipo se quedó sin cuota o el modelo estaba saturado. El mismo texto funciona tal cual: pasalo a la cola y lo ejecuta un conector
                 (Claude, ChatGPT o Grok) con su propia cuota.
               </p>
+              {/* Son todas la misma falla: arreglarlas de a una es apretar el
+                  mismo botón veinte veces. */}
+              <div className="mt-2">
+                <ReintentarFallidas runs={grupos.cuota} onListo={onChanged} />
+              </div>
             </div>
           )}
           <Lista vacio="Ninguna corrida se quedó sin cuota. 👌" runs={grupos.cuota} onOpen={onOpen} onChanged={onChanged} />
         </>
       )}
 
-      {pestana === 'fallidas' && <Lista vacio="Sin fallos que revisar." runs={grupos.fallidas} onOpen={onOpen} onChanged={onChanged} />}
+      {pestana === 'fallidas' && (
+        <>
+          {grupos.fallidas.length > 1 && (
+            <div className="flex justify-end">
+              <ReintentarFallidas runs={grupos.fallidas} onListo={onChanged} />
+            </div>
+          )}
+          <Lista vacio="Sin fallos que revisar." runs={grupos.fallidas} onOpen={onOpen} onChanged={onChanged} />
+        </>
+      )}
 
       {pestana === 'hechas' && <Lista vacio="Todavía no se completó ninguna corrida." runs={grupos.hechas} onOpen={onOpen} onChanged={onChanged} />}
     </section>

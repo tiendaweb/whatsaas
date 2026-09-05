@@ -99,6 +99,14 @@ El contrato de `crm_fix` se agrega al prompt activo en tiempo de composición (`
 
 Smoke contra la base en `scripts/smoke-crm-fix.mts`: verifica que los nombres inexistentes no escriban y dejen la propuesta en pie, que resuelva sin mayúsculas ni acentos, y que aplicar borre la propuesta — todo sin cambiarle el CRM a nadie (propone la etapa que el contacto ya tiene).
 
+## Focus de supervisión en la Cola (2026-09-05)
+
+Segundo Focus, **violeta**, al que se entra con un botón propio en la Cola. El primero recorre clientes para ejecutarles algo; éste recorre lo que espera una decisión —prompts sin aprobar, corridas fallidas, lo bloqueado pidiendo criterio, lotes propuestos, programados detenidos— y en cada uno deja lo único que hace falta: leerlo entero, corregirlo y aprobarlo o descartarlo. El color tiñe la pantalla entera y no sólo el botón: los dos se ven y se recorren igual, y confundirlos es aprobar algo creyendo que se trabajaba un cliente.
+
+Lo que cambia respecto de la Cola: el texto de un prompt se ve **completo y editable** en vez de recortado a dos renglones, y "Aprobar" con cambios sin guardar guarda primero. La lista se congela al entrar (resolver un ítem lo saca del servidor; recalcular movería el siguiente justo cuando se va a apretar) y la Cola se refresca al salir.
+
+En la misma tanda: el pedido del Focus de trabajo **se limpia al encolarlo** —la pantalla pasa al siguiente cliente y un texto heredado se manda sin querer al que viene—; repetirlo es un toque porque queda primero entre las fichas de atajos.
+
 ## Fases
 
 | Fase | Estado |
@@ -114,6 +122,7 @@ Smoke contra la base en `scripts/smoke-crm-fix.mts`: verifica que los nombres in
 | 7 Leads nuevos | ⏳ |
 | 8 Focus (bloques de 25 min) | ✅ 2026-09-05 · doc `08-FOCUS.md` |
 | 9 CRM corregible por la IA (`crm_fix`, migración 0104) | ✅ 2026-09-05 |
+| 10 Focus de supervisión en la Cola | ✅ 2026-09-05 |
 
 ## Relación con otros trabajos en curso
 

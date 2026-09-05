@@ -124,8 +124,48 @@ de los dos botones, que van **uno debajo del otro** y no lado a lado: con el
 mismo tamaño y el mismo peso, en fila, se apretaba el equivocado. Arriba el que
 se queda en la pantalla, abajo el que pasa al siguiente.
 
-Recuerda el último texto por etapa (no por cliente): el 80 % de los pedidos de
-una tanda son el mismo. Tiene una × para cortar esa herencia sin borrar a mano.
+**El pedido se limpia al encolarlo.** La pantalla pasa al siguiente cliente, y un
+texto heredado que quedó en el cuadro se manda sin querer al que viene. Repetirlo
+no cuesta volver a escribirlo: el pedido que se acaba de usar queda **primero
+entre las fichas de atajos**, a un toque. Lo que sí se conserva entre sesiones es
+un borrador a medias que nunca se encoló, por etapa, y tiene una × para tirarlo.
+
+## 4-ter. El otro Focus: supervisión (violeta)
+
+El Focus de trabajo recorre **clientes** para ejecutarles algo. El de
+supervisión recorre **lo que quedó esperando que alguien lo mire**: prompts sin
+aprobar, corridas que fallaron, lo que volvió pidiendo criterio humano, lotes
+propuestos y programados detenidos. Se entra con el botón **Focus** de la Cola.
+
+**Es violeta, y en toda la pantalla, no sólo en el botón.** Los dos se ven
+igual, se abren igual y se recorren igual; confundirlos es aprobar algo creyendo
+que se estaba trabajando un cliente. El color es lo único que los distingue
+antes de apretar, así que tiñe la barra entera, la barra de progreso y los
+botones de acción.
+
+Qué se puede hacer en cada ítem:
+
+| Ítem | Qué se ve | Qué se puede hacer |
+|---|---|---|
+| Prompt / indicación | El texto **completo**, no recortado | Corregirlo ahí mismo, aprobar (guarda antes si se editó), volver a encolar si falló, descartar |
+| Bloqueado | El formulario que armó el conector | Contestarlo (`HumanDecisionCard`) |
+| Lote | Resumen, cuántas sin aprobar, respondidas y recuperadas | Aprobar el lote entero, abrirlo en detalle fila por fila, descartar |
+| Programado | La indicación para la IA y el texto que va a salir | Activar, pasar a la cola como pedido, borrar |
+
+Ese primer renglón es el que justifica la pantalla: en la Cola el texto de un
+prompt se ve en dos renglones y corregirlo abre un editor chico. Acá se lee
+entero y se corrige donde se lee, que es cuando uno se da cuenta de lo que está
+mal. Y "Aprobar" con cambios sin guardar **guarda primero**: aprobar lo viejo
+después de haberlo editado es el peor final posible.
+
+**La lista se congela al entrar.** Resolver un ítem lo saca del servidor, y si
+se recalculara sola el siguiente se correría un lugar justo cuando la persona va
+a apretar. Se marca lo resuelto, se avanza el índice, y la Cola se refresca al
+salir.
+
+Comparte el cronómetro con el Focus de trabajo —es el mismo bloque de 25
+minutos, se esté supervisando o ejecutando— pero acá no arranca solo: se toca
+para empezar.
 
 ## 5. Los dos botones
 

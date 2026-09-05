@@ -1,16 +1,14 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import useSWR from 'swr';
-import { Bot, Loader2, RotateCcw, Sparkles, User } from 'lucide-react';
-import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
+import { Bot, Sparkles, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { classifyRunError } from '../../shared/run-errors';
 import { HumanDecisionCard } from '../cola/HumanDecisionCard';
 import { SALES_OPS_API, fetcher, tiempoRelativo } from '../components/format';
 import { RUN_STATUS_LABELS, RUN_STATUS_TONE } from '../skills/skill-meta';
-import { retryRun, type SkillRun } from '../skills/api';
+import { FallaCorrida } from '../skills/FallaCorrida';
+import type { SkillRun } from '../skills/api';
 
 /**
  * Centro abajo del Focus: la conversación con la IA sobre ESTE cliente.
@@ -58,22 +56,14 @@ export function PanelChatIA({ chatId, className }: { chatId: number; className?:
 }
 
 function Corrida({ run, onCambio }: { run: SkillRun; onCambio: () => void }) {
-  const [reintentando, setReintentando] = useState(false);
   const necesitaCriterio = run.status === 'blocked' && Boolean(run.humanRequest);
-  const falla = run.status === 'failed' ? classifyRunError(run.summary ?? run.output ?? '') : null;
-
-  const reintentar = async () => {
-    setReintentando(true);
-    try {
-      await retryRun(run.id, 'queue');
-      toast.success('Volvió a la cola.');
-      onCambio();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'No se pudo reintentar.');
-    } finally {
-      setReintentando(false);
-    }
-  };
+  /**
+   * Una corrida fallida no muestra su `summary`: ahí adentro viene el error
+   * crudo del SDK —el 429 de Gemini son 900 caracteres de JSON— y eso no lo lee
+   * nadie. `FallaCorrida` dice qué pasó en castellano, qué hacer, y deja el
+   * detalle técnico a un clic.
+   */
+  const fallida = run.status === 'failed' || (run.status === 'blocked' && !run.humanRequest);
 
   return (
     <article className={cn('rounded-lg border p-2.5', necesitaCriterio ? 'border-primary/40 bg-primary/5' : 'border-border bg-card')}>
@@ -88,25 +78,17 @@ function Corrida({ run, onCambio }: { run: SkillRun; onCambio: () => void }) {
       </div>
       <p className="mt-0.5 text-[10px] text-muted-foreground">{tiempoRelativo(run.completedAt ?? run.createdAt)}</p>
 
-      {(run.summary || run.output) && (
-        <div className="mt-1.5 rounded-md bg-muted/50 px-2 py-1.5">
-          <p className="whitespace-pre-wrap text-[11px] leading-snug text-foreground/90">
-            <Bot className="mr-1 inline size-3 text-primary" aria-hidden />
-            {(run.output ?? run.summary ?? '').slice(0, 1200)}
-          </p>
-        </div>
-      )}
-
-      {falla && (
-        <div className="mt-1.5 flex items-start justify-between gap-2 rounded-md border border-border px-2 py-1.5">
-          <div className="min-w-0">
-            <p className="text-[11px] font-medium">{falla.title}</p>
-            <p className="text-[10px] leading-snug text-muted-foreground">{falla.hint}</p>
+      {fallida ? (
+        <FallaCorrida run={run} className="mt-1.5" onRetried={onCambio} />
+      ) : (
+        (run.summary || run.output) && (
+          <div className="mt-1.5 rounded-md bg-muted/50 px-2 py-1.5">
+            <p className="whitespace-pre-wrap text-[11px] leading-snug text-foreground/90">
+              <Bot className="mr-1 inline size-3 text-primary" aria-hidden />
+              {(run.output ?? run.summary ?? '').slice(0, 1200)}
+            </p>
           </div>
-          <Button variant="ghost" size="icon" className="size-6 shrink-0" onClick={() => void reintentar()} disabled={reintentando} title="Volver a dejarlo en la cola">
-            {reintentando ? <Loader2 className="size-3 animate-spin" aria-hidden /> : <RotateCcw className="size-3" aria-hidden />}
-          </Button>
-        </div>
+        )
       )}
 
       {necesitaCriterio && (
