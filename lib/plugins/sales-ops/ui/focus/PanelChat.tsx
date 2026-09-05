@@ -17,7 +17,7 @@ export type CabeceraChat = { chatId: number; name: string; remoteJid: string; in
  * versión: cuando estaba escrita adentro del layout de escritorio, la del
  * celular era una copia que se iba quedando atrás.
  */
-export function PanelChat({ header, chatHref, className }: { header: CabeceraChat | null; chatHref: string | null; className?: string }) {
+export function PanelChat({ header, chatHref, className, aviso }: { header: CabeceraChat | null; chatHref: string | null; className?: string; aviso?: React.ReactNode }) {
   const { data: team } = useSWR<{ id: number } | null>('/api/team', fetcher);
   /**
    * Arranca prendido: un chat sin nuestros mensajes ni los de las
@@ -43,6 +43,8 @@ export function PanelChat({ header, chatHref, className }: { header: CabeceraCha
         </div>
       </div>
 
+      {aviso}
+
       {!header?.remoteJid ? (
         <div className="flex flex-1 items-center justify-center text-muted-foreground">
           <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -57,6 +59,7 @@ export function PanelChat({ header, chatHref, className }: { header: CabeceraCha
             nombre={header.name}
             teamId={team?.id ?? null}
             ocultarEnviados={!verEnviados}
+            sinNota
             puedeEnviar
             className="min-h-0 flex-1"
           />

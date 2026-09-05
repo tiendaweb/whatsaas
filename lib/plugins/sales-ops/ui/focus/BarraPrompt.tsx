@@ -8,8 +8,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { classifyRunError } from '../../shared/run-errors';
 import { avisarEncolado } from '../components/eventos';
-import { ACCIONES, tituloDeAccion, type AccionFocus } from './acciones';
-import { SelectorAccion } from './SelectorAccion';
+import { componerPedido } from './acciones';
+import { useCapacidades } from './useCapacidades';
 import { atajosDe, recordarAtajo, type Atajo } from './atajos';
 import { LS_PROMPT, type Etapa } from './tipos';
 import { dejarParaConector, ejecutarAhora } from './api';
@@ -50,14 +50,16 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
   const [texto, setTexto] = useState('');
   const [atajos, setAtajos] = useState<Atajo[]>([]);
   /**
-   * Qué tiene que producir el pedido.
+   * Lo que el conector puede hacer en este equipo.
    *
-   * Sólo pesa en el camino del conector: "Ejecutar ahora" corre en el servidor,
-   * que no tiene herramientas, así que le va el pedido tal cual se escribió. Al
-   * conector, en cambio, se le manda la plantilla de la acción con su cadena de
-   * tools, y la corrida queda titulada "Programar · Juan" en vez de "Focus · Juan".
+   * Antes acá había un selector para que la persona eligiera UNA acción y la
+   * plantilla la fijaba. Pero quien lee el chat es el conector, y lo que hace
+   * falta casi nunca es una sola cosa: "contestale y armale la tarea" son dos.
+   * Ahora el pedido lleva la lista de lo que se puede hacer, con sus tools, y él
+   * elige una o una secuencia. Sólo se nombran las que el equipo tiene
+   * habilitadas: ofrecer una app apagada es mandarlo a fallar.
    */
-  const [accion, setAccion] = useState<AccionFocus>('mensaje');
+  const { permitidas } = useCapacidades();
   const [ejecutando, setEjecutando] = useState(false);
   const [encolando, setEncolando] = useState(false);
   /** Motivo por el que lo último pedido no se pudo hacer acá. Se limpia al escribir. */
@@ -128,8 +130,7 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
     }
     setEncolando(true);
     try {
-      const conPlantilla = ACCIONES[accion].plantilla(nombre, pedido).trim() || pedido;
-      await dejarParaConector({ chatId, text: conPlantilla, title: tituloDeAccion(accion, nombre) });
+      await dejarParaConector({ chatId, text: componerPedido(nombre, pedido, permitidas), title: `Focus · ${nombre}` });
       recordarAtajo(etapa, pedido);
       avisarEncolado(chatId);
       // Se limpia al encolar: la pantalla pasa al siguiente cliente y un pedido
@@ -145,8 +146,6 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
       setEncolando(false);
     }
   };
-
-  const selector = <SelectorAccion valor={accion} onCambio={setAccion} compacto={movil} className="pb-1.5" />;
 
   const chips = atajos.length > 0 && (
     <div className="-mx-0.5 flex gap-1.5 overflow-x-auto px-0.5 pb-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]{display:none}">
@@ -182,7 +181,6 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
           </p>
         )}
 
-        {selector}
         {chips}
 
         <div className="relative">
@@ -231,7 +229,6 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
 
   return (
     <div className="sticky bottom-0 shrink-0 border-t border-border bg-background pt-2">
-      {selector}
       {chips}
       {motivoConector && (
         <p className="mb-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-800 dark:text-amber-200">

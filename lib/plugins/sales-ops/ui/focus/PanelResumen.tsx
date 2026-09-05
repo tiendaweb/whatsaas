@@ -2,10 +2,12 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
-import { AlertTriangle, ChevronRight, Clock, Coins, Flame, Repeat2 } from 'lucide-react';
+import { AlertTriangle, ChevronRight, Clock, Coins, Flame, Radar as RadarIcon, Repeat2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { DetailPayload, TimelineGap, TimelineHit } from '../../shared/api-types';
 import type { SignalKind } from '../../shared/taxonomy';
+import { toast } from 'sonner';
+import { RadarPanel } from '@/lib/plugins/radar/ui/RadarPanel';
 import { GateBadge } from '../components/GateBadge';
 import { ProgramadosContacto } from '../components/ProgramadosContacto';
 import { ScoreRadar, ejesDeAnalisis } from '../components/ScoreRadar';
@@ -21,7 +23,7 @@ import { ACTION_KIND_LABELS, ACTION_STATUS_LABELS, OWNER_LABELS, SIGNAL_LABELS, 
  * campos del análisis quedan los seis que hacen falta para decidir qué hacer en
  * los próximos treinta segundos.
  */
-type DetalleConCabecera = DetailPayload & { header?: { remoteJid: string } | null };
+type DetalleConCabecera = DetailPayload & { header?: { remoteJid: string; contactId: number | null } | null };
 
 export function PanelResumen({ chatId, className }: { chatId: number; className?: string }) {
   const { data, error, isLoading, mutate } = useSWR<DetalleConCabecera>(`${SALES_OPS_API}/contacts/${chatId}`, fetcher, {
@@ -134,30 +136,10 @@ export function PanelResumen({ chatId, className }: { chatId: number; className?
         </Plegable>
       )}
 
-      {todasLasSenales.length > 0 && (
-        <Plegable titulo="Radar" cuantos={todasLasSenales.length}>
-          {/* Qué tipos de señal dio este contacto y cuántas de cada uno: es lo
-              que se lee de un vistazo antes de entrar a las frases sueltas. */}
-          <div className="mb-2 flex flex-wrap gap-1">
-            {porTipoDeSenal.map(([kind, n]) => (
-              <span key={kind} className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                {SIGNAL_LABELS[kind as SignalKind] ?? humanize(kind)} <span className="tabular-nums">{n}</span>
-              </span>
-            ))}
-          </div>
-          <ul className="space-y-1.5">
-            {todasLasSenales.slice(0, 10).map((s) => (
-              <li key={s.id} className="text-[11px] leading-snug">
-                <span className="font-medium text-foreground">{SIGNAL_LABELS[s.kind] ?? humanize(s.kind)}</span>
-                <span className="text-muted-foreground">
-                  {' · '}
-                  {SIGNAL_STATUS_LABEL[s.status] ?? s.status} · {tiempoRelativo(s.createdAt)}
-                </span>
-                {s.excerpt && <span className="mt-0.5 block line-clamp-2 text-muted-foreground/90">“{s.excerpt}”</span>}
-              </li>
-            ))}
-          </ul>
-        </Plegable>
+      {/* El mismo RadarPanel del Resumen del Command Center, no una copia: el
+          análisis acumulado del contacto con sus solapas, tal cual se ve allá. */}
+      {header?.contactId != null && (
+        <RadarDelCliente contactId={header.contactId} chatId={chatId} nombre={a.name} remoteJid={header.remoteJid} />
       )}
 
       {/* Los 20 datos derivados del análisis. Informan, no se accionan, así que
@@ -260,6 +242,48 @@ export function PanelResumen({ chatId, className }: { chatId: number; className?
 }
 
 /**
+ * Radar del cliente, igual que en el Resumen del Command Center.
+ *
+ * Se reusa `RadarPanel` del plugin en vez de dibujar otra lista de señales:
+ * había dos vistas del mismo dato con distinta forma, y la de acá mostraba
+ * menos. Abierto de entrada, porque es parte de lo que se viene a leer.
+ */
+function RadarDelCliente({ contactId, chatId, nombre, remoteJid }: { contactId: number; chatId: number; nombre: string; remoteJid: string }) {
+  const [abierto, setAbierto] = useState(true);
+  return (
+    <section className="space-y-2">
+      <button
+        type="button"
+        onClick={() => setAbierto((v) => !v)}
+        aria-expanded={abierto}
+        className="flex w-full items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground"
+      >
+        <ChevronRight className={cn('size-3.5 transition-transform', abierto && 'rotate-90')} aria-hidden />
+        <RadarIcon className="size-3.5" aria-hidden />
+        Radar del cliente
+      </button>
+      {abierto && (
+        <div className="overflow-hidden rounded-xl border border-border">
+          <RadarPanel
+            contactId={contactId}
+            chatId={chatId}
+            contactName={nombre}
+            remoteJid={remoteJid}
+            onBack={() => setAbierto(false)}
+            onUseSuggestion={(texto) => {
+              void navigator.clipboard.writeText(texto).then(
+                () => toast.success('Sugerencia copiada. Pegala en el chat.'),
+                () => toast.error('No se pudo copiar.'),
+              );
+            }}
+          />
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
  * Un dato del análisis. Mismo patrón que el `Field` de la ficha, un punto más
  * chico: en 300 px de ancho, el tamaño de la ficha entra en una columna sola.
  */
@@ -300,14 +324,16 @@ const SIGNAL_STATUS_LABEL: Record<string, string> = {
 };
 
 /**
- * Una sección que arranca cerrada.
+ * Una sección plegable, abierta por defecto.
  *
- * En una columna de 300 px, cuatro bloques abiertos son un muro y nadie los
- * lee. El encabezado dice cuántos hay, que suele ser el dato que se busca; el
- * detalle se abre cuando hace falta.
+ * Arrancaban cerradas para que la columna no fuera un muro, pero el muro es
+ * justamente lo que se quiere acá: entrar y ver al cliente entero sin destapar
+ * cajas. El encabezado sigue diciendo cuántos hay, y se pliega la que estorbe.
  */
-function Plegable({ titulo, cuantos, children }: { titulo: string; cuantos: number; children: React.ReactNode }) {
-  const [abierto, setAbierto] = useState(false);
+function Plegable({ titulo, cuantos, children, inicial = true }: { titulo: string; cuantos: number; children: React.ReactNode; inicial?: boolean }) {
+  // Abiertos de entrada: la columna es para leer al cliente completo, no para
+  // ir destapando cajas. Se pliegan a mano cuando una estorba.
+  const [abierto, setAbierto] = useState(inicial);
   return (
     <section className="rounded-xl border border-border bg-card">
       <button

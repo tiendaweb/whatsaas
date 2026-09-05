@@ -66,7 +66,19 @@ function mergePreservedStatic() {
 
 preserveActiveStatic();
 
-const nextBuildArgs = ['exec', 'next', 'build', '--turbopack'];
+/**
+ * Turbopack por defecto, con escape.
+ *
+ * Turbopack es Rust: su memoria vive FUERA del heap de V8, así que
+ * `--max-old-space-size` no la limita y en una máquina apretada el kernel
+ * termina matando el build (pasó el 2026-09-05: dos OOM seguidos con 5,6 GB
+ * residentes). Con `NEXT_NO_TURBOPACK=1` se compila con webpack, que es más
+ * lento pero mantiene la memoria adentro del heap, donde el tope sí manda.
+ */
+const nextBuildArgs = ['exec', 'next', 'build'];
+if (!process.env.NEXT_NO_TURBOPACK) {
+  nextBuildArgs.push('--turbopack');
+}
 
 if (process.env.NEXT_DEBUG_BUILD_PATHS) {
   nextBuildArgs.push('--debug-build-paths', process.env.NEXT_DEBUG_BUILD_PATHS);

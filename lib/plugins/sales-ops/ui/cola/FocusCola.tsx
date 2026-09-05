@@ -18,10 +18,11 @@ import { RevisarLote } from './RevisarLote';
 import { TarjetaProgramado } from '../programados/TarjetaProgramado';
 import type { Programado } from '../programados/api';
 import { fmtDateTime, fmtInt, tiempoRelativo } from '../components/format';
-import { ACCIONES, deducirAccion, tituloDeAccion, type AccionFocus } from '../focus/acciones';
+import { ACCIONES, deducirAccion, type AccionFocus } from '../focus/acciones';
 import { NuevoPedido } from '../focus/NuevoPedido';
 import { PanelContacto, SOLAPAS_CONTACTO, type SolapaContacto } from '../focus/PanelContacto';
-import { SelectorAccion } from '../focus/SelectorAccion';
+import { LimiteDeError } from '../focus/LimiteDeError';
+import { PanelResumen } from '../focus/PanelResumen';
 import { Reloj } from '../focus/Reloj';
 import { porcentaje } from '../focus/useColaFocus';
 import { useBloque } from '../focus/useBloque';
@@ -302,8 +303,19 @@ export function FocusCola({ items, onSalir, onCambio }: Props) {
           <div className="flex min-h-0 flex-1">
             {/* La lista entera: para saber qué hay —cuántos pre-descartes, si
                 quedó un lote— antes había que pasar por todos con las flechas. */}
-            <aside className="hidden w-[240px] shrink-0 flex-col border-r border-border p-2 xl:flex" aria-label="Cola de revisión">
-              <ColaLateral items={cola} indice={idx} resueltos={resueltos} onElegir={setIdx} className="h-full" />
+            {/* La cola arriba y, debajo, el mismo resumen del contacto que el
+                Focus de trabajo: sin eso se supervisaba un texto sin saber a
+                quién le iba a llegar. La lista se acota para que el resumen
+                entre; el que quiere ver la cola entera scrollea ahí adentro. */}
+            <aside className="hidden w-[280px] shrink-0 flex-col gap-2 overflow-hidden border-r border-border p-2 xl:flex" aria-label="Cola y contacto">
+              <ColaLateral items={cola} indice={idx} resueltos={resueltos} onElegir={setIdx} className="max-h-[38%] shrink-0" />
+              {chatDelPanel && (
+                <div className="min-h-0 flex-1 overflow-y-auto border-t border-border pt-2 pr-0.5">
+                  <LimiteDeError nombre="Resumen">
+                    <PanelResumen chatId={chatDelPanel} />
+                  </LimiteDeError>
+                </div>
+              )}
             </aside>
 
             <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
@@ -441,28 +453,6 @@ function CuerpoCorrida({ run, onResuelto, onCambio }: { run: SkillRun; onResuelt
   const necesitaCriterio = run.status === 'blocked' && Boolean(run.humanRequest);
   const fallida = run.status === 'failed' || (run.status === 'blocked' && !run.humanRequest);
 
-  /**
-   * Cambiar la acción reescribe el pedido con su plantilla.
-   *
-   * Pide confirmación porque pisa lo que haya escrito: la mitad de las veces se
-   * toca el chip para corregir una etiqueta mal deducida, no para tirar el texto.
-   */
-  const cambiarAccion = (nueva: AccionFocus) => {
-    if (nueva === accion) return;
-    const nombre = run.targetName ?? 'el contacto';
-    const plantilla = ACCIONES[nueva].plantilla(nombre, '').trim();
-    if (nueva !== 'libre' && plantilla && texto.trim() && !window.confirm(`¿Reescribir el pedido como “${ACCIONES[nueva].label}”? Se reemplaza el texto actual.`)) {
-      setAccion(nueva);
-      return;
-    }
-    setAccion(nueva);
-    if (nueva !== 'libre' && plantilla) {
-      setTexto(plantilla);
-      setTitulo(tituloDeAccion(nueva, nombre));
-      setEditando(true);
-    }
-  };
-
   const guardar = async () => {
     setGuardando(true);
     try {
@@ -518,10 +508,12 @@ function CuerpoCorrida({ run, onResuelto, onCambio }: { run: SkillRun; onResuelt
         {fmtDateTime(run.createdAt)}
       </p>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <SelectorAccion valor={accion} onCambio={cambiarAccion} />
-      </div>
-      <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{ACCIONES[accion].ayuda}</p>
+      {/* Qué parece ser este pedido. Es una etiqueta, no un selector: quien
+          decide qué hacer es el conector leyendo el chat, y forzarlo desde acá
+          era elegir por él antes de que mirara nada. */}
+      <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        {ACCIONES[accion].label}
+      </p>
 
       {editando ? (
         <Textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={14} className="mt-3 resize-y font-mono text-[12px] leading-relaxed" />

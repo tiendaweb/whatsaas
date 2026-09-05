@@ -397,22 +397,24 @@ export function RevisarLote({
                       </div>
                     ) : (
                       text && (
-                        <p className="mt-1 whitespace-pre-wrap text-sm text-foreground/90">
-                          {text}
+                        <div className="mt-1">
+                          <p className="whitespace-pre-wrap text-sm text-foreground/90">{text}</p>
                           {isPending && (
-                            // Corregir una palabra ya no obliga a excluir al
-                            // contacto y armar otro lote sólo para él.
+                            /* Corregir una palabra ya no obliga a excluir al
+                               contacto y armar otro lote sólo para él. El
+                               afford era un lápiz de 12 px metido adentro del
+                               párrafo y no lo encontraba nadie: acá es un botón
+                               con su etiqueta, debajo del texto que corrige. */
                             <button
                               type="button"
                               onClick={() => setEditando({ id: action.id, texto: text })}
-                              className="ml-1.5 inline-flex align-middle text-muted-foreground hover:text-foreground"
-                              aria-label={`Corregir el mensaje de ${action.name}`}
-                              title="Corregir este texto"
+                              className="mt-1 inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                             >
                               <Pencil className="size-3" aria-hidden />
+                              Editar el texto
                             </button>
                           )}
-                        </p>
+                        </div>
                       )
                     )}
                     {!text && action.kind !== 'send_message' && (

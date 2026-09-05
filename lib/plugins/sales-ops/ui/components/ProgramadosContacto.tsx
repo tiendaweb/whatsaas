@@ -125,6 +125,7 @@ export function ProgramadosContacto({
   inicialAbierto = false,
   avisarSinPermiso = false,
   soloSiHay = false,
+  diasEnviados = DIAS_VISIBLES_ENVIADOS,
   borradorExterno = null,
   onCambio,
 }: {
@@ -141,6 +142,15 @@ export function ProgramadosContacto({
    * que dice "ninguno" en cada ficha es ruido en la pantalla que más se mira.
    */
   soloSiHay?: boolean;
+  /**
+   * Cuántos días hacia atrás se muestran los ya enviados.
+   *
+   * En la ficha alcanza con tres —lo que acaba de recibir—, pero en el Focus la
+   * pregunta es otra: "¿qué le mandamos a esta persona?". Con la ventana corta,
+   * un contacto al que se le mandaron cuatro programados el mes pasado se veía
+   * vacío, y parecía que el sistema no mostraba nada.
+   */
+  diasEnviados?: number;
   /**
    * Texto que llega de afuera para editar acá (el Focus, con lo que devolvió
    * "Ejecutar ahora"). `token` cambia en cada pedido: sin él, pedir dos veces el
@@ -166,7 +176,7 @@ export function ProgramadosContacto({
 
   const propios = useMemo(() => {
     if (!telefono) return [];
-    const corte = Date.now() - DIAS_VISIBLES_ENVIADOS * 86_400_000;
+    const corte = Date.now() - diasEnviados * 86_400_000;
     return (data?.rows ?? [])
       .filter((item) => (item.targetNumbers ?? []).some((numero) => soloDigitos(numero) === telefono))
       .filter((item) => {
@@ -177,7 +187,7 @@ export function ProgramadosContacto({
         return Number.isFinite(enviado) && enviado >= corte;
       })
       .sort((a, b) => (a.nextRunAt ?? '') < (b.nextRunAt ?? '') ? -1 : 1);
-  }, [data?.rows, telefono]);
+  }, [data?.rows, telefono, diasEnviados]);
 
   const pendientes = propios.filter((item) => item.status === 'active' || item.status === 'paused');
   const proximo = pendientes.find((item) => item.status === 'active')?.nextRunAt ?? null;

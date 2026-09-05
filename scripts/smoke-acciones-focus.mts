@@ -9,7 +9,7 @@
  * ninguna quede vacía, y que `deducirAccion` reconozca lo que las plantillas
  * generan — si no, supervisar una corrida mostraría la etiqueta equivocada.
  */
-import { ACCIONES, ACCIONES_FOCUS, ACCIONES_VISIBLES, deducirAccion, tituloDeAccion, type AccionFocus } from '@/lib/plugins/sales-ops/ui/focus/acciones';
+import { ACCIONES, ACCIONES_FOCUS, ACCIONES_VISIBLES, bloqueDeCapacidades, componerPedido, deducirAccion, tituloDeAccion, type AccionFocus } from '@/lib/plugins/sales-ops/ui/focus/acciones';
 
 let ok = 0, fail = 0;
 const check = (l: string, c: boolean, e = '') => { c ? ok++ : fail++; console.log(`  ${c ? '✓' : '✗'} ${l}${e ? ' · ' + String(e).slice(0, 130) : ''}`); };
@@ -52,6 +52,27 @@ check('un texto cualquiera cae en libre', deducirAccion('hola qué tal') === 'li
 console.log('\n── Títulos ──');
 check('el título dice la acción y el contacto', tituloDeAccion('programar', 'Juan Pérez') === 'Programar · Juan Pérez', tituloDeAccion('programar', 'Juan Pérez'));
 check('un nombre larguísimo no rompe el límite de 160', tituloDeAccion('tareas', 'x'.repeat(400)).length === 160);
+
+console.log('\n── El pedido que ve el conector ──');
+const todas = [...ACCIONES_FOCUS];
+const pedido = componerPedido('Juan Pérez', 'recordale la seña', todas);
+check('nombra al contacto', pedido.includes('Juan Pérez'));
+check('mete lo que pidió la persona', pedido.includes('recordale la seña'));
+check('arranca por el expediente', pedido.includes('whatspro_sales_dossier'));
+check('cierra con prompt_result', pedido.includes('whatspro_sales_prompt_result'));
+check('lista las capacidades', pedido.includes('QUÉ PODÉS HACER'));
+for (const key of todas) {
+  if (key === 'libre') continue;
+  check(`ofrece ${key}`, pedido.includes(ACCIONES[key].label));
+}
+const sinDetalle = componerPedido('Juan Pérez', '', todas);
+check('sin detalle igual es un pedido válido', sinDetalle.length > 200 && sinDetalle.includes('leé el chat'));
+
+console.log('\n── Sólo se ofrece lo habilitado ──');
+const recortadas = componerPedido('Juan Pérez', 'algo', ['mensaje', 'crm']);
+check('nombra las permitidas', recortadas.includes('Mensaje') && recortadas.includes('CRM'));
+check('NO nombra las apagadas', !recortadas.includes('Tareas OS') && !recortadas.includes('Documento'));
+check('sin capacidades no hay bloque', bloqueDeCapacidades(['libre']) === '');
 
 console.log(`\n${fail === 0 ? '✓ TODO OK' : `✗ ${fail} fallas`} · ${ok} chequeos pasados\n`);
 process.exit(fail === 0 ? 0 : 1);

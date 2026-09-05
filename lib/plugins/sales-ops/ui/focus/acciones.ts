@@ -194,3 +194,55 @@ export function deducirAccion(texto: string): AccionFocus {
   if (/queue_propose|escribile|mensaje a /.test(t)) return 'mensaje';
   return 'libre';
 }
+
+/**
+ * Qué app hace falta para que una acción sea posible.
+ *
+ * "Que se activen si explícitamente los conectores pueden hacerlo": ofrecerle
+ * al conector que escriba un documento cuando el equipo no tiene la app de
+ * Documentos es mandarlo a fallar, y el error vuelve tres minutos después como
+ * una corrida `failed` que nadie entiende.
+ */
+export const APP_DE_ACCION: Partial<Record<AccionFocus, string>> = {
+  programar: '/plugins/scheduled-messages',
+  tareas: '/plugins/tasks',
+  calendario: '/plugins/calendar',
+  documento: '/plugins/documents',
+};
+
+/**
+ * El bloque de capacidades que se le pega al pedido.
+ *
+ * Antes la persona elegía UNA acción y la plantilla la fijaba. Pero quien lee
+ * el chat es el conector, y lo que hace falta casi nunca es una sola cosa:
+ * "contestale y armale la tarea" son dos. Así que el pedido pasa a decir qué
+ * puede hacer y con qué tools, y el conector elige una o una secuencia.
+ *
+ * Sólo entran las habilitadas: una capacidad que no existe no se nombra.
+ */
+export function bloqueDeCapacidades(permitidas: AccionFocus[]): string {
+  const utiles = permitidas.filter((a) => a !== 'libre');
+  if (!utiles.length) return '';
+  const lineas = utiles.map((key) => {
+    const def = ACCIONES[key];
+    return `- ${def.label}: ${def.ayuda} (${def.tools.filter((t) => t !== 'whatspro_sales_dossier').join(', ')})`;
+  });
+  return [
+    'QUÉ PODÉS HACER (elegí lo que corresponda; puede ser más de una, en el orden que tenga sentido):',
+    ...lineas,
+    'Si hace falta algo que no está en esta lista, no lo inventes: devolvé el pedido con status "blocked" y contá qué falta.',
+  ].join('\n');
+}
+
+/** El pedido final: lo que escribió la persona más lo que el conector puede hacer. */
+export function componerPedido(nombre: string, detalle: string, permitidas: AccionFocus[]): string {
+  const texto = detalle.trim();
+  const partes = [
+    `Trabajá el chat de ${nombre}.`,
+    texto ? `QUÉ PIDE LA PERSONA:\n${texto}` : 'QUÉ PIDE LA PERSONA: nada en concreto — leé el chat y decidí qué corresponde ahora.',
+    'Empezá por whatspro_sales_dossier para leer el expediente.',
+    bloqueDeCapacidades(permitidas),
+    'Cerrá con whatspro_sales_prompt_result contando qué hiciste y por qué.',
+  ];
+  return partes.filter(Boolean).join('\n\n');
+}

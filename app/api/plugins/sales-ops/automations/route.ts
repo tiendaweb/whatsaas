@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/lib/db/drizzle';
-import { activityLogs, automations, chats } from '@/lib/db/schema';
+import { activityLogs, automationSessions, automations, chats } from '@/lib/db/schema';
 import { triggerAutomationManually } from '@/lib/automation/engine';
 import { getSalesOpsContext } from '@/lib/plugins/sales-ops/server/access';
 
@@ -49,4 +49,54 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Error inesperado' }, { status: 500 });
   }
+}
+
+const cortarSchema = z.object({ chatId: z.number().int().positive(), cortar: z.boolean().default(true) });
+
+/**
+ * PATCH { chatId, cortar } → corta (o vuelve a habilitar) el flujo de ESTE chat.
+ *
+ * Supervisando aparece seguido: se está por escribirle algo a mano y hay un bot
+ * a mitad de una secuencia. Antes había que salir del Focus, buscar el chat en
+ * WhatsPro y apagarlo ahí; para cuando volvías, el bot ya había mandado otro.
+ *
+ * Corta las dos cosas, porque son dos: la bandera del chat evita que un flujo
+ * NUEVO lo tome, y cerrar la sesión activa frena el que ya venía corriendo.
+ * Apagar sólo la bandera dejaba la secuencia en curso terminando tranquila.
+ */
+export async function PATCH(request: NextRequest) {
+  const ctx = await getSalesOpsContext('salesOpsWrite');
+  if (!ctx.ok) return NextResponse.json({ error: ctx.message }, { status: ctx.status });
+  const parsed = cortarSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: 'Body inválido: { chatId, cortar? }' }, { status: 400 });
+  const { chatId, cortar } = parsed.data;
+
+  const chat = await db.query.chats.findFirst({ where: and(eq(chats.id, chatId), eq(chats.teamId, ctx.team.id)), columns: { id: true } });
+  if (!chat) return NextResponse.json({ error: 'Chat no encontrado' }, { status: 404 });
+
+  await db.update(chats).set({ automationDisabled: cortar }).where(and(eq(chats.id, chatId), eq(chats.teamId, ctx.team.id)));
+
+  let cerradas = 0;
+  if (cortar) {
+    const filas = await db
+      .update(automationSessions)
+      .set({ status: 'completed', updatedAt: new Date() })
+      .where(and(eq(automationSessions.teamId, ctx.team.id), eq(automationSessions.chatId, chatId), eq(automationSessions.status, 'active')))
+      .returning({ id: automationSessions.id });
+    cerradas = filas.length;
+  }
+
+  try {
+    await db.insert(activityLogs).values({
+      teamId: ctx.team.id,
+      userId: ctx.user.id,
+      action: cortar ? 'SALES_OPS_AUTOMATION_CUT' : 'SALES_OPS_AUTOMATION_RESUMED',
+      metadata: { chatId, sesionesCerradas: cerradas },
+      ipAddress: null,
+    });
+  } catch (error) {
+    console.error('[sales-ops/automations] audit', error);
+  }
+
+  return NextResponse.json({ ok: true, automationDisabled: cortar, sesionesCerradas: cerradas });
 }

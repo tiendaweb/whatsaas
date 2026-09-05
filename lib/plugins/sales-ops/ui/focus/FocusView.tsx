@@ -15,7 +15,7 @@ import { BarraFocus } from './BarraFocus';
 import { BarraPrompt } from './BarraPrompt';
 import { Confeti } from './Confeti';
 import { FocusMovil, type PestanaMovil } from './FocusMovil';
-import { PanelChat } from './PanelChat';
+import { PanelContacto, type SolapaContacto } from './PanelContacto';
 import { PanelFiltros } from './PanelFiltros';
 import { FinDeEtapa } from './FinDeEtapa';
 import { LimiteDeError } from './LimiteDeError';
@@ -49,6 +49,7 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
    */
   const [borrador, setBorrador] = useState<{ texto: string; token: number; chatId: number } | null>(null);
   const [pestana, setPestana] = useState<PestanaMovil>('accion');
+  const [solapaCliente, setSolapaCliente] = useState<SolapaContacto>('chat');
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
   const [esMovil, setEsMovil] = useState(false);
   const tokenRef = useRef(0);
@@ -218,7 +219,7 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
   /** El contenido de la pestaña abierta en el celular. */
   const panelMovil = (() => {
     if (!chatId) return null;
-    if (pestana === 'chat') return <PanelChat header={header} chatHref={detalle?.chatHref ?? null} className="min-h-0 flex-1 p-3" />;
+    if (pestana === 'chat') return <PanelContacto chatId={chatId} solapa={solapaCliente} onSolapa={setSolapaCliente} className="min-h-0 flex-1 p-3" />;
     if (pestana === 'programados') return <div className="min-h-0 flex-1 overflow-y-auto p-3">{programadosDelContacto}</div>;
     if (pestana === 'datos') {
       return (
@@ -347,13 +348,15 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
             {barraPrompt}
           </main>
 
-          {/* Derecha: la conversación, para responder sin salir. */}
-          <aside className="flex min-h-[50vh] shrink-0 flex-col border-border p-3 xl:min-h-0 xl:w-[420px] xl:border-l" aria-label="Chat del contacto">
+          {/* Derecha: el cliente entero —mensajes, notas, tareas y programados—
+              con las mismas cuatro solapas que la supervisión. Antes era sólo el
+              chat, y para ver una tarea o un programado había que salir. */}
+          <aside className="flex min-h-[50vh] shrink-0 flex-col border-border p-3 xl:min-h-0 xl:w-[420px] xl:border-l" aria-label="Cliente">
             {errorDetalle ? (
               <ErrorState message={errorDetalle instanceof Error ? errorDetalle.message : undefined} />
-            ) : (
-              <PanelChat header={header} chatHref={detalle?.chatHref ?? null} className="flex-1" />
-            )}
+            ) : chatId ? (
+              <PanelContacto chatId={chatId} solapa={solapaCliente} onSolapa={setSolapaCliente} className="min-h-0 flex-1" />
+            ) : null}
           </aside>
         </div>
       ))}

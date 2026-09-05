@@ -8,8 +8,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { avisarEncolado } from '../components/eventos';
 import { dejarParaConector } from './api';
-import { ACCIONES, tituloDeAccion, type AccionFocus } from './acciones';
-import { SelectorAccion } from './SelectorAccion';
+import { componerPedido } from './acciones';
+import { useCapacidades } from './useCapacidades';
 
 /**
  * Mandar otro pedido sobre este contacto, sin salir de donde uno está.
@@ -23,19 +23,20 @@ import { SelectorAccion } from './SelectorAccion';
  */
 export function NuevoPedido({ chatId, nombre, onEnviado, className }: { chatId: number; nombre: string; onEnviado?: () => void; className?: string }) {
   const [abierto, setAbierto] = useState(false);
-  const [accion, setAccion] = useState<AccionFocus>('mensaje');
   const [detalle, setDetalle] = useState('');
   const [enviando, setEnviando] = useState(false);
 
+  const { permitidas } = useCapacidades();
+
   const enviar = async () => {
-    const texto = ACCIONES[accion].plantilla(nombre, detalle.trim()).trim();
-    if (texto.length < 5) {
+    const texto = componerPedido(nombre, detalle, permitidas);
+    if (detalle.trim().length < 3) {
       toast.error('Escribí qué querés que haga.');
       return;
     }
     setEnviando(true);
     try {
-      await dejarParaConector({ chatId, text: texto, title: tituloDeAccion(accion, nombre) });
+      await dejarParaConector({ chatId, text: texto, title: `Pedido · ${nombre}` });
       avisarEncolado(chatId);
       toast.success('En la cola. Lo toma el próximo conector.');
       setDetalle('');
@@ -66,14 +67,15 @@ export function NuevoPedido({ chatId, nombre, onEnviado, className }: { chatId: 
         </Button>
       </div>
 
-      <SelectorAccion valor={accion} onCambio={setAccion} className="mt-2" />
-      <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">{ACCIONES[accion].ayuda}</p>
+      <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+        El conector elige qué hacer —mensaje, programado, tarea, documento, calendario o CRM— y en qué orden. Vos decís qué hace falta.
+      </p>
 
       <Textarea
         value={detalle}
         onChange={(e) => setDetalle(e.target.value)}
         rows={3}
-        placeholder={accion === 'libre' ? 'Escribí el pedido completo…' : 'Detalle (opcional): sin esto, el conector lo decide leyendo el chat.'}
+        placeholder="Qué hace falta con este cliente…" 
         className="mt-2 resize-y text-sm"
         disabled={enviando}
       />
