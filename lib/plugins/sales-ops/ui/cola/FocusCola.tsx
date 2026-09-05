@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import type { BatchSummary } from '../../shared/api-types';
 import { HumanDecisionCard } from './HumanDecisionCard';
+import { ColaLateral } from './ColaLateral';
 import { ContactosDelLote } from './ContactosDelLote';
 import { RevisarLote } from './RevisarLote';
 import { TarjetaProgramado } from '../programados/TarjetaProgramado';
@@ -296,13 +297,20 @@ export function FocusCola({ items, onSalir, onCambio }: Props) {
           );
         }
 
-        // Escritorio: lo que se supervisa a la izquierda, el contacto a la derecha.
+        // Escritorio: la cola, lo que se supervisa, y el cliente.
         return (
           <div className="flex min-h-0 flex-1">
-            <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
-              <div className={cn('mx-auto w-full', actual.tipo === 'lote' ? 'max-w-[900px]' : 'max-w-[720px]')}>{tarjeta}</div>
+            {/* La lista entera: para saber qué hay —cuántos pre-descartes, si
+                quedó un lote— antes había que pasar por todos con las flechas. */}
+            <aside className="hidden w-[240px] shrink-0 flex-col border-r border-border p-2 xl:flex" aria-label="Cola de revisión">
+              <ColaLateral items={cola} indice={idx} resueltos={resueltos} onElegir={setIdx} className="h-full" />
+            </aside>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+              <div className="mx-auto w-full max-w-[860px]">{tarjeta}</div>
             </div>
-            <aside className="hidden w-[360px] shrink-0 flex-col border-l border-border p-3 lg:flex xl:w-[420px]" aria-label="Contacto">
+
+            <aside className="hidden w-[360px] shrink-0 flex-col border-l border-border p-3 lg:flex xl:w-[400px]" aria-label="Cliente">
               {panelContacto(true, 'h-full')}
             </aside>
           </div>

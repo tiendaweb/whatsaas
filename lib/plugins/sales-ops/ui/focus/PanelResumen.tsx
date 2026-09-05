@@ -5,11 +5,12 @@ import useSWR from 'swr';
 import { AlertTriangle, ChevronRight, Clock, Coins, Flame, Repeat2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { DetailPayload, TimelineGap, TimelineHit } from '../../shared/api-types';
+import type { SignalKind } from '../../shared/taxonomy';
 import { GateBadge } from '../components/GateBadge';
 import { ProgramadosContacto } from '../components/ProgramadosContacto';
 import { ScoreRadar, ejesDeAnalisis } from '../components/ScoreRadar';
 import { ErrorState, LoadingRows } from '../components/States';
-import { ACTION_KIND_LABELS, ACTION_STATUS_LABELS, OWNER_LABELS, SIGNAL_LABELS, STATUS_LABELS, SALES_OPS_API, WHO_LABELS, diasTexto, fetcher, fmtInt, humanize, tiempoRelativo } from '../components/format';
+import { ACTION_KIND_LABELS, ACTION_STATUS_LABELS, OWNER_LABELS, SIGNAL_LABELS, STATUS_LABELS, SALES_OPS_API, WHO_LABELS, diasTexto, fetcher, fmtDate, fmtInt, fmtMoney, fmtPct, humanize, tiempoRelativo } from '../components/format';
 
 /**
  * Columna izquierda del Focus: quién es este cliente, en una pantalla sin
@@ -42,6 +43,12 @@ export function PanelResumen({ chatId, className }: { chatId: number; className?
 
   const sinAtender = data.signals.filter((s) => s.status === 'new' || s.status === 'seen');
   const todasLasSenales = data.signals;
+  const porTipoDeSenal = Object.entries(
+    data.signals.reduce<Record<string, number>>((acc, s) => {
+      acc[s.kind] = (acc[s.kind] ?? 0) + 1;
+      return acc;
+    }, {}),
+  ).sort((x, y) => y[1] - x[1]);
   const header = data.header;
 
   return (
@@ -129,6 +136,15 @@ export function PanelResumen({ chatId, className }: { chatId: number; className?
 
       {todasLasSenales.length > 0 && (
         <Plegable titulo="Radar" cuantos={todasLasSenales.length}>
+          {/* Qué tipos de señal dio este contacto y cuántas de cada uno: es lo
+              que se lee de un vistazo antes de entrar a las frases sueltas. */}
+          <div className="mb-2 flex flex-wrap gap-1">
+            {porTipoDeSenal.map(([kind, n]) => (
+              <span key={kind} className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                {SIGNAL_LABELS[kind as SignalKind] ?? humanize(kind)} <span className="tabular-nums">{n}</span>
+              </span>
+            ))}
+          </div>
           <ul className="space-y-1.5">
             {todasLasSenales.slice(0, 10).map((s) => (
               <li key={s.id} className="text-[11px] leading-snug">
@@ -143,6 +159,78 @@ export function PanelResumen({ chatId, className }: { chatId: number; className?
           </ul>
         </Plegable>
       )}
+
+      {/* Los 20 datos derivados del análisis. Informan, no se accionan, así que
+          van plegados: en esta columna compiten con lo que sí se acciona. Dos
+          columnas y no tres — acá el ancho es la mitad que en la ficha. */}
+      <Plegable titulo="Todos los datos" cuantos={a.version}>
+        <dl className="grid grid-cols-2 gap-x-2 gap-y-2">
+          <Campo label="Necesidad">
+            {humanize(a.need)}
+            {a.needDetail && <span className="block text-[10px] text-muted-foreground">{a.needDetail}</span>}
+          </Campo>
+          <Campo label="Precio conocido">{a.quotedPrice ? fmtMoney(a.quotedPrice.amount / 100, a.quotedPrice.currency) : '—'}</Campo>
+          <Campo label="Rubro">{a.businessType || '—'}</Campo>
+          <Campo label="Origen">
+            {humanize(a.source)}
+            {a.sourceDetail && <span className="block text-[10px] text-muted-foreground">{a.sourceDetail}</span>}
+          </Campo>
+          <Campo label="Objeción">
+            {humanize(a.objectionType)}
+            {a.objectionDetail && <span className="block text-[10px] text-muted-foreground">{a.objectionDetail}</span>}
+          </Campo>
+          <Campo label="Intención">
+            {humanize(a.intent)} <span className="tabular-nums text-muted-foreground">({a.intentScore})</span>
+          </Campo>
+          <Campo label="Temperatura">{humanize(a.temperature)}</Campo>
+          <Campo label="Probabilidad">{fmtPct(a.recoveryProbability)}</Campo>
+          <Campo label="Prioridad">{fmtInt(a.priorityScore)}</Campo>
+          <Campo label="Confianza">{fmtInt(a.confidence)}</Campo>
+          <Campo label="Gate máximo">{a.maxGate}</Campo>
+          <Campo label="Se cayó en">
+            {a.dropGate} <span className="block text-[10px] text-muted-foreground">{humanize(a.dropReason)}</span>
+          </Campo>
+          <Campo label="Impactos">
+            {fmtInt(a.followupsTotal)}
+            <span className="block text-[10px] text-muted-foreground">{a.followupsAutomated} auto · {a.followupsManual} manuales</span>
+          </Campo>
+          <Campo label="Último impacto">{a.lastFollowupAt ? tiempoRelativo(a.lastFollowupAt) : '—'}</Campo>
+          <Campo label="Primer contacto">{a.firstContactAt ? fmtDate(a.firstContactAt) : '—'}</Campo>
+          <Campo label="Próxima acción">{a.nextActionAt ? fmtDate(a.nextActionAt) : '—'}</Campo>
+          <Campo label="Cliente">
+            {a.isExistingCustomer ? 'sí' : 'no'}
+            <span className="block text-[10px] text-muted-foreground">{humanize(a.customerEvidence)}</span>
+          </Campo>
+          <Campo label="Pago pendiente">{a.paymentPending ? 'sí' : 'no'}</Campo>
+          <Campo label="Automatización">{a.automationActive ? 'activa' : 'no'}</Campo>
+          <Campo label="Análisis">
+            v{a.version}
+            <span className="block truncate text-[10px] text-muted-foreground">
+              {a.analyzedBy ? humanize(a.analyzedBy) : 'sin analizar'}
+              {a.analyzedAt ? ` · ${tiempoRelativo(a.analyzedAt)}` : ''}
+            </span>
+          </Campo>
+        </dl>
+
+        {(a.proposalSummary || a.lastProspectAction || a.lastTeamAction) && (
+          <dl className="mt-2 space-y-2 border-t border-border pt-2">
+            {a.proposalSummary && <Campo label="Resumen IA">{a.proposalSummary}</Campo>}
+            {a.lastProspectAction && (
+              <Campo label="Última acción del prospecto">
+                “{a.lastProspectAction}”
+                {a.lastCustomerMessageAt && <span className="block text-[10px] text-muted-foreground">{tiempoRelativo(a.lastCustomerMessageAt)}</span>}
+              </Campo>
+            )}
+            {a.lastTeamAction && (
+              <Campo label="Última acción nuestra">
+                {a.lastTeamAction}
+                {a.lastTeamMessageAt && <span className="block text-[10px] text-muted-foreground">{tiempoRelativo(a.lastTeamMessageAt)}</span>}
+              </Campo>
+            )}
+            {a.statusReason && <Campo label="Por qué ese estado">{a.statusReason}</Campo>}
+          </dl>
+        )}
+      </Plegable>
 
       {/* La conversación tal como la leyó el análisis: quién dijo qué y dónde
           hubo silencios. Es lo que explica el gate, y sin esto había que abrir
@@ -167,6 +255,19 @@ export function PanelResumen({ chatId, className }: { chatId: number; className?
           </ol>
         </Plegable>
       )}
+    </div>
+  );
+}
+
+/**
+ * Un dato del análisis. Mismo patrón que el `Field` de la ficha, un punto más
+ * chico: en 300 px de ancho, el tamaño de la ficha entra en una columna sola.
+ */
+function Campo({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 break-words text-[11px] leading-snug text-foreground">{children}</dd>
     </div>
   );
 }

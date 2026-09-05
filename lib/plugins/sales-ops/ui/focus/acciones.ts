@@ -18,7 +18,7 @@ import type { SkillIcon } from '../../shared/skills';
  * siendo editable después de elegirla: la plantilla es un punto de partida, no
  * un formulario.
  */
-export const ACCIONES_FOCUS = ['mensaje', 'programar', 'tarea', 'documento', 'planificacion', 'crm', 'libre'] as const;
+export const ACCIONES_FOCUS = ['mensaje', 'programar', 'tareas', 'calendario', 'documento', 'planificacion', 'crm', 'libre'] as const;
 export type AccionFocus = (typeof ACCIONES_FOCUS)[number];
 
 export type DefinicionAccion = {
@@ -67,17 +67,46 @@ export const ACCIONES: Record<AccionFocus, DefinicionAccion> = {
         cierre,
       ].join('\n\n'),
   },
-  tarea: {
-    key: 'tarea',
-    label: 'Tarea',
-    ayuda: 'Crear una tarea en Tareas OS, vinculada al contacto.',
+  tareas: {
+    key: 'tareas',
+    label: 'Tareas OS',
+    ayuda: 'Lo que haga falta en Tareas OS: una tarea, un proyecto entero o un espacio de trabajo nuevo.',
     icon: 'clipboard',
-    tools: ['whatspro_sales_dossier', 'whatspro_create_contact_task', 'whatspro_sales_tareas_from_chat'],
+    tools: [
+      'whatspro_sales_dossier',
+      'whatspro_create_contact_task',
+      'whatspro_sales_tareas_from_chat',
+      'whatspro_manage_task_project',
+      'whatspro_manage_task_workspace',
+      'whatspro_manage_task',
+      'whatspro_manage_task_column',
+    ],
     plantilla: (nombre, detalle) =>
       [
-        `Armá la tarea que hace falta para ${nombre}.`,
-        detalle ? `QUÉ TAREA:\n${detalle}` : 'QUÉ TAREA: leé el chat y sacá lo que quedó pendiente de nuestro lado.',
-        'QUÉ HACER: whatspro_create_contact_task (o whatspro_sales_tareas_from_chat si sale más de una). Título imperativo y corto, con fecha si el chat la dice.',
+        `Trabajá Tareas OS para ${nombre}.`,
+        detalle ? `QUÉ HACE FALTA:\n${detalle}` : 'QUÉ HACE FALTA: leé el chat y sacá lo que quedó pendiente de nuestro lado.',
+        [
+          'QUÉ HACER: elegí la forma según el tamaño, no crees una tarea suelta por costumbre.',
+          '- Una sola cosa pendiente → whatspro_create_contact_task, vinculada al contacto.',
+          '- Varias que dependen entre sí → whatspro_sales_tareas_from_chat action "project", o whatspro_manage_task_project si ya sabés a qué espacio va.',
+          '- Un cliente que arranca y todavía no tiene dónde → whatspro_manage_task_workspace para crear su espacio, y recién ahí el proyecto y sus tareas.',
+          '- Si ya existe el proyecto, no lo dupliques: sumale las tareas con whatspro_manage_task y ordená columnas con whatspro_manage_task_column.',
+          'Títulos imperativos y cortos, con fecha cuando el chat la diga.',
+        ].join('\n'),
+        cierre,
+      ].join('\n\n'),
+  },
+  calendario: {
+    key: 'calendario',
+    label: 'Calendario',
+    ayuda: 'Agendar, mover o cerrar una reunión con el cliente.',
+    icon: 'calendar',
+    tools: ['whatspro_sales_dossier', 'whatspro_manage_calendar_event', 'whatspro_meeting_agenda', 'whatspro_calendar_close_meeting'],
+    plantilla: (nombre, detalle) =>
+      [
+        `Ocupate del calendario con ${nombre}.`,
+        detalle ? `QUÉ HACER:\n${detalle}` : 'QUÉ HACER: leé el chat y fijate si quedó una reunión por agendar, mover o cerrar.',
+        'CON QUÉ: whatspro_manage_calendar_event para crear o mover, whatspro_meeting_agenda para prepararla y whatspro_calendar_close_meeting para cerrarla con lo que se habló. Si la fecha u hora no están claras en el chat, preguntalas con human_request en vez de inventarlas.',
         cierre,
       ].join('\n\n'),
   },
@@ -133,7 +162,7 @@ export const ACCIONES: Record<AccionFocus, DefinicionAccion> = {
   },
 };
 
-export const ACCIONES_VISIBLES: AccionFocus[] = ['mensaje', 'programar', 'tarea', 'documento', 'planificacion', 'crm', 'libre'];
+export const ACCIONES_VISIBLES: AccionFocus[] = ['mensaje', 'programar', 'tareas', 'calendario', 'documento', 'planificacion', 'crm', 'libre'];
 
 /** Título de la corrida, para que en la Cola se lea qué es sin abrirla. */
 export function tituloDeAccion(accion: AccionFocus, nombre: string): string {
@@ -153,11 +182,15 @@ export function deducirAccion(texto: string): AccionFocus {
   // El orden importa y no es alfabético: planificar USA la tool de tareas
   // (`tareas_from_chat`), así que si "tarea" se evaluara antes, todo plan se
   // leería como una tarea suelta. Lo específico va primero.
-  if (/planificá|planificar|customer_360|action "project"|entregable/.test(t)) return 'planificacion';
+  if (/manage_calendar_event|meeting_agenda|close_meeting|agendá la reunión|calendario/.test(t)) return 'calendario';
+  // `action "project"` NO sirve para distinguir: lo nombran las dos plantillas,
+  // porque planificar es armar un proyecto y Tareas OS también puede armarlo.
+  // Lo que separa a planificar es mirar el 360 del cliente y hablar de entregables.
+  if (/planificá|planificar|customer_360|entregable/.test(t)) return 'planificacion';
   if (/programad|programar un mensaje|scheduled_message|agendá el mensaje/.test(t)) return 'programar';
   if (/manage_document|documents_search|escribí un documento|informe/.test(t)) return 'documento';
   if (/crm_stage|set_contact_tags|set_custom_fields|etapa del embudo|etiquetas/.test(t)) return 'crm';
-  if (/tareas_from_chat|create_contact_task|creá la tarea|armá la tarea/.test(t)) return 'tarea';
+  if (/tareas_from_chat|create_contact_task|manage_task|tareas os/.test(t)) return 'tareas';
   if (/queue_propose|escribile|mensaje a /.test(t)) return 'mensaje';
   return 'libre';
 }

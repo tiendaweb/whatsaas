@@ -51,7 +51,7 @@ check('un texto cualquiera cae en libre', deducirAccion('hola qué tal') === 'li
 
 console.log('\n── Títulos ──');
 check('el título dice la acción y el contacto', tituloDeAccion('programar', 'Juan Pérez') === 'Programar · Juan Pérez', tituloDeAccion('programar', 'Juan Pérez'));
-check('un nombre larguísimo no rompe el límite de 160', tituloDeAccion('tarea', 'x'.repeat(400)).length === 160);
+check('un nombre larguísimo no rompe el límite de 160', tituloDeAccion('tareas', 'x'.repeat(400)).length === 160);
 
 console.log(`\n${fail === 0 ? '✓ TODO OK' : `✗ ${fail} fallas`} · ${ok} chequeos pasados\n`);
 process.exit(fail === 0 ? 0 : 1);
