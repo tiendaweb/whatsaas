@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import type { DetailPayload } from '../../shared/api-types';
 import type { OwnerFilterValue } from '../components/OwnerFilter';
+import { PROGRAMADOS_API, programadosFetcher } from '../cola/PromptsEnCola';
 import { ProgramadosContacto } from '../components/ProgramadosContacto';
 import { ErrorState } from '../components/States';
 import { SALES_OPS_API, fetcher } from '../components/format';
@@ -25,9 +26,7 @@ import { useColaFocus } from './useColaFocus';
 
 type Cabecera = { chatId: number; name: string; remoteJid: string; instanceId: number | null };
 type Detalle = DetailPayload & { header: Cabecera };
-type Programado = { id: number; status: string; message: string | null; targetNumbers: string[] };
 
-const PROGRAMADOS_API = '/api/plugins/scheduled-messages';
 const detalleUrl = (chatId: number) => `${SALES_OPS_API}/contacts/${chatId}`;
 
 /**
@@ -85,12 +84,17 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
   const chatId = cola.actual?.chatId ?? null;
   const { data: detalle, error: errorDetalle } = useSWR<Detalle>(chatId ? detalleUrl(chatId) : null, fetcher, { revalidateOnFocus: false });
   const { data: team } = useSWR<{ id: number } | null>('/api/team', fetcher);
-  const { data: programados } = useSWR<Programado[]>(PROGRAMADOS_API, async (url: string) => {
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return [];
-    const rows = await res.json();
-    return Array.isArray(rows) ? rows : [];
-  });
+  /**
+   * Los programados del equipo, para saber qué texto está por salirle a este
+   * contacto.
+   *
+   * Comparte clave, fetcher y forma con `ProgramadosContacto`, que ya los pide.
+   * Esto **no** es un detalle de estilo: SWR cachea por clave, así que dos
+   * fetchers distintos sobre la misma URL se pisan y el que pierde recibe la
+   * forma del otro. Con un fetcher propio que devolvía un array pelado, acá
+   * llegaba `{disponible, rows}` y `.find` reventaba la pantalla.
+   */
+  const { data: programados } = useSWR(PROGRAMADOS_API, programadosFetcher, { revalidateOnFocus: false });
 
   // El siguiente se pide mientras se trabaja el actual: pasar de cliente no
   // puede esperar a la red.
@@ -104,8 +108,9 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
   /** Texto del programado vivo del contacto, para que la IA lo corrija en vez de escribir otro. */
   const mensajeActual = useMemo(() => {
     const telefono = (header?.remoteJid ?? '').split('@')[0].replace(/\D/g, '');
-    if (!telefono || !programados) return null;
-    const vivo = programados.find(
+    const filas = programados?.rows;
+    if (!telefono || !Array.isArray(filas)) return null;
+    const vivo = filas.find(
       (p) => (p.status === 'active' || p.status === 'paused') && (p.targetNumbers ?? []).some((n) => String(n).replace(/\D/g, '') === telefono),
     );
     return vivo?.message ?? null;

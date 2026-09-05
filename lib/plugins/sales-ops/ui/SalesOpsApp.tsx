@@ -13,6 +13,7 @@ import { MobileBar, Sidebar, type SidebarUser } from './components/Sidebar';
 import { VISTA_LABELS, isVista, type Vista } from './components/vistas';
 import { LS_OWNER, SALES_OPS_API, fetcher, fmtInt } from './components/format';
 import { FocusView } from './focus/FocusView';
+import { LimiteDeError } from './focus/LimiteDeError';
 import { ColaView } from './views/ColaView';
 import { ExperimentosView } from './views/ExperimentosView';
 import { PromptStudioView } from './views/PromptStudioView';
@@ -190,7 +191,18 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
 
   // Focus se dibuja solo: ni rail, ni encabezado, ni barra inferior. No es un
   // overlay encima del shell — el shell directamente no se monta.
-  if (vista === 'focus') return <FocusView owner={owner} onSalir={salirFocus} />;
+  //
+  // Con su propio límite de error: un componente no puede atrapar lo que
+  // revienta adentro de él mismo, así que los límites por columna que tiene
+  // adentro no cubren al Focus en sí. Sin este, un error suyo se lleva la
+  // pantalla al boundary genérico de la app ("No se pudo cargar la página").
+  if (vista === 'focus') {
+    return (
+      <LimiteDeError nombre="Focus">
+        <FocusView owner={owner} onSalir={salirFocus} />
+      </LimiteDeError>
+    );
+  }
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
