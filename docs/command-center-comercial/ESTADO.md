@@ -107,6 +107,23 @@ Lo que cambia respecto de la Cola: el texto de un prompt se ve **completo y edit
 
 En la misma tanda: el pedido del Focus de trabajo **se limpia al encolarlo** —la pantalla pasa al siguiente cliente y un texto heredado se manda sin querer al que viene—; repetirlo es un toque porque queda primero entre las fichas de atajos.
 
+## La cuota de Gemini no era de Gemini (2026-09-05)
+
+Durante días el Command Center informó "se acabó la cuota de IA": 570 clasificaciones caídas, "Ejecutar ahora" siempre en 422 y las 13 keys del banco en 20/20. **Google no tenía nada que ver.** Al preguntarle a la API (`scripts/diag-gemini-banco.mts`) las keys respondían OK a la primera.
+
+Dos causas nuestras, encadenadas:
+
+1. **Cualquier 429 apagaba la key hasta el día siguiente.** `esErrorDeCuota` no distinguía el 429 de "se acabó el día" del de "vas muy rápido" (RPM), y los dos llamaban a `marcarAgotada`. Con `limit_rpm: 10` y trece keys, un pico de clasificación tiraba las trece de una. Ahora `alcanceDelLimite` los separa y el de minuto usa `marcarSaturadaPorMinuto`, que rellena la ventana del minuto en curso y deja la key volver sola. **Ante la duda se elige "minuto"**: una key enfriada de más un minuto no cuesta nada; apagada de más un día cuesta la cola entera.
+2. **El tope diario propio era 20.** Un default conservador que con 13 keys dejaba el banco en 260 pedidos/día. Google es la autoridad —un 429 por día saca la key solo—, así que subió a 200 (migración `0105`, sólo las que seguían en el default viejo). El banco pasó de 260 a **2.600 por día**.
+
+Verificado con `scripts/smoke-banco-gemini.mts` (el banco contesta y `runJsonWithApi` resuelve por él) y, por primera vez desde que se escribió, `scripts/smoke-focus-ia.mts` pasa entero: los cinco pedidos del motor de "Ejecutar ahora" devuelven el modo correcto contra Gemini real.
+
+## Acciones preestablecidas y supervisión con contexto (2026-09-05)
+
+Los pedidos dejan de ser "un prompt" a secas: se elige **qué tiene que producir** entre Mensaje, Programar, Tarea, Documento, Planificar, CRM y Libre (`ui/focus/acciones.ts`). Elegir escribe la instrucción con su cadena de tools y titula la corrida —en la Cola se lee "Programar · Juan" en vez de "Focus · Juan"—. El texto sigue editable después: la plantilla es un punto de partida, no un formulario. Las corridas viejas no la tienen guardada, así que se deduce del texto (`deducirAccion`) y se puede corregir; **el orden de esa deducción no es alfabético**: planificar usa la tool de tareas, así que lo específico se evalúa primero.
+
+El Focus de supervisión suma el panel del contacto a la derecha —**Chat · Resumen · CRM**, las tres cosas que se miran para decidir si un prompt está bien— y un botón **Supervisado, siguiente** que cuenta como revisado sin cambiar nada (saltear no cuenta: saltear es no haberlo mirado). Desde ahí también se manda **otro pedido** al mismo contacto sin salir. En el celular, ítem y contacto son pestañas con barra abajo.
+
 ## Fases
 
 | Fase | Estado |
@@ -123,6 +140,8 @@ En la misma tanda: el pedido del Focus de trabajo **se limpia al encolarlo** —
 | 8 Focus (bloques de 25 min) | ✅ 2026-09-05 · doc `08-FOCUS.md` |
 | 9 CRM corregible por la IA (`crm_fix`, migración 0104) | ✅ 2026-09-05 |
 | 10 Focus de supervisión en la Cola | ✅ 2026-09-05 |
+| 11 Banco de keys arreglado (migración 0105) | ✅ 2026-09-05 |
+| 12 Acciones preestablecidas + panel de contacto | ✅ 2026-09-05 |
 
 ## Relación con otros trabajos en curso
 

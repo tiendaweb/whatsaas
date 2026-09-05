@@ -666,6 +666,13 @@
       "when": 1788400500000,
       "tag": "0104_sales_ops_crm_fix",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1788400600000,
+      "tag": "0105_gemini_banco_limite_diario",
+      "breakpoints": true
     }
   ]
 }

@@ -166,8 +166,24 @@ export function ColaView({ presetChatIds, onOpen, selectedChatId }: { presetChat
   );
 
   const paraSupervisar = useMemo<ItemSupervision[]>(
-    () => [...porSeccion.decision, ...porSeccion.revision].map(({ key, tipo, fecha, ...resto }) => ({ key, tipo, fecha, ...resto }) as ItemSupervision),
-    [porSeccion.decision, porSeccion.revision],
+    () =>
+      [...porSeccion.decision, ...porSeccion.revision].map((item) => {
+        // El chat del ítem: es lo que alimenta el panel de la derecha (chat,
+        // resumen y CRM). Un lote toca muchos contactos, así que no tiene uno.
+        const chatId =
+          item.tipo === 'lote'
+            ? null
+            : item.tipo === 'programado'
+              ? chatDeProgramado(item.programado)
+              : item.run.targetKind === 'chat'
+                ? Number(item.run.targetId) || null
+                : null;
+        const { seccion: _seccion, ...resto } = item;
+        return { ...resto, chatId } as ItemSupervision;
+      }),
+    // `chatDeProgramado` depende del mapa de teléfonos, que llega aparte.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [porSeccion.decision, porSeccion.revision, chatsDeTelefono.data],
   );
 
   if (openBatch) {

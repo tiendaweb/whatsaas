@@ -17,6 +17,10 @@ import { RevisarLote } from './RevisarLote';
 import { TarjetaProgramado } from '../programados/TarjetaProgramado';
 import type { Programado } from '../programados/api';
 import { fmtDateTime, fmtInt, tiempoRelativo } from '../components/format';
+import { ACCIONES, deducirAccion, tituloDeAccion, type AccionFocus } from '../focus/acciones';
+import { NuevoPedido } from '../focus/NuevoPedido';
+import { PanelContacto, SOLAPAS_CONTACTO, type SolapaContacto } from '../focus/PanelContacto';
+import { SelectorAccion } from '../focus/SelectorAccion';
 import { Reloj } from '../focus/Reloj';
 import { porcentaje } from '../focus/useColaFocus';
 import { useBloque } from '../focus/useBloque';
@@ -44,9 +48,9 @@ const TONO = {
 };
 
 export type ItemSupervision =
-  | { key: string; tipo: 'lote'; fecha: string; batch: BatchSummary }
-  | { key: string; tipo: 'indicacion' | 'prompt'; fecha: string; run: SkillRun }
-  | { key: string; tipo: 'programado'; fecha: string; programado: Programado };
+  | { key: string; tipo: 'lote'; fecha: string; chatId: number | null; batch: BatchSummary }
+  | { key: string; tipo: 'indicacion' | 'prompt'; fecha: string; chatId: number | null; run: SkillRun }
+  | { key: string; tipo: 'programado'; fecha: string; chatId: number | null; programado: Programado };
 
 const TIPO_META: Record<ItemSupervision['tipo'], { label: string; icon: LucideIcon }> = {
   lote: { label: 'Lote', icon: Layers },
@@ -77,7 +81,7 @@ type Props = {
  */
 export function FocusCola({ items, onSalir, onCambio }: Props) {
   const [idx, setIdx] = useState(0);
-  const [resueltos, setResueltos] = useState<Record<string, 'aprobado' | 'descartado' | 'saltado'>>({});
+  const [resueltos, setResueltos] = useState<Record<string, 'aprobado' | 'descartado' | 'supervisado' | 'saltado'>>({});
   const [cola] = useState<ItemSupervision[]>(items);
   /**
    * Lote abierto fila por fila, SIN salir del Focus.
@@ -88,16 +92,33 @@ export function FocusCola({ items, onSalir, onCambio }: Props) {
    * a la tarjeta del lote, en el mismo lugar de la cola.
    */
   const [detalleLote, setDetalleLote] = useState<string | null>(null);
+  const [solapa, setSolapa] = useState<SolapaContacto>('chat');
+  /** En el celular no entra el panel al lado: el ítem y el contacto son pestañas. */
+  const [pestanaMovil, setPestanaMovil] = useState<'item' | SolapaContacto>('item');
+  const [esMovil, setEsMovil] = useState(false);
   const bloque = useBloque();
+
+  // El Focus de trabajo corta en 1280 porque son tres columnas; acá son dos —lo
+  // que se supervisa y el contacto— y entran cómodas desde 1024. Con el corte
+  // heredado, un portátil con la ventana en 1200 no veía el chat al lado y no
+  // había forma de saber por qué.
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1023px)');
+    const aplicar = () => setEsMovil(mq.matches);
+    aplicar();
+    mq.addEventListener('change', aplicar);
+    return () => mq.removeEventListener('change', aplicar);
+  }, []);
 
   const actual = cola[idx] ?? null;
   const total = cola.length;
   const revisados = useMemo(() => Object.values(resueltos).filter((v) => v !== 'saltado').length, [resueltos]);
   const pct = porcentaje(revisados, total);
 
-  const marcar = (clave: string, como: 'aprobado' | 'descartado' | 'saltado') => {
+  const marcar = (clave: string, como: 'aprobado' | 'descartado' | 'supervisado' | 'saltado') => {
     setResueltos((prev) => ({ ...prev, [clave]: como }));
     setDetalleLote(null);
+    setPestanaMovil('item');
     setIdx((i) => i + 1);
     if (como !== 'saltado') onCambio();
   };
@@ -154,28 +175,94 @@ export function FocusCola({ items, onSalir, onCambio }: Props) {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
-        <div className={cn('mx-auto w-full', detalleLote ? 'max-w-[1000px]' : 'max-w-[720px]')}>
-          {detalleLote ? (
-            <RevisarLote
-              batchId={detalleLote}
-              onBack={() => setDetalleLote(null)}
-              onChanged={onCambio}
-            />
-          ) : !actual ? (
-            <FinDeRevision total={total} revisados={revisados} onSalir={onSalir} onVolver={() => setIdx(0)} />
-          ) : (
-            <TarjetaSupervision
-              key={actual.key}
-              item={actual}
-              onResuelto={(como) => marcar(actual.key, como)}
-              onSaltar={() => marcar(actual.key, 'saltado')}
-              onAbrirLote={setDetalleLote}
-              onCambio={onCambio}
-            />
-          )}
-        </div>
-      </div>
+      {(() => {
+        // El detalle de un lote se lleva la pantalla entera: es una tabla larga
+        // y al lado no entra nada útil.
+        if (detalleLote) {
+          return (
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
+              <div className="mx-auto w-full max-w-[1000px]">
+                <RevisarLote batchId={detalleLote} onBack={() => setDetalleLote(null)} onChanged={onCambio} />
+              </div>
+            </div>
+          );
+        }
+        if (!actual) {
+          return (
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
+              <div className="mx-auto w-full max-w-[720px]">
+                <FinDeRevision total={total} revisados={revisados} onSalir={onSalir} onVolver={() => setIdx(0)} />
+              </div>
+            </div>
+          );
+        }
+
+        const tarjeta = (
+          <TarjetaSupervision
+            key={actual.key}
+            item={actual}
+            onResuelto={(como) => marcar(actual.key, como)}
+            onSaltar={() => marcar(actual.key, 'saltado')}
+            onSupervisado={() => marcar(actual.key, 'supervisado')}
+            onAbrirLote={setDetalleLote}
+            onCambio={onCambio}
+          />
+        );
+
+        // Celular: el ítem y el contacto son pestañas, con la barra abajo.
+        if (esMovil) {
+          return (
+            <>
+              <div className="min-h-0 flex-1 overflow-hidden">
+                {pestanaMovil === 'item' ? (
+                  <div className="h-full overflow-y-auto p-3">{tarjeta}</div>
+                ) : actual.chatId ? (
+                  <PanelContacto chatId={actual.chatId} solapa={pestanaMovil} onSolapa={setPestanaMovil} conSolapas={false} className="h-full p-3" />
+                ) : (
+                  <p className="p-6 text-center text-xs text-muted-foreground">Este ítem no cuelga de un chat: un lote toca varios contactos a la vez.</p>
+                )}
+              </div>
+
+              <nav className="flex shrink-0 border-t border-border bg-background pb-[env(safe-area-inset-bottom)]" aria-label="Secciones">
+                {(['item', ...SOLAPAS_CONTACTO] as const).map((id) => {
+                  const activa = pestanaMovil === id;
+                  const deshabilitada = id !== 'item' && !actual.chatId;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      disabled={deshabilitada}
+                      onClick={() => setPestanaMovil(id)}
+                      aria-current={activa ? 'page' : undefined}
+                      className={cn(
+                        'relative flex-1 py-2.5 text-[11px] font-medium capitalize transition-colors disabled:opacity-35',
+                        activa ? TONO.acento : 'text-muted-foreground',
+                      )}
+                    >
+                      {id === 'item' ? 'Revisar' : id}
+                      {activa && <span aria-hidden className={cn('absolute inset-x-5 top-0 h-0.5 rounded-full', TONO.barraProgreso)} />}
+                    </button>
+                  );
+                })}
+              </nav>
+            </>
+          );
+        }
+
+        // Escritorio: lo que se supervisa a la izquierda, el contacto a la derecha.
+        return (
+          <div className="flex min-h-0 flex-1">
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
+              <div className="mx-auto w-full max-w-[720px]">{tarjeta}</div>
+            </div>
+            {actual.chatId && (
+              <aside className="hidden w-[360px] shrink-0 flex-col border-l border-border p-3 lg:flex xl:w-[420px]" aria-label="Contacto">
+                <PanelContacto chatId={actual.chatId} solapa={solapa} onSolapa={setSolapa} className="h-full" />
+              </aside>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -204,17 +291,27 @@ function FinDeRevision({ total, revisados, onSalir, onVolver }: { total: number;
   );
 }
 
+/** Con qué nombre llamar al contacto del ítem, sin repetir el mismo `?.` en tres lugares. */
+function nombreDelItem(item: ItemSupervision): string {
+  if (item.tipo === 'programado') return item.programado.name;
+  if (item.tipo === 'lote') return item.batch.batchLabel;
+  return item.run.targetName ?? 'el contacto';
+}
+
 /** El ítem que se está mirando, entero y con lo que se puede hacerle. */
 function TarjetaSupervision({
   item,
   onResuelto,
   onSaltar,
+  onSupervisado,
   onAbrirLote,
   onCambio,
 }: {
   item: ItemSupervision;
   onResuelto: (como: 'aprobado' | 'descartado') => void;
   onSaltar: () => void;
+  /** "Lo miré y está bien": no cambia nada, cuenta como revisado y avanza. */
+  onSupervisado: () => void;
   onAbrirLote: (batchId: string) => void;
   onCambio: () => void;
 }) {
@@ -239,9 +336,22 @@ function TarjetaSupervision({
         )}
       </div>
 
-      <div className="mt-4 border-t border-border pt-3">
-        <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-muted-foreground" onClick={onSaltar}>
-          <SkipForward className="size-3.5" aria-hidden />
+      {item.chatId && (
+        <div className="mt-3 border-t border-border pt-3">
+          <NuevoPedido chatId={item.chatId} nombre={nombreDelItem(item)} onEnviado={onCambio} />
+        </div>
+      )}
+
+      {/* Las dos salidas que no cambian nada. "Supervisado" cuenta como
+          revisado —lo miraste y está bien—; "Saltar" no, porque saltear es
+          justamente no haberlo mirado. */}
+      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-3">
+        <Button size="sm" className={cn('h-9 gap-1.5', TONO.boton)} onClick={onSupervisado}>
+          <CheckCircle2 className="size-4" aria-hidden />
+          Supervisado, siguiente
+        </Button>
+        <Button variant="ghost" size="sm" className="h-9 gap-1.5 text-muted-foreground" onClick={onSaltar}>
+          <SkipForward className="size-4" aria-hidden />
           Saltar por ahora
         </Button>
       </div>
@@ -259,6 +369,13 @@ function TarjetaSupervision({
 function CuerpoCorrida({ run, onResuelto, onCambio }: { run: SkillRun; onResuelto: (como: 'aprobado' | 'descartado') => void; onCambio: () => void }) {
   const [titulo, setTitulo] = useState(run.title);
   const [texto, setTexto] = useState(run.text);
+  /**
+   * Qué tiene que producir. Las corridas viejas no lo tienen guardado, así que
+   * se deduce del texto y se muestra para poder corregirlo: decir "esto es una
+   * tarea" cuando no lo es confunde más que no decir nada, por eso `deducirAccion`
+   * cae en `libre` ante la duda.
+   */
+  const [accion, setAccion] = useState<AccionFocus>(() => deducirAccion(run.text));
   const [editando, setEditando] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [ocupado, setOcupado] = useState(false);
@@ -267,6 +384,28 @@ function CuerpoCorrida({ run, onResuelto, onCambio }: { run: SkillRun; onResuelt
   const esperandoAprobacion = run.status === 'queued' && !run.approvedAt;
   const necesitaCriterio = run.status === 'blocked' && Boolean(run.humanRequest);
   const fallida = run.status === 'failed' || (run.status === 'blocked' && !run.humanRequest);
+
+  /**
+   * Cambiar la acción reescribe el pedido con su plantilla.
+   *
+   * Pide confirmación porque pisa lo que haya escrito: la mitad de las veces se
+   * toca el chip para corregir una etiqueta mal deducida, no para tirar el texto.
+   */
+  const cambiarAccion = (nueva: AccionFocus) => {
+    if (nueva === accion) return;
+    const nombre = run.targetName ?? 'el contacto';
+    const plantilla = ACCIONES[nueva].plantilla(nombre, '').trim();
+    if (nueva !== 'libre' && plantilla && texto.trim() && !window.confirm(`¿Reescribir el pedido como “${ACCIONES[nueva].label}”? Se reemplaza el texto actual.`)) {
+      setAccion(nueva);
+      return;
+    }
+    setAccion(nueva);
+    if (nueva !== 'libre' && plantilla) {
+      setTexto(plantilla);
+      setTitulo(tituloDeAccion(nueva, nombre));
+      setEditando(true);
+    }
+  };
 
   const guardar = async () => {
     setGuardando(true);
@@ -322,6 +461,11 @@ function CuerpoCorrida({ run, onResuelto, onCambio }: { run: SkillRun; onResuelt
         {' · '}
         {fmtDateTime(run.createdAt)}
       </p>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <SelectorAccion valor={accion} onCambio={cambiarAccion} />
+      </div>
+      <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{ACCIONES[accion].ayuda}</p>
 
       {editando ? (
         <Textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={14} className="mt-3 resize-y font-mono text-[12px] leading-relaxed" />

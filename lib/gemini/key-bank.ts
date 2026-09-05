@@ -145,7 +145,11 @@ export async function crearKey(input: {
       apiKey: encryptPaymentSecret(input.apiKey.trim()),
       model: input.model?.trim() || MODELO_GEMINI_POR_DEFECTO,
       limitRpm: input.limitRpm ?? 10,
-      limitRpd: input.limitRpd ?? 20,
+      // Google es la autoridad, no este número: un 429 de verdad saca la key del
+      // día solo (`marcarAgotada`). Este límite es una cortesía para no salir a
+      // golpear la puerta a lo loco, y en 20 estaba diez veces por debajo de lo
+      // que el free tier sirve — con 13 keys, el banco entero daba 260 pedidos.
+      limitRpd: input.limitRpd ?? 200,
       notes: input.notes?.trim().slice(0, 1000) ?? '',
       createdBy: input.createdBy ?? null,
     })
@@ -322,6 +326,53 @@ function esErrorDeCuota(error: unknown) {
 }
 
 /**
+ * ¿Ese 429 es "se acabó el día" o "vas muy rápido"?
+ *
+ * Google usa el mismo código para las dos cosas y la diferencia es enorme: la
+ * primera saca la key hasta mañana, la segunda hasta el minuto que viene. Al
+ * tratarlas igual, un pico de clasificación que pasaba las 10 por minuto
+ * mataba las trece keys del banco para todo el día, y el banco informaba "no
+ * hay keys con cuota" mientras Google las seguía atendiendo perfectamente. Eso
+ * es exactamente lo que estaba pasando el 2026-09-05: las 13 en 20/20 y la API
+ * respondiendo OK a la primera prueba.
+ *
+ * Ante la duda se elige "minuto". Una key enfriada de más un minuto no cuesta
+ * nada; una key apagada de más un día cuesta la cola entera.
+ */
+function alcanceDelLimite(error: unknown): 'dia' | 'minuto' {
+  const texto = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  const porDia = /perday|per day|per-day|\bdaily\b|requests per day|por d[ií]a/.test(texto);
+  const porMinuto = /perminute|per minute|per-minute|requests per minute|\brpm\b/.test(texto);
+  if (porDia && !porMinuto) return 'dia';
+  return 'minuto';
+}
+
+/**
+ * Saca la key de la rotación por lo que queda del minuto.
+ *
+ * Rellena el contador de la ventana en curso hasta el límite: `elegirKey` la
+ * saltea sola y vuelve a estar disponible cuando el minuto rota, sin columnas
+ * nuevas ni un reloj aparte.
+ */
+async function marcarSaturadaPorMinuto(keyId: number) {
+  const dia = hoyUTC();
+  const ventana = minutoActual();
+  try {
+    await db.execute(sql`
+      insert into team_gemini_key_usage (key_id, day, requests, minute_window, minute_requests, updated_at)
+      values (${keyId}, ${dia}::date, 0, ${ventana.toISOString()}::timestamptz,
+              (select limit_rpm from team_gemini_keys where id = ${keyId}), now())
+      on conflict (key_id, day) do update
+        set minute_window = ${ventana.toISOString()}::timestamptz,
+            minute_requests = (select limit_rpm from team_gemini_keys where id = ${keyId}),
+            updated_at = now()
+    `);
+  } catch (error) {
+    console.error('[gemini/key-bank] marcarSaturadaPorMinuto falló', error);
+  }
+}
+
+/**
  * Modelo retirado: Google devuelve 404 "no longer available to new users".
  *
  * No es un problema de la key ni del audio, y por eso hay que distinguirlo: si
@@ -414,7 +465,10 @@ export async function transcribirConBanco(input: {
       const cuota = esErrorDeCuota(error);
       const mensaje = error instanceof Error ? error.message : String(error);
       await registrarUso(key.id, { error: true, quotaError: cuota });
-      if (cuota) await marcarAgotada(key.id);
+      if (cuota) {
+        if (alcanceDelLimite(error) === 'dia') await marcarAgotada(key.id);
+        else await marcarSaturadaPorMinuto(key.id);
+      }
       await registrarError(key.id, mensaje);
       ultimoError = mensaje;
       // El modelo retirado no se reintenta con otra key: le pasa a todas por
@@ -468,7 +522,10 @@ export async function analizarTextoConBanco(input: { teamId: number; prompt: str
       const cuota = esErrorDeCuota(error);
       const mensaje = error instanceof Error ? error.message : String(error);
       await registrarUso(key.id, { error: true, quotaError: cuota });
-      if (cuota) await marcarAgotada(key.id);
+      if (cuota) {
+        if (alcanceDelLimite(error) === 'dia') await marcarAgotada(key.id);
+        else await marcarSaturadaPorMinuto(key.id);
+      }
       await registrarError(key.id, mensaje);
       ultimoError = mensaje;
     }
