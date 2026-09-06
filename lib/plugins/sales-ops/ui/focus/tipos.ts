@@ -1,5 +1,8 @@
 import type { ListQuery } from '../../shared/api-types';
-import type { Gate } from '../../shared/taxonomy';
+import { FRONT_SWEEP_GATES, type Gate } from '../../shared/taxonomy';
+
+/** Los gates de "Dinero". Mismo corte que `MONEY_GATES` del servidor, que no se importa acá porque ese módulo es `server-only`. */
+const MONEY_GATES: Gate[] = ['G8', 'G9', 'G10'];
 
 /**
  * Piezas compartidas del Focus (doc 08).
@@ -57,7 +60,35 @@ export const FILTROS_INICIALES: FiltrosFocus = {
 
 export const LS_FILTROS = 'sales-ops:focus:filtros';
 export const LS_BLOQUE = 'sales-ops:focus:bloque';
+/**
+ * El reloj de la supervisión tiene su propia clave. Compartían una y entrar a
+ * supervisar heredaba el bloque a medias del Focus de trabajo (o al revés):
+ * son dos tareas distintas y cada una arranca y termina sus 25 minutos.
+ */
+export const LS_BLOQUE_SUPERVISION = 'sales-ops:focus:bloque-supervision';
 export const LS_PROMPT = 'sales-ops:focus:prompt';
+
+/**
+ * Título de una corrida encolada desde cualquiera de los dos Focus. Los dos
+ * ponían uno distinto ("Focus · " y "Pedido · ") para el mismo pedido, y en la
+ * Cola parecían dos cosas distintas.
+ */
+export function tituloDePedido(nombre: string): string {
+  return `Pedido · ${nombre}`.slice(0, 160);
+}
+
+/**
+ * A qué etapa del Focus pertenece un contacto por su gate. Es el mismo corte
+ * que `vistaWhere` en el servidor, sin la parte del status (acá no hace falta:
+ * sólo se usa para elegir qué atajos ofrecer).
+ */
+export function etapaDeGate(gate: Gate | null | undefined): Etapa {
+  if (!gate) return 'oportunidades';
+  if (gate === 'GX' || gate === 'G11') return 'limpieza';
+  if (MONEY_GATES.includes(gate)) return 'dinero';
+  if (FRONT_SWEEP_GATES.includes(gate)) return 'barrido';
+  return 'oportunidades';
+}
 
 export const MINUTOS_BLOQUE = 25;
 export const MINUTOS_DESCANSO = 5;

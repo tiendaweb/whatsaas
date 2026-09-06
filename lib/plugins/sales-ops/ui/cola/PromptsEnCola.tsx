@@ -9,7 +9,7 @@ import { PROGRAMADOS_API, programadosFetcher } from '@/lib/plugins/scheduled-mes
 import { fmtDateTime, tiempoRelativo } from '../components/format';
 import { borrarProgramado } from '../programados/api';
 import type { SkillRun } from '../skills/api';
-import { RUN_STATUS_LABELS, RUN_STATUS_TONE, MODE_LABELS } from '../skills/skill-meta';
+import { etiquetaDeCorrida, RUN_STATUS_TONE, MODE_LABELS } from '../skills/skill-meta';
 
 /**
  * Piezas compartidas de la Cola para corridas del Prompt Studio y programados.
@@ -143,7 +143,7 @@ export function FilaRun({ run, onOpen, compact }: { run: SkillRun; onOpen?: (cha
       <div className="flex items-start justify-between gap-2">
         <p className="min-w-0 flex-1 line-clamp-2 text-sm font-medium leading-snug" title={run.title}>{run.title}</p>
         <span className={cn('shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium', needsDecision ? 'bg-primary/10 text-primary' : RUN_STATUS_TONE[run.status] ?? 'bg-muted text-muted-foreground')}>
-          {needsDecision ? tQueue('decisionStatus') : RUN_STATUS_LABELS[run.status] ?? run.status}
+          {needsDecision ? tQueue('decisionStatus') : etiquetaDeCorrida(run)}
         </span>
       </div>
       <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-muted-foreground">

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { assertPermission, parse, type GrokActionContext, type GrokActionTool } from '@/lib/plugins/grok-connector/server/actions';
 import { ClassificationInputError, classifyChat, listPendingChats } from '@/lib/plugins/sales-ops/server/classifier';
 import { DossierError, buildChatDossier } from '@/lib/plugins/sales-ops/server/dossier';
-import { getActivePrompt, SALES_OPS_PROMPT_KEYS } from '@/lib/plugins/sales-ops/server/prompts';
+import { composeClassifySystem, getActivePrompt, SALES_OPS_PROMPT_KEYS } from '@/lib/plugins/sales-ops/server/prompts';
 import { SALES_OPS_PLUGIN_ID } from '@/lib/plugins/sales-ops/shared/taxonomy';
 
 /**
@@ -59,7 +59,10 @@ export const dossierReadTools: GrokActionTool[] = [
       'días de silencio, impactos (followups), origen inferido y fechas clave. Los audios con ficha vienen con su ' +
       'transcripción; los que no, como "[audio Ns sin transcribir]" (encolalos con whatspro_audio_queue_add si son ' +
       'recientes). `fingerprint` identifica el estado del chat: se guarda con la clasificación para detectar stale. ' +
-      'Los grupos no tienen expediente. Sólo lectura.',
+      'Trae además `crmCatalog` (stages/tags/fields que EXISTEN en el equipo, por nombre) y `prompt`: la key, la versión y el ' +
+      'systemPrompt + userTemplate del P2 activo del equipo. Para clasificar aplicá ESE systemPrompt (ya trae el contrato de ' +
+      'crm_fix) y rellená el userTemplate con facts y dossier: así el conector clasifica igual que el servidor y con las ' +
+      'reglas que el equipo editó en el Prompt Studio, no con el P2 que recuerde. Los grupos no tienen expediente. Sólo lectura.',
     inputSchema: {
       type: 'object',
       required: ['chat_id'],
@@ -166,7 +169,19 @@ export async function executeDossierTool(name: string, input: Record<string, unk
     const data = parse(dossierSchemaInput, input);
     try {
       const [dossier, prompt] = await Promise.all([buildChatDossier(context.teamId, data.chat_id), getActivePrompt(context.teamId, SALES_OPS_PROMPT_KEYS.classify)]);
-      return { dossier, prompt: { key: prompt.key, version: prompt.version, source: prompt.source } };
+      // El conector clasifica con el MISMO system prompt que usa el servidor
+      // (el activo del equipo más el contrato de crm_fix si le falta): si sólo
+      // viajara la versión, cada conector aplicaría el P2 que recuerde.
+      return {
+        dossier,
+        prompt: {
+          key: prompt.key,
+          version: prompt.version,
+          source: prompt.source,
+          systemPrompt: composeClassifySystem(prompt.systemPrompt),
+          userTemplate: prompt.userTemplate,
+        },
+      };
     } catch (error) {
       friendly(error);
     }

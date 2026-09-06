@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getSalesOpsContext } from '@/lib/plugins/sales-ops/server/access';
+import { getSalesOpsTasksContext } from '@/lib/plugins/sales-ops/server/access';
 import { documentarPaso, loadProduccion } from '@/lib/plugins/sales-ops/server/produccion';
 
 export const dynamic = 'force-dynamic';
 
 /** GET → demos, clientes y bitácora del Command Center con avance por proyecto. */
 export async function GET() {
-  const ctx = await getSalesOpsContext('salesOpsRead');
+  const ctx = await getSalesOpsTasksContext('read');
   if (!ctx.ok) return NextResponse.json({ error: ctx.message }, { status: ctx.status });
   try {
     return NextResponse.json(await loadProduccion(ctx.team.id, ctx.user.id));
@@ -21,7 +21,7 @@ const schema = z.object({ action: z.literal('documentar'), title: z.string().min
 
 /** POST { action: 'documentar', title, notes?, chatId? } → un paso en la Bitácora. */
 export async function POST(request: NextRequest) {
-  const ctx = await getSalesOpsContext('salesOpsWrite');
+  const ctx = await getSalesOpsTasksContext('write');
   if (!ctx.ok) return NextResponse.json({ error: ctx.message }, { status: ctx.status });
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Body inválido' }, { status: 400 });

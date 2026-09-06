@@ -40,6 +40,7 @@ import { Ajustes } from './views/Ajustes';
 import { Calendario } from './views/Calendario';
 import { ComoUsar } from './views/ComoUsar';
 import { Enfoque } from './views/Enfoque';
+import { ProduccionOS } from './views/ProduccionOS';
 import { Metricas } from './views/Metricas';
 import { Tablero } from './views/Tablero';
 import { Espacios } from './views/Espacios';
@@ -772,7 +773,7 @@ export function TareasApp() {
       <MobileDrawer open={drawer} onClose={() => setDrawer(false)} {...sidebarProps} />
 
       <main ref={contenedorRef} className="flex-1 h-full overflow-y-auto relative w-full">
-        {prefs.nav !== 'espacios' && prefs.nav !== 'enfoque' && (
+        {prefs.nav !== 'espacios' && prefs.nav !== 'enfoque' && prefs.nav !== 'produccion' && (
           <div className="sticky top-0 z-10 bg-[var(--t-bg)]/90 backdrop-blur-md border-b border-[var(--t-border)]">
             <div className="px-4 lg:px-6 pt-3 pb-2 flex items-center gap-3">
               <button type="button" className="lg:hidden p-2 -ml-2" onClick={() => setDrawer(true)} aria-label="Menú">
@@ -985,6 +986,19 @@ export function TareasApp() {
               if (id) setPrefs({ nav: 'bandeja' });
             }}
           />
+        )}
+
+        {/* Producción OS: pedidos de demos, producción y cambios, con su propio
+            Focus. La misma pantalla que ve el Command Center › Producción. */}
+        {prefs.nav === 'produccion' && (
+          <div className="px-4 lg:px-6 py-4">
+            <ProduccionOS
+              onOpenTask={(taskId) => {
+                const tarea = tareasOperativas.find((t) => t.id === taskId);
+                if (tarea) setTareaAbierta(tarea);
+              }}
+            />
+          </div>
         )}
 
         {prefs.nav === 'metricas' && (

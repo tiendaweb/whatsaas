@@ -1743,6 +1743,7 @@
     "syslog_contact_auto_created": "Contacto \"{name}\" creado automáticamente por IA",
     "syslog_user_activated_ai": "{name} activó la IA",
     "syslog_user_deactivated_ai": "{name} desactivó la IA",
+    "syslog_automation_paused_scheduled": "Automatizaciones pausadas: hay un mensaje programado ({name})",
     "send_failed": "Error al enviar",
     "retry_send": "Reintentar",
     "window_expired_title": "Seleccione una plantilla de mensaje para reactivar la conversación",
@@ -4479,6 +4480,31 @@
       "moved": "Movido a {stage}",
       "moveError": "No se pudo mover. Se deshizo el cambio."
     }
+  },
+  "SalesOpsQueue": {
+    "decisionLabel": "Tu decisión",
+    "decisionHelp": "El conector avanzó hasta un punto que necesita tu criterio. Respondé acá y la misma corrida vuelve a la cola.",
+    "decisionEmpty": "No hay decisiones esperando tu respuesta.",
+    "decisionStatus": "Necesita decisión",
+    "decisionCount": "{count, plural, one {# respuesta pendiente} other {# respuestas pendientes}}",
+    "promptFull": "Prompt completo",
+    "seeFull": "Ver completo",
+    "seeLess": "Ver menos"
+  },
+  "SalesOpsHumanDecision": {
+    "eyebrow": "Necesita tu criterio",
+    "connectorFallback": "Conector",
+    "requestedAt": "Solicitado {time}",
+    "chooseOption": "Elegí una opción",
+    "otherOption": "Otra respuesta",
+    "otherPlaceholder": "Escribí tu respuesta",
+    "requiredError": "Este dato es necesario para continuar.",
+    "codeLabel": "Código o datos estructurados",
+    "resumeHint": "Tu respuesta se agrega al prompt original y la corrida continúa sin perder el contexto.",
+    "submitDefault": "Responder y continuar",
+    "sending": "Enviando…",
+    "answeredSuccess": "Respuesta guardada. La corrida volvió a la cola.",
+    "genericError": "No se pudo guardar la respuesta."
   },
   "AiBuiltinTools": {
     "title": "Funciones integradas por app",

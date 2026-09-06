@@ -2,8 +2,8 @@ import 'server-only';
 
 import { and, asc, eq, gte, inArray, isNull, lte, not, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
-import { chats, messageAudioInsights, messages, teamCommercialAnalysis } from '@/lib/db/schema';
-import { analizarTextoConBanco, capacidadDelBanco, keysConCuota, transcribirConBanco } from '@/lib/gemini/key-bank';
+import { chats, messageAudioInsights, messages, teamCommercialAnalysis, teamAudioBlocks } from '@/lib/db/schema';
+import { analizarTextoConBanco, capacidadDelBanco, cuotaAutomatica, keysConCuota, transcribirConBanco, transcripcionAutomaticaActiva } from '@/lib/gemini/key-bank';
 import { condicionesDeChatIgnorado } from '@/lib/chats/internos';
 
 /**
@@ -318,6 +318,45 @@ const RANGO_COMERCIAL = sql<number>`case
   else 2 end`;
 
 /**
+ * "Este audio se puede drenar hoy": sin bloque, o con un bloque activo cuyo
+ * día ya llegó y que no alcanzó su tope diario. Exige el LEFT JOIN a
+ * `team_audio_blocks` en la consulta que lo usa.
+ *
+ * Es una función y no una constante para que la vista Audios y el worker
+ * apliquen exactamente la misma regla: si la pantalla dijera "en cola" de algo
+ * que el worker no va a tomar, la posición que muestra sería mentira.
+ */
+export function condicionDeBloqueActivo() {
+  return sql`(
+    ${messageAudioInsights.blockId} is null
+    or (
+      ${teamAudioBlocks.status} = 'active'
+      and (${teamAudioBlocks.notBefore} is null or ${teamAudioBlocks.notBefore} <= current_date)
+      and (
+        ${teamAudioBlocks.dailyCap} is null
+        or (select count(*) from message_audio_insights d
+              where d.block_id = ${teamAudioBlocks.id} and d.status = 'done' and d.generated_at >= current_date) < ${teamAudioBlocks.dailyCap}
+      )
+    )
+  )`;
+}
+
+/**
+ * El orden de la cola, en un solo lugar (lo usan el worker y la vista Audios):
+ *  1. `priority`: lo que una persona puso adelante (o mandó al final, con -1).
+ *  2. el bloque, por posición; sin bloque va PRIMERO porque es lo recién
+ *     encolado por el cron —la conversación que está pasando ahora—.
+ *  3. el frente comercial (Dinero, Oportunidades, resto).
+ *  4. antigüedad en la cola.
+ */
+export const ORDEN_DE_LA_COLA = [
+  sql`${messageAudioInsights.priority} desc`,
+  sql`coalesce(${teamAudioBlocks.position}, -1) asc`,
+  RANGO_COMERCIAL,
+  asc(messageAudioInsights.queuedAt),
+];
+
+/**
  * Lo próximo a procesar: primero lo pedido a mano (`priority`), después los
  * chats donde hay plata en juego, y recién ahí lo más viejo.
  *
@@ -330,6 +369,7 @@ export async function proximosDeLaCola(limit: number, teamId?: number): Promise<
       eq(messageAudioInsights.status, 'failed'),
       sql`${messageAudioInsights.attempts} < ${AUDIO_INSIGHTS_CONFIG.maxAttempts}`,
     ))!,
+    condicionDeBloqueActivo(),
   ];
   if (teamId) condiciones.push(eq(messageAudioInsights.teamId, teamId));
   const habilitados = AUDIO_INSIGHTS_CONFIG.teamIds;
@@ -349,6 +389,7 @@ export async function proximosDeLaCola(limit: number, teamId?: number): Promise<
     .from(messageAudioInsights)
     .innerJoin(messages, eq(messages.id, messageAudioInsights.messageId))
     .innerJoin(chats, eq(chats.id, messageAudioInsights.chatId))
+    .leftJoin(teamAudioBlocks, eq(teamAudioBlocks.id, messageAudioInsights.blockId))
     .leftJoin(
       teamCommercialAnalysis,
       and(
@@ -357,7 +398,7 @@ export async function proximosDeLaCola(limit: number, teamId?: number): Promise<
       ),
     )
     .where(and(...condiciones))
-    .orderBy(sql`${messageAudioInsights.priority} desc`, RANGO_COMERCIAL, asc(messageAudioInsights.queuedAt))
+    .orderBy(...ORDEN_DE_LA_COLA)
     .limit(limit);
 
   return filas as ItemDeCola[];
@@ -399,7 +440,7 @@ export type InsightResult =
  *
  * No analiza: eso es `analizarAudio`, aparte y a pedido.
  */
-export async function transcribirAudio(messageId: string, options: { force?: boolean; requestedBy?: Origen } = {}): Promise<InsightResult> {
+export async function transcribirAudio(messageId: string, options: { force?: boolean; requestedBy?: Origen; automatico?: boolean } = {}): Promise<InsightResult> {
   const fila = await db
     .select({
       id: messages.id,
@@ -440,6 +481,7 @@ export async function transcribirAudio(messageId: string, options: { force?: boo
     teamId: fila.teamId,
     mediaUrl: fila.mediaUrl,
     audioSeconds: fila.mediaSeconds ?? 0,
+    automatico: options.automatico,
   });
 
   if (!resultado.ok) {
@@ -564,7 +606,7 @@ export type AnalisisResult =
  * mucho menos como texto, y porque una transcripción ya pagada no se vuelve a
  * pagar para releerla.
  */
-export async function analizarAudio(messageId: string, options: { force?: boolean } = {}): Promise<AnalisisResult> {
+export async function analizarAudio(messageId: string, options: { force?: boolean; automatico?: boolean } = {}): Promise<AnalisisResult> {
   const ficha = await db.query.messageAudioInsights.findFirst({
     where: eq(messageAudioInsights.messageId, messageId),
   });
@@ -579,6 +621,7 @@ export async function analizarAudio(messageId: string, options: { force?: boolea
   const resultado = await analizarTextoConBanco({
     teamId: ficha.teamId,
     prompt: `${PROMPT_FICHA}${ficha.transcript.slice(0, TRANSCRIPT_MAX_CHARS)}`,
+    automatico: options.automatico,
   });
   if (!resultado.ok) return { ok: false, messageId, error: resultado.error, reintentable: resultado.reintentable };
 
@@ -752,6 +795,11 @@ export type BatchReport = {
   reintentables: number;
   /** Ninguna key tenía cuota: no se sacó nada de la cola. */
   sinCuota: boolean;
+  /** Cuando se paró por la reserva: cuánto se guarda y cuánto quedaba. */
+  reserva?: { pct: number; pedidos: number; restanteHoy: number };
+  /** La corrida no tocó la cola: el check "usar Gemini para transcribir" está apagado. */
+  skipped?: boolean;
+  reason?: 'transcripcion_desactivada';
   detalle: Array<{ messageId: string; ok: boolean; error?: string }>;
 };
 
@@ -774,11 +822,24 @@ export async function runAudioInsightsBatch(options: { limit?: number; teamId?: 
    * el día se consume parejo. Un `limit` explícito (backfill a mano) manda.
    */
   const equipoDeCuota = options.teamId ?? AUDIO_INSIGHTS_CONFIG.teamIds[0] ?? null;
+
+  // Check "usar Gemini para transcribir audios" (settings del plugin Gemini).
+  // Apagado, el worker no encola ni saca nada: el banco queda para el Command
+  // Center y para lo manual. "Transcribir ahora" no pasa por acá.
+  if (equipoDeCuota && !(await transcripcionAutomaticaActiva(equipoDeCuota))) {
+    return { ...reporte, skipped: true, reason: 'transcripcion_desactivada' };
+  }
+
   let limit = options.limit ?? AUDIO_INSIGHTS_CONFIG.batchSize;
   if (options.limit === undefined && equipoDeCuota) {
-    const disponibles = await keysConCuota(equipoDeCuota);
-    if (disponibles === 0) reporte.sinCuota = true;
-    else limit = Math.min(limit, disponibles);
+    // Con `automatico` el conteo ya descuenta la reserva del banco: el worker
+    // para cuando lo que queda del día es lo que se guarda para pedidos a mano.
+    const disponibles = await keysConCuota(equipoDeCuota, { automatico: true });
+    if (disponibles === 0) {
+      reporte.sinCuota = true;
+      const cuota = await cuotaAutomatica(equipoDeCuota);
+      reporte.reserva = { pct: cuota.reservaPct, pedidos: cuota.reserva, restanteHoy: cuota.restanteHoy };
+    } else limit = Math.min(limit, disponibles);
   }
 
   // Paso 0: sacar lo que no corresponde transcribir. Va antes de encolar para
@@ -802,7 +863,7 @@ export async function runAudioInsightsBatch(options: { limit?: number; teamId?: 
   if (reporte.sinCuota) return reporte;
   const pendientes = await proximosDeLaCola(limit, options.teamId);
   for (const item of pendientes) {
-    const resultado = await transcribirAudio(item.messageId);
+    const resultado = await transcribirAudio(item.messageId, { automatico: true });
     reporte.procesados += 1;
     if (resultado.ok) {
       reporte.transcriptos += 1;

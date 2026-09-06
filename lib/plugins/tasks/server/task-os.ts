@@ -26,6 +26,7 @@ import {
 } from '@/lib/db/schema';
 import { resolveMediaUrl } from '@/lib/media-url';
 import { pusherServer } from '@/lib/pusher-server';
+import { esWorkKind, esWorkStatus, type WorkKind, type WorkStatus } from '../shared/produccion';
 
 /**
  * Con qué se puede vincular una tarea.
@@ -335,6 +336,12 @@ export async function createTaskInColumn(input: {
   color?: string | null;
   icon?: string | null;
   coverMediaId?: number | null;
+  assigneeId?: number | null;
+  workKind?: WorkKind | null;
+  workStatus?: WorkStatus | null;
+  requestedBy?: number | null;
+  deliveryUrl?: string | null;
+  blockedReason?: string | null;
 }) {
   const column = await db.query.teamTaskColumns.findFirst({
     where: and(eq(teamTaskColumns.id, input.columnId), eq(teamTaskColumns.teamId, input.teamId)),
@@ -367,6 +374,12 @@ export async function createTaskInColumn(input: {
     icon: input.icon ?? null,
     coverMediaId: input.coverMediaId ?? null,
     createdBy: input.userId ?? null,
+    assigneeId: input.assigneeId ?? null,
+    workKind: input.workKind ?? null,
+    workStatus: input.workStatus ?? null,
+    requestedBy: input.requestedBy ?? null,
+    deliveryUrl: input.deliveryUrl ?? null,
+    blockedReason: input.blockedReason ?? null,
   }).returning();
 
   await createTaskLocation({
@@ -494,6 +507,12 @@ export async function patchTaskItem(input: { teamId: number; taskId: number; pat
           patch.checklist.every((item) => item.completed)
         ? 'done'
         : undefined;
+  let nextWorkStatus: WorkStatus | undefined;
+  if (nextStatus !== undefined && esWorkKind(current.workKind) && esWorkStatus(current.workStatus)) {
+    if (nextStatus === 'done') nextWorkStatus = 'entregado';
+    else if (nextStatus === 'in_progress') nextWorkStatus = ['espera_cliente', 'cambios'].includes(current.workStatus) ? current.workStatus : 'en_curso';
+    else nextWorkStatus = ['pedido', 'aceptado'].includes(current.workStatus) ? current.workStatus : 'pedido';
+  }
 
   const [updated] = await db
     .update(teamTaskItems)
@@ -520,6 +539,7 @@ export async function patchTaskItem(input: { teamId: number; taskId: number; pat
         status: nextStatus,
         completedAt: nextStatus === 'done' ? new Date() : null,
       }),
+      ...(nextWorkStatus !== undefined && { workStatus: nextWorkStatus }),
       ...(patch.parentTaskId !== undefined && { parentTaskId: patch.parentTaskId ? Number(patch.parentTaskId) : null }),
       ...(patch.color !== undefined && { color: patch.color ? String(patch.color) : null }),
       ...(patch.icon !== undefined && { icon: patch.icon ? String(patch.icon) : null }),

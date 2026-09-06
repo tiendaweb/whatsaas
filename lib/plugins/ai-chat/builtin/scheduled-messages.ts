@@ -2,6 +2,8 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { teamScheduledMessages } from '@/lib/db/schema';
 import { computeNextRunAt } from '@/lib/plugins/scheduled-messages/schedule';
+import { asegurarParrafos } from '@/lib/messaging/parrafos';
+import { pausarAutomatizacionesDelProgramado } from '@/lib/chats/pausar-automatizacion';
 import { formatZoned, logBotAction, parseDateInput, resolveActorUserId, resolveChatContact } from './context';
 import { fail, ok, type BuiltinToolDefinition } from './types';
 
@@ -44,12 +46,23 @@ export const scheduledMessagesTools: BuiltinToolDefinition[] = [
           scheduleType: 'once',
           scheduledAt: sendAt,
           actionType: 'message',
-          message,
+          message: asegurarParrafos(message),
           maxRuns: 1,
           nextRunAt: computeNextRunAt({ scheduleType: 'once', scheduledAt: sendAt }),
           createdBy: actorId,
         })
         .returning({ id: teamScheduledMessages.id });
+      // Este chat queda fuera de los flujos automáticos hasta que alguien
+      // dispare uno a mano: si no, el flujo se come la respuesta del cliente al
+      // recordatorio. Ver lib/chats/pausar-automatizacion.
+      await pausarAutomatizacionesDelProgramado(context.teamId, {
+        id: row.id,
+        name: `IA · ${bundle.displayName}`,
+        status: 'active',
+        actionType: 'message',
+        instanceId: bundle.chat.instanceId,
+        targetNumbers: [bundle.phone],
+      });
       await logBotAction(context, bundle, `@@syslog_ai_added_note`);
       return ok({ scheduled_message_id: row.id, send_at: sendAt.toISOString(), readable: formatZoned(sendAt) });
     },

@@ -30,11 +30,14 @@ import { retryRun, type SkillRun } from '../skills/api';
  */
 const POR_TANDA = 50;
 
-export function ReintentarFallidas({ runs, onListo }: { runs: SkillRun[]; onListo: () => void }) {
+export function ReintentarFallidas({ runs: todas, onListo }: { runs: SkillRun[]; onListo: () => void }) {
   const [abierto, setAbierto] = useState(false);
   const [modo, setModo] = useState<'api' | 'queue' | null>(null);
   const [hechas, setHechas] = useState(0);
 
+  // Una fallida que ya se reintentó tiene su reemplazo en la cola: volver a
+  // reintentarla es mandar el mismo pedido dos veces (y el servidor la rechaza).
+  const runs = todas.filter((r) => !r.relaunchedAs);
   if (runs.length === 0) return null;
 
   const tanda = runs.slice(0, POR_TANDA);

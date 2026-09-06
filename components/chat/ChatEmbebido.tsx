@@ -40,6 +40,15 @@ export type ChatEmbebidoProps = {
   teamId: number | null;
   puedeEnviar?: boolean;
   ocultarEnviados?: boolean;
+  /**
+   * Esconde el switch "Nota" del compositor.
+   *
+   * Donde las notas tienen su propia solapa —el Focus— el switch es una segunda
+   * puerta al mismo lugar, y de las dos, ésta es la que se aprieta sin querer:
+   * queda al lado de Enviar y convierte un mensaje al cliente en una nota
+   * interna sin que se note hasta después.
+   */
+  sinNota?: boolean;
   tokens?: 'core' | 'tareas';
   className?: string;
 };
@@ -55,6 +64,14 @@ type MensajeApi = {
   mediaCaption: string | null;
   status: string | null;
   isInternal: boolean | null;
+  /**
+   * De dónde salió lo que mandamos. La API ya los devolvía; sin declararlos, el
+   * chat mostraba igual un mensaje escrito por una automatización que uno
+   * escrito por una persona, y al leer el hilo parecía que alguien había
+   * contestado a mano cuando no.
+   */
+  isAi?: boolean | null;
+  isAutomation?: boolean | null;
   participantName?: string | null;
   locationLatitude?: string | null;
   locationLongitude?: string | null;
@@ -101,6 +118,7 @@ const SYSLOG: Record<string, (p: Record<string, string>) => string> = {
   syslog_contact_auto_created: (p) => `Contacto "${p.name ?? ''}" creado automáticamente por IA`,
   syslog_user_activated_ai: (p) => `${p.name ?? ''} activó la IA`,
   syslog_user_deactivated_ai: (p) => `${p.name ?? ''} desactivó la IA`,
+  syslog_automation_paused_scheduled: (p) => `Automatizaciones pausadas: hay un mensaje programado (${p.name ?? ''})`,
 };
 
 function textoSistema(texto: string | null): string {
@@ -178,7 +196,7 @@ const ESTILOS = {
 } as const;
 
 export function ChatEmbebido(props: ChatEmbebidoProps) {
-  const { remoteJid, instanceId, chatId, nombre, teamId, puedeEnviar = true, ocultarEnviados = false, tokens = 'core', className } = props;
+  const { remoteJid, instanceId, chatId, nombre, teamId, puedeEnviar = true, ocultarEnviados = false, sinNota = false, tokens = 'core', className } = props;
   const S = ESTILOS[tokens];
   const pusher = usePusher();
 
@@ -385,10 +403,12 @@ export function ChatEmbebido(props: ChatEmbebidoProps) {
               placeholder={esNota ? TEXTOS.placeholderNota : TEXTOS.placeholder(nombre)}
               className={S.input}
             />
-            <label className={cn('flex shrink-0 select-none items-center gap-1.5 pb-3', S.etiquetaNota)}>
-              <Switch checked={esNota} onCheckedChange={setEsNota} className="scale-90" aria-label={TEXTOS.nota} />
-              {TEXTOS.nota}
-            </label>
+            {!sinNota && (
+              <label className={cn('flex shrink-0 select-none items-center gap-1.5 pb-3', S.etiquetaNota)}>
+                <Switch checked={esNota} onCheckedChange={setEsNota} className="scale-90" aria-label={TEXTOS.nota} />
+                {TEXTOS.nota}
+              </label>
+            )}
             <button
               type="button"
               onClick={() => void enviar()}
@@ -428,6 +448,11 @@ function Mensaje({ msg, S, tokens }: { msg: MensajeApi; S: Estilos; tokens: 'cor
   const esDocumento = !!msg.mediaUrl && !esImagen && !esAudio;
   const esTexto = !!(msg.text || msg.mediaCaption);
   const esNota = !!msg.isInternal;
+  /**
+   * Quién lo escribió, cuando no fue una persona. Sólo para lo que sale de
+   * nuestro lado: de lo que manda el cliente no hay nada que aclarar.
+   */
+  const origen = esNota ? 'Nota' : msg.isAutomation ? 'Automatización' : msg.isAi ? 'IA' : null;
 
   let cuerpo: React.ReactNode;
   if (esImagen) {
@@ -471,8 +496,8 @@ function Mensaje({ msg, S, tokens }: { msg: MensajeApi; S: Estilos; tokens: 'cor
   return (
     <div className={cn('flex', msg.fromMe ? 'justify-end' : 'justify-start')}>
       <div className={cn(S.burbuja, esNota ? S.nota : msg.fromMe ? S.propia : S.ajena)}>
-        {esNota && tokens === 'core' && (
-          <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Nota</span>
+        {origen && tokens === 'core' && (
+          <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{origen}</span>
         )}
         {cuerpo}
         <div className={cn('mt-1', msg.fromMe && !esNota ? S.horaPropia : S.horaAjena)}>

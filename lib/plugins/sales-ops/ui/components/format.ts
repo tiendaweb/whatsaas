@@ -1,3 +1,4 @@
+import { ZONA_NEGOCIO } from '@/lib/time/zona';
 /**
  * Etiquetas y formateadores de la UI del Command Center. Español rioplatense,
  * hardcodeado a propósito (el plugin se construye en paralelo, sin i18n).
@@ -134,7 +135,7 @@ export function fmtDate(value: string | null | undefined): string {
   const d = new Date(value);
   if (!Number.isFinite(d.getTime())) return '—';
   try {
-    return new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(d);
+    return new Intl.DateTimeFormat('es-AR', { timeZone: ZONA_NEGOCIO, day: '2-digit', month: '2-digit', year: 'numeric' }).format(d);
   } catch {
     return d.toISOString().slice(0, 10);
   }
@@ -145,7 +146,7 @@ export function fmtDateShort(value: string | null | undefined): string {
   const d = new Date(value);
   if (!Number.isFinite(d.getTime())) return '—';
   try {
-    return new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit' }).format(d);
+    return new Intl.DateTimeFormat('es-AR', { timeZone: ZONA_NEGOCIO, day: '2-digit', month: '2-digit' }).format(d);
   } catch {
     return d.toISOString().slice(5, 10);
   }
@@ -156,7 +157,9 @@ export function fmtDateTime(value: string | null | undefined): string {
   const d = new Date(value);
   if (!Number.isFinite(d.getTime())) return '—';
   try {
-    return new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(d);
+    // Zona del negocio explícita: el navegador de una IA que maneja Chrome
+    // suele estar en UTC, y mostraría las 13 donde son las 10.
+    return new Intl.DateTimeFormat('es-AR', { timeZone: ZONA_NEGOCIO, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(d);
   } catch {
     return d.toISOString().slice(0, 16).replace('T', ' ');
   }

@@ -1,4 +1,5 @@
 import 'server-only';
+import { asegurarParrafos } from '@/lib/messaging/parrafos';
 
 import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -56,7 +57,7 @@ export const messagingActionTools: GrokActionTool[] = [
       required: ['text', 'idempotency_key'],
       properties: {
         ...targetProperties,
-        text: { type: 'string', minLength: 1, maxLength: 20000 },
+        text: { type: 'string', minLength: 1, maxLength: 20000, description: 'Con párrafos separados por una línea en blanco cuando tiene más de dos o tres oraciones: WhatsApp muestra los saltos y un bloque largo se lee como un muro. Si viene largo y sin saltos, el servidor lo parte por oración.' },
         instance_id: { type: ['integer', 'null'], minimum: 1, description: 'Número desde el cual enviar. Por defecto, el del chat existente o la primera instancia conectada del equipo.' },
         quoted_message_id: { type: ['string', 'null'], maxLength: 255, description: 'ID de un mensaje del chat para responderlo citándolo.' },
         idempotency_key: { type: 'string', minLength: 8, maxLength: 80, description: IDEMPOTENCY_HELP },
@@ -256,7 +257,7 @@ async function sendMessage(input: Record<string, unknown>, context: GrokActionCo
         remote_jid: target.remoteJid,
         chat_id: target.chatId,
         from_instance: instance.instanceName,
-        text: data.text,
+        text: asegurarParrafos(data.text),
         creates_new_chat: target.chatId === null,
       },
     };
@@ -276,7 +277,7 @@ async function sendMessage(input: Record<string, unknown>, context: GrokActionCo
 
   const result = await sendTeamTextMessage(context.teamId, {
     recipientJid: target.remoteJid,
-    text: data.text,
+    text: asegurarParrafos(data.text),
     instanceId: data.instance_id,
     quotedMessage,
     origin: 'mcp',

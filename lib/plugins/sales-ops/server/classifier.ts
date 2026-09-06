@@ -31,7 +31,8 @@ import {
   type VersionReason,
 } from '../shared/taxonomy';
 import { buildChatDossierFull, isExcludedChat, type DossierBuildResult } from './dossier';
-import { computeFingerprint } from './fingerprint';
+import { computeFingerprint, chatFingerprint } from './fingerprint';
+import { resolverClientes } from '@/lib/customers/es-cliente';
 import { maskJid } from '@/lib/desktop/command-center/types';
 import { computePriority, type PriorityFactors } from './priority';
 import { SALES_OPS_PROMPT_KEYS, composeClassifySystem, getActivePrompt, recordPromptRun, renderTemplate, type ActivePrompt } from './prompts';
@@ -161,7 +162,7 @@ async function callGeminiJson(apiKey: string, model: string, systemPrompt: strin
   return text;
 }
 
-async function runServerAi(teamId: number, systemPrompt: string, userPrompt: string): Promise<AiOutcome> {
+async function runServerAi(teamId: number, systemPrompt: string, userPrompt: string, opts: { automatico?: boolean } = {}): Promise<AiOutcome> {
   const errors: string[] = [];
   const jsonOnly = 'Respondé EXCLUSIVAMENTE con un objeto JSON válido, sin markdown ni texto alrededor.';
   try {
@@ -182,7 +183,8 @@ async function runServerAi(teamId: number, systemPrompt: string, userPrompt: str
     errors.push(`proveedor del equipo: ${error instanceof Error ? error.message : String(error)}`);
   }
   try {
-    const banco = await analizarTextoConBanco({ teamId, prompt: `${systemPrompt}\n\n${jsonOnly}\n\n${userPrompt}` });
+    // Sin usuario = lo corre el cron: respeta la reserva del banco para lo manual.
+    const banco = await analizarTextoConBanco({ teamId, prompt: `${systemPrompt}\n\n${jsonOnly}\n\n${userPrompt}`, automatico: opts.automatico });
     if (!banco.ok) {
       errors.push(`banco de keys: ${banco.error}`);
     } else {
@@ -531,7 +533,7 @@ export async function classifyChat(teamId: number, chatId: number, opts: Classif
   if (opts.engine === 'server') {
     // Con gate forzado por R1 fuerte / R2 / R3 igual se consulta la IA (rellena
     // necesidad y acción), pero si no hay IA el resultado sigue siendo útil.
-    ai = await runServerAi(teamId, composeClassifySystem(prompt.systemPrompt), userPrompt);
+    ai = await runServerAi(teamId, composeClassifySystem(prompt.systemPrompt), userPrompt, { automatico: userId == null });
     classification = ai.classification;
   } else if (opts.engine === 'connector') {
     analyzedBy = opts.connector;
@@ -607,10 +609,13 @@ export async function classifyChat(teamId: number, chatId: number, opts: Classif
     version = persisted.version;
     diff = persisted.diff;
 
-    // R10: encolar audios sin ficha, con prioridad, sin romper si el equipo no tiene fichas.
+    // R10: encolar audios sin ficha, SIN prioridad, sin romper si el equipo no tiene fichas.
+    // Antes iban con prioridad 10 y eso puso 173 audios de clientes ya cerrados
+    // (G11) adelante de todo lo demás: el orden lo decide el frente comercial y
+    // los bloques de Audios, no quién los encoló.
     if (facts.evidence_gap && facts.pending_audio_message_ids.length) {
       try {
-        await encolarAudios({ teamId, chatId, messageIds: facts.pending_audio_message_ids.slice(0, 50), priority: 10, requestedBy: 'auto', limit: 50 });
+        await encolarAudios({ teamId, chatId, messageIds: facts.pending_audio_message_ids.slice(0, 50), priority: 0, requestedBy: 'auto', limit: 50 });
       } catch (error) {
         console.error('[sales-ops] encolarAudios failed', error);
       }
@@ -724,16 +729,9 @@ export async function setManualOverride(teamId: number, chatId: number, userId: 
 }
 
 async function currentFingerprint(teamId: number, chatId: number): Promise<string> {
-  const rows = (await db.execute(sql`
-    select
-      (select m.id from messages m where m.chat_id = ${chatId} order by m.timestamp desc, m.id desc limit 1) as last_id,
-      (select m.timestamp from messages m where m.chat_id = ${chatId} order by m.timestamp desc, m.id desc limit 1) as last_ts,
-      (select count(*)::int from message_audio_insights i where i.chat_id = ${chatId} and i.status = 'done') as done
-    from chats c where c.id = ${chatId} and c.team_id = ${teamId}
-  `)) as unknown as Array<{ last_id: string | null; last_ts: Date | string | null; done: number }>;
-  const r = rows[0];
-  if (!r) throw new Error('Chat no encontrado.');
-  return computeFingerprint({ chatId, lastMessageId: r.last_id, lastMessageTimestamp: r.last_ts ? new Date(r.last_ts).toISOString() : null, audioInsightsDone: Number(r.done ?? 0) });
+  const fingerprint = await chatFingerprint(teamId, chatId);
+  if (!fingerprint) throw new Error('Chat no encontrado.');
+  return fingerprint;
 }
 
 // ── Pendientes (doc 07 P1) ────────────────────────────────────────────────
@@ -855,6 +853,7 @@ export async function listPendingChats(teamId: number, opts: { source?: PendingS
         : sql`where (a.id is null or a.version = 0)`}
   `)) as unknown as PendingRow[];
 
+  const clientes = await resolverClientes(teamId, rows.map((row) => row.contact_id).filter((id): id is number => id != null));
   const out: PendingChat[] = [];
   for (const r of rows) {
     if (isExcludedChat(teamId, r.chat_id)) continue;
@@ -863,6 +862,8 @@ export async function listPendingChats(teamId: number, opts: { source?: PendingS
       lastMessageId: r.last_id,
       lastMessageTimestamp: r.last_ts ? new Date(r.last_ts).toISOString() : null,
       audioInsightsDone: Number(r.audios_done ?? 0),
+      customerId: r.contact_id ? clientes.get(r.contact_id)?.customerId ?? null : null,
+      fuente: r.contact_id ? clientes.get(r.contact_id)?.fuente ?? null : null,
     });
     const hasAnalysis = r.a_version != null;
     const matches = hasAnalysis && r.a_fingerprint === fingerprint;

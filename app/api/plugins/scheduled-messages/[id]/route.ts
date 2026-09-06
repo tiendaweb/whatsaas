@@ -5,7 +5,9 @@ import { db } from '@/lib/db/drizzle';
 import { teamScheduledMessages } from '@/lib/db/schema';
 import { getPluginRequestContext } from '@/lib/plugins/core/runtime-permissions';
 import { computeNextRunAt } from '@/lib/plugins/scheduled-messages/schedule';
+import { aLocal, formatoLocal, proximoHorarioFuturo } from '@/lib/time/zona';
 import { InstanceOwnershipError, assertTeamInstance } from '@/lib/instances/ownership';
+import { pausarAutomatizacionesDelProgramado } from '@/lib/chats/pausar-automatizacion';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,6 +59,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const mergedHour = 'hour' in d ? (d.hour ?? null) : existing.hour;
   const mergedMinute = 'minute' in d ? (d.minute ?? null) : existing.minute;
   const mergedWeekdays = d.weekdays ?? (existing.weekdays as number[]);
+
+  // Una hora ya pasada en un "una vez" saldría en la próxima corrida del cron:
+  // se rechaza con el próximo horario que tiene sentido. Sólo cuando se cambia
+  // la fecha o se reactiva; pausar o editar el texto de uno vencido está bien.
+  if (mergedScheduleType === 'once' && mergedScheduledAt && ('scheduledAt' in d || d.status === 'active')) {
+    const proximo = proximoHorarioFuturo(mergedScheduledAt);
+    if (proximo.ajustado && (existing.status !== 'active' || 'scheduledAt' in d)) {
+      return NextResponse.json(
+        { error: `La hora elegida (${formatoLocal(mergedScheduledAt)}) ya pasó. Sugerencia: ${formatoLocal(proximo.date)}.`, code: 'past_schedule', sugerencia: aLocal(proximo.date), sugerenciaIso: proximo.date.toISOString() },
+        { status: 422 },
+      );
+    }
+  }
 
   // Recompute nextRunAt only if scheduling fields changed or status is being set to active
   const needsRecompute = d.scheduleType || 'scheduledAt' in d || 'hour' in d || 'minute' in d || d.weekdays || d.status === 'active';
@@ -110,6 +125,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     .returning();
 
   if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  // Editarlo puede cambiar el destinatario o reactivarlo: se vuelve a mirar,
+  // porque el chat nuevo puede tener flujos encendidos.
+  // Ver lib/chats/pausar-automatizacion.
+  await pausarAutomatizacionesDelProgramado(ctx.team.id, updated);
+
   return NextResponse.json(updated);
 }
 

@@ -27,6 +27,7 @@ import {
   updateCostCenter,
 } from '@/lib/plugins/finance/server/cost-centers';
 import { financeOsResumen } from '@/lib/plugins/finance/server/os';
+import { customerForContact } from '@/lib/customers/service';
 import { db } from '@/lib/db/drizzle';
 import {
   contacts,
@@ -82,7 +83,7 @@ export const financeActionTools: GrokActionTool[] = [
     description:
       'Registra un movimiento financiero: un ingreso (una venta cobrada o por cobrar) o un egreso (un gasto). '
       + 'Es la puerta para que la plata quede DENTRO del sistema en vez de en una nota. '
-      + 'Los montos van en la unidad mínima de la moneda y como entero: $200.000 ARS son 200000, no 200000.00. '
+      + 'Los montos van en CENTAVOS (unidad mínima) y como entero: $200.000 ARS son 20000000; USD 45,50 son 4550. Para un cobro de un cliente de WhatsApp preferí whatspro_sales_register_payment, que recibe unidades y hace todo (venta, asiento, pago, cliente, G11). '
       + 'Si el movimiento ya se cobró, podés mandarlo con status "paid" y paid_on; si se cobra en partes, dejalo "pending" '
       + 'y después registrá cada pago con whatspro_finance_settle_entry.',
     inputSchema: {
@@ -573,6 +574,9 @@ async function registrarVenta(input: Record<string, unknown>, context: GrokActio
     const venta = await db.query.teamSales.findFirst({ where: eq(teamSales.id, previo.saleId) });
     if (venta) return { success: true, idempotent: true, created: false, sale: venta, entry: previo };
   }
+  // Sin create_entry la clave sólo vivía en el asiento: un reintento duplicaba la venta.
+  const ventaPrevia = await db.query.teamSales.findFirst({ where: and(eq(teamSales.teamId, context.teamId), eq(teamSales.idempotencyKey, data.idempotency_key)) });
+  if (ventaPrevia) return { success: true, idempotent: true, created: false, sale: ventaPrevia, entry: null };
 
   if (data.contact_id) {
     const contacto = await db.query.contacts.findFirst({
@@ -603,9 +607,14 @@ async function registrarVenta(input: Record<string, unknown>, context: GrokActio
     };
   }
 
+  // El cliente vinculado al contacto, para que la venta cuente en el 360 y en cobranzas.
+  const clienteVinculado = data.contact_id ? await customerForContact(context.teamId, data.contact_id) : null;
   const [venta] = await db.insert(teamSales).values({
     teamId: context.teamId,
     contactId: data.contact_id ?? null,
+    customerId: clienteVinculado?.id ?? null,
+    idempotencyKey: data.idempotency_key,
+    paidAt: data.status === 'paid' ? new Date() : null,
     saleNumber,
     status: data.status ?? 'confirmed',
     currency: data.currency.toUpperCase(),
@@ -638,6 +647,7 @@ async function registrarVenta(input: Record<string, unknown>, context: GrokActio
       paidOn: data.status === 'paid' ? new Date().toISOString().slice(0, 10) : null,
       recurrence: 'none',
       saleId: venta.id,
+      customerId: clienteVinculado?.id ?? null,
       externalSource: FUENTE,
       externalId: data.idempotency_key,
       createdBy: context.userId,

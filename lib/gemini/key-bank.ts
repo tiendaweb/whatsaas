@@ -4,6 +4,7 @@ import { GoogleGenAI } from '@google/genai';
 import fs from 'fs/promises';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
+import { teamPlugins } from '@/lib/db/schema';
 import { teamGeminiKeyUsage, teamGeminiKeys } from '@/lib/db/schema';
 import { resolveMediaFilePath, statMediaFile } from '@/lib/media-file-path';
 // El códec vive en lib/payments pero no tiene nada de pagos: es AES-256-GCM
@@ -36,8 +37,23 @@ function extensionDe(ruta: string) {
   return punto === -1 ? '' : ruta.slice(punto).toLowerCase();
 }
 
-function hoyUTC() {
-  return new Date().toISOString().slice(0, 10);
+/**
+ * El "día" del banco es el de Google, no el de UTC.
+ *
+ * Google resetea la cuota diaria a medianoche del Pacífico (07:00 UTC en
+ * verano, 08:00 en invierno). Con el día en UTC pasaba esto: a las 00:00 UTC el
+ * banco estrenaba día, el cron disparaba, Google contestaba 429 porque SU día
+ * no había rotado, `marcarAgotada` llenaba el contador del día nuevo y el banco
+ * se quedaba apagado hasta las 00:00 UTC siguiente. Google liberaba a las 07:00
+ * y acá seguíamos sin keys 17 horas más. Con el día de Los Ángeles, el 429 de
+ * las 00:05 UTC cae en el día que de verdad está agotado.
+ */
+function diaDeGoogle(fecha: Date = new Date()) {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(fecha);
+  const de = (tipo: string) => partes.find((parte) => parte.type === tipo)?.value ?? '';
+  return `${de('year')}-${de('month')}-${de('day')}`;
 }
 
 function minutoActual() {
@@ -82,7 +98,7 @@ export async function listarKeys(teamId: number): Promise<KeyConUso[]> {
     .from(teamGeminiKeys)
     .leftJoin(
       teamGeminiKeyUsage,
-      and(eq(teamGeminiKeyUsage.keyId, teamGeminiKeys.id), eq(teamGeminiKeyUsage.day, hoyUTC())),
+      and(eq(teamGeminiKeyUsage.keyId, teamGeminiKeys.id), eq(teamGeminiKeyUsage.day, diaDeGoogle())),
     )
     .where(eq(teamGeminiKeys.teamId, teamId))
     .orderBy(asc(teamGeminiKeys.id));
@@ -146,10 +162,13 @@ export async function crearKey(input: {
       model: input.model?.trim() || MODELO_GEMINI_POR_DEFECTO,
       limitRpm: input.limitRpm ?? 10,
       // Google es la autoridad, no este número: un 429 de verdad saca la key del
-      // día solo (`marcarAgotada`). Este límite es una cortesía para no salir a
-      // golpear la puerta a lo loco, y en 20 estaba diez veces por debajo de lo
-      // que el free tier sirve — con 13 keys, el banco entero daba 260 pedidos.
-      limitRpd: input.limitRpd ?? 200,
+      // día solo (`marcarAgotada`, que además guarda el `limit: N` que Google
+      // dice en el error). El 20 es lo que el free tier sirve HOY para
+      // gemini-3.6-flash por proyecto y por día ("GenerateRequestsPerDayPerProjectPerModel-FreeTier,
+      // limit: 20", 2026-09-06). Estuvo en 200 y el banco prometía 2.600 pedidos
+      // que Google nunca dio: la reserva del 30 % (780) era más grande que la
+      // cuota real entera (260), y lo automático no arrancaba nunca.
+      limitRpd: input.limitRpd ?? 20,
       notes: input.notes?.trim().slice(0, 1000) ?? '',
       createdBy: input.createdBy ?? null,
     })
@@ -198,9 +217,16 @@ export type KeyElegida = { id: number; apiKey: string; model: string; label: str
  * `excluir` sirve para reintentar con otra cuando la elegida devolvió 429: sin
  * eso el reintento puede caer en la misma key y volver a fallar.
  */
-export async function elegirKey(teamId: number, excluir: number[] = []): Promise<KeyElegida | null> {
+export async function elegirKey(teamId: number, excluir: number[] = [], opts: { automatico?: boolean } = {}): Promise<KeyElegida | null> {
   const candidatas = await listarKeys(teamId);
   const ventana = minutoActual().getTime();
+
+  // Un proceso automático no toca la reserva: si lo que queda del día es la
+  // reserva, para él no hay keys. Lo pedido a mano sí llega hasta el final.
+  if (opts.automatico) {
+    const cuota = cuotaAutomaticaDe(candidatas, await reservaDelBanco(teamId));
+    if (cuota.disponibleAutomatico <= 0) return null;
+  }
 
   const elegibles = candidatas.filter((key) => (
     key.status === 'active'
@@ -218,6 +244,88 @@ export async function elegirKey(teamId: number, excluir: number[] = []): Promise
   if (!apiKey) return null;
   void ventana;
   return { id: fila.id, apiKey, model: fila.model, label: fila.label };
+}
+
+/* ------------------------------------------------------------------ */
+/* Reserva para lo manual                                              */
+/* ------------------------------------------------------------------ */
+
+const RESERVA_DEFAULT_PCT = 30;
+
+/** Porcentaje reservado, leído de los settings del plugin Gemini del equipo. */
+export async function reservaDelBanco(teamId: number): Promise<number> {
+  const row = await db.query.teamPlugins.findFirst({
+    where: and(eq(teamPlugins.teamId, teamId), eq(teamPlugins.pluginId, 'gemini')),
+    columns: { settings: true },
+  });
+  const raw = (row?.settings as Record<string, unknown> | null)?.reservaDiariaPct;
+  const pct = typeof raw === 'number' && Number.isFinite(raw) ? raw : RESERVA_DEFAULT_PCT;
+  return Math.min(90, Math.max(0, Math.round(pct)));
+}
+
+/** Cambia la reserva. Va en los settings del plugin Gemini: es una propiedad del banco, no del Command Center. */
+export async function setReservaDelBanco(teamId: number, pct: number): Promise<number> {
+  const valor = Math.min(90, Math.max(0, Math.round(pct)));
+  const existing = await db.query.teamPlugins.findFirst({
+    where: and(eq(teamPlugins.teamId, teamId), eq(teamPlugins.pluginId, 'gemini')),
+    columns: { id: true, settings: true },
+  });
+  if (!existing) throw new Error('El equipo no tiene la app Gemini activada.');
+  await db.update(teamPlugins).set({ settings: { ...((existing.settings as Record<string, unknown> | null) ?? {}), reservaDiariaPct: valor }, updatedAt: new Date() }).where(eq(teamPlugins.id, existing.id));
+  return valor;
+}
+
+/**
+ * ¿El banco se usa para transcribir audios por cron? Setting del plugin Gemini
+ * (`transcribirAudios`, default true). Sólo frena al worker automático: lo que
+ * una persona pide a mano sigue saliendo aunque esté apagado.
+ */
+export async function transcripcionAutomaticaActiva(teamId: number): Promise<boolean> {
+  const row = await db.query.teamPlugins.findFirst({
+    where: and(eq(teamPlugins.teamId, teamId), eq(teamPlugins.pluginId, 'gemini')),
+    columns: { settings: true },
+  });
+  const raw = (row?.settings as Record<string, unknown> | null)?.transcribirAudios;
+  return typeof raw === 'boolean' ? raw : true;
+}
+
+export async function setTranscripcionAutomatica(teamId: number, activa: boolean): Promise<boolean> {
+  const existing = await db.query.teamPlugins.findFirst({
+    where: and(eq(teamPlugins.teamId, teamId), eq(teamPlugins.pluginId, 'gemini')),
+    columns: { id: true, settings: true },
+  });
+  if (!existing) throw new Error('El equipo no tiene la app Gemini activada.');
+  await db.update(teamPlugins).set({ settings: { ...((existing.settings as Record<string, unknown> | null) ?? {}), transcribirAudios: activa }, updatedAt: new Date() }).where(eq(teamPlugins.id, existing.id));
+  return activa;
+}
+
+export type CuotaAutomatica = {
+  totalDiario: number;
+  restanteHoy: number;
+  reservaPct: number;
+  /** Pedidos que se guardan para lo manual. */
+  reserva: number;
+  /** Lo que los procesos automáticos pueden gastar todavía hoy. */
+  disponibleAutomatico: number;
+};
+
+function cuotaAutomaticaDe(keys: KeyConUso[], reservaPct: number): CuotaAutomatica {
+  const activas = keys.filter((key) => key.status === 'active');
+  const totalDiario = activas.reduce((suma, key) => suma + key.limitRpd, 0);
+  const restanteHoy = activas.reduce((suma, key) => suma + key.disponibleHoy, 0);
+  const reserva = Math.floor((totalDiario * reservaPct) / 100);
+  return { totalDiario, restanteHoy, reservaPct, reserva, disponibleAutomatico: Math.max(0, restanteHoy - reserva) };
+}
+
+/**
+ * Cuánto pueden gastar hoy los procesos automáticos.
+ *
+ * La reserva es un porcentaje del total diario, no de lo que queda: así una
+ * mañana de clasificación intensa no puede dejar la tarde sin cuota para lo
+ * que una persona pide con el cliente delante.
+ */
+export async function cuotaAutomatica(teamId: number): Promise<CuotaAutomatica> {
+  return cuotaAutomaticaDe(await listarKeys(teamId), await reservaDelBanco(teamId));
 }
 
 /** Cuánto se puede procesar hoy con todo el banco, para avisar antes de encolar de más. */
@@ -238,9 +346,15 @@ export async function capacidadDelBanco(teamId: number) {
  * una: así una corrida usa todas las keys una vez en vez de gastar la primera
  * y descubrir el 429 con la cola ya sacada.
  */
-export async function keysConCuota(teamId: number): Promise<number> {
+export async function keysConCuota(teamId: number, opts: { automatico?: boolean } = {}): Promise<number> {
   const keys = await listarKeys(teamId);
-  return keys.filter((key) => key.status === 'active' && key.disponibleHoy > 0).length;
+  const conCuota = keys.filter((key) => key.status === 'active' && key.disponibleHoy > 0).length;
+  if (!opts.automatico) return conCuota;
+  // Para el worker, además del conteo de keys, cuenta la reserva: cada audio
+  // son dos pedidos (transcribir + analizar), así que el lote no puede pasar
+  // de la mitad de lo que queda por encima de la reserva.
+  const cuota = cuotaAutomaticaDe(keys, await reservaDelBanco(teamId));
+  return Math.min(conCuota, Math.floor(cuota.disponibleAutomatico / 2));
 }
 
 /* ------------------------------------------------------------------ */
@@ -248,7 +362,7 @@ export async function keysConCuota(teamId: number): Promise<number> {
 /* ------------------------------------------------------------------ */
 
 async function registrarUso(keyId: number, datos: { audioSeconds?: number; error?: boolean; quotaError?: boolean }) {
-  const dia = hoyUTC();
+  const dia = diaDeGoogle();
   const ventana = minutoActual();
 
   await db
@@ -294,13 +408,24 @@ async function registrarUso(keyId: number, datos: { audioSeconds?: number; error
  * llamadas del día fueron eso). Marcarla llena la saca de la rotación hasta que
  * el contador rote de día.
  *
- * El corte es a medianoche UTC y el de Google es a la suya, así que una key
- * puede quedar guardada unas horas de más. Es mejor negocio que quemar la cola
- * contra una puerta cerrada.
+ * El corte del contador es el día de Google (`diaDeGoogle`), así que la key
+ * vuelve sola cuando Google la libera.
+ *
+ * Si el 429 trae "limit: N", ese N es la cuota real del proyecto para el
+ * modelo y se guarda en `limit_rpd`: lo que dice Google manda sobre lo que
+ * alguien cargó a mano (el 2026-09-06 las 13 keys decían 200 y Google 20).
  */
-async function marcarAgotada(keyId: number) {
-  const dia = hoyUTC();
+async function marcarAgotada(keyId: number, error?: unknown) {
+  const dia = diaDeGoogle();
+  const limiteReal = limiteDiarioDelError(error);
   try {
+    if (limiteReal !== null) {
+      const [antes] = await db.select({ limitRpd: teamGeminiKeys.limitRpd, label: teamGeminiKeys.label }).from(teamGeminiKeys).where(eq(teamGeminiKeys.id, keyId));
+      if (antes && antes.limitRpd !== limiteReal) {
+        await db.update(teamGeminiKeys).set({ limitRpd: limiteReal, updatedAt: new Date() }).where(eq(teamGeminiKeys.id, keyId));
+        console.warn(`[gemini/key-bank] key "${antes.label}" (#${keyId}): Google dice limit_rpd ${limiteReal}, estaba en ${antes.limitRpd}. Corregido.`);
+      }
+    }
     await db.execute(sql`
       insert into team_gemini_key_usage (key_id, day, requests, updated_at)
       values (${keyId}, ${dia}::date, (select limit_rpd from team_gemini_keys where id = ${keyId}), now())
@@ -311,6 +436,16 @@ async function marcarAgotada(keyId: number) {
   } catch (error) {
     console.error('[gemini/key-bank] marcarAgotada falló', error);
   }
+}
+
+/** El "limit: N" del 429 diario, si Google lo dice. Es la cuota real del proyecto. */
+function limiteDiarioDelError(error: unknown): number | null {
+  if (error === undefined || error === null) return null;
+  const texto = error instanceof Error ? error.message : String(error);
+  const match = /limit:\s*(\d+)/i.exec(texto);
+  if (!match) return null;
+  const valor = Number(match[1]);
+  return Number.isInteger(valor) && valor > 0 && valor <= 100000 ? valor : null;
 }
 
 async function registrarError(keyId: number, mensaje: string) {
@@ -355,7 +490,7 @@ function alcanceDelLimite(error: unknown): 'dia' | 'minuto' {
  * nuevas ni un reloj aparte.
  */
 async function marcarSaturadaPorMinuto(keyId: number) {
-  const dia = hoyUTC();
+  const dia = diaDeGoogle();
   const ventana = minutoActual();
   try {
     await db.execute(sql`
@@ -409,6 +544,8 @@ export async function transcribirConBanco(input: {
   mediaUrl: string;
   audioSeconds?: number;
   prompt?: string;
+  /** true = lo pide un proceso automático (worker): respeta la reserva del banco. */
+  automatico?: boolean;
 }): Promise<TranscripcionBanco> {
   const resuelto = resolveMediaFilePath(input.mediaUrl);
   if (!resuelto) return { ok: false, error: 'La ruta del audio no es válida.', reintentable: false };
@@ -425,7 +562,7 @@ export async function transcribirConBanco(input: {
   // Un intento por key disponible: si todas están sin cuota, el que llama
   // necesita saberlo para dejar el audio en la cola y no marcarlo fallido.
   for (let intento = 0; intento < 10; intento += 1) {
-    const key = await elegirKey(input.teamId, intentadas);
+    const key = await elegirKey(input.teamId, intentadas, { automatico: input.automatico });
     if (!key) {
       // Se agotaron las keys: el audio vuelve a la cola sin gastar un intento.
       // Que no haya podido el banco no lo vuelve un audio malo — y a partir de
@@ -435,7 +572,7 @@ export async function transcribirConBanco(input: {
         reintentable: true,
         error: intentadas.length
           ? `${intentadas.length === 1 ? 'La única API key del banco no pudo' : `Ninguna de las ${intentadas.length} API keys del banco pudo`} con este audio.${ultimoError ? ` Último error: ${ultimoError}` : ''}`
-          : 'No hay ninguna API key de Gemini disponible con cuota libre.',
+          : input.automatico ? 'El banco de Gemini llegó a la reserva del día: lo que queda es para pedidos a mano.' : 'No hay ninguna API key de Gemini disponible con cuota libre.',
       };
     }
     intentadas.push(key.id);
@@ -466,7 +603,7 @@ export async function transcribirConBanco(input: {
       const mensaje = error instanceof Error ? error.message : String(error);
       await registrarUso(key.id, { error: true, quotaError: cuota });
       if (cuota) {
-        if (alcanceDelLimite(error) === 'dia') await marcarAgotada(key.id);
+        if (alcanceDelLimite(error) === 'dia') await marcarAgotada(key.id, error);
         else await marcarSaturadaPorMinuto(key.id);
       }
       await registrarError(key.id, mensaje);
@@ -492,18 +629,18 @@ export async function transcribirConBanco(input: {
 }
 
 /** Análisis sobre texto ya transcripto: mismo banco, sin mandar el audio otra vez. */
-export async function analizarTextoConBanco(input: { teamId: number; prompt: string }): Promise<TranscripcionBanco> {
+export async function analizarTextoConBanco(input: { teamId: number; prompt: string; automatico?: boolean }): Promise<TranscripcionBanco> {
   const intentadas: number[] = [];
   let ultimoError = '';
   for (let intento = 0; intento < 10; intento += 1) {
-    const key = await elegirKey(input.teamId, intentadas);
+    const key = await elegirKey(input.teamId, intentadas, { automatico: input.automatico });
     if (!key) {
       return {
         ok: false,
         reintentable: true,
         error: intentadas.length
           ? `${intentadas.length === 1 ? 'La única API key del banco no pudo' : `Ninguna de las ${intentadas.length} API keys del banco pudo`} con el análisis.${ultimoError ? ` Último error: ${ultimoError}` : ''}`
-          : 'No hay API keys de Gemini con cuota libre.',
+          : input.automatico ? 'El banco de Gemini llegó a la reserva del día: lo que queda es para pedidos a mano.' : 'No hay API keys de Gemini con cuota libre.',
       };
     }
     intentadas.push(key.id);
@@ -523,7 +660,7 @@ export async function analizarTextoConBanco(input: { teamId: number; prompt: str
       const mensaje = error instanceof Error ? error.message : String(error);
       await registrarUso(key.id, { error: true, quotaError: cuota });
       if (cuota) {
-        if (alcanceDelLimite(error) === 'dia') await marcarAgotada(key.id);
+        if (alcanceDelLimite(error) === 'dia') await marcarAgotada(key.id, error);
         else await marcarSaturadaPorMinuto(key.id);
       }
       await registrarError(key.id, mensaje);

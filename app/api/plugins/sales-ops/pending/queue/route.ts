@@ -13,7 +13,7 @@ const SKILL_AUDITORIA = 'qa.p2-auditar-chat';
 
 const INSTRUCCION = `Auditá este chat y guardá la clasificación.
 
-whatspro_sales_dossier {chat_id} para leer el expediente y los RULE_FACTS. Aplicá las reglas R1–R5 del Command Center (cliente existente → G11; entrada muerta → G0; nunca contestado → G0 "Responder ya"; rechazo explícito → GX; pago pendiente → mínimo G9, o G10 si el bloqueo es nuestro). Si ninguna decide, elegí entre G1 y G8 por el punto más alto con evidencia DEL CLIENTE. Cerrá con whatspro_sales_classification_write {chat_id, classification, connector}.`;
+whatspro_sales_dossier {chat_id} para leer el expediente y los RULE_FACTS. Aplicá las reglas R1–R5 del Command Center (cliente existente → G11; entrada muerta → G0; nunca contestado → G0 "Responder ya"; rechazo explícito → GX; pago pendiente → mínimo G9, o G10 si el bloqueo es nuestro). Si ninguna decide, elegí entre G1 y G8 por el punto más alto con evidencia DEL CLIENTE. Si el CRM contradice lo que leíste (etapa, etiquetas o campos del contacto), corregilo en el mismo paso con whatspro_change_crm_stage / whatspro_set_contact_tags / whatspro_set_custom_fields usando nombres del crmCatalog del expediente, y dejá el detalle en crm_fix; sólo este contacto, nunca en lote. Cerrá con whatspro_sales_classification_write {chat_id, classification, connector}.`;
 
 /**
  * POST { chatIds } → deja el análisis de esos chats en la cola de conectores.

@@ -10,6 +10,8 @@ import {
   isRunMode,
   missingVariables,
   renderSkillText,
+  runEsEditable,
+  RUN_EDITABLE_STATUSES,
   type RunMode,
   type Skill,
   type SkillVariable,
@@ -68,6 +70,18 @@ export type PromptRunRow = {
    */
   approvedAt: string | null;
   approvedBy: number | null;
+  /**
+   * `approvedAt` ya resuelto a sí/no. Las etiquetas y los conectores lo
+   * preguntaban cada uno a su manera (y varios se olvidaban): una corrida
+   * `queued` sin aprobar está "En revisión", no "En cola".
+   */
+  approved: boolean;
+  /**
+   * Id de la corrida que la reemplazó al reintentarla. La original queda
+   * `cancelled` con esto puesto, así la Cola no muestra dos veces el mismo
+   * pedido (la vieja fallida y la nueva encolada).
+   */
+  relaunchedAs: number | null;
   humanRequest: HumanDecisionRequest | null;
   humanRequestedAt: string | null;
 };
@@ -75,6 +89,7 @@ export type PromptRunRow = {
 function rowToRun(r: typeof teamPromptRuns.$inferSelect, targetName: string | null): PromptRunRow {
   const meta = (r.metadata ?? {}) as Record<string, unknown>;
   const humanRequest = humanDecisionRequestSchema.safeParse(meta.humanRequest);
+  const approvedAt = typeof meta.approvedAt === 'string' ? meta.approvedAt : null;
   return {
     id: r.id,
     promptId: r.promptId,
@@ -95,8 +110,10 @@ function rowToRun(r: typeof teamPromptRuns.$inferSelect, targetName: string | nu
     createdAt: r.createdAt.toISOString(),
     // La columna es nueva; las corridas viejas todavía lo tienen en `metadata`.
     completedAt: r.completedAt ? r.completedAt.toISOString() : typeof meta.completedAt === 'string' ? meta.completedAt : null,
-    approvedAt: typeof meta.approvedAt === 'string' ? meta.approvedAt : null,
+    approvedAt,
     approvedBy: typeof meta.approvedBy === 'number' ? meta.approvedBy : null,
+    approved: approvedAt !== null,
+    relaunchedAs: typeof meta.relaunchedAs === 'number' ? meta.relaunchedAs : null,
     humanRequest: humanRequest.success ? humanRequest.data : null,
     humanRequestedAt: typeof meta.humanRequestedAt === 'string' ? meta.humanRequestedAt : null,
   };
@@ -307,15 +324,33 @@ export async function launchRun(teamId: number, userId: number | null, input: La
   return { run: rowToRun(updated, target.targetName), skill };
 }
 
+/** Sólo se reintenta lo que se cayó o se descartó: lo demás ya está en marcha o ya se hizo. */
+const RELAUNCHABLE_STATUSES: PromptRunStatus[] = ['failed', 'cancelled', 'blocked'];
+
 /**
  * Repite una corrida con el **texto ya resuelto** de la original (no se
  * re-renderiza la skill: si alguien la editó en el medio, lo que se relanza
  * sigue siendo lo que la persona quiso ejecutar). `api` la corre ya con la IA
  * del equipo; `queue` la deja para un conector.
+ *
+ * La original queda `cancelled` con `metadata.relaunchedAs` apuntando a la
+ * nueva. Antes se creaba la nueva y la vieja seguía `failed` en "En revisión":
+ * la misma persona la reintentaba dos y tres veces creyendo que no había
+ * pasado nada, y el conector terminaba con tres pedidos iguales. Y sólo se
+ * reintenta lo que está caído o descartado: relanzar una `queued` era la otra
+ * forma de duplicarla.
  */
 export async function relaunchRun(teamId: number, userId: number | null, runId: number, mode: RunMode, opts: { approved?: boolean } = {}): Promise<LaunchResult & { from: number }> {
-  const original = await getPromptRun(teamId, runId);
-  if (!original) throw new LaunchError('Corrida no encontrada.');
+  const existing = await db.query.teamPromptRuns.findFirst({ where: and(eq(teamPromptRuns.teamId, teamId), eq(teamPromptRuns.id, runId)) });
+  if (!existing) throw new LaunchError('Corrida no encontrada.');
+  const original = rowToRun(existing, null);
+  if (!RELAUNCHABLE_STATUSES.includes(original.status)) {
+    throw new LaunchError(
+      original.relaunchedAs
+        ? `Esta corrida ya se reintentó: la nueva es la #${original.relaunchedAs}.`
+        : `La corrida está ${original.status}: sólo se reintenta una fallida, cancelada o bloqueada.`,
+    );
+  }
   const result = await launchRun(teamId, userId, {
     text: original.text,
     title: original.title,
@@ -326,24 +361,58 @@ export async function relaunchRun(teamId: number, userId: number | null, runId: 
     mode,
     approved: opts.approved ?? true,
   });
+  // El estado se vuelve a exigir en el UPDATE: si entre la lectura y acá
+  // alguien la tomó o la relanzó, no se pisa lo que hizo.
+  await db
+    .update(teamPromptRuns)
+    .set({
+      status: 'cancelled',
+      completedAt: existing.completedAt ?? new Date(),
+      metadata: { ...((existing.metadata ?? {}) as Record<string, unknown>), relaunchedAs: result.run.id, relaunchedAt: new Date().toISOString(), relaunchedBy: userId },
+    })
+    .where(and(eq(teamPromptRuns.id, runId), inArray(teamPromptRuns.status, RELAUNCHABLE_STATUSES)));
+  await audit(teamId, userId, 'SALES_OPS_PROMPT_RELAUNCHED', { runId, relaunchedAs: result.run.id, mode, fromStatus: original.status });
   return { ...result, from: runId };
 }
 
 /**
- * Corrige el texto o el título de una corrida que todavía nadie tomó.
+ * Corrige el texto o el título de una corrida que todavía espera una decisión.
  *
- * Sólo `queued`: una vez que un conector la tiene (`in_progress`) o terminó,
- * cambiar el texto haría que el registro no coincida con lo que se ejecutó.
+ * Se puede corregir todo lo que la Cola muestra "para supervisar"
+ * (`RUN_EDITABLE_STATUSES`): la que espera aprobación (`queued`), la que falló
+ * —corregir el texto es justamente lo que se va a reintentar— y la que se frenó
+ * a pedir criterio (`blocked`), donde la respuesta humana se anexa a este
+ * mismo texto. Antes sólo se admitía `queued` y editar una fallida devolvía
+ * "sólo se edita mientras espera en la cola" desde la propia pantalla de
+ * supervisión, que la lista como pendiente.
+ *
+ * Queda afuera `in_progress` (un conector la tiene en la mano), `completed`
+ * (ese texto es el que produjo la respuesta guardada) y `cancelled`.
+ *
+ * En una corrida que ya se ejecutó, el texto original se conserva en
+ * `metadata.textoOriginal` la primera vez que se corrige: el rastro de lo que
+ * de verdad se mandó a ejecutar no se pierde.
  */
 export async function editQueuedRun(teamId: number, userId: number | null, runId: number, patch: { text?: string; title?: string }): Promise<PromptRunRow> {
   const existing = await db.query.teamPromptRuns.findFirst({ where: and(eq(teamPromptRuns.teamId, teamId), eq(teamPromptRuns.id, runId)) });
   if (!existing) throw new LaunchError('Corrida no encontrada.');
-  if (existing.status !== 'queued') throw new LaunchError(`La corrida ya está ${existing.status}: sólo se edita mientras espera en la cola.`);
+  if (!runEsEditable(existing.status)) {
+    throw new LaunchError(
+      existing.status === 'in_progress'
+        ? 'Un conector la está ejecutando: no se le puede cambiar el texto en el medio. Descartala y volvé a lanzarla.'
+        : existing.status === 'completed'
+          ? 'La corrida ya terminó: ese texto es el que produjo la respuesta guardada. Relanzala para correr otro.'
+          : `La corrida está ${existing.status}: sólo se corrige lo que espera una decisión (${RUN_EDITABLE_STATUSES.join(', ')}).`,
+    );
+  }
   const text = patch.text?.trim();
   if (text !== undefined && text.length < 5) throw new LaunchError('El texto es obligatorio (mínimo 5 caracteres).');
   if (text === undefined && patch.title === undefined) throw new LaunchError('No hay nada que cambiar: pasá text o title.');
   const meta = { ...((existing.metadata ?? {}) as Record<string, unknown>) };
   if (patch.title !== undefined) meta.title = patch.title.trim().slice(0, 160);
+  // Una corrida que ya salió a ejecutarse deja constancia del texto con el que
+  // salió; una que nunca corrió no tiene nada que conservar.
+  if (text !== undefined && existing.status !== 'queued' && typeof meta.textoOriginal !== 'string') meta.textoOriginal = existing.promptSnapshot;
   meta.editedBy = userId;
   const [row] = await db
     .update(teamPromptRuns)
@@ -352,9 +421,13 @@ export async function editQueuedRun(teamId: number, userId: number | null, runId
       promptFingerprint: text !== undefined ? promptFingerprint('', text) : existing.promptFingerprint,
       metadata: meta,
     })
-    .where(eq(teamPromptRuns.id, runId))
+    // El estado se vuelve a exigir en el UPDATE: entre la lectura y la
+    // escritura un conector puede haber tomado la corrida, y ahí el texto ya no
+    // se toca.
+    .where(and(eq(teamPromptRuns.teamId, teamId), eq(teamPromptRuns.id, runId), inArray(teamPromptRuns.status, [...RUN_EDITABLE_STATUSES])))
     .returning();
-  await audit(teamId, userId, 'SALES_OPS_PROMPT_EDITED', { runId, fields: Object.keys(patch) });
+  if (!row) throw new LaunchError('La corrida cambió de estado mientras la editabas. Actualizá la cola para ver cómo quedó.');
+  await audit(teamId, userId, 'SALES_OPS_PROMPT_EDITED', { runId, fields: Object.keys(patch), status: existing.status });
   const names = row.targetKind === 'chat' ? await chatNames(teamId, [Number(row.targetId)]) : new Map<number, string>();
   return rowToRun(row, names.get(Number(row.targetId)) ?? null);
 }
@@ -447,27 +520,44 @@ export type CompleteInput = {
   metadata?: Record<string, unknown>;
 };
 
-/** El conector (o una persona) cierra la corrida. */
+/**
+ * El conector (o una persona) cierra la corrida.
+ *
+ * Las reglas de qué se puede cerrar viven acá y no en cada camino (la ruta de
+ * la interfaz, la tool MCP): antes la interfaz dejaba cancelar una `completed`
+ * y la tool no, y la corrida terminaba "cancelada" con su resultado guardado.
+ */
 export async function completePromptRun(teamId: number, userId: number | null, runId: number, input: CompleteInput): Promise<PromptRunRow> {
   const existing = await db.query.teamPromptRuns.findFirst({ where: and(eq(teamPromptRuns.teamId, teamId), eq(teamPromptRuns.id, runId)) });
   if (!existing) throw new Error('Corrida no encontrada');
-  if (['completed', 'cancelled'].includes(existing.status) && input.status !== 'cancelled') {
-    throw new Error(`La corrida ya está ${existing.status}.`);
+  if (existing.status === 'completed') {
+    throw new Error(input.status === 'cancelled' ? 'La corrida ya terminó: lo hecho no se cancela. Si el resultado está mal, relanzala con otro texto.' : 'La corrida ya está completed.');
+  }
+  if (existing.status === 'cancelled' && input.status !== 'cancelled') {
+    throw new Error('La corrida ya está cancelled.');
   }
   const meta = { ...(existing.metadata ?? {}), ...(input.metadata ?? {}) } as Record<string, unknown>;
+  // `blocked` sin formulario no es "espera criterio": es una falla sin
+  // explicar. La Cola lo dibujaba como bloqueado sin nada que responder y
+  // nadie sabía qué hacerle. Se guarda como fallida con el motivo que vino.
+  let status = input.status;
+  if (status === 'blocked' && !humanDecisionRequestSchema.safeParse(meta.humanRequest).success) {
+    status = 'failed';
+    meta.blockedSinFormulario = true;
+  }
   const [row] = await db
     .update(teamPromptRuns)
     .set({
-      status: input.status,
+      status,
       summary: input.summary ?? existing.summary,
       output: input.output ?? existing.output,
       connector: input.connector ?? existing.connector,
-      completedAt: input.status === 'in_progress' ? existing.completedAt : new Date(),
+      completedAt: status === 'in_progress' ? existing.completedAt : new Date(),
       metadata: meta,
     })
     .where(eq(teamPromptRuns.id, runId))
     .returning();
-  await audit(teamId, userId, 'SALES_OPS_PROMPT_RESULT', { runId, status: input.status, connector: row.connector });
+  await audit(teamId, userId, 'SALES_OPS_PROMPT_RESULT', { runId, status, requested: input.status, connector: row.connector });
   const names = row.targetKind === 'chat' ? await chatNames(teamId, [Number(row.targetId)]) : new Map<number, string>();
   return rowToRun(row, names.get(Number(row.targetId)) ?? null);
 }

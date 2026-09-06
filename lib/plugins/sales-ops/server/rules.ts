@@ -1,3 +1,4 @@
+import type { EvidenciaDebil, FuenteCliente } from '@/lib/customers/es-cliente';
 import type { DossierEntry, RuleFacts } from '../shared/contract';
 import type { CustomerEvidence, Gate, Source } from '../shared/taxonomy';
 
@@ -77,12 +78,15 @@ export type RuleEntry = DossierEntry & {
   epoch: number;
 };
 
+/** Lo que dice `resolverCliente` (lib/customers/es-cliente.ts): la única definición de cliente del producto. */
+export type ClienteFacts = { fuente: FuenteCliente | null; customerId: number | null; evidenciaDebil: EvidenciaDebil[] };
+
 export type RuleDbFacts = {
   chatName: string | null;
-  customerLinked: boolean;
+  cliente: ClienteFacts;
+  /** Venta `paid` del contacto: sólo para R5 (un pago pendiente ya cobrado no es pendiente). */
   salePaid: boolean;
   salePending: boolean;
-  subscriptionActive: boolean;
   dealNegotiationOverdue: boolean;
   activeAutomationName: string | null;
   humanOverride: boolean;
@@ -156,15 +160,31 @@ export function markAutoReplies(entries: RuleEntry[], repeatedTexts: Set<string>
 
 // ── Cliente existente (doc 04 §4) ─────────────────────────────────────────
 
-const PRODUCT_TAG_PATTERN = /membresia anual|a medida/;
+const EVIDENCIA_FUERTE: Record<FuenteCliente, CustomerEvidence> = {
+  vinculo: 'customer_link',
+  suscripcion_activa: 'subscription',
+  venta_pagada: 'sale_paid',
+  telefono: 'phone_match',
+};
+const EVIDENCIA_DEBIL: Record<EvidenciaDebil, CustomerEvidence> = {
+  custom_data: 'custom_data',
+  tag_producto: 'tag_product',
+  etapa: 'funnel_stage',
+};
 
+/**
+ * R1 sale de `resolverCliente`, no de acá: antes esta función tenía su propia
+ * idea de cliente (vínculo, venta, suscripción por contact_id, custom_data,
+ * etiqueta) y contradecía a la UI y a la ruta `by-contact`. Ahora sólo mapea
+ * la fuente canónica a la evidencia que guarda el análisis. La evidencia débil
+ * (custom_data, etiqueta, etapa) nunca es fuerte: es una hipótesis del CRM que
+ * la IA puede confirmar por el chat, no un hecho.
+ */
 export function customerEvidenceFor(dbFacts: RuleDbFacts): { evidence: CustomerEvidence; strong: boolean } {
-  if (dbFacts.customerLinked) return { evidence: 'customer_link', strong: true };
-  if (dbFacts.salePaid) return { evidence: 'sale_paid', strong: true };
-  if (dbFacts.subscriptionActive) return { evidence: 'subscription', strong: true };
-  const cliente = dbFacts.customData.cliente;
-  if (cliente === true || cliente === 'true' || cliente === 'si' || cliente === 'sí') return { evidence: 'custom_data', strong: false };
-  if (dbFacts.tags.some((t) => PRODUCT_TAG_PATTERN.test(normalizeText(t)))) return { evidence: 'tag_product', strong: false };
+  const { fuente, evidenciaDebil } = dbFacts.cliente;
+  if (fuente) return { evidence: EVIDENCIA_FUERTE[fuente], strong: true };
+  const debil = evidenciaDebil[0];
+  if (debil) return { evidence: EVIDENCIA_DEBIL[debil], strong: false };
   return { evidence: 'none', strong: false };
 }
 

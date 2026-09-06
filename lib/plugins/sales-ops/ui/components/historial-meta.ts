@@ -1,4 +1,4 @@
-import { EyeOff, Flag, History, ListChecks, Radar, SendHorizontal, Sparkles, UserSquare2, Wand2, type LucideIcon } from 'lucide-react';
+import { Banknote, EyeOff, Flag, History, ListChecks, Radar, SendHorizontal, Sparkles, UserSquare2, Wand2, type LucideIcon } from 'lucide-react';
 import type { HistoryEntry } from '../../shared/api-types';
 
 export type HistorialKind = HistoryEntry['kind'];
@@ -21,6 +21,7 @@ export const HISTORIAL_ICONOS: Record<HistorialKind, LucideIcon> = {
   cola: ListChecks,
   envio: SendHorizontal,
   crm: UserSquare2,
+  cobro: Banknote,
   skill: Wand2,
   limpieza: EyeOff,
   otro: History,
@@ -34,6 +35,7 @@ export const HISTORIAL_TONOS: Record<HistorialKind, string> = {
   cola: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200',
   envio: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200',
   crm: 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-200',
+  cobro: 'bg-lime-100 text-lime-800 dark:bg-lime-900/40 dark:text-lime-200',
   skill: 'bg-primary/10 text-primary',
   limpieza: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-200',
   otro: 'bg-muted text-muted-foreground',
@@ -48,6 +50,7 @@ export const HISTORIAL_KIND_LABELS: Record<HistorialKind, string> = {
   cola: 'Cola',
   envio: 'Envíos',
   crm: 'CRM',
+  cobro: 'Cobros',
   skill: 'Skills',
   limpieza: 'Limpieza',
   otro: 'Otros',

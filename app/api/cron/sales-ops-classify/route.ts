@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db/drizzle';
 import { teamPlugins } from '@/lib/db/schema';
 import { and, eq } from 'drizzle-orm';
-import { capacidadDelBanco } from '@/lib/gemini/key-bank';
+import { cuotaAutomatica } from '@/lib/gemini/key-bank';
 import { getAIProviderForTeam } from '@/lib/plugins/ai-chat/service';
 import { classifyChat, listPendingChats, type PendingSource } from '@/lib/plugins/sales-ops/server/classifier';
 import { SALES_OPS_PLUGIN_ID } from '@/lib/plugins/sales-ops/shared/taxonomy';
@@ -56,9 +56,10 @@ export async function GET(request: Request) {
     }
     if (!aiReady) {
       try {
-        const banco = await capacidadDelBanco(teamId);
-        aiReady = banco.activas > 0 && banco.restanteHoy > 0;
-        if (!aiReady) motivo = motivo || `banco: ${banco.activas} keys activas, ${banco.restanteHoy} pedidos restantes hoy`;
+        // El cron respeta la reserva del banco: lo que queda por debajo es para pedidos a mano.
+        const banco = await cuotaAutomatica(teamId);
+        aiReady = banco.disponibleAutomatico > 0;
+        if (!aiReady) motivo = motivo || `banco: ${banco.restanteHoy} pedidos restantes hoy, ${banco.reserva} reservados para lo manual (${banco.reservaPct}%)`;
       } catch (error) {
         motivo = motivo || `banco: ${error instanceof Error ? error.message : String(error)}`;
       }

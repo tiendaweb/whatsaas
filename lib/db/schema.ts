@@ -487,6 +487,8 @@ export const messageAudioInsights = pgTable(
     priority: integer("priority").notNull().default(0),
     /** auto | connector | radar | ui */
     requestedBy: varchar("requested_by", { length: 24 }).notNull().default("auto"),
+    /** Bloque de trabajo (Command Center › Audios). NULL = sin bloque: entra con el orden normal. */
+    blockId: integer("block_id").references(() => teamAudioBlocks.id, { onDelete: "set null" }),
     /** Con qué API key del banco se procesó, para poder culpar a la correcta. */
     keyId: integer("key_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -497,6 +499,39 @@ export const messageAudioInsights = pgTable(
     queueIndex: index("message_audio_insights_queue_idx").on(table.status, table.priority, table.queuedAt),
     teamStatusIndex: index("message_audio_insights_team_status_idx").on(table.teamId, table.status, table.updatedAt),
     chatIndex: index("message_audio_insights_chat_idx").on(table.chatId, table.generatedAt),
+    blockIndex: index("message_audio_insights_block_idx").on(table.blockId, table.status),
+  }),
+);
+
+/**
+ * Bloques de trabajo de la cola de audios.
+ *
+ * Agrupan audios encolados y deciden si se drenan ahora, a partir de un día,
+ * con un tope diario, o quedan en pausa. La cola sin bloque sigue con el orden
+ * de siempre; el bloque es la palanca para repartir la cuota en el tiempo.
+ */
+export const teamAudioBlocks = pgTable(
+  "team_audio_blocks",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 120 }).notNull(),
+    description: text("description").notNull().default(""),
+    /** active | paused */
+    status: varchar("status", { length: 16 }).notNull().default("active"),
+    position: integer("position").notNull().default(0),
+    /** El bloque no se drena antes de este día (YYYY-MM-DD). */
+    notBefore: date("not_before"),
+    /** Audios por día como máximo para este bloque. NULL = sin tope. */
+    dailyCap: integer("daily_cap"),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    teamIndex: index("team_audio_blocks_team_idx").on(table.teamId, table.position),
   }),
 );
 
@@ -4450,10 +4485,24 @@ export const teamTaskItems = pgTable(
     coverMediaId: integer("cover_media_id").references(() => teamTaskMedia.id, { onDelete: "set null" }),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
     assigneeId: integer("assignee_id").references(() => users.id, { onDelete: "set null" }),
+    /**
+     * Producción OS. Tipo de trabajo (demo_sitio_aapp, tienda_custom, cambio…)
+     * y estado del pedido (pedido → aceptado → en_curso → espera_cliente →
+     * entregado → cambios). NULL = tarea común, fuera de producción.
+     */
+    workKind: varchar("work_kind", { length: 32 }),
+    workStatus: varchar("work_status", { length: 24 }),
+    /** Quién pidió el trabajo (Noelia, un conector en nombre de alguien). */
+    requestedBy: integer("requested_by").references(() => users.id, { onDelete: "set null" }),
+    /** Dónde quedó lo entregado (demo publicada, sitio, tienda). */
+    deliveryUrl: text("delivery_url"),
+    /** Qué falta del cliente cuando el pedido está en espera. */
+    blockedReason: text("blocked_reason"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => ({
+    teamTaskItemsWorkIdx: index("team_task_items_work_idx").on(table.teamId, table.workStatus, table.workKind),
     teamTaskItemsColumnIdx: index("team_task_items_column_idx").on(table.columnId),
     teamTaskItemsProjectIdx: index("team_task_items_project_idx").on(table.projectId),
     teamTaskItemsParentIdx: index("team_task_items_parent_idx").on(table.parentTaskId),

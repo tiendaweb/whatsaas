@@ -1,5 +1,6 @@
 import { getTeamForUser, getUser, getUserMembership } from '@/lib/db/queries';
 import type { MemberPermissions } from '@/lib/permissions';
+import { hasPermission } from '@/lib/permissions';
 
 export async function getPluginRequestContext(requiredPermission: keyof Omit<MemberPermissions, 'chatVisibility'>) {
   const [team, user, membership] = await Promise.all([getTeamForUser(), getUser(), getUserMembership()]);
@@ -8,7 +9,11 @@ export async function getPluginRequestContext(requiredPermission: keyof Omit<Mem
     return { ok: false as const, status: 401, message: 'Unauthorized' };
   }
 
-  if (membership.role !== 'owner' && membership.role !== 'admin' && membership.permissions?.[requiredPermission] !== true) {
+  // Los permisos guardados pueden ser anteriores a una clave nueva. La misma
+  // resolución canónica que usa el resto de la app mezcla el preset del rol;
+  // mirar el JSON crudo dejaba a agentes sin `tasksRead` aunque su rol sí lo
+  // concediera, y producía diferencias entre navegación, API y conectores.
+  if (!hasPermission(membership.role, membership.permissions, requiredPermission)) {
     return { ok: false as const, status: 403, message: 'Forbidden' };
   }
 

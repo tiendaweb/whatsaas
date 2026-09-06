@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import useSWR from 'swr';
-import { ChevronDown, ChevronRight, Clock, Inbox, Loader2, Pause, Play, Plus, Save, Sparkles, Trash2, Wand2, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Clock, Inbox, Loader2, Pause, Play, Plus, Save, Sparkles, Trash2, Wand2, X, CalendarClock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { aLocal, parsearLocal } from '@/lib/time/zona';
 import { toast } from 'sonner';
 import { PROGRAMADOS_API as API, programadosFetcher } from '@/lib/plugins/scheduled-messages/ui/swr';
 import { SALES_OPS_API, fmtDateTime } from './format';
@@ -80,13 +81,12 @@ function soloDigitos(value: string | null | undefined) {
   return (value ?? '').replace(/\D/g, '');
 }
 
-/** `datetime-local` quiere hora local sin zona; `toISOString` da UTC. */
+/** `datetime-local` quiere `YYYY-MM-DDTHH:mm` sin zona: en hora del negocio, no la del navegador. */
 function paraInput(iso: string | null) {
   if (!iso) return '';
   const value = new Date(iso);
   if (!Number.isFinite(value.getTime())) return '';
-  const offset = value.getTimezoneOffset() * 60000;
-  return new Date(value.getTime() - offset).toISOString().slice(0, 16);
+  return aLocal(value);
 }
 
 function cuando(item: Programado) {
@@ -157,7 +157,7 @@ export function ProgramadosContacto({
    * mismo texto no reabriría el editor, y con `texto` en las dependencias
    * cualquier re-render lo pisaría mientras la persona lo está corrigiendo.
    */
-  borradorExterno?: { texto: string; token: number } | null;
+  borradorExterno?: { texto: string; cuando?: string | null; token: number } | null;
   /** Se llama después de crear, editar, pausar o borrar (para refrescar la lista). */
   onCambio?: () => void;
 }) {
@@ -171,6 +171,8 @@ export function ProgramadosContacto({
   const [fallo, setFallo] = useState(false);
   const [encolando, setEncolando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Horario futuro que sugirió el servidor cuando el elegido ya había pasado (`YYYY-MM-DDTHH:mm`). */
+  const [sugerencia, setSugerencia] = useState<string | null>(null);
 
   const telefono = soloDigitos((remoteJid ?? '').split('@')[0]);
 
@@ -208,20 +210,23 @@ export function ProgramadosContacto({
     tokenAplicado.current = borradorExterno.token;
     setAbierto(true);
     setError(null);
+    // Con fecha (la IA la sacó del pedido: "mañana a las 10") el editor queda
+    // listo para guardar; sin fecha se respeta la que ya tenía el programado.
+    const cuando = borradorExterno.cuando ?? null;
     setBorrador((actual) => {
-      if (actual) return { ...actual, message: texto };
+      if (actual) return { ...actual, message: texto, ...(cuando && actual.scheduleType === 'once' ? { scheduledAt: cuando } : {}) };
       const vivo = pendientes[0];
       if (vivo) {
         return {
           id: vivo.id,
           name: vivo.name,
           message: texto,
-          scheduledAt: paraInput(vivo.scheduledAt ?? vivo.nextRunAt),
+          scheduledAt: cuando && vivo.scheduleType === 'once' ? cuando : paraInput(vivo.scheduledAt ?? vivo.nextRunAt),
           scheduleType: vivo.scheduleType,
           aiPrompt: vivo.aiPrompt ?? '',
         };
       }
-      return { id: null, name: `Seguimiento a ${nombre}`.slice(0, 200), message: texto, scheduledAt: '', scheduleType: 'once', aiPrompt: '' };
+      return { id: null, name: `Seguimiento a ${nombre}`.slice(0, 200), message: texto, scheduledAt: cuando ?? '', scheduleType: 'once', aiPrompt: '' };
     });
   }, [borradorExterno, pendientes, nombre]);
 
@@ -263,7 +268,9 @@ export function ProgramadosContacto({
       };
       if (borrador.scheduleType === 'once') {
         cuerpo.scheduleType = 'once';
-        cuerpo.scheduledAt = borrador.scheduledAt ? new Date(borrador.scheduledAt).toISOString() : null;
+        // La hora escrita es la del negocio (Argentina), no la del navegador:
+        // `new Date('2026-09-06T10:00')` en un Chrome en UTC daría las 7.
+        cuerpo.scheduledAt = borrador.scheduledAt ? (parsearLocal(borrador.scheduledAt)?.toISOString() ?? null) : null;
       }
       const res = await fetch(borrador.id ? `${API}/${borrador.id}` : API, {
         method: borrador.id ? 'PATCH' : 'POST',
@@ -271,9 +278,13 @@ export function ProgramadosContacto({
         body: JSON.stringify(borrador.id ? cuerpo : { ...cuerpo, status: 'active' }),
       });
       if (!res.ok) {
-        const detalle = await res.json().catch(() => null);
+        const detalle = (await res.json().catch(() => null)) as { error?: unknown; code?: string; sugerencia?: string } | null;
+        // Hora ya pasada: el servidor manda el próximo horario con sentido y
+        // acá se ofrece de un botón, sin obligar a tipear la fecha de nuevo.
+        if (detalle?.code === 'past_schedule' && detalle.sugerencia) setSugerencia(detalle.sugerencia);
         throw new Error(typeof detalle?.error === 'string' ? detalle.error : 'No se pudo guardar el programado.');
       }
+      setSugerencia(null);
       // Con prompt, el programado deja de serlo: pasa a la cola como pedido para el conector.
       if (borrador.aiPrompt.trim().length >= 5) {
         const guardado = (await res.json().catch(() => null)) as { id?: number } | null;
@@ -440,6 +451,22 @@ export function ProgramadosContacto({
           </p>
         )}
         {error ? <p className="text-[11px] text-destructive">{error}</p> : null}
+        {sugerencia && borrador.scheduleType === 'once' ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 w-full gap-1.5 text-[11px]"
+            onClick={() => {
+              setBorrador({ ...borrador, scheduledAt: sugerencia });
+              setSugerencia(null);
+              setError(null);
+            }}
+          >
+            <CalendarClock className="size-3" aria-hidden />
+            Usar el horario sugerido ({sugerencia.replace('T', ' ')})
+          </Button>
+        ) : null}
         {fallo ? (
           <Button
             type="button"

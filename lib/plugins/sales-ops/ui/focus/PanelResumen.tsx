@@ -44,13 +44,6 @@ export function PanelResumen({ chatId, className }: { chatId: number; className?
   }
 
   const sinAtender = data.signals.filter((s) => s.status === 'new' || s.status === 'seen');
-  const todasLasSenales = data.signals;
-  const porTipoDeSenal = Object.entries(
-    data.signals.reduce<Record<string, number>>((acc, s) => {
-      acc[s.kind] = (acc[s.kind] ?? 0) + 1;
-      return acc;
-    }, {}),
-  ).sort((x, y) => y[1] - x[1]);
   const header = data.header;
 
   return (
@@ -314,13 +307,6 @@ const TONO_QUIEN: Record<string, string> = {
   bot: 'text-muted-foreground',
   ia: 'text-violet-600 dark:text-violet-400',
   nota: 'text-amber-600 dark:text-amber-400',
-};
-
-const SIGNAL_STATUS_LABEL: Record<string, string> = {
-  new: 'nueva',
-  seen: 'vista',
-  handled: 'atendida',
-  dismissed: 'descartada',
 };
 
 /**

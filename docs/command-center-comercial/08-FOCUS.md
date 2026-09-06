@@ -1,5 +1,7 @@
 # 08 — Focus: bloques de trabajo de 25 minutos
 
+> **Vigencia (2026-09-05):** aprobar ejecuta (`SERVER_EXECUTABLE_KINDS`: envío, programado, tarea, demo, pre-descarte, descarte, responsable, llamada; y desde el 2026-09-06 también registrar cobro), los conectores corrigen el CRM de a un contacto (sólo lo que contradice ese chat, nunca en lote), y los cobros van por `whatspro_sales_register_payment`. Lo que sigue describe el diseño original.
+
 > Estado: plan aprobado, en ejecución. Rama `feat/tareas-rediseno`.
 > Depende de: 02-ARQUITECTURA, 05-PANTALLAS-Y-FLUJO, 07-PROMPT-STUDIO.
 

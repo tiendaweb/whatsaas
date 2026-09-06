@@ -16,6 +16,8 @@ const salesOpsSettingsSchema = z.object({
   accountVisibility: z.record(z.string(), z.enum(['private', 'hidden'])).default({}),
   /** Chats cuyos audios no se transcriben nunca: no entran a la cola ni a la vista Audios. */
   audioNeverChatIds: z.array(z.number().int().positive()).default([]),
+  /** A quién se le piden las transcripciones a mano (id de usuario). null = Noelia por nombre, o el primer owner. */
+  audioHumanoUserId: z.number().int().positive().nullable().default(null),
   /** Ítems descartados de la cola de conectores: `until` null = excluido para siempre; con fecha = por esta vez. */
   /** Leads pospuestos: no aparecen en las listas hasta `until`. */
   leadSnoozes: z.array(z.object({ chatId: z.number().int().positive(), until: z.string(), note: z.string().optional(), at: z.string().optional() })).default([]),

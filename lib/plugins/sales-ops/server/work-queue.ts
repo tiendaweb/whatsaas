@@ -11,8 +11,8 @@ import { listPromptRuns } from './prompt-queue';
  * Cola de trabajo para conectores.
  *
  * Todo lo que el servidor no puede hacer solo —por falta de cuota/tokens de IA
- * (clasificar chats, clasificar respuestas, transcribir) o por diseño (los
- * envíos aprobados no salen del servidor hasta la Fase 6)— queda acá, con la
+ * (clasificar chats, clasificar respuestas, transcribir), porque exige leer el
+ * chat y decidir (pedidos), o porque quedó aprobado sin ejecutar— queda acá, con la
  * cadena de tools `whatspro_*` que lo resuelve. Un conector (Claude / ChatGPT /
  * Grok) pide la cola, ejecuta ítem por ítem y devuelve el resultado con las
  * tools de escritura.
@@ -42,11 +42,14 @@ export type WorkQueue = {
 };
 
 const RULES = [
-  'Podés corregir el CRM del contacto que estás trabajando —etapa del embudo, etiquetas, campos y notas— con whatspro_change_crm_stage, whatspro_set_contact_tags y whatspro_set_custom_fields. Todo queda auditado con tu nombre de conector.',
+  'Podés corregir el CRM del contacto que estás trabajando —etapa del embudo, etiquetas, campos y notas— con whatspro_change_crm_stage, whatspro_set_contact_tags y whatspro_set_custom_fields. Los nombres válidos están en crmCatalog del expediente (stages/tags/fields, con id); el id lo sacás de ahí o de whatspro_list_records. Todo queda auditado con tu nombre de conector.',
   'Corregí SÓLO lo que contradice lo que leíste en ese chat, y de a un contacto por vez: nada de whatspro_crm_bulk_stage ni whatspro_crm_bulk_tags sin que una persona lo haya pedido explícitamente. Una etapa mal puesta en 200 contactos no se nota y no se deshace.',
-  'Automatizaciones y registro de clientes siguen siendo de las personas: no las prendas, no las apagues y no conviertas a nadie en cliente por tu cuenta.',
+  'Automatizaciones siguen siendo de las personas: no las prendas ni las apagues. Convertir en cliente lo hace solo el registro de un cobro.',
+  'Cobros: cuando el cliente confirma que pagó (comprobante, "ya transferí", "listo el pago") NO lo registres por deducción: proponé una fila register_sale con whatspro_sales_queue_propose {kind:"register_sale", chat_ids:[…], payload_template:{extra:{amount:<unidades>, currency:"ARS|USD|PYG", method:"transferencia", paid_on:"YYYY-MM-DD", receiptMessageId:"<id del mensaje con el comprobante>"}}} y una persona la aprueba (al aprobar, el servidor crea venta, asiento y pago en Finanzas, vincula al contacto como cliente y pasa el chat a G11). Registrá directo con whatspro_sales_register_payment SOLO desde una fila register_sale aprobada (ítem execute_action) o cuando una persona te lo pidió explícitamente en su pedido.',
   'Un envío por llamada, con la idempotency_key que viene en el ítem; nunca reintentar un envío con timeout.',
-  'Antes de ejecutar un envío aprobado, verificá que el cliente no haya escrito después de la aprobación (whatspro_list_records messages fromMe=false limit=1); si escribió, reportá el resultado como skipped.',
+  'Todo texto para el cliente (programado, propuesta o envío) va con párrafos separados por una línea en blanco: saludo · motivo · propuesta · cierre. Un bloque de 400 caracteres sin saltos se lee como un muro en el celular.',
+  'Antes de ejecutar un envío aprobado, verificá que el cliente no haya escrito después de la aprobación (whatspro_list_records messages fromMe=false limit=1); si escribió, reportá whatspro_sales_queue_result {status:"failed", result:{error:"customer_replied"}} y seguí con el siguiente.',
+  'Si falta una decisión humana en un pedido (run_prompt), no la inventes: whatspro_sales_prompt_result {status:"blocked", human_request:{…}}. La persona responde en la Cola y la misma corrida vuelve a esta cola con la respuesta anexada.',
   'Todo resultado vuelve por la tool de escritura del ítem; sin eso el servidor no se entera.',
 ];
 
@@ -63,8 +66,8 @@ function classifyItem(p: PendingChat, index: number): WorkItem {
     pendingAudios: p.pendingAudios,
     tools: ['whatspro_sales_dossier', 'whatspro_sales_classification_write', 'whatspro_change_crm_stage', 'whatspro_set_contact_tags', 'whatspro_set_custom_fields'],
     steps: [
-      `whatspro_sales_dossier {chat_id: ${p.chatId}} → leer expediente y facts`,
-      'aplicar el prompt sales-ops.classify (whatspro_sales_prompts o doc 07 P2) y armar el JSON del contrato',
+      `whatspro_sales_dossier {chat_id: ${p.chatId}} → leer expediente, facts y prompt.systemPrompt`,
+      'aplicar prompt.systemPrompt del expediente (es el sales-ops.classify vigente del equipo, con crm_fix) y armar el JSON del contrato',
       `whatspro_sales_classification_write {chat_id: ${p.chatId}, classification, connector}`,
       'si el CRM contradice lo que leíste, corregilo en el mismo paso (whatspro_change_crm_stage / whatspro_set_contact_tags / whatspro_set_custom_fields) y dejá el detalle en crm_fix para que quede a la vista en la ficha; sólo este contacto, nunca en lote',
     ],
@@ -97,7 +100,7 @@ export async function listWorkQueue(teamId: number, opts: { kinds?: WorkKind[]; 
         targetName: run.targetName,
         chatId: run.targetKind === 'chat' ? Number(run.targetId) : null,
         createdAt: run.createdAt,
-        tools: ['whatspro_sales_dossier', 'whatspro_sales_tareas_from_chat', 'whatspro_manage_scheduled_message', 'whatspro_sales_queue_propose', 'whatspro_sales_prompt_result'],
+        tools: ['whatspro_sales_dossier', 'whatspro_sales_tareas_from_chat', 'whatspro_manage_scheduled_message', 'whatspro_sales_queue_propose', 'whatspro_sales_register_payment', 'whatspro_sales_prompt_result'],
         steps: [
           `whatspro_sales_prompt_result {run_id: ${run.id}, status: "in_progress"} (opcional, para marcar que lo tomaste)`,
           'ejecutar el texto del prompt tal cual, con las tools whatspro_* que pida; respetar las reglas del Command Center',
@@ -109,7 +112,10 @@ export async function listWorkQueue(teamId: number, opts: { kinds?: WorkKind[]; 
     }
   }
 
-  // 1. Envíos y acciones aprobadas que el servidor no ejecuta (Fase 6 pendiente).
+  // 1. Acciones aprobadas que quedaron sin ejecutar. Desde el 2026-09-05
+  //    aprobar desde la Cola ya ejecuta lo que el servidor sabe hacer solo
+  //    (SERVER_EXECUTABLE_KINDS), así que acá quedan los cobros, lo aprobado
+  //    con `execute:false` y lo viejo.
   const approved = await db
     .select({
       id: teamCommercialActions.id,
@@ -137,7 +143,7 @@ export async function listWorkQueue(teamId: number, opts: { kinds?: WorkKind[]; 
           : a.kind === 'create_task'
             ? ['whatspro_create_contact_task', 'whatspro_sales_queue_result']
             : a.kind === 'register_sale'
-              ? ['whatspro_register_sale', 'whatspro_sales_queue_result']
+              ? ['whatspro_sales_register_payment', 'whatspro_sales_queue_result']
               : a.kind === 'schedule_message'
                 ? ['whatspro_manage_scheduled_message', 'whatspro_sales_queue_result']
                 : a.kind === 'request_demo'
@@ -168,6 +174,11 @@ export async function listWorkQueue(teamId: number, opts: { kinds?: WorkKind[]; 
                   `whatspro_manage_scheduled_message: crear un programado único para el chat ${a.chatId} con payload.text a la hora payload.sendAt (nombre "Cola · #${a.id}")`,
                   `whatspro_sales_queue_result {action_id: ${a.id}, status: "executed", result: { scheduledMessageId }}`,
                 ]
+              : a.kind === 'register_sale'
+                ? [
+                    `whatspro_sales_register_payment {chat_id: ${a.chatId}, amount: payload.amount (UNIDADES, no centavos), currency: payload.currency, method: payload.method, paid_on: payload.paidOn, concept: payload.concept ?? payload.text, receipt_message_id: payload.receiptMessageId, idempotency_key: "${idempotencyKey}", confirm: true} — la fila ya la aprobó una persona: el importe es el del payload, no lo cambies`,
+                    `whatspro_sales_queue_result {action_id: ${a.id}, status: "executed", result: { saleId, entryId, paymentId }}`,
+                  ]
               : a.kind === 'request_demo'
                 ? [
                     `whatspro_sales_dossier {chat_id: ${a.chatId}}: investigar el negocio, qué pidió, tono y datos concretos`,
@@ -212,10 +223,11 @@ export async function listWorkQueue(teamId: number, opts: { kinds?: WorkKind[]; 
         name: c.name,
         excerpt: c.excerpt,
         at: c.timestamp,
-        tools: ['whatspro_sales_signal_write'],
+        tools: ['whatspro_sales_signal_write', 'whatspro_sales_queue_propose'],
         steps: [
           'clasificar el mensaje con el prompt sales-ops.radar (interesado · pide_informacion · precio · objecion · quiere_llamada · intencion_compra · pago · rechazo · respuesta_automatica · irrelevante)',
           `whatspro_sales_signal_write {message_id: "${c.messageId}", kind, confidence, urgent}`,
+          `si es "pago" y el cliente CONFIRMA que pagó (comprobante, "ya transferí"): whatspro_sales_queue_propose {kind:"register_sale", chat_ids:[${c.chatId}], label:"Cobro · ${c.name}", payload_template:{extra:{amount, currency, method, receiptMessageId:"${c.messageId}"}}} con el importe que diga el chat o el quoted_price del análisis; si no hay importe, proponela igual y anotalo en el label: la persona lo completa al aprobar`,
         ],
       });
     }
@@ -316,6 +328,7 @@ export async function countConnectorPending(teamId: number, totals: { total: num
     .select({ n: sql<number>`count(*)::int` })
     .from(teamCommercialActions)
     .where(and(eq(teamCommercialActions.teamId, teamId), eq(teamCommercialActions.status, 'approved')));
-  const queuedRuns = await listPromptRuns(teamId, { status: 'queued', limit: 200 });
+  // Sólo las aprobadas: es lo que `listWorkQueue` entrega; contar las que esperan revisión inflaba el número.
+  const queuedRuns = await listPromptRuns(teamId, { status: 'queued', approved: true, limit: 200 });
   return (row?.n ?? 0) + queuedRuns.length + Math.max(0, totals.total - totals.analyzed) + totals.stale;
 }

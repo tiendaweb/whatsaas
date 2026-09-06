@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { HORA_LABORAL, aLocal, desdeZona, fechaEnZona, parsearLocal, sumarDias } from '@/lib/time/zona';
 import { ACTION_ROLES, GATE_LABELS, type ActionKind, type ActionRole, type Gate } from '../../shared/taxonomy';
 import { GATE_OPTIONS, KIND_LABELS, QUEUE_ENDPOINT, ROLE_LABELS, postJson, type ApiError } from './api';
 
@@ -23,11 +24,8 @@ const KIND_OPTIONS: ActionKind[] = ['send_message', 'schedule_message', 'create_
 
 /** Valor por defecto del selector de fecha: mañana a las 10, en hora local. */
 function mananaALas10(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setHours(10, 0, 0, 0);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  // Mañana a las 10 en hora del negocio, sin pasar por el reloj del navegador.
+  return aLocal(desdeZona(sumarDias(fechaEnZona(), 1), HORA_LABORAL.porDefecto, 0));
 }
 
 const REASON_LABELS: Record<string, string> = {
@@ -106,7 +104,7 @@ export function NuevoLoteDialog({
         ...(minDaysSilent !== '' ? { minDaysSilent: Number(minDaysSilent) } : {}),
       },
       payloadTemplate: usesText
-        ? { text: text.trim(), ...(ab && !esProgramado ? { textB: textB.trim() } : {}), ...(esProgramado ? { sendAt: new Date(sendAt).toISOString() } : {}) }
+        ? { text: text.trim(), ...(ab && !esProgramado ? { textB: textB.trim() } : {}), ...(esProgramado ? { sendAt: parsearLocal(sendAt)?.toISOString() ?? new Date(sendAt).toISOString() } : {}) }
         : esDemo
           ? { taskTitle: 'Demo web — {{nombre}}', ...(text.trim() ? { text: text.trim() } : {}) }
           : undefined,

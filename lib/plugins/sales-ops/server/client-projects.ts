@@ -83,6 +83,9 @@ export async function createClientProject(input: {
       title: t.title.slice(0, 200),
       notes: t.notes?.slice(0, 20000),
       dueDate: t.dueDate ?? null,
+      workKind: 'desarrollo',
+      workStatus: 'pedido',
+      requestedBy: input.userId,
     });
     if (!task) continue;
     taskIds.push(task.id);

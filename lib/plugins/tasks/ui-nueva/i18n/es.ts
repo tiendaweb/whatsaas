@@ -39,6 +39,7 @@ export const ES = {
     completadas: 'Completadas',
     enCola: 'En cola IA',
     enfoque: 'Enfoque',
+    produccion: 'Producción',
     metricas: 'Métricas',
     ajustes: 'Ajustes',
     comoUsar: 'Cómo usar',

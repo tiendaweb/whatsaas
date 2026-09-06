@@ -1,5 +1,7 @@
 # Prompt Studio — prompts ejecutables por conectores
 
+> **Vigencia (2026-09-05):** aprobar ejecuta (`SERVER_EXECUTABLE_KINDS`: envío, programado, tarea, demo, pre-descarte, descarte, responsable, llamada; y desde el 2026-09-06 también registrar cobro), los conectores corrigen el CRM de a un contacto (sólo lo que contradice ese chat, nunca en lote), y los cobros van por `whatspro_sales_register_payment`. Lo que sigue describe el diseño original.
+
 Qué es: una biblioteca de prompts **con contrato de salida y cadena de tools**, pensados para pegarse en Claude / ChatGPT / Grok con el conector `whatspro_*` conectado. Cada prompt lee de WhatsPro, razona con las reglas del documento 04 y **escribe sólo en la capa del Command Center** (documentos de esta carpeta, notas internas, y —cuando exista— la tabla de análisis). Ninguno cambia etapas, etiquetas, campos, automatizaciones ni clientes.
 
 **v0 (hoy):** los prompts viven en esta carpeta de Documentos; el conector los encuentra con `whatspro_documents_search "Prompt Studio"`. Los resultados van a dos subcarpetas: **Auditoría** (lotes clasificados) y **Cola** (lotes propuestos/aprobados/ejecutados).
@@ -28,7 +30,7 @@ REGLAS DEL COMMAND CENTER COMERCIAL
 4. Citá evidencia: cada gate lleva los ids de los mensajes que lo justifican. Sin evidencia, confianza < 55 y "Revisar".
 5. No reabras decisiones tomadas: si pidió alias, eligió plan o dio fecha, la siguiente acción continúa desde ahí.
 6. Un mensaje nuestro marcado isAutomation o isAi no es una respuesta humana. isInternal es una nota que el cliente nunca vio.
-7. Enviar mensajes sólo con un lote APROBADO por escrito, uno por llamada, con idempotency_key = sales-ops:{fecha}:{chatId}.
+7. Enviar mensajes sólo desde una fila APROBADA, uno por llamada, con la idempotency_key que trae el ítem: sales-ops:{actionId}.
 8. Nunca escribas teléfonos completos en documentos: últimos 4 dígitos.
 ```
 
@@ -145,7 +147,7 @@ Excluir siempre: `automation_active`, `is_existing_customer` (G11), `GX`, `auto_
 
 **Para qué:** enviar lo aprobado, con rastro, sin duplicar.
 
-**Cadena:** `whatspro_documents_search "Cola — semana"` → leer el lote con "ESTADO: APROBADO" → por cada fila: verificar de nuevo `whatspro_list_records messages {chatId, fromMe:false, limit:1}` (si el cliente escribió después de la aprobación, **saltar** y marcar "respondió antes del envío") y `automation-sessions` activas (saltar) → `whatspro_chat_send_message {chat_id, text, idempotency_key: "sales-ops:{fecha}:{chatId}", dry_run:true}` → si el dry run es correcto, la misma llamada sin `dry_run` → anotar `messageId` en la fila → al terminar, **"ESTADO: EJECUTADO {fecha} — enviados n · saltados n · fallidos n"**.
+**Cadena:** `whatspro_documents_search "Cola — semana"` → leer el lote con "ESTADO: APROBADO" → por cada fila: verificar de nuevo `whatspro_list_records messages {chatId, fromMe:false, limit:1}` (si el cliente escribió después de la aprobación, **saltar** y marcar "respondió antes del envío") y `automation-sessions` activas (saltar) → `whatspro_chat_send_message {chat_id, text, idempotency_key: "sales-ops:{actionId}", dry_run:true}` → si el dry run es correcto, la misma llamada sin `dry_run` → anotar `messageId` en la fila → al terminar, **"ESTADO: EJECUTADO {fecha} — enviados n · saltados n · fallidos n"**.
 
 Nunca más de un envío por llamada. Nunca reintentar un envío con timeout: anotarlo como "desconocido" y enlazar el chat.
 
@@ -183,26 +185,21 @@ Nunca más de un envío por llamada. Nunca reintentar un envío con timeout: ano
 
 ## P9 · Drenar la cola de trabajo (lo que el servidor no puede hacer con tokens)
 
-**Para qué:** todo lo que el servidor no puede resolver solo —por falta de cuota/tokens de IA (clasificar chats, clasificar respuestas ambiguas, transcribir audios) o por diseño (los envíos aprobados no salen del servidor hasta la Fase 6)— queda en una cola y lo ejecuta el conector. **Este es el prompt de trabajo diario.**
+**Para qué:** todo lo que el servidor no puede resolver solo —por falta de cuota/tokens de IA (clasificar chats, clasificar respuestas ambiguas, transcribir audios) o porque quedó aprobado sin que el servidor pudiera ejecutarlo solo (fallas, filas aprobadas con `execute:false`, cobros anteriores al 2026-09-06)— queda en una cola y lo ejecuta el conector. Desde el 2026-09-05 la cola trae además `run_prompt`: pedidos y skills ya aprobados por una persona, con el texto completo, que se cierran con `whatspro_sales_prompt_result` (`status:"blocked"` + `human_request` si falta una decisión). **Este es el prompt de trabajo diario.**
 
 **Cadena:** `whatspro_sales_work_queue {limit: 30}` → por cada ítem, seguir sus `steps` con sus `tools`:
 
 | Tipo | Qué hace el conector | Devuelve con |
 |---|---|---|
-| `execute_action` | Envío/tarea/venta **ya aprobada por una persona**. Verificar que el cliente no escribió después de la aprobación; `whatspro_chat_send_message` con la `idempotencyKey` del ítem (`dry_run` primero). | `whatspro_sales_queue_result {action_id, status: executed\|failed\|skipped…, result_message_id, executed_via: "connector"}` |
+| `execute_action` | Acción **ya aprobada por una persona** que el servidor no pudo ejecutar solo. Verificar que el cliente no escribió después de la aprobación: si escribió, `status:"failed"` con `result.error:"customer_replied"`; si no, `whatspro_chat_send_message` con la `idempotencyKey` del ítem (`sales-ops:{actionId}`, `dry_run` primero). Los cobros (`register_sale`) van por `whatspro_sales_register_payment`. | `whatspro_sales_queue_result {action_id, status: executed\|failed, result: {error?}, result_message_id, executed_via: "connector"}` |
 | `classify` | `whatspro_sales_dossier` → prompt P2 → JSON del contrato. | `whatspro_sales_classification_write {chat_id, classification, connector}` |
 | `classify_signal` | Clasificar la respuesta nueva (tipos del radar). | `whatspro_sales_signal_write {message_id, kind, confidence, urgent}` |
 | `transcribe` | `whatspro_audio_queue_takeover` → escuchar. | `whatspro_audio_insight_write {message_id, transcript, summary, intent}` |
 
-**Instrucción:** pegar después de las reglas comunes:
+**Instrucción:** es la constante compartida `PROMPT_P9` de `lib/plugins/sales-ops/shared/prompt-p9.ts` (la misma que copia el botón "Copiar prompt P9" de la Cola y la que siembra la skill `qa.p9-drenar-cola`). Se pega después de las reglas comunes; si cambia, cambia allá y se vuelve a sembrar:
 
 ```
-Pedí whatspro_sales_work_queue. Trabajá los ítems en el orden en que vienen (los envíos aprobados
-primero, después clasificaciones del prefiltro de dinero, después respuestas nuevas, después audios).
-Por cada ítem seguí exactamente sus "steps" y cerrá con la tool de resultado antes de pasar al
-siguiente. Nunca reintentes un envío que dio timeout: reportalo como send_unknown con el chat.
-Cuando termines el lote, volvé a pedir la cola; si viene vacía, informá cuántos ítems hiciste por tipo.
-Límite por sesión: 30 ítems, o menos si el usuario lo pide.
+qa.p9-drenar-cola
 ```
 
 **Salida:** al final de la sesión, un resumen (tipo · hechos · saltados · fallidos) en el documento "Cola / Sesión conector — {fecha}".

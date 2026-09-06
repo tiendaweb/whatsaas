@@ -368,6 +368,8 @@ const PRIORITY_TOOLS = [
   'whatspro_sales_queue_propose',
   'whatspro_sales_queue_approve',
   'whatspro_sales_queue_result',
+  'whatspro_sales_register_payment',
+  'whatspro_sales_contact_money',
   'whatspro_sales_signal_write',
   'whatspro_sales_signals_list',
   // Radar.
@@ -650,7 +652,7 @@ async function handleRpc(message: JsonRpcRequest, context: McpContext) {
       capabilities: { tools: { listChanged: true } },
       serverInfo: { name: context.actionsEnabled || context.scopes.includes(APP_MAKER_WRITE_SCOPE) ? 'WhatsPro AI Connector' : 'WhatsPro AI Read-only Connector', version: '4.0.0' },
       instructions: context.actionsEnabled || context.scopes.includes(APP_MAKER_WRITE_SCOPE)
-        ? 'Enumera y consulta recursos antes de actuar. Para App Maker consulta whatspro_appmaker_catalog y la versión actual; usa expected_version, separa borrador de publicación y confirma eliminaciones. Los adjuntos son privados y solo deben solicitarse cuando hagan falta. Para automatizaciones consulta whatspro_automation_guide. Para el Command Center Comercial (clasificación G0-GX, cola aprobada, radar de respuestas) empezá por whatspro_sales_work_queue: devuelve lo que espera un conector con la cadena exacta de tools; nunca modifiques el CRM desde ese flujo. Para sitios, conserva expected_updated_at antes de editar. Respeta el aislamiento del equipo y usa claves de idempotencia estables.'
+        ? 'Enumera y consulta recursos antes de actuar. Para App Maker consulta whatspro_appmaker_catalog y la versión actual; usa expected_version, separa borrador de publicación y confirma eliminaciones. Los adjuntos son privados y solo deben solicitarse cuando hagan falta. Para automatizaciones consulta whatspro_automation_guide. Para el Command Center Comercial (clasificación G0-GX, cola aprobada, radar de respuestas) empezá por whatspro_sales_work_queue (o whatspro_work_queue, que federa todas las colas): cada ítem trae tools y steps; cerrá siempre con la tool de resultado; si falta una decisión humana devolvé status blocked con human_request; podés corregir el CRM del contacto que estás trabajando, de a uno y sólo lo que contradice ese chat; los cobros se registran con whatspro_sales_register_payment sólo desde filas aprobadas o por pedido explícito. Para sitios, conserva expected_updated_at antes de editar. Respeta el aislamiento del equipo y usa claves de idempotencia estables.'
         : 'Acceso de lectura. Enumera recursos y el catálogo de App Maker antes de consultar; pagina resultados, respeta audiencias y nunca solicites ni reveles secretos.',
     });
   }

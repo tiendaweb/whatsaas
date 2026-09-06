@@ -9,6 +9,8 @@ import {
   type TeamScheduledMessage,
 } from '@/lib/db/schema';
 import { triggerAutomationManually } from '@/lib/automation/engine';
+import { computeNextRunAt } from '@/lib/plugins/scheduled-messages/schedule';
+import { pausarAutomatizacionDelChat } from '@/lib/chats/pausar-automatizacion';
 import { pusherServer } from '@/lib/pusher-server';
 import { processDueAappRenewals } from '@/lib/plugins/scheduled-messages/aapp-renewals';
 
@@ -17,36 +19,10 @@ export const revalidate = 0;
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8080';
 
-// ─── Helper: compute next run date ───────────────────────────────────────────
-
-function computeNextRunAt(msg: TeamScheduledMessage): Date | null {
-  const now = new Date();
-
-  if (msg.scheduleType === 'once') {
-    return null; // after sending, mark completed
-  }
-
-  if (msg.scheduleType === 'daily') {
-    const next = new Date();
-    next.setHours(msg.hour ?? 9, msg.minute ?? 0, 0, 0);
-    if (next <= now) next.setDate(next.getDate() + 1);
-    return next;
-  }
-
-  if (msg.scheduleType === 'weekly') {
-    const weekdays = (msg.weekdays as number[]) ?? [];
-    if (!weekdays.length) return null;
-    for (let i = 1; i <= 7; i++) {
-      const next = new Date();
-      next.setDate(next.getDate() + i);
-      next.setHours(msg.hour ?? 9, msg.minute ?? 0, 0, 0);
-      if (weekdays.includes(next.getDay())) return next;
-    }
-    return null;
-  }
-
-  return null;
-}
+// La próxima salida se calcula en la zona del negocio, con la misma función
+// que usan las rutas y las tools (`lib/plugins/scheduled-messages/schedule`).
+// Acá había una copia con `setHours` en hora del servidor (UTC): los diarios
+// "a las 10" salían a las 7 de Argentina.
 
 // ─── Helper: format phone number for WhatsApp JID ────────────────────────────
 
@@ -216,6 +192,11 @@ export async function GET(request: Request) {
           }
 
           if (msg.actionType === 'message' && msg.message) {
+            // Se apagó al programar, pero entre aquel momento y éste pueden
+            // haber pasado días: si alguien volvió a habilitar los flujos, el
+            // que se le adelanta a la respuesta del cliente es el flujo. Ver
+            // lib/chats/pausar-automatizacion.
+            await pausarAutomatizacionDelChat(msg.teamId, chat.id, msg.name);
             const phone = toPhoneNumber(rawNum);
             const apiUrl = `${EVOLUTION_API_URL}/message/sendText/${instance.instanceName}`;
             const response = await fetch(apiUrl, {
@@ -332,7 +313,7 @@ export async function GET(request: Request) {
       const isCompleted =
         msg.scheduleType === 'once' || (maxRuns !== null && maxRuns !== undefined && newRunCount >= maxRuns);
 
-      const nextRunAt = isCompleted ? null : computeNextRunAt(msg);
+      const nextRunAt = isCompleted ? null : computeNextRunAt(msg, { afterRun: true });
 
       await db
         .update(teamScheduledMessages)

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { parsearLocal } from '@/lib/time/zona';
 
 import { GateBadge } from '../components/GateBadge';
 import { SALES_OPS_API, fmtDateTime, iniciales } from '../components/format';
@@ -89,7 +90,8 @@ export function TarjetaProgramado({
       };
       if (item.scheduleType === 'once' && borrador.scheduledAt) {
         cuerpo.scheduleType = 'once';
-        cuerpo.scheduledAt = new Date(borrador.scheduledAt).toISOString();
+        // Hora del negocio, no la del navegador (una IA en Chrome corre en UTC).
+        cuerpo.scheduledAt = parsearLocal(borrador.scheduledAt)?.toISOString() ?? null;
       }
       await patchProgramado(item.id, cuerpo);
       setEditando(false);
@@ -204,13 +206,14 @@ export function TarjetaProgramado({
             <X className="size-3.5" aria-hidden />
           </Button>
         </div>
-        <Input value={borrador.name} onChange={(e) => setBorrador({ ...borrador, name: e.target.value })} className="h-8 text-xs" placeholder="Nombre" />
+        <Input value={borrador.name} onChange={(e) => setBorrador({ ...borrador, name: e.target.value })} className="h-8 text-xs" placeholder="Nombre" aria-label="Nombre del programado" />
         <Textarea
           value={borrador.message}
           onChange={(e) => setBorrador({ ...borrador, message: e.target.value })}
           rows={3}
           className="resize-none text-xs"
           placeholder="Mensaje que le va a llegar"
+          aria-label="Mensaje que le va a llegar"
         />
         <div className="space-y-1.5 rounded-lg border border-border/70 bg-background p-2">
           <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -221,6 +224,7 @@ export function TarjetaProgramado({
             value={borrador.aiPrompt}
             onChange={(e) => setBorrador({ ...borrador, aiPrompt: e.target.value })}
             rows={2}
+            aria-label="Prompt para reescribir el mensaje"
             className="resize-none text-xs"
             placeholder="Ej.: tono cercano, máximo 3 líneas, cerrá con una sola pregunta."
           />
@@ -359,6 +363,7 @@ export function TarjetaProgramado({
               size="icon"
               className="size-7"
               title={item.status === 'active' ? 'Pausar' : 'Activar'}
+              aria-label={`${item.status === 'active' ? 'Pausar' : 'Activar'} ${item.name}`}
               onClick={() => void cambiarEstado(item.status === 'active' ? 'paused' : 'active')}
             >
               {item.status === 'active' ? <Pause className="size-3.5" aria-hidden /> : <Play className="size-3.5" aria-hidden />}
@@ -371,6 +376,7 @@ export function TarjetaProgramado({
               size="icon"
               className={cn('size-7', item.aiPrompt && 'text-primary')}
               title={item.aiPrompt ? 'Cambiar el prompt con el que se escribe' : 'Que lo escriba la IA: agregarle un prompt'}
+              aria-label={`${item.aiPrompt ? 'Cambiar el prompt de' : 'Escribir con IA'} ${item.name}`}
               onClick={() => {
                 setPromptSuelto(item.aiPrompt ?? '');
                 setPrompteando((v) => !v);
@@ -380,11 +386,11 @@ export function TarjetaProgramado({
             </Button>
           )}
           {item.actionType === 'message' && (
-            <Button type="button" variant="ghost" size="icon" className="size-7" title="Editar el mensaje" onClick={abrirEdicion}>
+            <Button type="button" variant="ghost" size="icon" className="size-7" title="Editar el mensaje" aria-label={`Editar el mensaje de ${item.name}`} onClick={abrirEdicion}>
               <Pencil className="size-3.5" aria-hidden />
             </Button>
           )}
-          <Button type="button" variant="ghost" size="icon" className="size-7 text-muted-foreground hover:text-destructive" title="Borrar" onClick={() => void eliminar()}>
+          <Button type="button" variant="ghost" size="icon" className="size-7 text-muted-foreground hover:text-destructive" title="Borrar" aria-label={`Borrar ${item.name}`} onClick={() => void eliminar()}>
             <Trash2 className="size-3.5" aria-hidden />
           </Button>
           {/* "Abrir" es la ficha del contacto, no la app de Programados: desde
@@ -408,6 +414,7 @@ export function TarjetaProgramado({
               href="/plugins/scheduled-messages"
               className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
               title="Sin chat conocido para este número · abrir en Programados"
+              aria-label={`Abrir ${item.name} en Programados`}
             >
               <ExternalLink className="size-3.5" aria-hidden />
             </a>
@@ -433,6 +440,7 @@ export function TarjetaProgramado({
             value={promptSuelto}
             onChange={(e) => setPromptSuelto(e.target.value)}
             rows={3}
+            aria-label="Prompt para que lo escriba la IA"
             className="resize-none text-xs"
             placeholder="Ej.: recordale la seña sin repetir el precio, tono cercano, máximo 3 líneas, cerrá con una sola pregunta."
           />

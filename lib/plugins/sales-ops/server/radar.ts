@@ -93,7 +93,9 @@ const BOT_PATTERNS = [
   /\bmenu\b/,
   /opcion [0-9]/,
 ];
-const PAGO_RE = /\b(alias|cbu|cvu|transferencia|comprobante|sena|anticipo|como pago|link de pago)\b/;
+// "te transferi", "ya pague", "listo el pago", "deposite": el cliente avisando
+// que pagó no matcheaba (1 sola señal `pago` en toda la historia, y fue una imagen).
+const PAGO_RE = /\b(alias|cbu|cvu|transferencia|comprobante|sena|anticipo|como pago|link de pago|transfer[ií]|transferido|pagu[eé]|pagad[oa]|pago hecho|listo el pago|deposit[eé]|deposito hecho|te mand[eé] el comprobante)\b/;
 const RECHAZO_RE = /(\bno me interesa|\bno gracias|\bno molest|equivocado|\bbloque|\bbaja\b|\bdeja de)/;
 const PRECIO_RE = /(\bprecio|cuanto|\bvale\b|\bcosto)/;
 const LLAMADA_RE = /(llamar|llamada|llamame|hablamos por telefono|me llamas)/;
@@ -424,9 +426,40 @@ function rowFromRecord(record: typeof teamCommercialSignals.$inferSelect, name: 
 
 // ── Efectos colaterales (UPDATE directos, sin importar queue.ts) ────────────
 
-async function applySideEffects(teamId: number, chatId: number, kind: SignalKind, signalId: number, name: string) {
+async function applySideEffects(teamId: number, chatId: number, kind: SignalKind, signalId: number, name: string, messageId?: string) {
   const countsAsReply = kind !== 'respuesta_automatica' && kind !== 'irrelevante';
   const now = new Date();
+  // Señal de pago → fila `register_sale` PROPUESTA con lo que se sabe (importe
+  // cotizado, moneda, comprobante). Nadie cobra solo: una persona confirma el
+  // importe al aprobar, y recién ahí el servidor registra venta + asiento + pago.
+  if (kind === 'pago') {
+    try {
+      const [analisis] = await db
+        .select({ quotedPrice: teamCommercialAnalysis.quotedPrice, quotedCurrency: teamCommercialAnalysis.quotedCurrency })
+        .from(teamCommercialAnalysis)
+        .where(and(eq(teamCommercialAnalysis.teamId, teamId), eq(teamCommercialAnalysis.chatId, chatId)))
+        .limit(1);
+      const [abierta] = await db
+        .select({ id: teamCommercialActions.id })
+        .from(teamCommercialActions)
+        .where(and(eq(teamCommercialActions.teamId, teamId), eq(teamCommercialActions.chatId, chatId), eq(teamCommercialActions.kind, 'register_sale'), inArray(teamCommercialActions.status, ['proposed', 'pending_approval', 'approved'])))
+        .limit(1);
+      if (!abierta) {
+        const { proposeBatch } = await import('./queue');
+        const amount = analisis?.quotedPrice != null ? Number(analisis.quotedPrice) : null;
+        await proposeBatch(teamId, {
+          label: `Cobro · ${name}${amount ? '' : ' (importe a confirmar)'}`.slice(0, 120),
+          kind: 'register_sale',
+          requiresRole: 'any',
+          chatIds: [chatId],
+          payloadTemplate: { extra: { ...(amount ? { amount } : {}), currency: analisis?.quotedCurrency ?? 'ARS', ...(messageId ? { receiptMessageId: messageId } : {}), signalId } },
+          proposedBy: 'ia',
+        });
+      }
+    } catch (error) {
+      console.error('[sales-ops/radar] proponer cobro falló', error);
+    }
+  }
   try {
     await db
       .update(teamCommercialAnalysis)
@@ -578,7 +611,7 @@ export async function classifyIncomingMessage(teamId: number, messageId: string,
     return { ok: true, created: false, signal: rowFromRecord(raced, name), decidedBy: 'existing', reason: 'already_classified' };
   }
 
-  await applySideEffects(teamId, message.chatId, classification.kind, inserted.id, name);
+  await applySideEffects(teamId, message.chatId, classification.kind, inserted.id, name, message.id);
   await audit(teamId, null, 'SALES_OPS_SIGNAL', {
     signalId: inserted.id,
     chatId: message.chatId,

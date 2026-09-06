@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { desdeZona, fechaEnZona, partesEnZona } from '@/lib/time/zona';
 
 import { FichaDock, type DockItem } from '../components/FichaDock';
 import { FiltroGates } from '../components/FiltroGates';
@@ -49,7 +50,8 @@ const SECCIONES: Array<DockItem<Seccion>> = [
 
 /** Lunes de la semana a la que pertenece la fecha (la semana laboral arranca ahí). */
 function lunesDe(fecha: Date): Date {
-  const d = new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate());
+  // A mediodía: así el día del negocio (`claveDia`) coincide con el del navegador.
+  const d = new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate(), 12);
   const dia = d.getDay();
   d.setDate(d.getDate() - (dia === 0 ? 6 : dia - 1));
   return d;
@@ -286,9 +288,12 @@ function Lista({ rows, onCambio, onOpen, destinoDe }: ModoProps) {
 function Dia({ offset, rows, onCambio, onOpen, destinoDe }: ModoProps & { offset: -1 | 0 | 1 | 2 }) {
   const { fecha, clave, atrasados, porSalir, salieron } = useMemo(() => {
     const ahora = new Date();
-    const fecha = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() + offset);
+    // A mediodía y con el "hoy" del negocio: en un navegador en UTC, a las 22
+    // de Argentina ya es mañana y "Hoy" mostraba el día equivocado.
+    const hoyNegocio = partesEnZona(ahora);
+    const fecha = new Date(hoyNegocio.year, hoyNegocio.month - 1, hoyNegocio.day + offset, 12);
     const clave = claveDia(fecha);
-    const arranqueDeHoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
+    const arranqueDeHoy = desdeZona(fechaEnZona(ahora), 0, 0);
     const salioEseDia = (p: Programado) => Boolean(p.lastRunAt && claveDia(new Date(p.lastRunAt)) === clave);
     // Un recurrente diario "cae" ese día aunque su hora ya haya pasado: si ya
     // salió, pertenece al grupo de abajo y no a la lista de lo que falta.
@@ -329,7 +334,8 @@ function horaCorta(p: Programado): string {
   const cuando = p.scheduledAt ?? p.nextRunAt ?? p.lastRunAt;
   const fecha = cuando ? new Date(cuando) : null;
   if (!fecha || !Number.isFinite(fecha.getTime())) return '--:--';
-  return `${String(fecha.getHours()).padStart(2, '0')}:${String(fecha.getMinutes()).padStart(2, '0')}`;
+  const h = partesEnZona(fecha);
+  return `${String(h.hour).padStart(2, '0')}:${String(h.minute).padStart(2, '0')}`;
 }
 
 /** Sólo los de una vez que todavía no salieron se pueden correr de día. */
@@ -337,10 +343,8 @@ const seMueve = (p: Programado) => p.scheduleType === 'once' && estaPendiente(p)
 
 /** Misma hora, otro día. */
 function moverAlDia(p: Programado, clave: string): string {
-  const actual = new Date(p.scheduledAt ?? p.nextRunAt ?? Date.now());
-  const [y, m, d] = clave.split('-').map(Number);
-  const nueva = new Date(y, m - 1, d, actual.getHours(), actual.getMinutes(), 0, 0);
-  return nueva.toISOString();
+  const actual = partesEnZona(new Date(p.scheduledAt ?? p.nextRunAt ?? Date.now()));
+  return desdeZona(clave, actual.hour, actual.minute).toISOString();
 }
 
 /**
@@ -366,7 +370,8 @@ function Semana({ rows, onCambio, onOpen, destinoDe }: ModoProps) {
   const esEscritorio = useIsDesktop();
 
   const dias = useMemo(() => {
-    const lunes = lunesDe(new Date());
+    const hoyNegocio = partesEnZona(new Date());
+    const lunes = lunesDe(new Date(hoyNegocio.year, hoyNegocio.month - 1, hoyNegocio.day, 12));
     lunes.setDate(lunes.getDate() + offset * 7);
     const domingo = new Date(lunes);
     domingo.setDate(domingo.getDate() + 6);
@@ -600,8 +605,8 @@ function Calendario({
   onDia: (dia: string | null) => void;
 }) {
   const { celdas, porDia } = useMemo(() => {
-    const primero = new Date(mes.getFullYear(), mes.getMonth(), 1);
-    const ultimo = new Date(mes.getFullYear(), mes.getMonth() + 1, 0);
+    const primero = new Date(mes.getFullYear(), mes.getMonth(), 1, 12);
+    const ultimo = new Date(mes.getFullYear(), mes.getMonth() + 1, 0, 12);
 
     const porDia = new Map<string, Programado[]>();
     for (const p of rows) {
@@ -616,7 +621,7 @@ function Calendario({
     const previos = (primero.getDay() + 6) % 7;
     const celdas: Array<{ fecha: Date; clave: string } | null> = Array.from({ length: previos }, () => null);
     for (let d = 1; d <= ultimo.getDate(); d++) {
-      const fecha = new Date(mes.getFullYear(), mes.getMonth(), d);
+      const fecha = new Date(mes.getFullYear(), mes.getMonth(), d, 12);
       celdas.push({ fecha, clave: claveDia(fecha) });
     }
     return { celdas, porDia };

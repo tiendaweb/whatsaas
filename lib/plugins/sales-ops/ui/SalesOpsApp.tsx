@@ -74,6 +74,7 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
   const [collapsed, setCollapsed] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
+  const [contextFocusRequest, setContextFocusRequest] = useState(0);
 
   useEffect(() => {
     try {
@@ -176,10 +177,10 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
     if (vista === 'hoy') return <HoyView owner={owner} onChangeVista={onNav} onOpen={onOpen} />;
     if (isListaVista(vista)) return <ListaView vista={vista} owner={owner} selectedChatId={chatId} onOpen={onOpen} onOpenChat={onOpenChat} onNav={onNav} />;
     if (vista === 'respuestas') return <RespuestasView />;
-    if (vista === 'cola') return <ColaView onOpen={onOpen} selectedChatId={chatId} />;
+    if (vista === 'cola') return <ColaView onOpen={onOpen} selectedChatId={chatId} focusRequest={contextFocusRequest} />;
     if (vista === 'programados') return <ProgramadosView onOpen={onOpen} />;
     if (vista === 'audios') return <AudiosView onOpen={onOpen} />;
-    if (vista === 'produccion') return <ProduccionView onOpen={onOpen} />;
+    if (vista === 'produccion') return <ProduccionView onOpen={onOpen} focusRequest={contextFocusRequest} />;
     if (vista === 'ayuda') return <AyudaView onNav={onNav} />;
     if (vista === 'experimentos') return <ExperimentosView />;
     if (vista === 'prompts') return <PromptStudioView onOpen={onOpen} onNav={onNav} />;
@@ -188,6 +189,31 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
   })();
 
   const sidebarProps = { vista, counts, owner, user: user ?? null, onNav, onOwner };
+  const contextFocus = vista === 'cola'
+    ? {
+        label: 'Focus de cola',
+        title: 'Revisar de a uno todo lo que espera una decisión',
+        className: 'bg-violet-600 text-white hover:bg-violet-700',
+      }
+    : vista === 'produccion'
+      ? {
+          label: 'Focus de producción',
+          title: 'Trabajar un pedido de producción por vez',
+          className: 'bg-sky-600 text-white hover:bg-sky-700',
+        }
+      : {
+          label: 'Focus',
+          title: 'Trabajar de a un cliente, en bloques de 25 minutos',
+          className: 'bg-primary text-primary-foreground hover:bg-primary/90',
+        };
+
+  const openContextFocus = () => {
+    if (vista === 'cola' || vista === 'produccion') {
+      setContextFocusRequest((request) => request + 1);
+      return;
+    }
+    entrarFocus();
+  };
 
   // Focus se dibuja solo: ni rail, ni encabezado, ni barra inferior. No es un
   // overlay encima del shell — el shell directamente no se monta.
@@ -225,9 +251,9 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
             <h1 className="truncate text-base font-semibold leading-tight lg:text-lg">{VISTA_LABELS[vista]}</h1>
             <p className="truncate text-[11px] text-muted-foreground lg:text-xs">{subtitle}</p>
           </div>
-          <Button variant="outline" size="sm" className="h-8 shrink-0 gap-1.5" onClick={entrarFocus} title="Trabajar de a un cliente, en bloques de 25 minutos">
+          <Button size="sm" className={cn('h-8 shrink-0 gap-1.5', contextFocus.className)} onClick={openContextFocus} title={contextFocus.title}>
             <Timer className="size-4" aria-hidden />
-            <span className="hidden sm:inline">Focus</span>
+            <span className="hidden sm:inline">{contextFocus.label}</span>
           </Button>
           <div className="lg:hidden">
             <OwnerFilter value={owner} onChange={onOwner} />

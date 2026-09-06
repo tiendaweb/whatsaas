@@ -1,6 +1,6 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, lt, sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
-import { activityLogs, teamCommercialActions, teamCommercialAnalysis } from '@/lib/db/schema';
+import { activityLogs, teamCommercialActions, teamCommercialAnalysis, teamPromptRuns } from '@/lib/db/schema';
 import { SALES_OPS_ACTIVITY_PREFIX, type CollectionSpeed, type Gate, type Objection } from '../shared/taxonomy';
 import { computePriority } from './priority';
 import { expireStale, proposeBatch } from './queue';
@@ -27,6 +27,8 @@ const PRE_DESCARTE_MIN_DAYS = 180;
 export type HousekeepingReport = {
   teamId: number;
   expired: number;
+  /** Corridas `queued` que ningún conector tomó en 72 h, canceladas. */
+  runsVencidas: number;
   preDescarte: { batchId: string | null; proposed: number; excluded: number };
   overdue: { batchId: string | null; proposed: number };
   priority: { scanned: number; updated: number };
@@ -186,6 +188,7 @@ export async function runHousekeeping(teamId: number): Promise<HousekeepingRepor
   const started = Date.now();
   const now = new Date();
   const { expired } = await expireStale(teamId);
+  const runsVencidas = await expirarCorridasSinConector(teamId, now);
   const preDescarte = await proposePreDescarte(teamId, now);
   const overdue = await proposeOverdue(teamId, now);
   const priority = await recalcPriority(teamId, now);
@@ -198,7 +201,7 @@ export async function runHousekeeping(teamId: number): Promise<HousekeepingRepor
   } catch (error) {
     console.error('[sales-ops/housekeeping] encolar audios de frentes falló', error);
   }
-  const report: HousekeepingReport = { teamId, expired, preDescarte, overdue, priority, audios, seconds: Math.round((Date.now() - started) / 1000) };
+  const report: HousekeepingReport = { teamId, expired, runsVencidas, preDescarte, overdue, priority, audios, seconds: Math.round((Date.now() - started) / 1000) };
   try {
     await db.insert(activityLogs).values({ teamId, userId: null, action: `${SALES_OPS_ACTIVITY_PREFIX}HOUSEKEEPING`, metadata: report });
   } catch (error) {
@@ -211,4 +214,36 @@ export async function runHousekeeping(teamId: number): Promise<HousekeepingRepor
 export async function teamsWithAnalysis(): Promise<number[]> {
   const rows = await db.selectDistinct({ teamId: teamCommercialAnalysis.teamId }).from(teamCommercialAnalysis);
   return rows.map((r) => r.teamId);
+}
+
+/** Horas que una corrida puede esperar un conector antes de darse por vencida. */
+const HORAS_CORRIDA_VENCIDA = 72;
+
+/**
+ * Corridas `queued` que ningún conector tomó en 72 h → `cancelled`.
+ *
+ * Había 31 corridas esperando desde hacía días (algunas del 04-09): nada las
+ * expiraba y la Cola las mostraba como trabajo vivo. Se cancelan con el motivo
+ * en `summary` y quedan en Descartados, donde se pueden relanzar a mano.
+ */
+export async function expirarCorridasSinConector(teamId: number, now = new Date()): Promise<number> {
+  const limite = new Date(now.getTime() - HORAS_CORRIDA_VENCIDA * 3_600_000);
+  const rows = await db
+    .update(teamPromptRuns)
+    .set({
+      status: 'cancelled',
+      summary: `Vencida: ningún conector la tomó en ${HORAS_CORRIDA_VENCIDA} h`,
+      completedAt: now,
+      metadata: sql`coalesce(${teamPromptRuns.metadata}, '{}'::jsonb) || jsonb_build_object('expiredAt', ${now.toISOString()}::text)`,
+    })
+    .where(and(eq(teamPromptRuns.teamId, teamId), eq(teamPromptRuns.status, 'queued'), lt(teamPromptRuns.createdAt, limite)))
+    .returning({ id: teamPromptRuns.id });
+  if (rows.length) {
+    try {
+      await db.insert(activityLogs).values({ teamId, userId: null, action: `${SALES_OPS_ACTIVITY_PREFIX}RUNS_EXPIRED`, metadata: { count: rows.length, hours: HORAS_CORRIDA_VENCIDA, ids: rows.map((r) => r.id).slice(0, 50) } });
+    } catch (error) {
+      console.error('[sales-ops/housekeeping] audit runs expired', error);
+    }
+  }
+  return rows.length;
 }

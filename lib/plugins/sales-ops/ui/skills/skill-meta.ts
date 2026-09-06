@@ -64,6 +64,20 @@ export const RUN_STATUS_LABELS: Record<string, string> = {
   cancelled: 'Cancelado',
 };
 
+/**
+ * La etiqueta de una corrida, mirando también si está aprobada.
+ *
+ * `queued` son dos momentos distintos: sin aprobar espera a una persona ("En
+ * revisión"); aprobada espera a un conector ("En cola"). El mapa por status
+ * los mezclaba y una corrida que nadie había aprobado se leía como si ya
+ * estuviera saliendo. Bloqueada con formulario es "necesita tu criterio".
+ */
+export function etiquetaDeCorrida(run: { status: string; approved?: boolean; approvedAt?: string | null; humanRequest?: unknown }): string {
+  if (run.status === 'queued') return (run.approved ?? Boolean(run.approvedAt)) ? 'En cola' : 'En revisión';
+  if (run.status === 'blocked' && run.humanRequest) return 'Necesita tu criterio';
+  return RUN_STATUS_LABELS[run.status] ?? run.status;
+}
+
 export const RUN_STATUS_TONE: Record<string, string> = {
   queued: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
   in_progress: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200',

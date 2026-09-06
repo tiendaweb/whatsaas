@@ -209,8 +209,9 @@ export const promptActionTools: GrokActionTool[] = [
         id: { type: 'integer', minimum: 1, description: 'Id de la skill. Alternativa a key.' },
         text: { type: 'string', maxLength: 20000, description: 'Prompt suelto, o indicación extra que se agrega al final de la skill.' },
         title: { type: 'string', maxLength: 160 },
-        target_kind: { type: 'string', enum: ['team', 'chat'] },
+        target_kind: { type: 'string', enum: ['team', 'chat', 'batch'], description: 'batch = una indicación para todo un lote de la Cola (pasá target_ref con el batch_id).' },
         target_id: { type: 'integer', minimum: 1, description: 'chat_id cuando target_kind=chat.' },
+        target_ref: { type: 'string', maxLength: 64, description: 'batch_id cuando target_kind=batch.' },
         variables: { type: 'object', additionalProperties: { type: 'string', maxLength: 4000 } },
         mode: { type: 'string', enum: [...RUN_MODES] },
         dry_run: { type: 'boolean' },
@@ -243,10 +244,12 @@ export const promptActionTools: GrokActionTool[] = [
     description:
       'Administra una corrida del Prompt Studio que ya existe (las de whatspro_sales_prompts_list include_runs o de la actividad). ' +
       'action=approve: aprueba una corrida que espera en "En revisión" (las que lanza un conector con mode=queue nacen sin aprobar y ' +
-      'no aparecen en whatspro_sales_work_queue hasta que una persona, o vos por pedido explícito de una persona, la apruebe). action=cancel: saca de la cola una corrida queued/in_progress que no debe ejecutarse. action=edit: corrige text y/o title ' +
-      'de una corrida que todavía nadie tomó (sólo queued). action=retry: vuelve a lanzar una corrida fallida o cancelada con el ' +
+      'no aparecen en whatspro_sales_work_queue hasta que una persona, o vos por pedido explícito de una persona, la apruebe). action=cancel: saca de la cola una corrida que no debe ejecutarse (todo menos lo ya completed). action=edit: corrige text y/o title ' +
+      'de una corrida que todavía espera una decisión —queued, failed o blocked, o sea todo lo que la Cola lista "para ' +
+      'supervisar"—; en una fallida, el texto corregido es el que se va a reintentar. No se edita lo que un conector está ' +
+      'ejecutando (in_progress), lo terminado (completed) ni lo cancelado. action=retry: vuelve a lanzar una corrida fallida, cancelada o bloqueada con el ' +
       'mismo texto ya resuelto; mode="api" la corre ahí mismo con la IA del equipo, mode="queue" (default) la deja para un ' +
-      'conector. Ninguna toca el CRM.',
+      'conector. La original queda cancelled con `relaunchedAs` apuntando a la nueva: no la reintentes dos veces. Ninguna toca el CRM.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -342,8 +345,9 @@ const launchSchema = z.object({
   id: z.number().int().positive().optional(),
   text: z.string().max(20000).optional(),
   title: z.string().max(160).optional(),
-  target_kind: z.enum(['team', 'chat']),
+  target_kind: z.enum(['team', 'chat', 'batch']),
   target_id: z.number().int().positive().optional(),
+  target_ref: z.string().max(64).optional(),
   variables: z.record(z.string().max(60), z.string().max(4000)).optional(),
   mode: z.enum(RUN_MODES).optional(),
   dry_run: z.boolean().optional(),
@@ -379,6 +383,11 @@ const resultSchema = z.object({
 }).superRefine((value, ctx) => {
   if (value.human_request && value.status !== 'blocked') {
     ctx.addIssue({ code: 'custom', path: ['human_request'], message: 'human_request sólo corresponde con status=blocked.' });
+  }
+  // Un `blocked` sin formulario no le dice a nadie qué decidir: la Cola lo
+  // dibujaba como falla sin motivo. O se pide la decisión, o es `failed`.
+  if (value.status === 'blocked' && !value.human_request) {
+    ctx.addIssue({ code: 'custom', path: ['human_request'], message: 'status=blocked exige human_request con la decisión que tiene que tomar la persona. Si no hay nada que decidir, usá status=failed con el motivo en summary.' });
   }
 });
 
@@ -429,6 +438,8 @@ export async function executePromptTool(name: string, input: Record<string, unkn
       search: args.search,
       kind: args.kind === 'all' ? undefined : args.kind,
     });
+    // Cada corrida trae `approved`: una `queued` sin aprobar está "En revisión"
+    // y el conector no la va a ver en whatspro_sales_work_queue todavía.
     const runs = args.include_runs || args.chat_id ? await listPromptRuns(context.teamId, { status: 'open', chatId: args.chat_id, limit: 100 }) : [];
     const recommended = args.chat_id ? await recommendSkillsForChat(context.teamId, args.chat_id, 6) : null;
     return {
@@ -543,6 +554,7 @@ export async function executePromptTool(name: string, input: Record<string, unkn
         title: args.title ?? null,
         targetKind: args.target_kind,
         targetId: args.target_id ?? null,
+        targetRef: args.target_ref ?? null,
         variables: args.variables,
         mode: args.mode,
       });
@@ -592,7 +604,8 @@ export async function executePromptTool(name: string, input: Record<string, unkn
         return { run, note: 'Aprobada: ya la puede tomar un conector desde whatspro_sales_work_queue.' };
       }
       if (args.action === 'cancel') {
-        if (!['queued', 'in_progress'].includes(existing.status)) throw new Error(`La corrida ya está ${existing.status}: no hay nada que cancelar.`);
+        // Qué se puede cancelar lo decide `completePromptRun`: la misma regla
+        // que la interfaz, para que un camino no permita lo que el otro niega.
         const run = await completePromptRun(context.teamId, context.userId ?? null, args.run_id, {
           status: 'cancelled',
           summary: args.reason ?? 'Cancelada por conector',

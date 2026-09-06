@@ -17,9 +17,9 @@ type BloqueGuardado = {
   desde: number;
 };
 
-function leer(): BloqueGuardado | null {
+function leer(clave: string): BloqueGuardado | null {
   try {
-    const raw = window.localStorage.getItem(LS_BLOQUE);
+    const raw = window.localStorage.getItem(clave);
     if (!raw) return null;
     const b = JSON.parse(raw) as Partial<BloqueGuardado>;
     if ((b.tipo !== 'foco' && b.tipo !== 'descanso') || typeof b.terminaEn !== 'number') return null;
@@ -34,10 +34,10 @@ function leer(): BloqueGuardado | null {
   }
 }
 
-function escribir(b: BloqueGuardado | null) {
+function escribir(clave: string, b: BloqueGuardado | null) {
   try {
-    if (b) window.localStorage.setItem(LS_BLOQUE, JSON.stringify(b));
-    else window.localStorage.removeItem(LS_BLOQUE);
+    if (b) window.localStorage.setItem(clave, JSON.stringify(b));
+    else window.localStorage.removeItem(clave);
   } catch {
     /* sin storage */
   }
@@ -55,8 +55,12 @@ const MINUTOS: Record<TipoBloque, number> = { foco: MINUTOS_BLOQUE, descanso: MI
  * segundos que corren los dibuja `<Reloj>`, que se re-renderiza solo.
  *
  * El reloj informa, no manda: nada de la pantalla se bloquea al llegar a cero.
+ *
+ * `clave` es dónde se guarda: el Focus de trabajo y el de supervisión tienen
+ * cada uno la suya, porque son dos tareas y no un mismo bloque visto desde dos
+ * pantallas.
  */
-export function useBloque() {
+export function useBloque(clave: string = LS_BLOQUE) {
   const [bloque, setBloque] = useState<BloqueGuardado | null>(null);
   const [vencido, setVencido] = useState(false);
   /** El aviso de "se terminó" se cierra a mano: si se cerrara solo, quien
@@ -64,8 +68,8 @@ export function useBloque() {
   const [avisoCerrado, setAvisoCerrado] = useState(false);
 
   useEffect(() => {
-    setBloque(leer());
-  }, []);
+    setBloque(leer(clave));
+  }, [clave]);
 
   useEffect(() => {
     setVencido(false);
@@ -95,37 +99,40 @@ export function useBloque() {
     };
   }, [bloque]);
 
-  const arrancar = useCallback((tipo: TipoBloque = 'foco') => {
-    const ahora = Date.now();
-    const nuevo: BloqueGuardado = { tipo, terminaEn: ahora + MINUTOS[tipo] * 60_000, pausadoCon: null, desde: ahora };
-    setBloque(nuevo);
-    escribir(nuevo);
-    setAvisoCerrado(false);
-  }, []);
+  const arrancar = useCallback(
+    (tipo: TipoBloque = 'foco') => {
+      const ahora = Date.now();
+      const nuevo: BloqueGuardado = { tipo, terminaEn: ahora + MINUTOS[tipo] * 60_000, pausadoCon: null, desde: ahora };
+      setBloque(nuevo);
+      escribir(clave, nuevo);
+      setAvisoCerrado(false);
+    },
+    [clave],
+  );
 
   const pausar = useCallback(() => {
     setBloque((actual) => {
       if (!actual || actual.pausadoCon != null) return actual;
       const nuevo = { ...actual, pausadoCon: Math.max(0, actual.terminaEn - Date.now()) };
-      escribir(nuevo);
+      escribir(clave, nuevo);
       return nuevo;
     });
-  }, []);
+  }, [clave]);
 
   const reanudar = useCallback(() => {
     setBloque((actual) => {
       if (!actual || actual.pausadoCon == null) return actual;
       const nuevo = { ...actual, terminaEn: Date.now() + actual.pausadoCon, pausadoCon: null };
-      escribir(nuevo);
+      escribir(clave, nuevo);
       return nuevo;
     });
-  }, []);
+  }, [clave]);
 
   const terminar = useCallback(() => {
     setBloque(null);
-    escribir(null);
+    escribir(clave, null);
     setAvisoCerrado(false);
-  }, []);
+  }, [clave]);
 
   return {
     /** null hasta que se lee localStorage: en el primer render no hay reloj. */

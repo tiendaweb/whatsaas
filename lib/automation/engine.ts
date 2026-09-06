@@ -41,6 +41,8 @@ const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "http://localhost:808
 const GRAPH_API_URL = "https://graph.facebook.com";
 const GRAPH_API_VERSION = "v21.0";
 const NODE_HISTORY_KEY = "__nodeHistory";
+/** Una sesión activa sin movimiento en dos semanas es un chat atrapado, no una conversación. */
+const SESSION_MAX_IDLE_DAYS = 14;
 const FORM_PROGRESS_KEY = "__formProgress";
 
 type FlowData = {
@@ -305,6 +307,21 @@ export async function processAutomation(
   });
 
   if (session && session.automation.instanceId !== instanceId) return false;
+
+  // Una sesión viva de una automatización que alguien APAGÓ (o que lleva más
+  // de dos semanas sin moverse) no es una conversación en curso: es un chat
+  // atrapado. Había 76 chats en "PRIMER MENU" desactivado, y un flujo apagado
+  // llegó a mandar 10 mensajes. Se cierra y se sigue como si no hubiera sesión:
+  // así el chat puede entrar a otra automatización o a la IA.
+  if (session) {
+    const idleMs = Date.now() - new Date(session.updatedAt ?? session.createdAt ?? Date.now()).getTime();
+    const motivo = !session.automation.isActive ? 'automatizacion_desactivada' : idleMs > SESSION_MAX_IDLE_DAYS * 86_400_000 ? 'sesion_vencida' : null;
+    if (motivo) {
+      await db.update(automationSessions).set({ status: 'completed', updatedAt: new Date() }).where(eq(automationSessions.id, session.id));
+      console.log(`[automation] sesión ${session.id} cerrada (${motivo}) en chat ${chatId}`);
+      session = undefined;
+    }
+  }
 
   if (!session) {
     // If the chat was manually cut/closed by an operator, do not auto-trigger

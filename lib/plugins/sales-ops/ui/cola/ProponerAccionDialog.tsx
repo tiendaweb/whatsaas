@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { HORA_LABORAL, aLocal, desdeZona, fechaEnZona, parsearLocal, sumarDias } from '@/lib/time/zona';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,11 +32,11 @@ const TITULOS: Partial<Record<ActionKind, string>> = {
 };
 
 const AYUDAS: Partial<Record<ActionKind, string>> = {
-  send_message: 'Se propone; no sale hasta que alguien lo apruebe en la Cola. Ahí también se ejecuta.',
-  create_task: 'Queda propuesta en la Cola. Al aprobarla y ejecutarla se crea la tarea vinculada al contacto.',
-  register_sale: 'Queda propuesto en la Cola para que una persona confirme el importe antes de registrarlo.',
-  schedule_message: 'Se propone; al aprobarlo y ejecutarlo queda como mensaje programado y sale solo a la hora indicada.',
-  request_demo: 'Al aprobarlo y ejecutarlo se crea una tarea en el workspace “Demos” de Tareas OS con la investigación del chat y el prompt para generar la web en AAPP SPACE.',
+  send_message: 'Se propone; no sale hasta que alguien lo apruebe en la Cola. Aprobar lo envía en el acto.',
+  create_task: 'Queda propuesta en la Cola. Aprobarla crea la tarea vinculada al contacto, sin IA ni conector.',
+  register_sale: 'Queda propuesto en la Cola. Al aprobarlo, el servidor registra la venta, el asiento y el pago en Finanzas, vincula al contacto como cliente y pasa el chat a G11.',
+  schedule_message: 'Se propone; aprobarlo lo deja programado y sale solo a la hora indicada. No pasa por ningún conector.',
+  request_demo: 'Aprobarlo crea una tarea en el workspace “Demos” de Tareas OS con la investigación del chat y el prompt para generar la web en AAPP SPACE.',
 };
 
 /**
@@ -57,6 +58,8 @@ export function ProponerAccionDialog({ chatId, nombre, kind, open, onOpenChange,
   const [dias, setDias] = useState('1');
   const [importe, setImporte] = useState('');
   const [moneda, setMoneda] = useState('ARS');
+  const [medio, setMedio] = useState('transferencia');
+  const [concepto, setConcepto] = useState('');
   const [guardando, setGuardando] = useState(false);
 
   const esEnvio = kind === 'send_message';
@@ -65,11 +68,8 @@ export function ProponerAccionDialog({ chatId, nombre, kind, open, onOpenChange,
   const esProgramado = kind === 'schedule_message';
   const esDemo = kind === 'request_demo';
   const [sendAt, setSendAt] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    d.setHours(10, 0, 0, 0);
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    // Mañana a las 10 en hora del negocio, sin pasar por el reloj del navegador.
+    return aLocal(desdeZona(sumarDias(fechaEnZona(), 1), HORA_LABORAL.porDefecto, 0));
   });
 
   const listo = esEnvio || esProgramado ? texto.trim().length >= 5 && (!esProgramado || sendAt.length > 0) : esTarea ? titulo.trim().length >= 3 : esDemo ? true : importe.trim().length > 0;
@@ -82,7 +82,7 @@ export function ProponerAccionDialog({ chatId, nombre, kind, open, onOpenChange,
       if (esEnvio) payloadTemplate.text = texto.trim();
       if (esProgramado) {
         payloadTemplate.text = texto.trim();
-        payloadTemplate.sendAt = new Date(sendAt).toISOString();
+        payloadTemplate.sendAt = parsearLocal(sendAt)?.toISOString() ?? new Date(sendAt).toISOString();
       }
       if (esDemo) {
         payloadTemplate.taskTitle = `Demo web — ${nombre}`.slice(0, 200);
@@ -94,7 +94,8 @@ export function ProponerAccionDialog({ chatId, nombre, kind, open, onOpenChange,
         if (texto.trim()) payloadTemplate.text = texto.trim();
       }
       if (esCobro) {
-        payloadTemplate.extra = { amount: importe.trim(), currency: moneda };
+        // Al aprobar, el servidor registra venta + asiento + pago, vincula como cliente y pasa el chat a G11.
+        payloadTemplate.extra = { amount: importe.trim(), currency: moneda, method: medio.trim() || null, concept: concepto.trim() || null };
         if (texto.trim()) payloadTemplate.text = texto.trim();
       }
 
@@ -111,7 +112,7 @@ export function ProponerAccionDialog({ chatId, nombre, kind, open, onOpenChange,
         toast.error(motivo ? `No entró en el lote: ${motivo.replace(/_/g, ' ')}.` : 'No se pudo proponer: el chat quedó excluido.');
         return;
       }
-      toast.success('Propuesto. Aprobalo en la Cola para que salga.');
+      toast.success(esProgramado ? 'Propuesto. Aprobalo en la Cola y queda programado.' : esCobro ? 'Propuesto. Al aprobarlo en la Cola se registra en Finanzas y el contacto pasa a cliente.' : 'Propuesto. Aprobalo en la Cola para que salga.');
       // Ya tiene una acción esperando: sale de "Pendiente de verificación".
       avisarEncolado(chatId);
       onProposed?.(result.batchId);
@@ -193,6 +194,22 @@ export function ProponerAccionDialog({ chatId, nombre, kind, open, onOpenChange,
                 <option value="PYG">PYG</option>
                 <option value="USD">USD</option>
               </select>
+            </div>
+          </div>
+        )}
+        {esCobro && (
+          <div className="flex gap-2">
+            <div className="w-40 space-y-1.5">
+              <Label htmlFor="prop-medio" className="text-xs">
+                Medio
+              </Label>
+              <Input id="prop-medio" value={medio} onChange={(e) => setMedio(e.target.value)} placeholder="transferencia" className="h-9" />
+            </div>
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <Label htmlFor="prop-concepto" className="text-xs">
+                Concepto
+              </Label>
+              <Input id="prop-concepto" value={concepto} onChange={(e) => setConcepto(e.target.value)} placeholder="Seña sitio web" className="h-9" />
             </div>
           </div>
         )}

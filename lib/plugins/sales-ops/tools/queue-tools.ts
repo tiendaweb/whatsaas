@@ -2,7 +2,9 @@ import 'server-only';
 import { z } from 'zod';
 import { assertPermission, parse, type GrokActionContext, type GrokActionTool } from '@/lib/plugins/grok-connector/server/actions';
 import { approveBatch, editAction, getBatch, listBatches, markResult, proposeBatch, QueueError, rejectBatch, removeFromBatch } from '@/lib/plugins/sales-ops/server/queue';
-import { ACTION_KINDS, ACTION_ROLES, ACTION_STATUSES, ANALYSIS_STATUSES, GATES, OWNERS, SALES_OPS_PLUGIN_ID } from '@/lib/plugins/sales-ops/shared/taxonomy';
+import { executeApprovedBatch } from '@/lib/plugins/sales-ops/server/execute';
+import { asegurarParrafos } from '@/lib/messaging/parrafos';
+import { ACTION_KINDS, ACTION_ROLES, ACTION_STATUSES, ANALYSIS_STATUSES, GATES, OWNERS, SALES_OPS_PLUGIN_ID, SERVER_EXECUTABLE_KINDS, esEjecutableEnServidor } from '@/lib/plugins/sales-ops/shared/taxonomy';
 
 /**
  * Cola del Command Center Comercial por MCP (`whatspro_sales_queue_*`).
@@ -11,10 +13,12 @@ import { ACTION_KINDS, ACTION_ROLES, ACTION_STATUSES, ANALYSIS_STATUSES, GATES, 
  * la tool en silencio. Zod se usa sólo DENTRO del handler. Verificar con
  *   NODE_OPTIONS="--conditions=react-server" npx tsx scripts/verify-connector-tools.mts
  *
- * Ninguna de estas tools envía mensajes. Aprobar deja el lote listo para que un
- * humano o el prompt `sales-ops.execute-batch` lo ejecute de a uno con
- * `whatspro_chat_send_message` (idempotency_key `sales-ops:{actionId}`) y
- * reporte con `whatspro_sales_queue_result`.
+ * Aprobar EJECUTA (desde el 2026-09-05): `whatspro_sales_queue_approve` con
+ * `execute` (default true) corre `executeApprovedBatch` sobre lo aprobado si el
+ * tipo está en `SERVER_EXECUTABLE_KINDS` (envío, programado, tarea, demo, cobro,
+ * pre-descarte, descarte, responsable, llamada). Con `execute:false` las filas
+ * quedan `approved` y las ejecuta el conector de a una (idempotency_key
+ * `sales-ops:{actionId}`) reportando con `whatspro_sales_queue_result`.
  */
 
 const KIND_HELP =
@@ -22,8 +26,10 @@ const KIND_HELP =
   'payload_template.text y send_at; al ejecutar se crea un programado por contacto y sale solo a esa hora), create_task ' +
   '(tarea para el responsable), request_demo (al ejecutar, una tarea por contacto en el workspace "Demos" de Tareas OS con la ' +
   'investigación del chat y el prompt para generar la web en AAPP SPACE; payload_template.text es la indicación opcional), ' +
-  'register_sale (registrar cobro), mark_pre_descarte (pasar a pre-descarte, sin mensaje), mark_descarte (descarte definitivo; ' +
-  'sólo lo aprueba una persona), assign_owner (devolver a la cola de un responsable), schedule_call (agendar llamada).';
+  'register_sale (registrar cobro: payload_template.extra {amount en UNIDADES, currency, method, paid_on, concept, receiptMessageId}; al aprobar el ' +
+  'servidor crea venta + asiento + pago en Finanzas, vincula al contacto como cliente y pasa el chat a G11), mark_pre_descarte (pasar a ' +
+  'pre-descarte, sin mensaje), mark_descarte (descarte definitivo; sólo lo aprueba una persona), assign_owner (devolver a la cola de un ' +
+  'responsable; extra {owner}), schedule_call (agendar llamada; extra {at: ISO}).';
 
 export const queueReadTools: GrokActionTool[] = [
   {
@@ -94,7 +100,7 @@ export const queueActionTools: GrokActionTool[] = [
           type: 'object',
           additionalProperties: false,
           properties: {
-            text: { type: 'string', maxLength: 4000, description: 'Texto (variante A). Variables: {{nombre}}, {{plan}}, {{precio}}.' },
+            text: { type: 'string', maxLength: 4000, description: 'Texto (variante A). Variables: {{nombre}}, {{plan}}, {{precio}}. Con párrafos separados por una línea en blanco: un bloque largo sin saltos se lee como un muro en WhatsApp (si viene así, el servidor lo parte por oración).' },
             text_b: { type: 'string', maxLength: 4000, description: 'Texto de la variante B (obligatorio con variant_split).' },
             task_title: { type: 'string', maxLength: 200 },
             due_in_days: { type: 'integer', minimum: 0, maximum: 365 },
@@ -115,9 +121,10 @@ export const queueActionTools: GrokActionTool[] = [
       'Aprueba un lote propuesto: las filas proposed/pending_approval pasan a approved con approved_by; las que se listan en ' +
       'exclude_action_ids pasan a rejected. Valida el rol (requires_role del lote: noelia/carlos por nombre de usuario; owner ' +
       'siempre puede). Si un chat del lote ya tiene otro envío aprobado en otro lote, NO aprueba nada y devuelve blockedChats ' +
-      'con el chat que lo bloquea (índice único: un envío aprobado por chat a la vez). Aprobar NO envía: la ejecución es por ' +
-      'conector (un envío por llamada, con dry_run primero) o manual, y se reporta con whatspro_sales_queue_result. ' +
-      'Exige confirm=true.',
+      'con el chat que lo bloquea (índice único: un envío aprobado por chat a la vez). Con execute=true el servidor ejecuta ' +
+      'ahí mismo lo aprobado si el tipo se puede hacer solo (' + SERVER_EXECUTABLE_KINDS.join(', ') + '): es lo que hace ' +
+      'la Cola de la UI al aprobar. Sin execute las filas quedan approved y la ejecución es por conector (un envío por ' +
+      'llamada, con dry_run primero) o manual, reportada con whatspro_sales_queue_result. Exige confirm=true.',
     inputSchema: {
       type: 'object',
       required: ['batch_id', 'confirm'],
@@ -125,6 +132,7 @@ export const queueActionTools: GrokActionTool[] = [
         batch_id: { type: 'string', minLength: 3, maxLength: 64 },
         exclude_action_ids: { type: 'array', items: { type: 'integer', minimum: 1 }, maxItems: 5000, description: 'Ids de acción (filas) que se sacan del lote antes de aprobar.' },
         confirm: { type: 'boolean', description: 'Debe ser true: un humano revisó la lista.' },
+        execute: { type: 'boolean', description: 'Default true: ejecuta ahí mismo lo aprobado si el tipo se puede hacer desde el servidor (envíos, programados, tareas, demos, cobros, pre-descarte, descarte, responsable, llamadas). Pasá false sólo si la persona quiere revisar la ejecución aparte o ejecutarla vos de a una.' },
       },
       additionalProperties: false,
     },
@@ -250,6 +258,7 @@ const approveSchema = z.object({
   batch_id: z.string().min(3).max(64),
   exclude_action_ids: z.array(z.number().int().positive()).max(5000).optional(),
   confirm: z.boolean(),
+  execute: z.boolean().optional(),
 });
 
 const editSchema = z.object({
@@ -292,7 +301,7 @@ export async function executeQueueTool(name: string, input: Record<string, unkno
     await assertPermission(context, 'salesOpsRead', SALES_OPS_PLUGIN_ID);
     const data = parse(listSchema, input);
     const batches = await listBatches(context.teamId, { status: data.status, limit: data.limit });
-    return { batches, note: 'Aprobar no envía. Las filas approved se ejecutan de a una con whatspro_chat_send_message y se reportan con whatspro_sales_queue_result.' };
+    return { batches, note: 'Aprobar ejecuta (execute default true). Lo que quede approved sin ejecutar se hace de a uno con la tool del kind y se reporta con whatspro_sales_queue_result.' };
   }
 
   if (name === 'whatspro_sales_queue_get') {
@@ -309,6 +318,8 @@ export async function executeQueueTool(name: string, input: Record<string, unkno
     await assertPermission(context, 'salesOpsWrite', SALES_OPS_PLUGIN_ID);
     const data = parse(proposeSchema, input);
     try {
+      if (data.payload_template?.text) data.payload_template.text = asegurarParrafos(data.payload_template.text);
+      if (data.payload_template?.text_b) data.payload_template.text_b = asegurarParrafos(data.payload_template.text_b);
       const result = await proposeBatch(context.teamId, {
         label: data.label,
         kind: data.kind,
@@ -358,7 +369,18 @@ export async function executeQueueTool(name: string, input: Record<string, unkno
     if (!data.confirm) throw new Error('confirm debe ser true: un humano tiene que revisar la lista antes de aprobar.');
     try {
       const result = await approveBatch(context.teamId, context.userId, data.batch_id, { excludeActionIds: data.exclude_action_ids });
-      return { ...result, note: 'Aprobado. La ejecución es por conector (un envío por llamada) o manual hasta la Fase 6.' };
+      // Default true: confirm=true ya dice que una persona revisó la lista, y
+      // aprobar es querer que salga. `execute:false` deja las filas para el conector.
+      if (data.execute !== false && result.approved > 0 && esEjecutableEnServidor(result.kind)) {
+        const execution = await executeApprovedBatch(context.teamId, context.userId, data.batch_id, { actionIds: result.approvedIds, max: 200 });
+        return { ...result, execution, note: `Aprobado y ejecutado desde el servidor: ${execution.executed} hechos · ${execution.skipped} salteados · ${execution.failed} fallidos.` };
+      }
+      return {
+        ...result,
+        note: esEjecutableEnServidor(result.kind)
+          ? 'Aprobado con execute=false. Quedó en approved: ejecutalo vos (un envío por llamada, con dry_run) o volvé a llamar con execute=true para que lo haga el servidor.'
+          : 'Aprobado. Este tipo lo ejecuta una persona o un conector y se reporta con whatspro_sales_queue_result.',
+      };
     } catch (error) {
       friendly(error);
     }

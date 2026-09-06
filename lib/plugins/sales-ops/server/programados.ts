@@ -58,6 +58,9 @@ export async function convertirProgramadoEnPedido(
     targetKind: primero ? 'chat' : 'team',
     targetId: primero?.chatId ?? null,
     mode: 'queue',
+    // Quien apretó "pasar a la cola" ya decidió: sin esto el pedido caía en
+    // "En revisión" y había que aprobarlo una segunda vez.
+    approved: true,
   });
 
   await db.delete(teamScheduledMessages).where(and(eq(teamScheduledMessages.teamId, teamId), eq(teamScheduledMessages.id, scheduledId)));

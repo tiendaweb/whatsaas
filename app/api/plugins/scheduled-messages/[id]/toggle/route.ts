@@ -4,6 +4,7 @@ import { db } from '@/lib/db/drizzle';
 import { teamScheduledMessages } from '@/lib/db/schema';
 import { getPluginRequestContext } from '@/lib/plugins/core/runtime-permissions';
 import { computeNextRunAt } from '@/lib/plugins/scheduled-messages/schedule';
+import { pausarAutomatizacionesDelProgramado } from '@/lib/chats/pausar-automatizacion';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,6 +46,10 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
     .set({ status: newStatus, nextRunAt, updatedAt: new Date() })
     .where(and(eq(teamScheduledMessages.id, msgId), eq(teamScheduledMessages.teamId, ctx.team.id)))
     .returning();
+
+  // Reactivarlo es volver a programarlo: el chat sale otra vez de los flujos.
+  // Ver lib/chats/pausar-automatizacion.
+  if (newStatus === 'active') await pausarAutomatizacionesDelProgramado(ctx.team.id, updated);
 
   return NextResponse.json(updated);
 }

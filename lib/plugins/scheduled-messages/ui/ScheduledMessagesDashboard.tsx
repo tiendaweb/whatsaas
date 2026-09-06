@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useRef, useEffect, type KeyboardEvent } from 'react';
+import { ZONA_NEGOCIO, aLocal, parsearLocal } from '@/lib/time/zona';
 import useSWR from 'swr';
 import { PROGRAMADOS_API, programadosFetcher } from './swr';
 import { Button } from '@/components/ui/button';
@@ -123,6 +124,7 @@ function formatSchedule(msg: ScheduledMessage): string {
   if (msg.scheduleType === 'once') {
     if (!msg.scheduledAt) return 'Una vez';
     return new Date(msg.scheduledAt).toLocaleString('es-ES', {
+      timeZone: ZONA_NEGOCIO,
       day: '2-digit', month: '2-digit', year: 'numeric',
       hour: '2-digit', minute: '2-digit',
     });
@@ -151,7 +153,7 @@ function formatRelativeDate(iso: string | null): string {
     const hrs = Math.round(absDiff / 3_600_000);
     return diff < 0 ? `Hace ${hrs}h` : `En ${hrs}h`;
   }
-  return d.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString('es-ES', { timeZone: ZONA_NEGOCIO, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
 function statusBadge(status: ScheduledMessage['status']) {
@@ -745,7 +747,8 @@ function GeneralScheduledMessagesDashboard() {
       instanceId: msg.instanceId != null ? String(msg.instanceId) : '',
       targetNumbers: msg.targetNumbers ?? [],
       scheduleType: msg.scheduleType,
-      scheduledAt: msg.scheduledAt ? new Date(msg.scheduledAt).toISOString().slice(0, 16) : '',
+      // En hora del negocio: `toISOString` mostraba la hora UTC (tres más) al editar.
+      scheduledAt: msg.scheduledAt ? aLocal(new Date(msg.scheduledAt)) : '',
       hour: msg.hour != null ? String(msg.hour) : '9',
       minute: msg.minute != null ? String(msg.minute) : '0',
       weekdays: msg.weekdays ?? [],
@@ -788,7 +791,8 @@ function GeneralScheduledMessagesDashboard() {
         instanceId: form.instanceId ? parseInt(form.instanceId, 10) : null,
         targetNumbers: form.targetNumbers,
         scheduleType: form.scheduleType,
-        scheduledAt: form.scheduleType === 'once' && form.scheduledAt ? form.scheduledAt : null,
+        // La hora escrita es la del negocio (Argentina), no la del navegador.
+        scheduledAt: form.scheduleType === 'once' && form.scheduledAt ? (parsearLocal(form.scheduledAt)?.toISOString() ?? null) : null,
         hour: (form.scheduleType === 'daily' || form.scheduleType === 'weekly') ? parseInt(form.hour, 10) : null,
         minute: (form.scheduleType === 'daily' || form.scheduleType === 'weekly') ? parseInt(form.minute, 10) : null,
         weekdays: form.scheduleType === 'weekly' ? form.weekdays : [],

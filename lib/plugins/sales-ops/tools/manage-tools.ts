@@ -182,9 +182,9 @@ export const manageActionTools: GrokActionTool[] = [
       'cada envío revisa si el cliente escribió después de la aprobación y en ese caso lo SALTEA (status skipped, ' +
       'la fila queda failed/customer_replied para que la relean); un timeout no se reintenta (queda failed/send_unknown y ' +
       'lo mira una persona); el destinatario lo resuelve el servidor desde el chat, nunca se pasa un teléfono. Máximo 25 ' +
-      'acciones por llamada: si el lote es más grande, volvé a llamarla hasta que executed+skipped+failed sea 0. Las ' +
-      'acciones de CRM (register_sale, assign_owner, schedule_call, mark_*) NO se ejecutan acá: quedan skipped para la ' +
-      'cola de conectores o una persona. Devuelve por acción: actionId, chatId, nombre, status (executed | skipped | ' +
+      'acciones por llamada: si el lote es más grande, volvé a llamarla hasta que executed+skipped+failed sea 0. Ejecuta ' +
+      'todo lo de SERVER_EXECUTABLE_KINDS: envío, programado, tarea, demo, cobro (register_sale → venta + asiento + pago en ' +
+      'Finanzas, cliente vinculado, chat a G11), pre-descarte, descarte, responsable y llamada. Devuelve por acción: actionId, chatId, nombre, status (executed | skipped | ' +
       'failed), reason y messageId. Exige confirm: true. NO uses whatspro_chat_send_message además de esto para el ' +
       'mismo lote.',
     inputSchema: {

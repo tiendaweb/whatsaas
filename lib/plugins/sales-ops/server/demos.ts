@@ -3,6 +3,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { contacts, messages, teamTaskProjects, teamTaskWorkspaces, type TaskChecklistItem } from '@/lib/db/schema';
 import { createTaskInColumn, getProjectFirstColumn, insertRelation } from '@/lib/plugins/tasks/server/task-os';
+import type { WorkKind } from '@/lib/plugins/tasks/shared/produccion';
 import { buildChatContext, runSkillWithApi } from './skill-runner';
 
 /**
@@ -90,6 +91,8 @@ export async function createDemoTask(input: {
   /** Investigación y prompt ya redactados (por un conector que leyó el chat): se usan tal cual, sin llamar a la IA. */
   research?: string;
   prompt?: string;
+  /** El canal viejo crea sitios AAPP; Producción OS permite precisar el tipo. */
+  workKind?: Extract<WorkKind, `demo_${string}`>;
 }): Promise<{ taskId: number; projectId: number; workspaceId: number; promptSource: 'ia' | 'base' | 'connector' } | { error: string }> {
   const contact = await db.query.contacts.findFirst({ where: and(eq(contacts.id, input.contactId), eq(contacts.teamId, input.teamId)), columns: { id: true, name: true } });
   if (!contact) return { error: 'contact_not_found' };
@@ -132,6 +135,9 @@ export async function createDemoTask(input: {
       { id: 'publicar', text: 'Publicar y revisar en el celular', completed: false },
       { id: 'avisar', text: 'Mandarle el link al cliente', completed: false },
     ] satisfies TaskChecklistItem[],
+    workKind: input.workKind ?? 'demo_sitio_aapp',
+    workStatus: 'pedido',
+    requestedBy: input.userId,
   });
   if (!task) return { error: 'task_not_created' };
 

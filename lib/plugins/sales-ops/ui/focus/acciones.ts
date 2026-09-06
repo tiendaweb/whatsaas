@@ -18,7 +18,7 @@ import type { SkillIcon } from '../../shared/skills';
  * siendo editable después de elegirla: la plantilla es un punto de partida, no
  * un formulario.
  */
-export const ACCIONES_FOCUS = ['mensaje', 'programar', 'tareas', 'calendario', 'documento', 'planificacion', 'crm', 'libre'] as const;
+export const ACCIONES_FOCUS = ['mensaje', 'programar', 'tareas', 'calendario', 'documento', 'planificacion', 'crm', 'cobro', 'libre'] as const;
 export type AccionFocus = (typeof ACCIONES_FOCUS)[number];
 
 export type DefinicionAccion = {
@@ -148,7 +148,21 @@ export const ACCIONES: Record<AccionFocus, DefinicionAccion> = {
       [
         `Poné el CRM de ${nombre} a tono con lo que dice el chat.`,
         detalle ? `QUÉ CORREGIR:\n${detalle}` : 'QUÉ CORREGIR: comparás el expediente con la etapa, las etiquetas y los campos que tiene, y arreglás lo que se contradice.',
-        'QUÉ HACER: whatspro_change_crm_stage, whatspro_set_contact_tags y whatspro_set_custom_fields sobre ESTE contacto. Sólo lo que contradice este chat, nunca en lote, y usando nombres que existan en el equipo (están en crm_catalog del expediente).',
+        'QUÉ HACER: whatspro_change_crm_stage, whatspro_set_contact_tags y whatspro_set_custom_fields sobre ESTE contacto. Sólo lo que contradice este chat, nunca en lote, y usando nombres que existan en el equipo (están en crmCatalog del expediente).',
+        cierre,
+      ].join('\n\n'),
+  },
+  cobro: {
+    key: 'cobro',
+    label: 'Cobro',
+    ayuda: 'Registrar un pago que el cliente confirmó: venta, asiento y pago en Finanzas, cliente vinculado, chat a G11.',
+    icon: 'sparkles',
+    tools: ['whatspro_sales_dossier', 'whatspro_sales_contact_money', 'whatspro_sales_register_payment'],
+    plantilla: (nombre, detalle) =>
+      [
+        `Registrá el cobro de ${nombre}.`,
+        detalle ? `QUÉ SE COBRÓ:\n${detalle}` : 'QUÉ SE COBRÓ: sacá importe, moneda y medio del chat (comprobante o mensaje del cliente).',
+        'QUÉ HACER: mirá whatspro_sales_contact_money por si hay una venta o asiento pendiente (cobrá contra ese id); después whatspro_sales_register_payment con el importe en UNIDADES, la moneda, el medio, la fecha y receipt_message_id si hay comprobante. Si el importe no está claro en el chat, preguntalo con human_request en vez de inventarlo.',
         cierre,
       ].join('\n\n'),
   },
@@ -162,7 +176,7 @@ export const ACCIONES: Record<AccionFocus, DefinicionAccion> = {
   },
 };
 
-export const ACCIONES_VISIBLES: AccionFocus[] = ['mensaje', 'programar', 'tareas', 'calendario', 'documento', 'planificacion', 'crm', 'libre'];
+export const ACCIONES_VISIBLES: AccionFocus[] = ['mensaje', 'programar', 'tareas', 'calendario', 'documento', 'planificacion', 'crm', 'cobro', 'libre'];
 
 /** Título de la corrida, para que en la Cola se lea qué es sin abrirla. */
 export function tituloDeAccion(accion: AccionFocus, nombre: string): string {
@@ -189,6 +203,7 @@ export function deducirAccion(texto: string): AccionFocus {
   if (/planificá|planificar|customer_360|entregable/.test(t)) return 'planificacion';
   if (/programad|programar un mensaje|scheduled_message|agendá el mensaje/.test(t)) return 'programar';
   if (/manage_document|documents_search|escribí un documento|informe/.test(t)) return 'documento';
+  if (/register_payment|registrá el cobro|registra el cobro|contact_money/.test(t)) return 'cobro';
   if (/crm_stage|set_contact_tags|set_custom_fields|etapa del embudo|etiquetas/.test(t)) return 'crm';
   if (/tareas_from_chat|create_contact_task|manage_task|tareas os/.test(t)) return 'tareas';
   if (/queue_propose|escribile|mensaje a /.test(t)) return 'mensaje';

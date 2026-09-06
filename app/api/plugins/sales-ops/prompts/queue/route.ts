@@ -36,17 +36,24 @@ const enqueueSchema = z.object({
   targetRef: z.string().max(64).nullable().optional(),
   variables: z.record(z.string().max(60), z.string().max(4000)).optional(),
   mode: z.enum(RUN_MODES).optional(),
+  /** Default true: lo escribió una persona en la ficha. false = dejarla en revisión. Misma regla que /prompts/launch. */
+  approved: z.boolean().optional(),
 });
 
-/** POST → deja un prompt en la cola de conectores (o lo corre por API si se pide). */
+/**
+ * POST → deja un prompt en la cola de conectores (o lo corre por API si se pide).
+ *
+ * Es la ruta histórica; `/prompts/launch` hace lo mismo con el mismo
+ * `launchRun` y el mismo default de `approved`. Las dos siguen porque tienen
+ * clientes, pero no pueden decidir distinto.
+ */
 export async function POST(request: NextRequest) {
   const ctx = await getSalesOpsContext('salesOpsWrite');
   if (!ctx.ok) return NextResponse.json({ error: ctx.message }, { status: ctx.status });
   const parsed = enqueueSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: 'Body inválido: { skillId? | text, targetKind, targetId?, variables?, mode? }' }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ error: 'Body inválido: { skillId? | text, targetKind, targetId?, variables?, mode?, approved? }' }, { status: 400 });
   try {
-    // Lo escribió una persona en la ficha: ya está aprobado.
-    const { run } = await launchRun(ctx.team.id, ctx.user.id, { ...parsed.data, mode: parsed.data.mode ?? 'queue', approved: true });
+    const { run } = await launchRun(ctx.team.id, ctx.user.id, { ...parsed.data, mode: parsed.data.mode ?? 'queue', approved: parsed.data.approved ?? true });
     return NextResponse.json(run, { status: 201 });
   } catch (error) {
     if (error instanceof LaunchError) return NextResponse.json({ error: error.message, missing: error.missing }, { status: 422 });

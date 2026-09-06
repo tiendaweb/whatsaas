@@ -57,6 +57,7 @@ import { cn } from '@/lib/utils';
 import { Link } from '@/i18n/routing';
 import { TagPill, type ContactTag } from './ContactTagsEditor';
 import { ConvertLeadActions } from './ConvertLeadActions';
+import { formatMoney as formatMoneySeguro, formatMoneyFromCents } from '@/lib/format/money';
 
 type CustomField = { id: number; name: string; key: string; type: 'text' | 'boolean' };
 type ContactTask = { id: number; title: string; notes: string; status: string; dueDate: string | null; createdAt: string };
@@ -163,7 +164,10 @@ export function CustomerProfileDialog({
     : t('no_value');
   const formatMoney = (amount: string | number | null | undefined, currency = 'USD', cents = false) => {
     const numeric = Number(amount || 0) / (cents ? 100 : 1);
-    return new Intl.NumberFormat(locale, { style: 'currency', currency: currency || 'USD' }).format(Number.isFinite(numeric) ? numeric : 0);
+    // La moneda puede venir de `team_customer_transactions`, donde el sync de
+    // AAPP dejó nombres de acción en vez de códigos ISO. `|| 'USD'` no protege:
+    // esos strings son truthy y hacían reventar el diálogo entero.
+    return formatMoneySeguro(numeric, currency, { locale, maximumFractionDigits: 2 });
   };
 
   const saveContact = async (body: Record<string, unknown>, kind: 'note' | 'fields') => {

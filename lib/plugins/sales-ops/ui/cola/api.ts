@@ -1,5 +1,6 @@
 'use client';
 
+import { ZONA_NEGOCIO } from '@/lib/time/zona';
 import type { ActionKind, ActionRole, ActionStatus, Gate } from '../../shared/taxonomy';
 
 export const QUEUE_ENDPOINT = '/api/plugins/sales-ops/queue';
@@ -80,7 +81,7 @@ export function formatDate(iso: string | null | undefined, withTime = false): st
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '—';
   try {
-    return new Intl.DateTimeFormat('es-AR', withTime ? { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' } : { day: '2-digit', month: '2-digit' }).format(date);
+    return new Intl.DateTimeFormat('es-AR', withTime ? { timeZone: ZONA_NEGOCIO, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' } : { timeZone: ZONA_NEGOCIO, day: '2-digit', month: '2-digit' }).format(date);
   } catch {
     return date.toISOString().slice(0, 10);
   }

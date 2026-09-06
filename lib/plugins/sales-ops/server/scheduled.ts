@@ -2,6 +2,8 @@ import 'server-only';
 import { db } from '@/lib/db/drizzle';
 import { teamScheduledMessages } from '@/lib/db/schema';
 import { computeNextRunAt } from '@/lib/plugins/scheduled-messages/schedule';
+import { pausarAutomatizacionesDelProgramado } from '@/lib/chats/pausar-automatizacion';
+import { formatoLocal, proximoHorarioFuturo } from '@/lib/time/zona';
 
 /**
  * Deja un mensaje programado a partir de una acción aprobada de la cola.
@@ -23,7 +25,10 @@ export async function scheduleActionMessage(input: {
   sendAt: Date;
 }): Promise<{ id: number } | { error: string }> {
   if (!input.instanceId) return { error: 'El chat no tiene una instancia de WhatsApp asociada.' };
-  if (input.sendAt.getTime() < Date.now() + 60_000) return { error: 'La fecha de salida ya pasó.' };
+  if (input.sendAt.getTime() < Date.now() + 60_000) {
+    const proximo = proximoHorarioFuturo(input.sendAt);
+    return { error: `La fecha de salida (${formatoLocal(input.sendAt)}) ya pasó. Corregí la fila con una futura, por ejemplo ${formatoLocal(proximo.date)}.` };
+  }
   const phone = (input.remoteJid || '').split('@')[0].replace(/\D/g, '');
   if (!phone) return { error: 'No se pudo resolver el teléfono del chat.' };
   const [row] = await db
@@ -43,5 +48,15 @@ export async function scheduleActionMessage(input: {
       createdBy: input.userId,
     })
     .returning({ id: teamScheduledMessages.id });
+  // El chat sale de los flujos automáticos: si no, cuando el cliente conteste
+  // este mensaje el flujo se le adelanta. Ver lib/chats/pausar-automatizacion.
+  await pausarAutomatizacionesDelProgramado(input.teamId, {
+    id: row.id,
+    name: input.name,
+    status: 'active',
+    actionType: 'message',
+    instanceId: input.instanceId,
+    targetNumbers: [phone],
+  });
   return { id: row.id };
 }

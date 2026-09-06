@@ -2,12 +2,13 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
-import { Ban, ChevronDown, ChevronUp, Copy, Loader2, Plug, RefreshCw, Undo2, X } from 'lucide-react';
+import { Ban, ChevronDown, ChevronUp, Copy, ListPlus, Loader2, Plug, RefreshCw, Undo2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { PROMPT_P9 } from '@/lib/plugins/sales-ops/shared/prompt-p9';
 import { SALES_OPS_API } from '../components/format';
-import { cancelRun } from '../skills/api';
+import { cancelRun, launchSkill, type SkillsPayload } from '../skills/api';
 import { QUEUE_ENDPOINT } from './api';
 
 type WorkKind = 'run_prompt' | 'classify' | 'execute_action' | 'classify_signal' | 'transcribe';
@@ -32,14 +33,15 @@ const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : Promi
 
 const LABELS: Record<WorkKind, string> = {
   run_prompt: 'Prompts encolados',
-  execute_action: 'Envíos y acciones aprobadas',
+  execute_action: 'Aprobado sin ejecutar',
   classify: 'Chats por clasificar',
   classify_signal: 'Respuestas por clasificar',
   transcribe: 'Audios por transcribir',
 };
 const REASON: Record<string, string> = { sin_analisis: 'sin analizar', import: 'importado', stale: 'desactualizado', chat_changed: 'el chat cambió' };
 
-export const PROMPT_P9 = `Pedí whatspro_sales_work_queue. Trabajá los ítems en el orden en que vienen (los envíos aprobados primero, después clasificaciones del prefiltro de dinero, después respuestas nuevas, después audios). Por cada ítem seguí exactamente sus "steps" y cerrá con la tool de resultado antes de pasar al siguiente. No toques el CRM (etapas, etiquetas, campos, automatizaciones, clientes). Nunca reintentes un envío que dio timeout: reportalo como send_unknown con el chat. Cuando termines el lote, volvé a pedir la cola; si viene vacía, informá cuántos ítems hiciste por tipo. Límite por sesión: 30 ítems.`;
+/** La skill sembrada con ese mismo texto; "Encolar P9" la lanza a la cola de conectores. */
+const SKILL_P9 = 'qa.p9-drenar-cola';
 
 /** La clave con la que el servidor identifica un ítem para descartarlo. */
 function keyOf(it: WorkItem): string {
@@ -71,9 +73,18 @@ export function ConectoresCard() {
       await navigator.clipboard.writeText(PROMPT_P9);
       toast.success('Prompt P9 copiado. Pegalo en Claude, ChatGPT o Grok con el conector de WhatsPro.');
     } catch {
-      toast.error('No se pudo copiar. Abrí el documento "07 — Prompt Studio" y copiá el P9 a mano.');
+      toast.error('No se pudo copiar. El P9 también existe como skill "qa.p9-drenar-cola": lanzala desde el Prompt Studio o con whatspro_sales_prompt_launch.');
     }
   };
+
+  /** Deja el P9 en la cola de conectores como corrida de la skill sembrada, sin copiar nada a mano. */
+  const encolarP9 = () =>
+    correr('p9', async () => {
+      const { skills } = (await fetcher(`${SALES_OPS_API}/prompts`)) as SkillsPayload;
+      const skill = skills.find((s) => s.key === SKILL_P9);
+      if (!skill) throw new Error('La skill qa.p9-drenar-cola no está sembrada en este equipo: lanzá el P9 desde el Prompt Studio.');
+      await launchSkill({ skillId: skill.id, targetKind: 'team', mode: 'queue' });
+    }, 'P9 encolado: el próximo conector que pida la cola lo va a tomar.');
 
   const correr = async (id: string, fn: () => Promise<unknown>, ok: string) => {
     setBusy(id);
@@ -142,7 +153,7 @@ export function ConectoresCard() {
             {isLoading ? 'Calculando…' : error ? 'No se pudo cargar la cola.' : total === 0 ? 'Nada pendiente para los conectores.' : `${total} ítems esperan un conector.`}
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Lo que el servidor no puede hacer sin cuota de IA (clasificar, transcribir) y los envíos aprobados quedan acá. Tocá un tipo para ver los ítems y descartar lo que no corresponda.
+            Lo que el servidor no puede hacer solo: pedidos que exigen leer el chat, clasificar y transcribir sin cuota, y lo aprobado que no pudo ejecutar (cobros, fallas). Tocá un tipo para ver los ítems y descartar lo que no corresponda.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -152,6 +163,10 @@ export function ConectoresCard() {
           <Button type="button" size="sm" variant="outline" className="gap-1.5" onClick={copy}>
             <Copy className="size-3.5" aria-hidden />
             Copiar prompt P9
+          </Button>
+          <Button type="button" size="sm" variant="outline" className="gap-1.5" disabled={busy !== null} onClick={() => void encolarP9()} title="Deja el P9 en la cola como corrida de la skill qa.p9-drenar-cola">
+            {busy === 'p9' ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <ListPlus className="size-3.5" aria-hidden />}
+            Encolar P9
           </Button>
         </div>
       </div>

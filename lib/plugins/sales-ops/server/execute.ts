@@ -1,13 +1,19 @@
 import 'server-only';
 import { and, desc, eq, gt, inArray } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
-import { activityLogs, chats, messages, teamCommercialActions } from '@/lib/db/schema';
+import { activityLogs, chats, messages, teamCommercialActions, teamCommercialAnalysis } from '@/lib/db/schema';
 import { maskJid } from '@/lib/desktop/command-center/types';
 import { sendTeamTextMessage } from '@/lib/messaging/send';
 import { createContactTask } from '@/lib/plugins/tasks/server/contact-tasks';
+import { createEvent } from '@/lib/plugins/calendar/server/events';
+import { HORA_LABORAL, desdeZona, fechaEnZona, proximoHorarioFuturo, sumarDias } from '@/lib/time/zona';
+import { OWNERS, type Gate, type Owner } from '../shared/taxonomy';
+import { setManualOverride } from './classifier';
 import { createDemoTask } from './demos';
+import { transferLead } from './lead';
 import { scheduleActionMessage } from './scheduled';
 import { markResult } from './queue';
+import { CobroError, parsearImporte, registrarCobro } from './cobros';
 
 /**
  * Fase 6: ejecutar desde el servidor lo que una persona ya aprobó.
@@ -15,8 +21,12 @@ import { markResult } from './queue';
  * Hasta acá, aprobar un lote dejaba las acciones en `approved` y alguien tenía
  * que mandarlas a mano o pedirle a un conector que las drenara. Eso sigue
  * funcionando (la cola de conectores no cambia); esto agrega el camino directo.
+ * Desde el 2026-09-05 aprobar desde la Cola llama a esto en el mismo request
+ * (`SERVER_EXECUTABLE_KINDS`): lo que tiene el dato completo se hace al
+ * aprobar, y sólo queda `approved` lo que falló o lo que necesita a alguien.
  *
- * Los cinco seguros, que no se aflojan:
+ * Los cinco seguros, que no se aflojan (la cola de conectores sólo recibe lo que
+ * el servidor no ejecutó: fallas y lo aprobado con `execute:false`):
  *  1. Sólo se ejecuta lo que está en `approved`. Nada salta la aprobación.
  *  2. Un envío por acción, con clave idempotente derivada del id de la acción:
  *     doble clic, F5 y reintento producen un solo mensaje.
@@ -46,8 +56,37 @@ export type ExecuteBatchResult = {
   results: ExecuteOutcome[];
 };
 
-/** Cuántas acciones se ejecutan por request. Más que esto pide otro click. */
+/** Cuántas acciones se ejecutan por request si no se pide otra cosa. */
 const MAX_POR_TANDA = 25;
+/** Techo absoluto por request: un envío tarda ~1 s y la ruta tiene 300 s. */
+const MAX_ABSOLUTO = 200;
+
+/**
+ * Los datos "extra" de una acción. `proposeBatch` los guardó aplanados en la
+ * raíz del payload durante semanas y este archivo los leía de `payload.extra`,
+ * que no existía: el motivo del pre-descarte y la hora de la llamada se
+ * perdían. Ahora vienen de las dos formas; se leen de las dos.
+ */
+function extraDe(payload: Record<string, unknown>): Record<string, unknown> {
+  const anidado = (payload.extra ?? {}) as Record<string, unknown>;
+  return { ...payload, ...anidado };
+}
+
+/** Fecha de una acción (`sendAt`, `dueAt`, `at`, `dueDate`), o `null` si no hay ninguna válida. Un día solo = ese día a las 10, hora del negocio. */
+function fechaDelPayload(payload: Record<string, unknown>): Date | null {
+  const extra = extraDe(payload);
+  for (const v of [payload.sendAt, payload.dueAt, extra.at, payload.dueDate, extra.dueDate]) {
+    if (typeof v !== 'string' || !v) continue;
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(v) ? desdeZona(v, HORA_LABORAL.porDefecto, 0) : new Date(v);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  return null;
+}
+
+/** Mañana a las 10 de la mañana, hora del negocio: el default de "agendar" cuando nadie puso hora. */
+function mananaALasDiez(): Date {
+  return desdeZona(sumarDias(fechaEnZona(), 1), HORA_LABORAL.porDefecto, 0);
+}
 
 async function audit(teamId: number, userId: number | null, action: string, metadata: Record<string, unknown>) {
   try {
@@ -81,7 +120,7 @@ export async function executeApprovedBatch(
   teamId: number,
   userId: number,
   batchId: string,
-  opts: { actionIds?: number[] } = {},
+  opts: { actionIds?: number[]; max?: number } = {},
 ): Promise<ExecuteBatchResult> {
   const conditions = [eq(teamCommercialActions.teamId, teamId), eq(teamCommercialActions.batchId, batchId), eq(teamCommercialActions.status, 'approved')];
   if (opts.actionIds?.length) conditions.push(inArray(teamCommercialActions.id, opts.actionIds));
@@ -103,7 +142,7 @@ export async function executeApprovedBatch(
     .innerJoin(chats, eq(chats.id, teamCommercialActions.chatId))
     .where(and(...conditions))
     .orderBy(teamCommercialActions.id)
-    .limit(MAX_POR_TANDA);
+    .limit(Math.min(Math.max(1, opts.max ?? MAX_POR_TANDA), MAX_ABSOLUTO));
 
   const results: ExecuteOutcome[] = [];
 
@@ -218,9 +257,104 @@ export async function executeApprovedBatch(
         continue;
       }
 
-      // El resto (registrar cobro, cambiar responsable, agendar) todavía lo hace
-      // una persona o un conector: acá no se inventa una escritura de CRM.
-      results.push({ ...base, status: 'skipped', reason: `"${row.kind}" se ejecuta desde la cola de conectores o a mano.` });
+      // Pre-descarte y descarte: el estado del análisis, con versión
+      // `manual_override` firmada por quien aprobó. Es lo que hacía a mano
+      // desde la ficha; el lote sólo lo aplica a varios de una vez.
+      if (row.kind === 'mark_pre_descarte' || row.kind === 'mark_descarte') {
+        const status = row.kind === 'mark_descarte' ? 'descarte_definitivo' : 'pre_descarte';
+        const extra = extraDe(payload);
+        const reason = [typeof extra.reason === 'string' ? extra.reason : null, typeof extra.rule === 'string' ? extra.rule : null, typeof payload.text === 'string' ? payload.text : null]
+          .filter(Boolean)
+          .join(' · ')
+          .slice(0, 300) || `Lote ${row.id}`;
+        const [actual] = await db
+          .select({ gate: teamCommercialAnalysis.currentGate })
+          .from(teamCommercialAnalysis)
+          .where(and(eq(teamCommercialAnalysis.teamId, teamId), eq(teamCommercialAnalysis.chatId, row.chatId)))
+          .limit(1);
+        const gate = (row.kind === 'mark_descarte' ? 'GX' : (actual?.gate as Gate | undefined) ?? 'G0') as Gate;
+        await setManualOverride(teamId, row.chatId, userId, { gate, status, reason: reason.length >= 3 ? reason : `Lote ${row.id}` });
+        await markResult(teamId, row.id, { status: 'executed', result: { status, gate }, executedVia: 'command-center', userId });
+        results.push({ ...base, status: 'executed' });
+        continue;
+      }
+
+      // Responsable: el mismo `transferLead` del menú ⋯ de las listas.
+      if (row.kind === 'assign_owner') {
+        const extra = extraDe(payload);
+        const owner = (typeof extra.owner === 'string' ? extra.owner : '') as Owner;
+        if (!OWNERS.includes(owner)) {
+          await markResult(teamId, row.id, { status: 'failed', result: { error: 'sin_responsable' }, executedVia: 'command-center', userId });
+          results.push({ ...base, status: 'failed', reason: 'La acción no dice a quién asignarlo.' });
+          continue;
+        }
+        await transferLead(teamId, userId, row.chatId, owner);
+        await markResult(teamId, row.id, { status: 'executed', result: { owner }, executedVia: 'command-center', userId });
+        results.push({ ...base, status: 'executed' });
+        continue;
+      }
+
+      // Llamada: un evento del Calendario, vinculado al contacto. Sin hora en
+      // el payload va mañana a las 10; nadie pierde una llamada por no haber
+      // puesto la hora, y moverla es un arrastre en el calendario.
+      if (row.kind === 'schedule_call') {
+        // Una llamada con la hora ya pasada se corre al próximo horario con sentido.
+        const startsAt = proximoHorarioFuturo(fechaDelPayload(payload) ?? mananaALasDiez()).date;
+        const endsAt = new Date(startsAt.getTime() + 30 * 60_000);
+        const evento = await createEvent(teamId, userId, {
+          title: typeof payload.taskTitle === 'string' && payload.taskTitle.trim() ? payload.taskTitle.trim() : `Llamar a ${name}`,
+          startsAt,
+          endsAt,
+          kind: 'call',
+          notes: typeof payload.text === 'string' ? payload.text : `Command Center · lote ${row.id}`,
+          contactId: row.contactId ?? null,
+          reminderMinutes: [15],
+        });
+        await markResult(teamId, row.id, { status: 'executed', result: { eventId: evento.id, startsAt: startsAt.toISOString() }, executedVia: 'command-center', userId });
+        results.push({ ...base, status: 'executed' });
+        continue;
+      }
+
+      // Cobro: la persona que aprobó vio importe, moneda y medio en la fila.
+      // `registrarCobro` deja consistentes venta, asiento, pago, cliente y
+      // análisis (G11); idempotente por acción, así que un reintento no cobra dos veces.
+      if (row.kind === 'register_sale') {
+        const extra = extraDe(payload);
+        const amount = parsearImporte(extra.amount);
+        const currency = typeof extra.currency === 'string' ? extra.currency : '';
+        if (!amount || !currency) {
+          await markResult(teamId, row.id, { status: 'failed', result: { error: 'sin_importe' }, executedVia: 'command-center', userId });
+          results.push({ ...base, status: 'failed', reason: 'La acción no tiene importe o moneda: editala antes de aprobar.' });
+          continue;
+        }
+        try {
+          const cobro = await registrarCobro(teamId, userId, {
+            chatId: row.chatId,
+            amount,
+            currency,
+            method: typeof extra.method === 'string' ? extra.method : null,
+            paidOn: typeof extra.paidOn === 'string' ? extra.paidOn : null,
+            concept: typeof extra.concept === 'string' ? extra.concept : typeof payload.text === 'string' ? payload.text.slice(0, 120) : null,
+            saleId: typeof extra.saleId === 'number' ? extra.saleId : null,
+            entryId: typeof extra.entryId === 'number' ? extra.entryId : null,
+            receiptMessageId: typeof extra.receiptMessageId === 'string' ? extra.receiptMessageId : null,
+            idempotencyKey: `sales-ops:${row.id}`,
+            via: 'cola',
+          });
+          await markResult(teamId, row.id, { status: 'executed', result: { saleId: cobro.sale?.id ?? null, entryId: cobro.entry?.id ?? null, paymentId: cobro.paymentId, customerId: cobro.customer?.id ?? null, amount, currency, summary: cobro.summary }, executedVia: 'command-center', userId });
+          results.push({ ...base, status: 'executed' });
+        } catch (error) {
+          if (error instanceof CobroError) {
+            await markResult(teamId, row.id, { status: 'failed', result: { error: error.message.slice(0, 300) }, executedVia: 'command-center', userId });
+            results.push({ ...base, status: 'failed', reason: error.message });
+            continue;
+          }
+          throw error;
+        }
+        continue;
+      }
+
+      results.push({ ...base, status: 'skipped', reason: `"${row.kind}" no se puede ejecutar desde el servidor.` });
     } catch (error) {
       // Un timeout entra por acá. NO se reintenta: se marca y lo mira alguien.
       const message = error instanceof Error ? error.message : String(error);

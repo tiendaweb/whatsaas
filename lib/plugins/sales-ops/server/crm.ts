@@ -2,6 +2,7 @@ import 'server-only';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { activityLogs, chats, contactTags, contacts, customFields, funnelStages, tags, teamCommercialAnalysis } from '@/lib/db/schema';
+import { isNotNull } from 'drizzle-orm';
 import type { CrmFix } from '../shared/crm-fix';
 
 /**
@@ -191,14 +192,18 @@ export type ApplyCrmFixResult = {
  * Al terminar borra la propuesta: ya se aplicó, y un botón que sigue ahí
  * después de apretarlo invita a aplicarla dos veces.
  */
-export async function applyCrmFix(teamId: number, userId: number, chatId: number): Promise<ApplyCrmFixResult> {
+export async function applyCrmFix(teamId: number, userId: number, chatId: number, opts: { fix?: CrmFix } = {}): Promise<ApplyCrmFixResult> {
   const [analysis] = await db
     .select({ id: teamCommercialAnalysis.id, crmFix: teamCommercialAnalysis.crmFix })
     .from(teamCommercialAnalysis)
     .where(and(eq(teamCommercialAnalysis.teamId, teamId), eq(teamCommercialAnalysis.chatId, chatId)))
     .limit(1);
 
-  const fix = analysis?.crmFix as CrmFix | null | undefined;
+  // Con `opts.fix` se aplica ESA corrección (la que acaba de proponer
+  // "Ejecutar ahora" del Focus y la persona confirmó en pantalla) en vez de la
+  // guardada por la clasificación. Pasa por el mismo camino y las mismas
+  // validaciones: lo único que cambia es de dónde sale la propuesta.
+  const fix = opts.fix ?? (analysis?.crmFix as CrmFix | null | undefined);
   if (!fix) throw new CrmError('Este contacto no tiene una corrección de CRM para aplicar.');
 
   const actual = await getCrm(teamId, chatId);
@@ -269,14 +274,78 @@ export async function applyCrmFix(teamId: number, userId: number, chatId: number
 
   const crm = await updateCrm(teamId, userId, chatId, patch);
 
-  await db
-    .update(teamCommercialAnalysis)
-    .set({ crmFix: null, crmToFix: null })
-    .where(and(eq(teamCommercialAnalysis.teamId, teamId), eq(teamCommercialAnalysis.chatId, chatId)));
+  // La propuesta guardada se borra sólo si fue la que se aplicó: una corrección
+  // propuesta desde el Focus no tiene por qué pisar la de la clasificación.
+  if (!opts.fix && analysis) {
+    await db
+      .update(teamCommercialAnalysis)
+      .set({ crmFix: null, crmToFix: null })
+      .where(and(eq(teamCommercialAnalysis.teamId, teamId), eq(teamCommercialAnalysis.chatId, chatId)));
+  }
 
   await audit(teamId, userId, 'SALES_OPS_CRM_FIX_APPLIED', { chatId, contactId: actual.contactId, applied, skipped, propuesta: fix });
 
   return { applied, skipped, crm };
+}
+
+export type CrmFixPendiente = {
+  chatId: number;
+  name: string;
+  gate: string | null;
+  fix: CrmFix;
+  texto: string | null;
+  analyzedAt: string | null;
+};
+
+/**
+ * Las correcciones de CRM que dejó la clasificación y nadie aplicó todavía.
+ *
+ * Antes sólo se veían adentro de la ficha de cada contacto: había que abrirlo
+ * para enterarse de que la etapa estaba mal. Como son una decisión pendiente
+ * igual que un lote, la Cola las lista en "En revisión" y se aplican o se
+ * descartan desde ahí, de a una, sin tocar el CRM en lote.
+ */
+export async function listCrmFixes(teamId: number, limit = 200): Promise<CrmFixPendiente[]> {
+  const rows = await db
+    .select({
+      chatId: teamCommercialAnalysis.chatId,
+      gate: teamCommercialAnalysis.currentGate,
+      fix: teamCommercialAnalysis.crmFix,
+      texto: teamCommercialAnalysis.crmToFix,
+      analyzedAt: teamCommercialAnalysis.analyzedAt,
+      chatName: chats.name,
+      pushName: chats.pushName,
+      remoteJid: chats.remoteJid,
+      contactName: contacts.name,
+    })
+    .from(teamCommercialAnalysis)
+    .innerJoin(chats, eq(chats.id, teamCommercialAnalysis.chatId))
+    .leftJoin(contacts, and(eq(contacts.chatId, chats.id), eq(contacts.teamId, teamId)))
+    .where(and(eq(teamCommercialAnalysis.teamId, teamId), isNotNull(teamCommercialAnalysis.crmFix)))
+    .orderBy(sql`${teamCommercialAnalysis.analyzedAt} desc nulls last`)
+    .limit(limit);
+  return rows
+    .filter((r) => r.fix && typeof r.fix === 'object')
+    .map((r) => ({
+      chatId: r.chatId,
+      name: r.contactName?.trim() || r.chatName?.trim() || r.pushName?.trim() || `…${(r.remoteJid || '').replace(/\D/g, '').slice(-4)}`,
+      gate: r.gate ?? null,
+      fix: r.fix as CrmFix,
+      texto: r.texto ?? null,
+      analyzedAt: r.analyzedAt ? r.analyzedAt.toISOString() : null,
+    }));
+}
+
+/** Descarta la corrección propuesta sin aplicarla. Queda auditado qué se descartó. */
+export async function dismissCrmFix(teamId: number, userId: number, chatId: number): Promise<{ chatId: number }> {
+  const [row] = await db
+    .update(teamCommercialAnalysis)
+    .set({ crmFix: null, crmToFix: null })
+    .where(and(eq(teamCommercialAnalysis.teamId, teamId), eq(teamCommercialAnalysis.chatId, chatId), isNotNull(teamCommercialAnalysis.crmFix)))
+    .returning({ chatId: teamCommercialAnalysis.chatId });
+  if (!row) throw new CrmError('Este contacto no tiene una corrección de CRM pendiente.');
+  await audit(teamId, userId, 'SALES_OPS_CRM_FIX_DISMISSED', { chatId });
+  return { chatId };
 }
 
 /** Compara nombres como los compara una persona: sin mayúsculas ni acentos. */

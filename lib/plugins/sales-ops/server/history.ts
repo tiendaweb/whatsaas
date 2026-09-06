@@ -28,7 +28,7 @@ import { GATE_LABELS, type Gate } from '../shared/taxonomy';
  * en la constante cruda en inglés: `SALES_OPS_CHATS_EXCLUDED` se leía
  * "chats_excluded" y parecía un error del sistema.
  */
-export const HISTORY_KINDS = ['analisis', 'manual', 'radar', 'prompt', 'cola', 'envio', 'crm', 'skill', 'limpieza', 'otro'] as const;
+export const HISTORY_KINDS = ['analisis', 'manual', 'radar', 'prompt', 'cola', 'envio', 'crm', 'cobro', 'skill', 'limpieza', 'otro'] as const;
 export type HistoryKind = (typeof HISTORY_KINDS)[number];
 
 const ACCIONES: Record<string, { label: string; kind: HistoryKind }> = {
@@ -45,6 +45,7 @@ const ACCIONES: Record<string, { label: string; kind: HistoryKind }> = {
   SALES_OPS_BATCH_EXECUTED: { label: 'Lote ejecutado', kind: 'envio' },
   SALES_OPS_VISIBILITY: { label: 'Visibilidad cambiada', kind: 'manual' },
   SALES_OPS_CRM_UPDATED: { label: 'CRM editado', kind: 'crm' },
+  SALES_OPS_COBRO_REGISTRADO: { label: 'Cobro registrado', kind: 'cobro' },
   SALES_OPS_SKILL_SAVED: { label: 'Skill guardada', kind: 'skill' },
   SALES_OPS_SKILL_RETIRED: { label: 'Skill retirada', kind: 'skill' },
   SALES_OPS_SKILL_PINNED: { label: 'Skill fijada', kind: 'skill' },

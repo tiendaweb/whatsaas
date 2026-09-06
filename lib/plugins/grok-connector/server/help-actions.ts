@@ -123,6 +123,7 @@ const GUIDES: Record<HelpDomain, string> = {
     '- whatspro_finance_record_entry: un ingreso o gasto. Montos ENTEROS en la unidad mínima ($200.000 = 200000).',
     '- whatspro_finance_settle_entry: marca pagado o registra un pago parcial contra una cuenta.',
     '- whatspro_register_sale: venta con ítems (con create_entry=true asienta el ingreso).',
+    '- whatspro_sales_register_payment: el cobro de UN chat del Command Center Comercial {chat_id, amount en UNIDADES (no en centavos), currency, method, paid_on, concept, idempotency_key, confirm}: crea la venta, el asiento y el pago, vincula al contacto como cliente y pasa el chat a G11. Sólo desde una fila "Registrar cobro" aprobada o por pedido explícito de una persona; nunca por deducción del chat.',
     '- whatspro_finance_manage_account: cuentas. whatspro_finance_manage_exchange_rate: cotizaciones (afectan TODOS los reportes).',
     '',
     '## Trampas',

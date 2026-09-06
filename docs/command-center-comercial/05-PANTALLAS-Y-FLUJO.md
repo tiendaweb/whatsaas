@@ -1,5 +1,7 @@
 # D · Mapa de pantallas · E · Flujo operativo
 
+> **Vigencia (2026-09-05):** aprobar ejecuta (`SERVER_EXECUTABLE_KINDS`: envío, programado, tarea, demo, pre-descarte, descarte, responsable, llamada; y desde el 2026-09-06 también registrar cobro), los conectores corrigen el CRM de a un contacto (sólo lo que contradice ese chat, nunca en lote), y los cobros van por `whatspro_sales_register_payment`. Lo que sigue describe el diseño original.
+
 Móvil primero. Cada pantalla responde una pregunta concreta; si una pantalla no responde ninguna de las ocho preguntas de la misión, no existe.
 
 | Pregunta | Pantalla |

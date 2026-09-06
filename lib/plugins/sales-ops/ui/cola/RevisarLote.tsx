@@ -11,19 +11,60 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { surfaceCard } from '@/components/escritorio/tokens';
 import type { ActionRow, QueueBatchPayload } from '../../shared/api-types';
+import { esEjecutableEnServidor, type ActionKind } from '../../shared/taxonomy';
 import { KIND_LABELS, PHASE_LABELS, QUEUE_ENDPOINT, ROLE_LABELS, STATUS_LABELS, batchPhase, fetcher, formatDate, postJson, type ApiError } from './api';
 
 const PENDING = new Set(['proposed', 'pending_approval']);
 
 /**
+ * Qué hace "Aprobar" según el tipo de lote, dicho en el botón.
+ *
+ * Aprobar ya ejecuta lo que el servidor sabe hacer solo: un programado queda
+ * programado, un mensaje sale, una tarea se crea. El botón lo dice para que
+ * nadie apriete creyendo que después viene otro paso —y para que con un envío
+ * se lea "enviar" antes de confirmar.
+ */
+function etiquetaAprobar(kind: ActionKind | undefined, n: number): string {
+  const verbo: Partial<Record<ActionKind, string>> = {
+    send_message: 'enviar',
+    schedule_message: 'programar',
+    create_task: 'crear',
+    request_demo: 'pedir',
+    mark_pre_descarte: 'marcar',
+    mark_descarte: 'marcar',
+    assign_owner: 'asignar',
+    schedule_call: 'agendar',
+  };
+  const v = kind ? verbo[kind] : undefined;
+  return v ? `Aprobar y ${v} ${n}` : `Aprobar ${n}`;
+}
+
+/** El error crudo de una fila fallida, en castellano. */
+function motivoDeFalla(result: Record<string, unknown> | null | undefined): string | null {
+  const e = result && typeof result.error === 'string' ? result.error : null;
+  if (!e) return null;
+  if (e === 'customer_replied') return 'El cliente escribió después de la aprobación: no salió.';
+  if (e === 'send_unknown') return 'Timeout: no se sabe si salió. Revisá el chat antes de reintentar.';
+  if (e === 'sin_texto') return 'La acción no tiene texto.';
+  if (e === 'sin_texto_o_fecha') return 'La acción no tiene texto o fecha de salida.';
+  if (e === 'sin_contacto') return 'El chat no tiene ficha de contacto.';
+  if (e === 'sin_responsable') return 'La acción no dice a quién asignarlo.';
+  if (e === 'manual') return 'Marcado como fallido a mano.';
+  return e.slice(0, 200);
+}
+
+/**
  * "Revisar lote" (doc 05 §5): lista completa de contactos con checkbox para
  * excluir, texto final por contacto, advertencias resaltadas y dos botones:
- * "Aprobar N" y "Rechazar lote". Aprobar NO envía.
+ * "Aprobar y <verbo> N" y "Rechazar lote". Aprobar ejecuta en el acto lo que
+ * el servidor sabe hacer solo; "Ejecutar" queda para lo que quedó aprobado sin
+ * salir (fallas, lotes viejos).
  */
 export function RevisarLote({
   batchId,
   onBack,
   onChanged,
+  onDecidido,
   onOpen,
   selectedChatId,
   embebido,
@@ -31,7 +72,14 @@ export function RevisarLote({
   batchId: string;
   /** Sin esto (modo embebido) no hay a dónde volver: el lote ya está a la vista. */
   onBack?: () => void;
+  /** Algo cambió en el lote (una edición, una indicación, una fila menos): hay que volver a pedirlo. */
   onChanged?: () => void;
+  /**
+   * Se decidió el lote entero: aprobado o rechazado. Distinto de `onChanged`:
+   * el Focus de supervisión lo usaba para marcar "aprobado" y avanzar, y
+   * guardar una corrección disparaba lo mismo que aprobar.
+   */
+  onDecidido?: (decision: 'aprobado' | 'rechazado') => void;
   /** Abre la ficha del contacto en el panel derecho (misma que en las listas). */
   onOpen?: (chatId: number) => void;
   /** Chat abierto ahora mismo en el panel derecho, para marcar su fila. */
@@ -67,17 +115,43 @@ export function RevisarLote({
     });
   }
 
+  /**
+   * Aprobar ejecuta en el mismo request lo que el servidor sabe hacer solo.
+   *
+   * Antes aprobar dejaba las filas en `approved` y había un segundo botón
+   * "Ejecutar" que nadie apretaba: 24 filas de pre-descarte y responsable
+   * quedaron aprobadas semanas sin que pasara nada. Ahora aprobar un programado
+   * es programarlo. El envío directo sigue pidiendo confirmación, porque es lo
+   * único que le llega al cliente y no se deshace.
+   */
   async function approve() {
     if (!approvable.length) return;
+    const kind = data?.batch.kind;
+    const directo = kind ? esEjecutableEnServidor(kind) : false;
+    if (kind === 'send_message' && !window.confirm(`Se van a enviar ${approvable.length} mensajes por WhatsApp apenas apruebes. No se pueden deshacer.\n\n¿Seguimos?`)) return;
     setBusy('approve');
     try {
-      const result = await postJson<{ approved: number; rejected: number }>(`${QUEUE_ENDPOINT}/${encodeURIComponent(batchId)}/approve`, {
-        excludeActionIds: [...excluded],
-      });
-      setApprovedNotice(`Aprobado ${result.approved}. Todavía no salió nada: apretá “Ejecutar” abajo, o dejalo para un conector.`);
+      const result = await postJson<{ approved: number; rejected: number; execution: { executed: number; skipped: number; failed: number; results: Array<{ name: string; status: string; reason?: string }> } | null }>(
+        `${QUEUE_ENDPOINT}/${encodeURIComponent(batchId)}/approve`,
+        { excludeActionIds: [...excluded], execute: true },
+      );
+      if (result.execution) {
+        const ex = result.execution;
+        const partes = [`hechos ${ex.executed}`];
+        if (ex.skipped) partes.push(`salteados ${ex.skipped}`);
+        if (ex.failed) partes.push(`fallidos ${ex.failed}`);
+        setApprovedNotice(`Aprobado ${result.approved} · ${partes.join(' · ')}.`);
+        const saltado = ex.results.find((r) => r.status === 'skipped' && r.reason);
+        if (saltado) toast.info(`${saltado.name}: ${saltado.reason}`);
+        if (ex.failed) toast.error(`${ex.failed} no se pudieron hacer. Mirá el motivo en cada fila.`);
+        else toast.success(`Listo: ${partes.join(' · ')}.`);
+      } else {
+        setApprovedNotice(directo ? `Aprobado ${result.approved}. No se ejecutó: apretá “Ejecutar” abajo.` : `Aprobado ${result.approved}. Este tipo lo hace una persona o un conector: marcá el resultado en cada fila.`);
+      }
       setExcluded(new Set());
       await mutate();
       onChanged?.();
+      onDecidido?.('aprobado');
     } catch (err) {
       const e = err as ApiError;
       if (e.blockedChats?.length) {
@@ -132,6 +206,7 @@ export function RevisarLote({
       toast.success(`Lote rechazado (${result.rejected} filas).`);
       await mutate();
       onChanged?.();
+      onDecidido?.('rechazado');
     } catch (err) {
       toast.error((err as ApiError).message);
     } finally {
@@ -434,9 +509,15 @@ export function RevisarLote({
                         ))}
                       </ul>
                     )}
+                    {action.status === 'failed' && motivoDeFalla(action.result) && (
+                      <p className="mt-1.5 flex items-start gap-1.5 text-xs text-destructive">
+                        <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                        <span>{motivoDeFalla(action.result)}</span>
+                      </p>
+                    )}
                     {action.status === 'approved' && (
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-                        <span>Aprobado {formatDate(action.approvedAt, true)} · listo para ejecutar</span>
+                        <span>Aprobado {formatDate(action.approvedAt, true)} · {esEjecutableEnServidor(action.kind) ? 'sin ejecutar: apretá “Ejecutar” abajo' : 'lo hace una persona o un conector'}</span>
                         <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" disabled={busy !== null} onClick={() => markManual(action, 'executed')}>
                           {busy === action.id ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
                           Lo mandé a mano
@@ -478,9 +559,9 @@ export function RevisarLote({
                   {busy === 'reject' ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <X className="size-3.5" aria-hidden />}
                   Rechazar lote
                 </Button>
-                <Button type="button" size="sm" disabled={busy !== null || approvable.length === 0} onClick={approve} className="gap-1.5">
+                <Button type="button" size="sm" disabled={busy !== null || approvable.length === 0} onClick={approve} className="gap-1.5" title={data && esEjecutableEnServidor(data.batch.kind) ? 'Aprobar ya lo ejecuta desde el servidor' : 'Aprobar deja las filas listas para una persona o un conector'}>
                   {busy === 'approve' ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Check className="size-3.5" aria-hidden />}
-                  Aprobar {approvable.length}
+                  {etiquetaAprobar(data?.batch.kind, approvable.length)}
                 </Button>
               </>
             )}

@@ -154,9 +154,17 @@ export function useColaFocus(filtros: FiltrosFocus, owner: OwnerFilterValue) {
   const avanzar = useCallback(() => setIdx((i) => i + 1), []);
   const retroceder = useCallback(() => setIdx((i) => Math.max(0, i - 1)), []);
 
-  /** Deja anotado qué se hizo con este cliente y pasa al siguiente. */
+  /**
+   * Deja anotado qué se hizo con este cliente y pasa al siguiente.
+   *
+   * `avanzar: false` anota sin pasar: es lo que corresponde cuando "Ejecutar
+   * ahora" resolvió algo acá mismo (un borrador que bajó al editor, una
+   * corrección de CRM aplicada) y la persona sigue en el cliente para revisarlo.
+   * Saltar de cliente en ese momento le sacaría de la vista lo que acaba de
+   * pedir.
+   */
   const marcar = useCallback(
-    (chatId: number, tipo: TipoProceso) => {
+    (chatId: number, tipo: TipoProceso, opts: { avanzar?: boolean } = {}) => {
       setProcesados((prev) => ({ ...prev, [chatId]: tipo }));
       setSesion((prev) => ({
         ejecutados: prev.ejecutados + (tipo === 'ejecutado' ? 1 : 0),
@@ -173,7 +181,7 @@ export function useColaFocus(filtros: FiltrosFocus, owner: OwnerFilterValue) {
       } else {
         setRacha(0);
       }
-      setIdx((i) => i + 1);
+      if (opts.avanzar !== false) setIdx((i) => i + 1);
     },
     [],
   );

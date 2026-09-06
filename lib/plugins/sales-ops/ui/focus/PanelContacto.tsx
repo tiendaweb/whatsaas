@@ -19,7 +19,8 @@ import { PanelChat, type CabeceraChat } from './PanelChat';
 export const SOLAPAS_CONTACTO = ['chat', 'notas', 'tareas', 'programar'] as const;
 export type SolapaContacto = (typeof SOLAPAS_CONTACTO)[number];
 
-const META: Record<SolapaContacto, { label: string; icon: typeof User }> = {
+/** Etiqueta e ícono de cada solapa. Exportado: la barra móvil de la supervisión dibuja las mismas. */
+export const META: Record<SolapaContacto, { label: string; icon: typeof User }> = {
   chat: { label: 'Mensajes', icon: MessageSquare },
   notas: { label: 'Notas', icon: StickyNote },
   tareas: { label: 'Tareas', icon: ListChecks },

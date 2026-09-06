@@ -21,7 +21,7 @@ const RULES = [
   'approval="ready" se puede ejecutar siguiendo steps. approval="needs_human" se propone y espera confirmación explícita de la persona.',
   'Un envío de mensaje por llamada, con la idempotency_key del ítem cuando la trae.',
   'Todo resultado vuelve por la tool de escritura que indica el ítem; sin eso el servidor no se entera de que lo hiciste.',
-  'No toques el CRM desde los ítems de source="sales": esa cola es de clasificación y ejecución aprobada, no de edición.',
+  'En los ítems de source="sales" podés corregir el CRM del contacto que estás trabajando (etapa, etiquetas, campos), sólo lo que contradice ese chat y de a un contacto; nunca en lote. Lo que hacés dentro de un pedido aprobado sale directo; lo que proponés por tu cuenta espera aprobación. Cobros: sólo whatspro_sales_register_payment desde una fila aprobada o por pedido explícito.',
 ];
 
 /** Los pasos de un ítem de Tareas dependen sólo de su fase y su estado. */
@@ -112,6 +112,8 @@ export async function listUnifiedWorkQueue(
 
   const items: UnifiedWorkItem[] = [];
   const sources: WorkSourceStatus[] = [];
+  /** Reglas propias de la cola comercial, que se suman a las generales cuando se incluye `sales`. */
+  const salesRules: string[] = [];
 
   const record = (source: WorkSource, skipped: string | null, count: number) => {
     sources.push({ source, available: skipped === null, skipped, count });
@@ -125,6 +127,9 @@ export async function listUnifiedWorkQueue(
       if (!active.has('sales-ops')) throw new Error('La app Command Center Comercial no está activa en este equipo.');
       if (!can('salesOpsRead')) throw new Error('Falta el permiso salesOpsRead.');
       const queue = await listWorkQueue(ctx.teamId, { limit: window });
+      // Las reglas de la cola comercial viajan con sus ítems: sin esto el
+      // conector veía los steps pero no las reglas que los enmarcan.
+      for (const rule of queue.rules ?? []) if (!salesRules.includes(rule)) salesRules.push(rule);
       for (const item of queue.items) {
         items.push({
           source: 'sales',
@@ -273,6 +278,6 @@ export async function listUnifiedWorkQueue(
     },
     sources,
     items: page,
-    rules: RULES,
+    rules: [...RULES, ...salesRules.filter((rule) => !RULES.includes(rule))],
   };
 }

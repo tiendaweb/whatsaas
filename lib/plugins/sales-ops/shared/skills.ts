@@ -62,6 +62,25 @@ export type SkillVariableType = (typeof SKILL_VARIABLE_TYPES)[number];
 export const RUN_MODES = ['queue', 'api'] as const;
 export type RunMode = (typeof RUN_MODES)[number];
 
+/**
+ * Estados en los que el texto de una corrida todavía se puede corregir.
+ *
+ * Es exactamente lo que la Cola muestra "para supervisar": espera aprobación
+ * (`queued`), falló y hay que decidir qué hacer (`failed`), o el conector se
+ * frenó a pedir criterio (`blocked`). En los tres casos nadie la está
+ * ejecutando y no hay resultado firmado, así que corregir el texto es lo que
+ * se va a reintentar.
+ *
+ * Quedan afuera `in_progress` (un conector la tiene en la mano), `completed`
+ * (el texto es el que produjo esa respuesta) y `cancelled` (ya se descartó).
+ * La regla vive acá y no en el servidor para que la pantalla no ofrezca un
+ * botón que la API va a rechazar.
+ */
+export const RUN_EDITABLE_STATUSES = ['queued', 'failed', 'blocked'] as const;
+
+/** true si esa corrida se puede corregir. Ver `RUN_EDITABLE_STATUSES`. */
+export const runEsEditable = (status: string): boolean => (RUN_EDITABLE_STATUSES as readonly string[]).includes(status);
+
 // ── Tipos ──────────────────────────────────────────────────────────────────
 
 export type SkillVariable = {

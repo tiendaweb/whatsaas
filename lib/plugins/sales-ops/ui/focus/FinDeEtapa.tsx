@@ -75,9 +75,12 @@ export function FinDeEtapa({
 
 function Marcador({ valor, label, tono }: { valor: number; label: string; tono: string }) {
   return (
-    <div className="rounded-lg border border-border bg-card py-2">
-      <dd className={`font-mono text-lg font-semibold tabular-nums ${tono}`}>{valor}</dd>
+    // `<dt>` antes de `<dd>`: es el orden del HTML, y un lector de pantalla
+    // anuncia el nombre y después el valor. Visualmente el número va arriba,
+    // así que se invierte con flex en vez de invertir el marcado.
+    <div className="flex flex-col-reverse rounded-lg border border-border bg-card py-2">
       <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dd className={`font-mono text-lg font-semibold tabular-nums ${tono}`}>{valor}</dd>
     </div>
   );
 }

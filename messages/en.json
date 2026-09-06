@@ -1743,6 +1743,7 @@
     "syslog_contact_auto_created": "Contact \"{name}\" auto-created by AI",
     "syslog_user_activated_ai": "{name} activated AI",
     "syslog_user_deactivated_ai": "{name} deactivated AI",
+    "syslog_automation_paused_scheduled": "Automations paused: a scheduled message is queued ({name})",
     "send_failed": "Failed to send",
     "retry_send": "Retry",
     "window_expired_title": "Select a message template to reactivate the conversation",
@@ -4480,6 +4481,31 @@
       "moved": "Moved to {stage}",
       "moveError": "Could not move. Change reverted."
     }
+  },
+  "SalesOpsQueue": {
+    "decisionLabel": "Your decision",
+    "decisionHelp": "The connector reached a point that needs your judgment. Answer here and the same run will return to the queue.",
+    "decisionEmpty": "No decisions are waiting for your response.",
+    "decisionStatus": "Needs a decision",
+    "decisionCount": "{count, plural, one {# answer pending} other {# answers pending}}",
+    "promptFull": "Full prompt",
+    "seeFull": "View full prompt",
+    "seeLess": "View less"
+  },
+  "SalesOpsHumanDecision": {
+    "eyebrow": "Needs your judgment",
+    "connectorFallback": "Connector",
+    "requestedAt": "Requested {time}",
+    "chooseOption": "Choose an option",
+    "otherOption": "Another answer",
+    "otherPlaceholder": "Write your answer",
+    "requiredError": "This information is required to continue.",
+    "codeLabel": "Code or structured data",
+    "resumeHint": "Your answer is added to the original prompt and the run continues without losing context.",
+    "submitDefault": "Answer and continue",
+    "sending": "Sending…",
+    "answeredSuccess": "Answer saved. The run returned to the queue.",
+    "genericError": "The answer could not be saved."
   },
   "AiBuiltinTools": {
     "title": "Built-in functions per app",

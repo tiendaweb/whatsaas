@@ -14,12 +14,11 @@ import {
   messages,
   tags,
   teamCommercialAnalysis,
-  teamCustomerContacts,
   teamDeals,
-  teamMembershipSubscriptions,
   teamSales,
 } from '@/lib/db/schema';
 import { getContactCommercialSnapshot } from '@/lib/contacts/graph';
+import { SIN_CLIENTE, resolverCliente, vincularSiCoincide, type EstadoCliente } from '@/lib/customers/es-cliente';
 import { maskJid } from '@/lib/desktop/command-center/types';
 import { dossierSchema, type Dossier, type DossierEntry } from '../shared/contract';
 import { computeFingerprint } from './fingerprint';
@@ -230,36 +229,38 @@ export async function buildChatDossierFull(teamId: number, chatId: number, opts:
   }
 
   // Hechos comerciales de la base (R1, R5).
-  let customerLinked = false;
+  let cliente: EstadoCliente = SIN_CLIENTE;
   let salePaid = false;
   let salePending = false;
-  let subscriptionActive = false;
   let dealNegotiationOverdue = false;
   let commercial: unknown = null;
   if (contact) {
-    const [links, sales, subs, deals] = await Promise.all([
-      db
-        .select({ id: teamCustomerContacts.id })
-        .from(teamCustomerContacts)
-        .where(and(eq(teamCustomerContacts.teamId, teamId), eq(teamCustomerContacts.contactId, contact.id)))
-        .limit(1),
+    // Dedupe automático: si ya hay una ficha de Clientes con este teléfono (o
+    // una membresía/venta a nombre de esa ficha), se vincula acá mismo, antes
+    // de resolver. Es barato (una vez por expediente) y `silencioso` porque
+    // este expediente ya es la reclasificación que el vínculo pediría.
+    try {
+      await vincularSiCoincide(teamId, contact.id, null, { silencioso: true });
+    } catch (error) {
+      console.error('[sales-ops/dossier] vincularSiCoincide falló', error);
+    }
+    // R1 la decide `resolverCliente` (lib/customers/es-cliente.ts), la misma
+    // función que usan la ficha, la lista y el conector: acá no hay otra idea
+    // de "cliente" que la del resto del producto.
+    const [estado, sales, deals] = await Promise.all([
+      resolverCliente(teamId, { contactId: contact.id }),
       db
         .select({ status: teamSales.status })
         .from(teamSales)
         .where(and(eq(teamSales.teamId, teamId), eq(teamSales.contactId, contact.id))),
       db
-        .select({ status: teamMembershipSubscriptions.status })
-        .from(teamMembershipSubscriptions)
-        .where(and(eq(teamMembershipSubscriptions.teamId, teamId), eq(teamMembershipSubscriptions.contactId, contact.id))),
-      db
         .select({ stage: teamDeals.stage, expectedCloseDate: teamDeals.expectedCloseDate })
         .from(teamDeals)
         .where(and(eq(teamDeals.teamId, teamId), eq(teamDeals.contactId, contact.id), inArray(teamDeals.stage, ['qualified', 'proposal', 'negotiation']))),
     ]);
-    customerLinked = links.length > 0;
+    cliente = estado;
     salePaid = sales.some((s) => s.status === 'paid');
     salePending = sales.some((s) => s.status === 'draft' || s.status === 'confirmed');
-    subscriptionActive = subs.some((s) => s.status === 'active');
     const nowMs = (opts.now ?? new Date()).getTime();
     dealNegotiationOverdue = deals.some((d) => d.stage === 'negotiation' && d.expectedCloseDate != null && new Date(d.expectedCloseDate).getTime() < nowMs);
 
@@ -316,10 +317,9 @@ export async function buildChatDossierFull(teamId: number, chatId: number, opts:
   const activeSession = sessions.find((s) => s.status === 'active') ?? null;
   const dbFacts: RuleDbFacts = {
     chatName: chat.name ?? chat.pushName ?? null,
-    customerLinked,
+    cliente: { fuente: cliente.fuente, customerId: cliente.customerId, evidenciaDebil: cliente.evidenciaDebil },
     salePaid,
     salePending,
-    subscriptionActive,
     dealNegotiationOverdue,
     activeAutomationName: activeSession?.automationName ?? null,
     humanOverride: !!existing && existing.analyzedBy === 'human',
@@ -385,6 +385,8 @@ export async function buildChatDossierFull(teamId: number, chatId: number, opts:
     lastMessageId: last?.id ?? null,
     lastMessageTimestamp: last?.at ?? null,
     audioInsightsDone: insightRows.filter((r) => r.status === 'done').length,
+    customerId: cliente.customerId,
+    fuente: cliente.fuente,
   });
 
   const dossier: Dossier = dossierSchema.parse({

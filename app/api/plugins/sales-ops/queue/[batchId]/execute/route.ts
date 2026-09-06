@@ -11,7 +11,8 @@ export const maxDuration = 300;
 const schema = z.object({
   /** Confirmación explícita: perder un campo nunca puede significar "mandá". */
   confirm: z.literal('EJECUTAR'),
-  actionIds: z.array(z.number().int().positive()).max(25).optional(),
+  /** Hasta 200 por request, igual que aprobar: el botón dice "Ejecutar N" y tiene que ejecutar N. */
+  actionIds: z.array(z.number().int().positive()).max(200).optional(),
 });
 
 /**

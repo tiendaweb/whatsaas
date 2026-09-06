@@ -1,20 +1,22 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import useSWR from 'swr';
-import { BookOpen, Bot, Building2, Check, ChevronDown, ChevronUp, ExternalLink, Globe, Loader2, Pencil, Plus, Save, UserSquare2 } from 'lucide-react';
+import { BookOpen, Bot, Building2, Check, ChevronDown, ChevronUp, ExternalLink, Factory, Globe, LayoutDashboard, Loader2, Pencil, Plus, Save, UserSquare2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { ProduccionOS } from '@/lib/plugins/tasks/ui-nueva/views/ProduccionOS';
 import type { ProdItem, ProdProject, ProduccionPayload } from '../../server/produccion';
 import { ErrorState } from '../components/States';
 import { FichaDock, type DockItem } from '../components/FichaDock';
 import { SALES_OPS_API, fetcher, fmtInt, tiempoRelativo } from '../components/format';
 
 type Tab = 'demos' | 'clientes' | 'cc';
+type VistaProduccion = 'actual' | 'os';
 const TASKS_API = '/api/plugins/tasks';
 
 const ESTADO_LABEL: Record<ProdProject['estado'], string> = { sin_empezar: 'Sin empezar', en_ejecucion: 'En ejecución', hecho: 'Hecho' };
@@ -43,10 +45,15 @@ async function patchTask(id: number, patch: Record<string, unknown>) {
  * (título, notas, checklist, columna) con las mismas rutas del tablero, y
  * "Abrir en Tareas OS" lleva al proyecto para lo que la vista no cubre.
  */
-export function ProduccionView({ onOpen }: { onOpen?: (chatId: number) => void }) {
+export function ProduccionView({ onOpen, focusRequest = 0 }: { onOpen?: (chatId: number) => void; focusRequest?: number }) {
   const { data, error, isLoading, mutate } = useSWR<ProduccionPayload>(`${SALES_OPS_API}/produccion`, fetcher, { refreshInterval: 60_000 });
   const [tab, setTab] = useState<Tab>('demos');
+  const [vista, setVista] = useState<VistaProduccion>('actual');
   const refrescar = () => void mutate();
+
+  useEffect(() => {
+    if (focusRequest > 0) setVista('os');
+  }, [focusRequest]);
 
   const tabs: Array<DockItem<Tab>> = [
     { id: 'demos', label: 'Demos', icon: Globe, badge: data?.demos?.projects.filter((p) => p.estado !== 'hecho').length },
@@ -54,55 +61,71 @@ export function ProduccionView({ onOpen }: { onOpen?: (chatId: number) => void }
     { id: 'cc', label: 'Command Center', icon: BookOpen, badge: data?.commandCenter.projects.reduce((s, p) => s + (p.total - p.hechas), 0) },
   ];
 
-  if (error) return <ErrorState message={String((error as Error).message ?? error)} onRetry={refrescar} />;
-
   const ws = tab === 'demos' ? data?.demos : tab === 'clientes' ? data?.clientes : data?.commandCenter;
   const resumen = ws ? { proyectos: ws.projects.length, enEjecucion: ws.projects.filter((p) => p.estado === 'en_ejecucion').length, hechos: ws.projects.filter((p) => p.estado === 'hecho').length, ia: ws.projects.reduce((s, p) => s + p.iaPendientes, 0) } : null;
 
   return (
     <div className="flex min-h-[60dvh] flex-col gap-3">
-      <FichaDock items={tabs} active={tab} onChange={setTab} className="rounded-xl border border-border" />
-
-      {isLoading && !data && (
-        <div className="space-y-2">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 rounded-2xl" />
-          ))}
+      <div className="flex flex-col gap-2 rounded-2xl border border-border bg-card p-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 px-2 py-1">
+          <p className="text-sm font-black text-foreground">Producción</p>
+          <p className="text-xs text-muted-foreground">Alterná entre el seguimiento anterior y la operación por pedidos.</p>
         </div>
-      )}
+        <div className="grid grid-cols-2 rounded-xl bg-muted p-1" role="tablist" aria-label="Vista de Producción">
+          <button type="button" role="tab" aria-selected={vista === 'actual'} onClick={() => setVista('actual')} className={cn('inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', vista === 'actual' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
+            <LayoutDashboard className="size-3.5" aria-hidden /> Vista actual
+          </button>
+          <button type="button" role="tab" aria-selected={vista === 'os'} onClick={() => setVista('os')} className={cn('inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', vista === 'os' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
+            <Factory className="size-3.5" aria-hidden /> Producción OS
+          </button>
+        </div>
+      </div>
 
-      {data && (
+      {vista === 'os' ? <ProduccionOS embedded focusRequest={focusRequest} /> : (
         <>
-          {resumen && (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <Kpi label={tab === 'cc' ? 'Proyectos' : tab === 'demos' ? 'Demos' : 'Clientes'} n={resumen.proyectos} />
-              <Kpi label="En ejecución" n={resumen.enEjecucion} tono="text-sky-600 dark:text-sky-300" />
-              <Kpi label="Hechos" n={resumen.hechos} tono="text-emerald-600 dark:text-emerald-300" />
-              <Kpi label="IA pendiente" n={resumen.ia} tono={resumen.ia ? 'text-amber-600 dark:text-amber-300' : undefined} />
+          <FichaDock items={tabs} active={tab} onChange={setTab} className="rounded-xl border border-border" />
+          {error && <ErrorState message={String((error as Error).message ?? error)} onRetry={refrescar} />}
+          {isLoading && !data && (
+            <div className="space-y-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-24 rounded-2xl" />
+              ))}
             </div>
           )}
+          {data && (
+            <>
+              {resumen && (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <Kpi label={tab === 'cc' ? 'Proyectos' : tab === 'demos' ? 'Demos' : 'Clientes'} n={resumen.proyectos} />
+                  <Kpi label="En ejecución" n={resumen.enEjecucion} tono="text-sky-600 dark:text-sky-300" />
+                  <Kpi label="Hechos" n={resumen.hechos} tono="text-emerald-600 dark:text-emerald-300" />
+                  <Kpi label="IA pendiente" n={resumen.ia} tono={resumen.ia ? 'text-amber-600 dark:text-amber-300' : undefined} />
+                </div>
+              )}
 
-          {tab === 'cc' && <DocumentarPaso onCreated={refrescar} />}
+              {tab === 'cc' && <DocumentarPaso onCreated={refrescar} />}
 
-          {!ws || ws.projects.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border p-8 text-center">
-              <p className="text-sm font-medium">{tab === 'demos' ? 'Todavía no hay demos' : tab === 'clientes' ? 'Todavía no hay proyectos de cliente' : 'La bitácora está vacía'}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {tab === 'demos'
-                  ? 'Se crean al ejecutar un lote "Demo web" o cuando un conector usa whatspro_sales_tareas_from_chat (demo).'
-                  : tab === 'clientes'
-                    ? 'Se crean con "Pedir demo web / proyecto" desde la ficha, o cuando un conector usa whatspro_sales_tareas_from_chat (project).'
-                    : 'Documentá el primer paso arriba.'}
-              </p>
-            </div>
-          ) : (
-            <ul className="space-y-2">
-              {ws.projects.map((p) => (
-                <li key={p.id}>
-                  <ProyectoCard project={p} onOpen={onOpen} onChanged={refrescar} />
-                </li>
-              ))}
-            </ul>
+              {!ws || ws.projects.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border p-8 text-center">
+                  <p className="text-sm font-medium">{tab === 'demos' ? 'Todavía no hay demos' : tab === 'clientes' ? 'Todavía no hay proyectos de cliente' : 'La bitácora está vacía'}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {tab === 'demos'
+                      ? 'Se crean al ejecutar un lote "Demo web" o cuando un conector usa whatspro_sales_tareas_from_chat (demo).'
+                      : tab === 'clientes'
+                        ? 'Se crean con "Pedir demo web / proyecto" desde la ficha, o cuando un conector usa whatspro_sales_tareas_from_chat (project).'
+                        : 'Documentá el primer paso arriba.'}
+                  </p>
+                </div>
+              ) : (
+                <ul className="space-y-2">
+                  {ws.projects.map((p) => (
+                    <li key={p.id}>
+                      <ProyectoCard project={p} onOpen={onOpen} onChanged={refrescar} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
         </>
       )}
@@ -367,4 +390,3 @@ function TareaRow({ item, columns, onOpen, onChanged }: { item: ProdItem; column
     </div>
   );
 }
-

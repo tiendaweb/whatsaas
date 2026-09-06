@@ -121,9 +121,12 @@ export type ProposeResult = {
 
 export type ApproveResult = {
   batchId: string;
+  kind: ActionKind;
   approved: number;
   rejected: number;
   approvedBy: number;
+  /** Ids de las filas que quedaron `approved` en esta llamada. */
+  approvedIds: number[];
 };
 
 export type MarkResultInput = {
@@ -545,7 +548,10 @@ export async function proposeBatch(teamId: number, input: ProposeInput): Promise
       variant: candidate.variant,
       kind: input.kind,
       payload: {
+        // `extra` va aplanado (así lo leían las listas) Y anidado: el ejecutor
+        // lee `payload.extra.owner|at|amount…` y hasta acá nunca existía.
         ...(template.extra ?? {}),
+        ...(template.extra && Object.keys(template.extra).length ? { extra: template.extra } : {}),
         ...(candidate.text != null ? { text: candidate.text } : {}),
         ...(template.taskTitle ? { taskTitle: resolveTemplate(template.taskTitle, { name: candidate.name, need: null, quotedPrice: null, quotedCurrency: null }) } : {}),
         ...(dueAt ? { dueAt } : {}),
@@ -824,7 +830,7 @@ export async function approveBatch(
   }
 
   await audit(teamId, 'APPROVED', { batchId, count: toApprove.length, rejected: toReject.length, userId }, userId);
-  return { batchId, approved: toApprove.length, rejected: toReject.length, approvedBy: userId };
+  return { batchId, kind: actions[0].kind as ActionKind, approved: toApprove.length, rejected: toReject.length, approvedBy: userId, approvedIds: toApprove.map((a) => a.id) };
 }
 
 export async function rejectBatch(teamId: number, userId: number, batchId: string, reason?: string): Promise<{ batchId: string; rejected: number }> {

@@ -1,5 +1,7 @@
 # Command Center Comercial — planificación
 
+> **Vigencia (2026-09-05):** aprobar ejecuta (`SERVER_EXECUTABLE_KINDS`: envío, programado, tarea, demo, pre-descarte, descarte, responsable, llamada; y desde el 2026-09-06 también registrar cobro), los conectores corrigen el CRM de a un contacto (sólo lo que contradice ese chat, nunca en lote), y los cobros van por `whatspro_sales_register_payment`. Lo que sigue describe el diseño original.
+
 Objetivo: **un sistema operativo comercial sobre WhatsPro** que lea el historial completo de cada chat, clasifique dónde se detuvo cada contacto en el funnel (G0–G11/GX), priorice por dinero y alimente una cola de acciones aprobables. Primero para limpiar la base histórica y cobrar ~USD 1.000 mientras se valida; después para operar los leads nuevos en tiempo real.
 
 **No es otro CRM.** WhatsPro es la fuente de datos. El Command Center es una capa de lectura + análisis + priorización + cola. Durante la validación **no escribe en el CRM** (contactos, etapas, etiquetas, automatizaciones, mensajes, clientes, oportunidades): tiene sus propias tablas.

@@ -15,6 +15,7 @@ import {
   Settings,
   Sparkles,
   Target,
+  Factory,
   Trash2,
 } from 'lucide-react';
 import { resolveTaskIcon } from '@/lib/plugins/tasks/client/task-appearance';
@@ -333,8 +334,9 @@ export function Sidebar(props: {
       </div>
 
       <div className="mt-auto p-4 space-y-1.5 border-t border-[var(--t-border)]">
-        <div className="grid grid-cols-3 gap-1.5">
+        <div className="grid grid-cols-4 gap-1.5">
           {atajo('enfoque', <Target className="w-[18px] h-[18px]" />, ES.nav.enfoque)}
+          {atajo('produccion', <Factory className="w-[18px] h-[18px]" />, ES.nav.produccion)}
           {atajo('metricas', <BarChart className="w-[18px] h-[18px]" />, ES.nav.metricas)}
           {atajo('ajustes', <Settings className="w-[18px] h-[18px]" />, ES.nav.ajustes)}
         </div>

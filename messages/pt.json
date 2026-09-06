@@ -1743,6 +1743,7 @@
     "syslog_contact_auto_created": "Contato \"{name}\" criado automaticamente pela IA",
     "syslog_user_activated_ai": "{name} ativou a IA",
     "syslog_user_deactivated_ai": "{name} desativou a IA",
+    "syslog_automation_paused_scheduled": "Automações pausadas: há uma mensagem agendada ({name})",
     "send_failed": "Falha no envio",
     "retry_send": "Tentar novamente",
     "window_expired_title": "Selecione um modelo de mensagem para reativar a conversa",
@@ -4480,6 +4481,31 @@
       "moved": "Movido para {stage}",
       "moveError": "Não foi possível mover. Alteração desfeita."
     }
+  },
+  "SalesOpsQueue": {
+    "decisionLabel": "Sua decisão",
+    "decisionHelp": "O conector chegou a um ponto que precisa do seu critério. Responda aqui e a mesma execução voltará para a fila.",
+    "decisionEmpty": "Não há decisões aguardando sua resposta.",
+    "decisionStatus": "Precisa de decisão",
+    "decisionCount": "{count, plural, one {# resposta pendente} other {# respostas pendentes}}",
+    "promptFull": "Prompt completo",
+    "seeFull": "Ver completo",
+    "seeLess": "Ver menos"
+  },
+  "SalesOpsHumanDecision": {
+    "eyebrow": "Precisa do seu critério",
+    "connectorFallback": "Conector",
+    "requestedAt": "Solicitado {time}",
+    "chooseOption": "Escolha uma opção",
+    "otherOption": "Outra resposta",
+    "otherPlaceholder": "Escreva sua resposta",
+    "requiredError": "Esta informação é necessária para continuar.",
+    "codeLabel": "Código ou dados estruturados",
+    "resumeHint": "Sua resposta é adicionada ao prompt original e a execução continua sem perder o contexto.",
+    "submitDefault": "Responder e continuar",
+    "sending": "Enviando…",
+    "answeredSuccess": "Resposta salva. A execução voltou para a fila.",
+    "genericError": "Não foi possível salvar a resposta."
   },
   "AiBuiltinTools": {
     "title": "Funções integradas por app",

@@ -26,6 +26,10 @@ export type SkillRun = {
   completedAt: string | null;
   approvedAt: string | null;
   approvedBy: number | null;
+  /** `approvedAt` resuelto a sí/no: `queued` sin aprobar está "En revisión", no "En cola". */
+  approved: boolean;
+  /** Id de la corrida que la reemplazó al reintentarla: ésta ya no se muestra como pendiente. */
+  relaunchedAs: number | null;
   humanRequest: HumanDecisionRequest | null;
   humanRequestedAt: string | null;
 };
@@ -87,6 +91,10 @@ export type LaunchPayload = {
 export const launchSkill = (payload: LaunchPayload) => send<{ run: SkillRun; skill: Skill | null }>(`${SALES_OPS_API}/prompts/launch`, 'POST', payload);
 
 export const cancelRun = (id: number) => send<SkillRun>(`${SALES_OPS_API}/prompts/queue/${id}`, 'PATCH', { status: 'cancelled' });
+
+/** Cierra la corrida como hecha a mano (una persona o una IA desde el navegador la resolvió sin conector). */
+export const completeRunManual = (id: number, input: { summary: string; output?: string | null }) =>
+  send<SkillRun>(`${SALES_OPS_API}/prompts/queue/${id}`, 'PATCH', { status: 'completed', summary: input.summary, output: input.output ?? null, manual: true });
 
 /** Aprueba una corrida que espera en revisión: desde ahí la ve el conector. */
 export const approveRun = (id: number) => send<SkillRun>(`${SALES_OPS_API}/prompts/queue/${id}`, 'PATCH', { approved: true });

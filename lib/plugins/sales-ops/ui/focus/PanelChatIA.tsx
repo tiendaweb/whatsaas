@@ -6,7 +6,7 @@ import { Bot, Sparkles, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { HumanDecisionCard } from '../cola/HumanDecisionCard';
 import { SALES_OPS_API, fetcher, tiempoRelativo } from '../components/format';
-import { RUN_STATUS_LABELS, RUN_STATUS_TONE } from '../skills/skill-meta';
+import { etiquetaDeCorrida, RUN_STATUS_TONE } from '../skills/skill-meta';
 import { FallaCorrida } from '../skills/FallaCorrida';
 import type { SkillRun } from '../skills/api';
 
@@ -73,7 +73,7 @@ function Corrida({ run, onCambio }: { run: SkillRun; onCambio: () => void }) {
           {run.title}
         </p>
         <span className={cn('shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium', necesitaCriterio ? 'bg-primary/15 text-primary' : (RUN_STATUS_TONE[run.status] ?? 'bg-muted text-muted-foreground'))}>
-          {necesitaCriterio ? 'Necesita tu criterio' : (RUN_STATUS_LABELS[run.status] ?? run.status)}
+          {etiquetaDeCorrida(run)}
         </span>
       </div>
       <p className="mt-0.5 text-[10px] text-muted-foreground">{tiempoRelativo(run.completedAt ?? run.createdAt)}</p>

@@ -133,6 +133,7 @@ export function titulosNav(nav: NavId): string {
     case 'ajustes': return ES.ajustes.titulo;
     case 'comoUsar': return ES.comoUsar.titulo;
     case 'enfoque': return ES.nav.enfoque;
+    case 'produccion': return ES.nav.produccion;
     case 'espacios': return ES.nav.espaciosTitulo;
     default: return ES.cabecera.misTareas;
   }

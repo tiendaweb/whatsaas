@@ -1,7 +1,10 @@
 /**
  * Siembra las skills del Prompt Studio (P1–P9 del doc 07, más las de uso
- * diario) como prompts `qa.*` del equipo 2. Idempotente por key: si la versión
- * 1 existe, actualiza su contenido y su metadata; no crea versiones nuevas.
+ * diario) como prompts `qa.*` del equipo 2. Idempotente por key y versionado
+ * como `upsertSkill`: si la versión activa ya dice exactamente esto, no toca
+ * nada; si cambió algo, retira la activa y crea la versión siguiente (nunca
+ * pisa una versión: el historial del Prompt Studio tiene que poder mostrar
+ * qué decía cada corrida).
  *
  * La metadata es lo que hace que una skill se pueda usar sin leer su texto:
  * `recurrence` la separa entre rutina y acción puntual, `execution` decide si
@@ -14,12 +17,13 @@ import 'dotenv/config';
 import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { teamPrompts } from '@/lib/db/schema';
+import { PROMPT_P9 } from '@/lib/plugins/sales-ops/shared/prompt-p9';
 import type { SkillCategory, SkillExecution, SkillIcon, SkillRecommendFor, SkillRecurrence, SkillScope, SkillVariable } from '@/lib/plugins/sales-ops/shared/skills';
 
 const TEAM_ID = 2;
 const USER_ID = 3;
 
-const REGLAS = `REGLAS DEL COMMAND CENTER COMERCIAL: WhatsPro es la fuente, leé antes de escribir. NO uses whatspro_change_crm_stage, whatspro_set_contact_tags, whatspro_set_custom_fields, whatspro_save_contact, whatspro_manage_automation*, whatspro_chat_trigger_automation, whatspro_convert_lead, whatspro_manage_customer ni whatspro_delete_record. El historial del chat es la evidencia; etiquetas y campos son hipótesis. Citá evidencia (ids de mensajes). No reabras decisiones tomadas. Un envío por llamada, sólo desde lotes aprobados, con la idempotency_key indicada. Teléfonos: últimos 4 dígitos. CONTEXTO DISPONIBLE: whatspro_sales_dossier trae el historial recortado, las notas internas (who: nota), los campos personalizados del contacto (contact.customData) y lo comercial; podés ampliar con whatspro_private_notes {contact_id} y whatspro_custom_fields, y agregar notas con whatspro_add_internal_note (no es CRM: el cliente no la ve).`;
+const REGLAS = `REGLAS DEL COMMAND CENTER COMERCIAL: WhatsPro es la fuente, leé antes de escribir. Podés corregir el CRM del contacto que estás trabajando (etapa, etiquetas, campos, con whatspro_change_crm_stage / whatspro_set_contact_tags / whatspro_set_custom_fields), sólo lo que contradice ese chat y de a uno; nada en lote (nunca whatspro_crm_bulk_* sin pedido explícito). No prendas ni apagues automatizaciones ni borres nada (whatspro_manage_automation*, whatspro_chat_trigger_automation, whatspro_delete_record quedan afuera). El historial del chat es la evidencia; etiquetas y campos son hipótesis. Citá evidencia (ids de mensajes). No reabras decisiones tomadas. Un envío inmediato sólo desde una fila aprobada y con su idempotency_key, uno por llamada; un programado, una tarea o una demo dentro de un pedido aprobado salen directo, lo que proponés por tu cuenta espera aprobación. Cobros: sólo con whatspro_sales_register_payment desde una fila aprobada o por pedido explícito de una persona, nunca por deducción del chat. Teléfonos: últimos 4 dígitos. CONTEXTO DISPONIBLE: whatspro_sales_dossier trae el historial recortado, las notas internas (who: nota), los campos personalizados del contacto (contact.customData) y lo comercial; podés ampliar con whatspro_private_notes {contact_id} y whatspro_custom_fields, y agregar notas con whatspro_add_internal_note (no es CRM: el cliente no la ve).`;
 
 type SeedSkill = {
   key: string;
@@ -50,7 +54,7 @@ const ACTIONS: SeedSkill[] = [
     pinned: true,
     title: 'P9 · Drenar la cola de trabajo',
     toolChain: ['whatspro_sales_work_queue', 'whatspro_sales_dossier', 'whatspro_sales_classification_write', 'whatspro_chat_send_message', 'whatspro_sales_queue_result', 'whatspro_sales_signal_write', 'whatspro_sales_prompt_result'],
-    text: `${REGLAS}\n\nPedí whatspro_sales_work_queue {limit: 30}. Trabajá los ítems en el orden en que vienen (prompts encolados, envíos aprobados, clasificaciones del prefiltro de dinero, respuestas nuevas, audios). Por cada ítem seguí exactamente sus "steps" y cerrá con la tool de resultado antes de pasar al siguiente. Nunca reintentes un envío que dio timeout: reportalo como send_unknown con el chat. Cuando termines, volvé a pedir la cola; si viene vacía, informá cuántos ítems hiciste por tipo.`,
+    text: `${REGLAS}\n\n${PROMPT_P9}`,
   },
   {
     key: 'qa.p1-prefiltro-dinero',
@@ -99,7 +103,7 @@ const ACTIONS: SeedSkill[] = [
     scope: 'team',
     title: 'P5 · Ejecutar envíos aprobados (uno por uno)',
     toolChain: ['whatspro_sales_work_queue', 'whatspro_chat_send_message', 'whatspro_sales_queue_result'],
-    text: `${REGLAS}\n\nPedí whatspro_sales_work_queue {kinds: ["execute_action"]}. Por cada envío aprobado: verificá con whatspro_list_records messages {chatId, fromMe: false, limit: 1} que el cliente no escribió después de approvedAt (si escribió, whatspro_sales_queue_result status "failed" con result.reason "customer_replied" y seguí); whatspro_chat_send_message {chat_id, text: payload.text, idempotency_key, dry_run: true} y, si está bien, la misma llamada sin dry_run; whatspro_sales_queue_result {action_id, status: "executed", result_message_id, executed_via: "connector"}. Un envío por llamada. Timeout = send_unknown, sin reintento. Al final: enviados · saltados · fallidos.`,
+    text: `${REGLAS}\n\nPedí whatspro_sales_work_queue {kinds: ["execute_action"]}. Por cada envío aprobado: verificá con whatspro_list_records messages {chatId, fromMe: false, limit: 1} que el cliente no escribió después de approvedAt (si escribió, whatspro_sales_queue_result status "failed" con result.error "customer_replied" y seguí); whatspro_chat_send_message {chat_id, text: payload.text, idempotency_key, dry_run: true} y, si está bien, la misma llamada sin dry_run; whatspro_sales_queue_result {action_id, status: "executed", result_message_id, executed_via: "connector"}. Un envío por llamada. Timeout = send_unknown, sin reintento. Al final: enviados · saltados · fallidos.`,
   },
   {
     key: 'qa.p6-radar-respuestas',
@@ -122,8 +126,8 @@ const ACTIONS: SeedSkill[] = [
     execution: 'connector',
     scope: 'team',
     title: 'P7 · Meta de caja y ventas faltantes',
-    toolChain: ['whatspro_list_records', 'whatspro_finance_summary', 'whatspro_sales_signals_list', 'whatspro_register_sale'],
-    text: `${REGLAS}\n\nListá las ventas pagadas del período de la misión (whatspro_list_records sales {status: "paid"}) y las señales de pago atendidas (whatspro_sales_signals_list {kind: "pago", status: "handled"}). Compará: cada señal de pago sin venta registrada es un "cobro probable sin registrar". Devolvé: USD cobrado (ARS 1.000 = USD 1, Gs 7.500 = USD 1 salvo que el equipo diga otro fx), tabla de ventas, y para cada faltante el comando whatspro_register_sale sugerido con idempotency_key "sale:{chatId}:{fecha}" para que Carlos lo confirme. No registres ventas sin confirmación.`,
+    toolChain: ['whatspro_list_records', 'whatspro_finance_summary', 'whatspro_sales_signals_list', 'whatspro_sales_register_payment'],
+    text: `${REGLAS}\n\nListá las ventas pagadas del período de la misión (whatspro_list_records sales {status: "paid"}) y las señales de pago atendidas (whatspro_sales_signals_list {kind: "pago", status: "handled"}). Compará: cada señal de pago sin venta registrada es un "cobro probable sin registrar". Devolvé: USD cobrado (ARS 1.000 = USD 1, Gs 7.500 = USD 1 salvo que el equipo diga otro fx), tabla de ventas, y para cada faltante el comando whatspro_sales_register_payment sugerido {chat_id, amount (en unidades), currency, method, paid_on, concept, idempotency_key "sale:{chatId}:{fecha}"} para que Carlos lo confirme. No registres cobros sin esa confirmación explícita: registrar crea la venta, el asiento y el pago, vincula al cliente y pasa el chat a G11.`,
   },
   {
     key: 'qa.resumen-chat-3-lineas',
@@ -230,21 +234,45 @@ function valores(a: SeedSkill) {
   };
 }
 
+/** Lo que define a la skill, en un orden fijo, para comparar la semilla con la fila activa. */
+function huella(v: ReturnType<typeof valores>): string {
+  return JSON.stringify([v.title, v.userTemplate, v.toolChain, v.notes, v.description, v.category, v.icon, v.recurrence, v.execution, v.scope, v.variables, v.recommendFor, v.pinned, v.audience]);
+}
+function huellaFila(p: typeof teamPrompts.$inferSelect): string {
+  return JSON.stringify([p.title, p.userTemplate, p.toolChain ?? [], p.notes ?? null, p.description ?? '', p.category, p.icon, p.recurrence, p.execution, p.scope, p.variables ?? [], p.recommendFor ?? {}, p.pinned ?? false, p.audience]);
+}
+
 async function main() {
+  let creadas = 0;
+  let iguales = 0;
   for (const a of ACTIONS) {
-    const v1 = await db.query.teamPrompts.findFirst({ where: and(eq(teamPrompts.teamId, TEAM_ID), eq(teamPrompts.key, a.key), eq(teamPrompts.version, 1)) });
-    if (v1) {
-      await db.update(teamPrompts).set({ ...valores(a), updatedAt: new Date() }).where(eq(teamPrompts.id, v1.id));
-      console.log(`= ${a.key} v1 actualizado`);
+    const v = valores(a);
+    const previas = await db.query.teamPrompts.findMany({ where: and(eq(teamPrompts.teamId, TEAM_ID), eq(teamPrompts.key, a.key)) });
+    const activa = previas.find((p) => p.status === 'active');
+    if (activa && huellaFila(activa) === huella(v)) {
+      console.log(`= ${a.key} v${activa.version} ya dice esto`);
+      iguales += 1;
       continue;
     }
-    const [row] = await db
-      .insert(teamPrompts)
-      .values({ teamId: TEAM_ID, key: a.key, purpose: 'custom', version: 1, status: 'active', systemPrompt: '', createdBy: USER_ID, ...valores(a) })
-      .returning({ id: teamPrompts.id });
-    console.log(`+ ${a.key} v1 creado (id ${row.id})`);
+    // Misma regla que upsertSkill: versión siguiente, la anterior queda
+    // retirada, y el uso acumulado (que es de la skill, no de la versión) se arrastra.
+    const version = previas.reduce((max, p) => Math.max(max, p.version), 0) + 1;
+    const usageCount = previas.reduce((max, p) => Math.max(max, p.usageCount ?? 0), 0);
+    const lastUsedAt = previas.reduce<Date | null>((latest, p) => (p.lastUsedAt && (!latest || p.lastUsedAt > latest) ? p.lastUsedAt : latest), null);
+    const row = await db.transaction(async (tx) => {
+      if (previas.length) {
+        await tx.update(teamPrompts).set({ status: 'retired', updatedAt: new Date() }).where(and(eq(teamPrompts.teamId, TEAM_ID), eq(teamPrompts.key, a.key)));
+      }
+      const [inserted] = await tx
+        .insert(teamPrompts)
+        .values({ teamId: TEAM_ID, key: a.key, purpose: 'custom', version, status: 'active', systemPrompt: '', createdBy: USER_ID, usageCount, lastUsedAt, ...v })
+        .returning({ id: teamPrompts.id });
+      return inserted;
+    });
+    console.log(`${previas.length ? '^' : '+'} ${a.key} v${version} ${previas.length ? `creada, v${activa?.version ?? '?'} retirada` : 'creada'} (id ${row.id})`);
+    creadas += 1;
   }
-  console.log(`\n${ACTIONS.length} skills sembradas (${ACTIONS.filter((a) => a.recurrence !== 'on_demand').length} rutinas, ${ACTIONS.filter((a) => a.variables?.length).length} con formulario).`);
+  console.log(`\n${ACTIONS.length} skills: ${creadas} versiones nuevas, ${iguales} sin cambios (${ACTIONS.filter((a) => a.recurrence !== 'on_demand').length} rutinas, ${ACTIONS.filter((a) => a.variables?.length).length} con formulario).`);
   process.exit(0);
 }
 main().catch((e) => { console.error(e); process.exit(1); });

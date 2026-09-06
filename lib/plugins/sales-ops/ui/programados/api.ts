@@ -1,5 +1,7 @@
 'use client';
 
+import { aLocal, desdeZona, fechaEnZona, partesEnZona, sumarDias } from '@/lib/time/zona';
+
 import { PROGRAMADOS_API, programadosFetcher as fetchProgramados } from '@/lib/plugins/scheduled-messages/ui/swr';
 
 /** Cliente del plugin de Mensajes programados, visto desde el Command Center. */
@@ -109,12 +111,16 @@ export function cuando(p: Programado, fmtDateTime: (v: string | null) => string)
   return `Sale ${fmtDateTime(p.scheduledAt ?? p.nextRunAt)}`;
 }
 
-/** `2026-09-01`, en hora local (no UTC: `toISOString` corre el día de madrugada). */
+/**
+ * `2026-09-01`: el día del negocio (Argentina) en el que cae el instante.
+ *
+ * No el del navegador: una IA que maneja Chrome corre en UTC y a las 22 de
+ * Argentina ya está en "mañana". Las fechas construidas a mano para recorrer
+ * días (`new Date(y, m, d, 12)`) van a mediodía para caer en el mismo día en
+ * cualquier zona razonable.
+ */
 export function claveDia(fecha: Date): string {
-  const y = fecha.getFullYear();
-  const m = String(fecha.getMonth() + 1).padStart(2, '0');
-  const d = String(fecha.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  return fechaEnZona(fecha);
 }
 
 /**
@@ -131,10 +137,12 @@ export function claveDia(fecha: Date): string {
  */
 export function diasOcupados(p: Programado, desde: Date, hasta: Date): string[] {
   const dias: string[] = [];
-  const inicio = new Date(desde.getFullYear(), desde.getMonth(), desde.getDate());
+  const primero = claveDia(desde);
+  const ultimo = claveDia(hasta);
+  const inicio = desdeZona(primero, 0, 0);
   // Fin del día, no su medianoche: con `hasta` a las 00:00 un programado de
   // hoy a las 15 quedaba fuera del rango y la pestaña "Hoy" salía vacía.
-  const fin = new Date(hasta.getFullYear(), hasta.getMonth(), hasta.getDate(), 23, 59, 59, 999);
+  const fin = new Date(desdeZona(ultimo, 23, 59).getTime() + 59_999);
 
   if (!estaPendiente(p)) {
     const salida = p.lastRunAt ? new Date(p.lastRunAt) : null;
@@ -149,26 +157,25 @@ export function diasOcupados(p: Programado, desde: Date, hasta: Date): string[] 
     return [];
   }
 
-  // Recurrentes: se recorre el rango día por día. Son semanas o un mes, no hay
-  // riesgo de recorrer de más.
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-  for (let d = new Date(inicio); d <= fin; d.setDate(d.getDate() + 1)) {
+  // Recurrentes: se recorre el rango día por día, en días del negocio. Son
+  // semanas o un mes, no hay riesgo de recorrer de más.
+  const hoy = fechaEnZona();
+  for (let dia = primero; dia <= ultimo; dia = sumarDias(dia, 1)) {
     // Un recurrente no "salió" en el pasado por el solo hecho de existir: lo que
     // ya pasó lo cuenta `lastRunAt`, no la regla.
-    if (d < hoy) continue;
-    if (p.scheduleType === 'daily' || (p.weekdays ?? []).includes(d.getDay())) dias.push(claveDia(d));
+    if (dia < hoy) continue;
+    const weekday = partesEnZona(desdeZona(dia, 12, 0)).weekday;
+    if (p.scheduleType === 'daily' || (p.weekdays ?? []).includes(weekday)) dias.push(dia);
   }
   return dias;
 }
 
-/** `datetime-local` quiere hora local sin zona; `toISOString` da UTC. */
+/** `datetime-local` quiere `YYYY-MM-DDTHH:mm` sin zona: se muestra en hora del negocio, no la del navegador. */
 export function paraInput(iso: string | null): string {
   if (!iso) return '';
   const value = new Date(iso);
   if (!Number.isFinite(value.getTime())) return '';
-  const offset = value.getTimezoneOffset() * 60000;
-  return new Date(value.getTime() - offset).toISOString().slice(0, 16);
+  return aLocal(value);
 }
 
 /**

@@ -13,6 +13,7 @@ export type NavId =
   | 'completadas'
   | 'enCola'
   | 'enfoque'
+  | 'produccion'
   | 'metricas'
   | 'ajustes'
   | 'comoUsar'

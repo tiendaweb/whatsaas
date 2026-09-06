@@ -75,7 +75,9 @@ export function HumanDecisionCard({ run, onAnswered }: Props) {
     }
   };
 
-  const connector = run.connector && run.connector !== 'pending' ? run.connector : t('connectorFallback');
+  // `connector` es el valor con el que la tool MCP cierra cuando el conector
+  // no dijo quién es: mostrarlo literal era leer "connector" en la tarjeta.
+  const connector = run.connector && run.connector !== 'pending' && run.connector !== 'connector' ? run.connector : 'el conector';
 
   return (
     <section className="mt-3 overflow-hidden rounded-xl border border-primary/30 bg-primary/[0.035]">

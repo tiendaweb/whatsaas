@@ -86,7 +86,7 @@ Contrato de salida (JSON, todas las claves):
 
 CORRECCIÓN DEL CRM. Si lo que leíste contradice la etapa del embudo, las etiquetas o los campos que tiene el contacto, escribí las dos cosas:
 - "crm_to_fix": qué está mal y por qué, en una o dos líneas, para que lo lea una persona.
-- "crm_fix": la MISMA corrección lista para aplicar. Los nombres tienen que salir TAL CUAL del catálogo del equipo (crm_catalog del expediente: stages, tags, fields). Si el nombre que querés no está en el catálogo, no lo inventes: dejalo sólo en crm_to_fix.
+- "crm_fix": la MISMA corrección lista para aplicar. Los nombres tienen que salir TAL CUAL del catálogo del equipo (crmCatalog del expediente: stages, tags, fields). Si el nombre que querés no está en el catálogo, no lo inventes: dejalo sólo en crm_to_fix.
 Poné "crm_fix": null cuando el CRM está bien o cuando lo que hay que corregir no es una etapa, una etiqueta ni un campo. Sólo lo que contradice ESTE chat: no aproveches para ordenar la ficha.`;
 
 const RADAR_SYSTEM = `Sos el radar de respuestas del equipo comercial. Clasificás UN mensaje entrante del cliente con el contexto de los últimos mensajes del chat.
@@ -181,7 +181,7 @@ CORRECCIÓN DEL CRM (obligatorio, aunque no esté en el resto del prompt).
 Sumá dos claves al JSON que devolvés:
   "crm_to_fix": "" | null → qué está mal en el CRM y por qué, en una o dos líneas, para que lo lea una persona.
   "crm_fix": { "stage": "<nombre exacto>" | null, "add_tags": [], "remove_tags": [], "fields": { "<nombre exacto>": "valor" | null }, "reason": "" } | null → la MISMA corrección lista para aplicar de un botón.
-Los nombres salen TAL CUAL del catálogo del equipo (crm_catalog del expediente: stages, tags, fields). Si el que querés no está en el catálogo, no lo inventes: dejalo sólo en crm_to_fix.
+Los nombres salen TAL CUAL del catálogo del equipo (crmCatalog del expediente: stages, tags, fields). Si el que querés no está en el catálogo, no lo inventes: dejalo sólo en crm_to_fix.
 "crm_fix": null cuando el CRM está bien, o cuando lo que hay que corregir no es una etapa, una etiqueta ni un campo.
 Sólo lo que contradice ESTE chat: no aproveches para ordenar la ficha.`.trim();
 

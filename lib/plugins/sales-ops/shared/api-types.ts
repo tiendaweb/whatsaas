@@ -348,7 +348,7 @@ export type HistoryEntry = {
   action: string;
   label: string;
   /** Familia del evento: la ficha elige ícono y color con esto. */
-  kind: 'analisis' | 'manual' | 'radar' | 'prompt' | 'cola' | 'envio' | 'crm' | 'skill' | 'limpieza' | 'otro';
+  kind: 'analisis' | 'manual' | 'radar' | 'prompt' | 'cola' | 'envio' | 'crm' | 'cobro' | 'skill' | 'limpieza' | 'otro';
   detail: string;
   at: string;
   /** null = lo hizo el cron o un conector, no una persona. */

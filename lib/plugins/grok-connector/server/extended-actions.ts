@@ -57,6 +57,8 @@ import {
 import { assertCompanyOwnership } from '@/lib/plugins/memberships/server/plan-schema';
 import { resolveSendingInstance } from '@/lib/messaging/send';
 import { computeNextRunAt } from '@/lib/plugins/scheduled-messages/schedule';
+import { asegurarParrafos } from '@/lib/messaging/parrafos';
+import { pausarAutomatizacionesDelProgramado } from '@/lib/chats/pausar-automatizacion';
 import {
   assertEntity,
   assertProject,
@@ -504,7 +506,7 @@ export const grokExtendedActionTools: GrokActionTool[] = [
         minute: { type: ['integer', 'null'], minimum: 0, maximum: 59 },
         weekdays: { type: 'array', uniqueItems: true, maxItems: 7, items: { type: 'integer', minimum: 0, maximum: 6 } },
         action_type: { type: 'string', enum: ['message', 'automation'] },
-        message: { type: ['string', 'null'], maxLength: 20000 },
+        message: { type: ['string', 'null'], maxLength: 20000, description: 'Texto que le llega al cliente. Escribilo con párrafos separados por una línea en blanco (saludo · motivo · propuesta · cierre): WhatsApp muestra los saltos y un bloque de 400 caracteres sin cortes se lee como un muro. Si viene largo y sin saltos, el servidor lo parte en párrafos por oración.' },
         media_url: { type: ['string', 'null'], maxLength: 2000 },
         automation_id: nullablePositiveId,
         max_runs: { type: ['integer', 'null'], minimum: 1 },
@@ -1844,13 +1846,18 @@ async function manageScheduledMessage(input: Record<string, unknown>, context: G
       minute: data.minute ?? null,
       weekdays: data.weekdays ?? [],
       actionType: data.action_type ?? 'message',
-      message: data.message ?? null,
+      // Los conectores tienden a mandar el mensaje entero en un bloque: se
+      // parte en párrafos si viene largo y sin ningún salto (lib/messaging/parrafos).
+      message: data.message ? asegurarParrafos(data.message) : null,
       mediaUrl: data.media_url ?? null,
       automationId: data.automation_id ?? null,
       maxRuns: data.max_runs ?? null,
       nextRunAt: computeNextRunAt({ scheduleType, scheduledAt, hour: data.hour, minute: data.minute, weekdays: data.weekdays }),
       createdBy: context.userId,
     }).returning();
+    // Programar saca al chat de los flujos automáticos: si no, el flujo se
+    // adelanta a la respuesta del cliente. Ver lib/chats/pausar-automatizacion.
+    await pausarAutomatizacionesDelProgramado(context.teamId, scheduledMessage);
     if (data.idempotency_key) {
       const keyHash = createHash('sha256').update(`sched:${context.teamId}:${data.idempotency_key}`).digest('hex');
       await db
@@ -1916,7 +1923,7 @@ async function manageScheduledMessage(input: Record<string, unknown>, context: G
     ...(data.minute !== undefined ? { minute: data.minute } : {}),
     ...(data.weekdays !== undefined ? { weekdays: data.weekdays } : {}),
     ...(data.action_type !== undefined ? { actionType: data.action_type } : {}),
-    ...(data.message !== undefined ? { message: data.message } : {}),
+    ...(data.message !== undefined ? { message: data.message ? asegurarParrafos(data.message) : data.message } : {}),
     ...(data.media_url !== undefined ? { mediaUrl: data.media_url } : {}),
     ...(data.automation_id !== undefined ? { automationId: data.automation_id } : {}),
     ...(data.max_runs !== undefined ? { maxRuns: data.max_runs } : {}),

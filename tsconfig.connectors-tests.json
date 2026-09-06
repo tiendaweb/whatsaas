@@ -13,6 +13,10 @@
   },
   "include": [
     "lib/plugins/grok-connector/shared/task-patch-schema.ts",
+    "lib/plugins/sales-ops/shared/human-decision.ts",
+    "lib/plugins/sales-ops/shared/skills.ts",
+    "lib/plugins/tasks/shared/produccion.ts",
+    "lib/messaging/parrafos.ts",
     "lib/plugins/sites/server/text-patch.ts",
     "tests/connectors/*.test.ts"
   ]

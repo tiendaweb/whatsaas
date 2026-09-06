@@ -1,34 +1,41 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import useSWR from 'swr';
 import {
   ArrowLeft, Ban, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock, Layers, Loader2, MessageSquareText,
-  Pause, Pencil, Play, Save, SkipForward, Timer, Wand2, X, type LucideIcon,
+  Pause, Pencil, Play, Save, SkipForward, Timer, Wand2, Wrench, X, type LucideIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import type { BatchSummary } from '../../shared/api-types';
+import type { BatchSummary, DetailPayload } from '../../shared/api-types';
+import type { CrmFixPendiente } from '../../server/crm';
+import { CrmFixItem } from './CrmFixItem';
 import { HumanDecisionCard } from './HumanDecisionCard';
-import { ColaLateral } from './ColaLateral';
+import { HechoAMano } from './HechoAMano';
+import { ColaLateral, type EstadoRevision } from './ColaLateral';
 import { ContactosDelLote } from './ContactosDelLote';
 import { RevisarLote } from './RevisarLote';
 import { TarjetaProgramado } from '../programados/TarjetaProgramado';
 import type { Programado } from '../programados/api';
-import { fmtDateTime, fmtInt, tiempoRelativo } from '../components/format';
+import { SALES_OPS_API, fetcher, fmtDateTime, fmtInt, tiempoRelativo } from '../components/format';
 import { ACCIONES, deducirAccion, type AccionFocus } from '../focus/acciones';
 import { NuevoPedido } from '../focus/NuevoPedido';
-import { PanelContacto, SOLAPAS_CONTACTO, type SolapaContacto } from '../focus/PanelContacto';
+import { META as META_SOLAPAS, PanelContacto, SOLAPAS_CONTACTO, type SolapaContacto } from '../focus/PanelContacto';
 import { LimiteDeError } from '../focus/LimiteDeError';
 import { PanelResumen } from '../focus/PanelResumen';
 import { Reloj } from '../focus/Reloj';
+import { etapaDeGate, LS_BLOQUE_SUPERVISION } from '../focus/tipos';
+import { useAtajosTeclado } from '../focus/useAtajosTeclado';
 import { porcentaje } from '../focus/useColaFocus';
 import { useBloque } from '../focus/useBloque';
 import { FallaCorrida } from '../skills/FallaCorrida';
+import { runEsEditable } from '../../shared/skills';
 import { approveRun, cancelRun, editRun, type SkillRun } from '../skills/api';
-import { RUN_STATUS_LABELS } from '../skills/skill-meta';
+import { etiquetaDeCorrida } from '../skills/skill-meta';
 
 /**
  * El violeta es la señal de que esto es otra cosa.
@@ -52,13 +59,15 @@ const TONO = {
 export type ItemSupervision =
   | { key: string; tipo: 'lote'; fecha: string; chatId: number | null; batch: BatchSummary }
   | { key: string; tipo: 'indicacion' | 'prompt'; fecha: string; chatId: number | null; run: SkillRun }
-  | { key: string; tipo: 'programado'; fecha: string; chatId: number | null; programado: Programado };
+  | { key: string; tipo: 'programado'; fecha: string; chatId: number | null; programado: Programado }
+  | { key: string; tipo: 'crm'; fecha: string; chatId: number | null; crm: CrmFixPendiente };
 
 const TIPO_META: Record<ItemSupervision['tipo'], { label: string; icon: LucideIcon }> = {
   lote: { label: 'Lote', icon: Layers },
   indicacion: { label: 'Indicación', icon: MessageSquareText },
   prompt: { label: 'Prompt', icon: Wand2 },
   programado: { label: 'Programado', icon: Clock },
+  crm: { label: 'Corrección de CRM', icon: Wrench },
 };
 
 type Props = {
@@ -74,7 +83,7 @@ type Props = {
  * Es el hermano del Focus de trabajo, pero del otro lado del mostrador: en vez
  * de recorrer clientes para ejecutarles algo, recorre lo que quedó esperando que
  * alguien lo mire —prompts sin aprobar, corridas que fallaron, lotes propuestos,
- * programados pausados— y en cada uno deja hacer lo único que hace falta:
+ * programados pausados, correcciones de CRM— y en cada uno deja hacer lo único que hace falta:
  * leerlo entero, corregirlo si está mal, y aprobarlo o descartarlo.
  *
  * La lista se congela al entrar. Resolver un ítem lo saca del servidor, y si la
@@ -83,7 +92,7 @@ type Props = {
  */
 export function FocusCola({ items, onSalir, onCambio }: Props) {
   const [idx, setIdx] = useState(0);
-  const [resueltos, setResueltos] = useState<Record<string, 'aprobado' | 'descartado' | 'supervisado' | 'saltado'>>({});
+  const [resueltos, setResueltos] = useState<Record<string, EstadoRevision>>({});
   const [cola] = useState<ItemSupervision[]>(items);
   /**
    * Lote abierto fila por fila, SIN salir del Focus.
@@ -105,7 +114,9 @@ export function FocusCola({ items, onSalir, onCambio }: Props) {
   /** En el celular no entra el panel al lado: el ítem y el contacto son pestañas. */
   const [pestanaMovil, setPestanaMovil] = useState<'item' | SolapaContacto>('item');
   const [esMovil, setEsMovil] = useState(false);
-  const bloque = useBloque();
+  // Reloj propio: con la clave del Focus de trabajo, entrar acá heredaba un
+  // bloque a medias de la otra pantalla.
+  const bloque = useBloque(LS_BLOQUE_SUPERVISION);
 
   // El Focus de trabajo corta en 1280 porque son tres columnas; acá son dos —lo
   // que se supervisa y el contacto— y entran cómodas desde 1024. Con el corte
@@ -132,7 +143,7 @@ export function FocusCola({ items, onSalir, onCambio }: Props) {
   const revisados = useMemo(() => Object.values(resueltos).filter((v) => v !== 'saltado').length, [resueltos]);
   const pct = porcentaje(revisados, total);
 
-  const marcar = (clave: string, como: 'aprobado' | 'descartado' | 'supervisado' | 'saltado') => {
+  const marcar = (clave: string, como: EstadoRevision) => {
     setResueltos((prev) => ({ ...prev, [clave]: como }));
     setChatDelLote(null);
     setPestanaMovil('item');
@@ -140,17 +151,15 @@ export function FocusCola({ items, onSalir, onCambio }: Props) {
     if (como !== 'saltado') onCambio();
   };
 
-  useEffect(() => {
-    const escuchar = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
-      if (e.key === 'ArrowRight') setIdx((i) => Math.min(i + 1, total));
-      else if (e.key === 'ArrowLeft') setIdx((i) => Math.max(0, i - 1));
-    };
-    window.addEventListener('keydown', escuchar);
-    return () => window.removeEventListener('keydown', escuchar);
-  }, [total]);
+  // Las mismas teclas que el Focus de trabajo: ← → y S para saltar.
+  const siguiente = useCallback(() => setIdx((i) => Math.min(i + 1, total)), [total]);
+  const anterior = useCallback(() => setIdx((i) => Math.max(0, i - 1)), []);
+  const saltar = useCallback(() => {
+    if (actualKey) marcar(actualKey, 'saltado');
+    // `marcar` cambia en cada render; lo que importa es sobre qué ítem se salta.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actualKey]);
+  useAtajosTeclado({ onSiguiente: siguiente, onAnterior: anterior, onSaltar: saltar });
 
   return (
     <div className="fixed inset-0 z-50 flex h-dvh w-full flex-col bg-background text-foreground">
@@ -284,11 +293,13 @@ export function FocusCola({ items, onSalir, onCambio }: Props) {
                       }}
                       aria-current={activa ? 'page' : undefined}
                       className={cn(
-                        'relative flex-1 py-2.5 text-[11px] font-medium capitalize transition-colors disabled:opacity-35',
+                        'relative flex-1 py-2.5 text-[11px] font-medium transition-colors disabled:opacity-35',
                         activa ? TONO.acento : 'text-muted-foreground',
                       )}
                     >
-                      {id === 'item' ? 'Revisar' : id}
+                      {/* Las mismas etiquetas que las solapas del panel: antes
+                          salía el id crudo ("programar") con una mayúscula. */}
+                      {id === 'item' ? 'Revisar' : META_SOLAPAS[id].label}
                       {activa && <span aria-hidden className={cn('absolute inset-x-5 top-0 h-0.5 rounded-full', TONO.barraProgreso)} />}
                     </button>
                   );
@@ -360,7 +371,16 @@ function FinDeRevision({ total, revisados, onSalir, onVolver }: { total: number;
 function nombreDelItem(item: ItemSupervision): string {
   if (item.tipo === 'programado') return item.programado.name;
   if (item.tipo === 'lote') return item.batch.batchLabel;
+  if (item.tipo === 'crm') return item.crm.name;
   return item.run.targetName ?? 'el contacto';
+}
+
+/** Estado del ítem para el DOM (`data-supervision-estado`). */
+function estadoDelItem(item: ItemSupervision): string | undefined {
+  if (item.tipo === 'lote') return undefined;
+  if (item.tipo === 'programado') return item.programado.status;
+  if (item.tipo === 'crm') return 'pendiente';
+  return item.run.status;
 }
 
 /** El ítem que se está mirando, entero y con lo que se puede hacerle. */
@@ -384,8 +404,23 @@ function TarjetaSupervision({
   onCambio: () => void;
 }) {
   const { label, icon: Icon } = TIPO_META[item.tipo];
+  /**
+   * El análisis del contacto, para que "Mandar otro pedido" ofrezca los mismos
+   * atajos y la misma acción recomendada que la barra del Focus de trabajo.
+   * Misma clave SWR que el panel y el resumen: no agrega ningún pedido.
+   */
+  const { data: detalle } = useSWR<DetailPayload>(item.chatId ? `${SALES_OPS_API}/contacts/${item.chatId}` : null, fetcher, { revalidateOnFocus: false });
   return (
-    <article className={cn('rounded-2xl border bg-card p-4', TONO.tarjeta)}>
+    // Qué es y en qué estado está, en el DOM: con un ítem por pantalla, quien
+    // supervise desde un navegador (persona con lector de pantalla o agente)
+    // ubica qué está mirando sin depender del ícono ni del color.
+    <article
+      className={cn('rounded-2xl border bg-card p-4', TONO.tarjeta)}
+      aria-label={`${label}: ${nombreDelItem(item)}`}
+      data-supervision-key={item.key}
+      data-supervision-tipo={item.tipo}
+      data-supervision-estado={estadoDelItem(item)}
+    >
       <div className="flex items-center gap-2">
         <span className={cn('flex size-7 items-center justify-center rounded-lg', TONO.chip)}>
           <Icon className="size-4" aria-hidden />
@@ -398,7 +433,9 @@ function TarjetaSupervision({
         {item.tipo === 'lote' ? (
           <CuerpoLote batch={item.batch} onResuelto={onResuelto} chatElegido={chatElegido} onElegirChat={onElegirChat} onCambio={onCambio} />
         ) : item.tipo === 'programado' ? (
-          <CuerpoProgramado programado={item.programado} onResuelto={onResuelto} />
+          <CuerpoProgramado programado={item.programado} onSupervisado={onSupervisado} />
+        ) : item.tipo === 'crm' ? (
+          <CrmFixItem item={item.crm} variante="focus" onResuelto={onResuelto} />
         ) : (
           <CuerpoCorrida run={item.run} onResuelto={onResuelto} onCambio={onCambio} />
         )}
@@ -406,7 +443,13 @@ function TarjetaSupervision({
 
       {item.chatId && (
         <div className="mt-3 border-t border-border pt-3">
-          <NuevoPedido chatId={item.chatId} nombre={nombreDelItem(item)} onEnviado={onCambio} />
+          <NuevoPedido
+            chatId={item.chatId}
+            nombre={nombreDelItem(item)}
+            etapa={etapaDeGate(detalle?.analysis?.currentGate)}
+            accionRecomendada={detalle?.analysis?.recommendedAction ?? null}
+            onEnviado={onCambio}
+          />
         </div>
       )}
 
@@ -449,15 +492,24 @@ function CuerpoCorrida({ run, onResuelto, onCambio }: { run: SkillRun; onResuelt
   const [ocupado, setOcupado] = useState(false);
 
   const sucio = titulo !== run.title || texto !== run.text;
-  const esperandoAprobacion = run.status === 'queued' && !run.approvedAt;
+  const esperandoAprobacion = run.status === 'queued' && !run.approved;
   const necesitaCriterio = run.status === 'blocked' && Boolean(run.humanRequest);
   const fallida = run.status === 'failed' || (run.status === 'blocked' && !run.humanRequest);
+  /**
+   * Todo lo que llega a esta pantalla espera una decisión, así que se corrige:
+   * la que espera aprobación, la que falló —el texto corregido es el que se
+   * reintenta— y la que se frenó a pedir criterio. La regla es la del servidor,
+   * para no ofrecer un botón que la API rechaza (era el caso de las fallidas:
+   * "Corregir" abría el editor y guardar respondía "sólo se edita mientras
+   * espera en la cola").
+   */
+  const editable = runEsEditable(run.status);
 
   const guardar = async () => {
     setGuardando(true);
     try {
       await editRun(run.id, { title: titulo.trim() || run.title, text: texto });
-      toast.success('Corregido.');
+      toast.success(fallida ? 'Corregido. Reintentala para correrla con el texto nuevo.' : 'Corregido.');
       setEditando(false);
       onCambio();
     } catch (e) {
@@ -493,12 +545,12 @@ function CuerpoCorrida({ run, onResuelto, onCambio }: { run: SkillRun; onResuelt
     <>
       <div className="flex items-start justify-between gap-2">
         {editando ? (
-          <Input value={titulo} onChange={(e) => setTitulo(e.target.value)} className="h-8 text-sm font-medium" maxLength={160} />
+          <Input id={`focus-run-${run.id}-titulo`} aria-label="Título de la corrida" value={titulo} onChange={(e) => setTitulo(e.target.value)} className="h-8 text-sm font-medium" maxLength={160} />
         ) : (
           <h2 className="min-w-0 flex-1 text-sm font-semibold leading-snug">{titulo}</h2>
         )}
         <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-          {necesitaCriterio ? 'Necesita tu criterio' : (RUN_STATUS_LABELS[run.status] ?? run.status)}
+          {etiquetaDeCorrida(run)}
         </span>
       </div>
 
@@ -516,14 +568,23 @@ function CuerpoCorrida({ run, onResuelto, onCambio }: { run: SkillRun; onResuelt
       </p>
 
       {editando ? (
-        <Textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={14} className="mt-3 resize-y font-mono text-[12px] leading-relaxed" />
+        <Textarea
+          id={`focus-run-${run.id}-texto`}
+          aria-label={`Texto de la corrida ${run.title}`}
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          rows={14}
+          className="mt-3 resize-y font-mono text-[12px] leading-relaxed"
+        />
       ) : (
         <pre className="mt-3 max-h-[46vh] overflow-y-auto whitespace-pre-wrap rounded-lg bg-muted/50 p-3 font-mono text-[12px] leading-relaxed text-foreground/90">{texto}</pre>
       )}
 
       {/* Una corrida fallida NO muestra su `summary`: ahí viene el error crudo
           del SDK, y el 429 de Gemini son 900 caracteres de JSON. `FallaCorrida`
-          lo dice en castellano y deja el detalle técnico a un clic. */}
+          lo dice en castellano y deja el detalle técnico a un clic.
+          Reintentar crea una corrida nueva ya aprobada y deja ésta cancelada
+          con `relaunchedAs`: para esta pantalla, el pedido quedó aprobado. */}
       {fallida ? (
         !editando && <FallaCorrida run={run} className="mt-3" onRetried={() => onResuelto('aprobado')} />
       ) : (
@@ -560,10 +621,12 @@ function CuerpoCorrida({ run, onResuelto, onCambio }: { run: SkillRun; onResuelt
                 {sucio ? 'Guardar y aprobar' : 'Aprobar'}
               </Button>
             )}
-            <Button size="sm" variant="outline" className="h-9 gap-1.5" onClick={() => setEditando(true)}>
-              <Pencil className="size-4" aria-hidden />
-              Corregir
-            </Button>
+            {editable && (
+              <Button size="sm" variant="outline" className="h-9 gap-1.5" aria-label={`Corregir el texto de ${run.title}`} onClick={() => setEditando(true)}>
+                <Pencil className="size-4" aria-hidden />
+                Corregir
+              </Button>
+            )}
             <Button size="sm" variant="ghost" className="h-9 gap-1.5 text-muted-foreground hover:text-destructive" onClick={() => void correr('descartar')} disabled={ocupado}>
               <Ban className="size-4" aria-hidden />
               Descartar
@@ -571,6 +634,16 @@ function CuerpoCorrida({ run, onResuelto, onCambio }: { run: SkillRun; onResuelt
           </>
         )}
       </div>
+
+      {/* Con el chat y el editor de programados al lado, quien supervisa
+          —persona o IA desde el navegador— puede resolver el pedido ahí mismo
+          y cerrarlo sin esperar a un conector. */}
+      {!editando && (
+        <div className="mt-3 border-t border-border pt-3">
+          <p className="mb-1.5 text-[11px] text-muted-foreground">¿Lo resolviste vos desde el chat o los programados de la derecha? Cerralo acá y no lo toma ningún conector.</p>
+          <HechoAMano run={run} variante="focus" onHecho={() => onResuelto('aprobado')} />
+        </div>
+      )}
     </>
   );
 }
@@ -601,19 +674,17 @@ function CuerpoLote({
   onElegirChat: (chatId: number) => void;
   onCambio: () => void;
 }) {
-  const vivas = (batch.byStatus.proposed ?? 0) + (batch.byStatus.pending_approval ?? 0);
   return (
     <RevisarLote
       embebido
       batchId={batch.batchId}
       selectedChatId={chatElegido}
       onOpen={onElegirChat}
-      onChanged={() => {
-        onCambio();
-        // Aprobar o rechazar saca el lote de la cola de supervisión: ya no hay
-        // nada que decidir sobre él.
-        if (vivas > 0) onResuelto('aprobado');
-      }}
+      // Cualquier cambio (una corrección, una indicación, un contacto menos)
+      // refresca la Cola, pero sólo aprobar o rechazar resuelve el lote acá:
+      // antes guardar una edición lo marcaba "aprobado" y pasaba al siguiente.
+      onChanged={onCambio}
+      onDecidido={(decision) => onResuelto(decision === 'aprobado' ? 'aprobado' : 'descartado')}
     />
   );
 }
@@ -627,14 +698,10 @@ function CuerpoLote({
  * repetir un editor recortado: un segundo editor con la mitad de los campos es
  * la forma segura de que uno de los dos se quede viejo.
  *
- * `onResuelto` se dispara cuando la tarjeta avisa que cambió algo: en esta
- * pantalla, tocarlo ya es haberlo supervisado.
+ * La tarjeta avisa "cambió algo" sin decir qué (pausar, editar, borrar, pasar
+ * a la cola): eso es haberlo **supervisado**, no haberlo aprobado. Antes se
+ * marcaba "aprobado" y el tilde verde de la cola lateral mentía.
  */
-function CuerpoProgramado({ programado, onResuelto }: { programado: Programado; onResuelto: (como: 'aprobado' | 'descartado') => void }) {
-  return (
-    <TarjetaProgramado
-      item={programado}
-      onCambio={() => onResuelto('aprobado')}
-    />
-  );
+function CuerpoProgramado({ programado, onSupervisado }: { programado: Programado; onSupervisado: () => void }) {
+  return <TarjetaProgramado item={programado} onCambio={onSupervisado} />;
 }

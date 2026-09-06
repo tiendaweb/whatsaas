@@ -1,18 +1,21 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Inbox, Loader2, Play, Sparkles, X } from 'lucide-react';
+import { Check, Inbox, Loader2, Play, Sparkles, Wrench, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { mutate as mutateGlobal } from 'swr';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import type { CrmFix } from '../../shared/crm-fix';
 import { classifyRunError } from '../../shared/run-errors';
 import { avisarEncolado } from '../components/eventos';
+import { SALES_OPS_API } from '../components/format';
 import { componerPedido } from './acciones';
 import { useCapacidades } from './useCapacidades';
 import { atajosDe, recordarAtajo, type Atajo } from './atajos';
 import { LS_PROMPT, type Etapa } from './tipos';
-import { dejarParaConector, ejecutarAhora } from './api';
+import { aplicarCrmPropuesto, dejarParaConector, ejecutarAhora } from './api';
 
 type Props = {
   chatId: number;
@@ -22,10 +25,16 @@ type Props = {
   mensajeActual?: string | null;
   /** Acción recomendada por el análisis: es lo que se encola con el prompt vacío. */
   accionRecomendada?: string | null;
-  /** Llega el texto que redactó la IA: el Focus lo baja al editor de programados. */
-  onTexto: (texto: string) => void;
+  /**
+   * Llega el texto que redactó la IA: el Focus lo baja al editor de programados.
+   * Con `cuando` (hora local `YYYY-MM-DDTHH:mm`) el editor queda con la fecha
+   * puesta: guardar es un clic y no hizo falta ningún conector.
+   */
+  onTexto: (texto: string, cuando?: string | null) => void;
   /** Se encoló: el Focus pasa al siguiente cliente. */
   onEncolado: () => void;
+  /** Una ejecución local válida cuenta para el progreso de la tanda. */
+  onEjecutado?: () => void;
   /**
    * En el celular los botones van a lo ancho y más altos: se aprietan con el
    * pulgar, con el teléfono en una mano, y el margen de error es otro.
@@ -38,15 +47,15 @@ type Props = {
  * terminan el cliente (doc 08 §5).
  *
  * **Ejecutar ahora** corre en el servidor con la IA del equipo y se queda en la
- * pantalla: lo que devuelve es un borrador que hay que leer. Nunca envía un
- * WhatsApp — redacta y programa, y el envío sigue pasando por aprobar y
- * ejecutar.
+ * pantalla: lo que devuelve es un borrador que hay que leer, un programado con
+ * la fecha puesta, o una corrección de CRM que se aplica con un botón. Nunca
+ * envía un WhatsApp — el envío sigue pasando por aprobar y ejecutar.
  *
  * **Listo para conector** encola el pedido y avanza. Con el prompt vacío encola
  * la acción recomendada del análisis, así pasar de largo igual deja trabajo
  * hecho en vez de nada.
  */
-export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecomendada, onTexto, onEncolado, movil = false }: Props) {
+export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecomendada, onTexto, onEncolado, onEjecutado, movil = false }: Props) {
   const [texto, setTexto] = useState('');
   const [atajos, setAtajos] = useState<Atajo[]>([]);
   /**
@@ -64,6 +73,13 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
   const [encolando, setEncolando] = useState(false);
   /** Motivo por el que lo último pedido no se pudo hacer acá. Se limpia al escribir. */
   const [motivoConector, setMotivoConector] = useState<string | null>(null);
+  /**
+   * Corrección de CRM que propuso "Ejecutar ahora" y espera confirmación.
+   * La IA propone; aplicar es de la persona, y pasa por el mismo aplicador que
+   * el botón de la ficha.
+   */
+  const [crmPropuesto, setCrmPropuesto] = useState<{ fix: CrmFix; steps: string[]; skipped: string[]; reason: string | null } | null>(null);
+  const [aplicandoCrm, setAplicandoCrm] = useState(false);
   const ref = useRef<HTMLTextAreaElement | null>(null);
 
   // Al cambiar de etapa se recupera lo último que quedó escrito sin encolar: un
@@ -87,6 +103,7 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
   const escribir = (v: string) => {
     setTexto(v);
     setMotivoConector(null);
+    setCrmPropuesto(null);
     try {
       window.localStorage.setItem(`${LS_PROMPT}:${etapa}`, v);
     } catch {
@@ -105,11 +122,17 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
       const res = await ejecutarAhora({ chatId, prompt: pedido, message: mensajeActual ?? null, name: nombre });
       recordarAtajo(etapa, pedido);
       if (res.mode === 'texto') {
-        onTexto(res.text);
-        toast.success('Texto listo arriba. Revisalo y guardá el programado.');
+        onTexto(res.text, null);
+        toast.success(res.reason ? `Texto listo arriba. ${res.reason}` : 'Texto listo arriba. Revisalo y guardá el programado.');
+      } else if (res.mode === 'programar') {
+        onTexto(res.text, res.when);
+        toast.success('Programado armado arriba, con la fecha puesta. Revisalo y guardá.');
+      } else if (res.mode === 'crm') {
+        setCrmPropuesto({ fix: res.fix, steps: res.steps, skipped: res.skipped, reason: res.reason });
       } else {
         setMotivoConector(res.reason);
       }
+      if (res.mode !== 'conector') onEjecutado?.();
     } catch (e) {
       // Sin cuota de IA del equipo la salida es el conector, no reintentar. El
       // 429 de Gemini son 900 caracteres de JSON: se traduce antes de mostrarlo.
@@ -147,6 +170,54 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
     }
   };
 
+  const aplicarCrm = async () => {
+    if (!crmPropuesto) return;
+    setAplicandoCrm(true);
+    try {
+      const r = await aplicarCrmPropuesto(chatId, crmPropuesto.fix);
+      toast.success(`CRM corregido: ${r.applied.join(' · ')}`);
+      if (r.skipped.length) toast.warning(r.skipped.join(' · '));
+      setCrmPropuesto(null);
+      escribir('');
+      // La pestaña CRM del panel lee esta clave: se le avisa que cambió.
+      void mutateGlobal(`${SALES_OPS_API}/contacts/${chatId}/crm`);
+      void mutateGlobal(`${SALES_OPS_API}/contacts/${chatId}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo aplicar.');
+    } finally {
+      setAplicandoCrm(false);
+    }
+  };
+
+  /** La corrección propuesta: qué va a cambiar, y los dos botones. */
+  const tarjetaCrm = crmPropuesto && (
+    <div className="mb-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5" data-crm-propuesto>
+      <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">
+        <Wrench className="size-3" aria-hidden />
+        Corrección de CRM propuesta
+      </p>
+      {crmPropuesto.reason && <p className="mt-1 text-[11px] leading-snug text-foreground/90">{crmPropuesto.reason}</p>}
+      <ul className="mt-1 space-y-0.5">
+        {crmPropuesto.steps.map((paso) => (
+          <li key={paso} className="flex items-start gap-1.5 text-[11px] text-foreground/90">
+            <span aria-hidden className="mt-1.5 size-1 shrink-0 rounded-full bg-amber-500" />
+            {paso}
+          </li>
+        ))}
+      </ul>
+      {crmPropuesto.skipped.length > 0 && <p className="mt-1 text-[10px] text-muted-foreground">Se saltea: {crmPropuesto.skipped.join(' · ')}</p>}
+      <div className="mt-2 flex gap-1.5">
+        <Button type="button" size="sm" className="h-8 gap-1.5 text-[11px]" disabled={aplicandoCrm} onClick={() => void aplicarCrm()}>
+          {aplicandoCrm ? <Loader2 className="size-3 animate-spin" aria-hidden /> : <Check className="size-3" aria-hidden />}
+          Aplicar al CRM
+        </Button>
+        <Button type="button" size="sm" variant="ghost" className="h-8 text-[11px]" disabled={aplicandoCrm} onClick={() => setCrmPropuesto(null)}>
+          Descartar
+        </Button>
+      </div>
+    </div>
+  );
+
   const chips = atajos.length > 0 && (
     <div className="-mx-0.5 flex gap-1.5 overflow-x-auto px-0.5 pb-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]{display:none}">
       {atajos.map((atajo) => (
@@ -175,6 +246,7 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
   if (movil) {
     return (
       <div className="shrink-0 border-t border-border bg-background p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        {tarjetaCrm}
         {motivoConector && (
           <p className="mb-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-800 dark:text-amber-200">
             {motivoConector}
@@ -230,6 +302,7 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
   return (
     <div className="sticky bottom-0 shrink-0 border-t border-border bg-background pt-2">
       {chips}
+      {tarjetaCrm}
       {motivoConector && (
         <p className="mb-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-800 dark:text-amber-200">
           {motivoConector}
@@ -265,7 +338,7 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
             apretaba el equivocado. Ahora la primera fila es la que se queda en
             la pantalla y la segunda la que pasa al siguiente. */}
         <div className="flex w-[168px] shrink-0 flex-col gap-1.5 sm:w-[184px]">
-          <Button type="button" onClick={() => void ejecutar()} disabled={ocupado || !texto.trim()} className="h-9 w-full justify-start gap-1.5" title="La IA del equipo redacta acá mismo. No envía nada.">
+          <Button type="button" onClick={() => void ejecutar()} disabled={ocupado || !texto.trim()} className="h-9 w-full justify-start gap-1.5" title="La IA del equipo redacta, programa o propone la corrección de CRM acá mismo. No envía nada.">
             {ejecutando ? <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden /> : <Play className="size-4 shrink-0" aria-hidden />}
             <span className="truncate">Ejecutar ahora</span>
           </Button>

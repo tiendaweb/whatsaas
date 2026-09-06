@@ -127,7 +127,14 @@ export type AnalysisStatus = (typeof ANALYSIS_STATUSES)[number];
 export const SOURCES = ['ads_meta', 'ads_cta_sitio', 'importacion', 'organico', 'presencial', 'desconocido'] as const;
 export type Source = (typeof SOURCES)[number];
 
-export const CUSTOMER_EVIDENCE = ['customer_link', 'sale_paid', 'subscription', 'custom_data', 'tag_product', 'chat', 'none'] as const;
+/**
+ * Evidencia de cliente (R1). Fuerte: `customer_link`, `subscription`,
+ * `sale_paid`, `phone_match` (ficha de Clientes con el mismo teléfono: la
+ * misma regla de dedupe que aplica "Registrar como cliente"). Débil:
+ * `custom_data`, `tag_product`, `funnel_stage`. `chat` la pone la IA cuando
+ * la conversación lo confirma. Sale de `resolverCliente` (lib/customers).
+ */
+export const CUSTOMER_EVIDENCE = ['customer_link', 'sale_paid', 'subscription', 'phone_match', 'custom_data', 'tag_product', 'funnel_stage', 'chat', 'none'] as const;
 export type CustomerEvidence = (typeof CUSTOMER_EVIDENCE)[number];
 
 export const ANALYZED_BY = ['server', 'claude', 'chatgpt', 'grok', 'human'] as const;
@@ -169,6 +176,35 @@ export const ACTION_KINDS = [
   'schedule_call',
 ] as const;
 export type ActionKind = (typeof ACTION_KINDS)[number];
+
+/**
+ * Lo que el servidor ejecuta solo apenas se aprueba.
+ *
+ * Aprobar era dejar la fila en `approved` y esperar a que alguien —una persona
+ * o un conector— la sacara de ahí: 24 filas de pre-descarte y de asignar
+ * responsable llegaron a quedar aprobadas semanas sin que nada pasara. Todo lo
+ * de esta lista tiene ya el dato completo en el payload (texto, fecha, título,
+ * responsable), así que no hay nada que leer ni decidir: se hace.
+ *
+ * `register_sale` entró el 2026-09-06: es plata, pero la confirmación humana ya
+ * está en la aprobación (la fila muestra importe, moneda y medio). Al aprobar,
+ * `registrarCobro` (server/cobros.ts) crea la venta, el asiento y el pago en
+ * Finanzas, vincula al contacto como cliente y pasa el chat a G11. Antes
+ * quedaba `approved` para siempre: cero cobros registrados en toda la historia.
+ */
+export const SERVER_EXECUTABLE_KINDS: readonly ActionKind[] = [
+  'send_message',
+  'schedule_message',
+  'create_task',
+  'request_demo',
+  'register_sale',
+  'mark_pre_descarte',
+  'mark_descarte',
+  'assign_owner',
+  'schedule_call',
+];
+
+export const esEjecutableEnServidor = (kind: string): kind is ActionKind => (SERVER_EXECUTABLE_KINDS as readonly string[]).includes(kind);
 
 export const ACTION_STATUSES = [
   'proposed',

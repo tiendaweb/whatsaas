@@ -7,6 +7,8 @@ import { MessagingError, resolveSendingInstance } from '@/lib/messaging/send';
 import { getPluginRequestContext } from '@/lib/plugins/core/runtime-permissions';
 import { InstanceOwnershipError, assertTeamInstance } from '@/lib/instances/ownership';
 import { computeNextRunAt } from '@/lib/plugins/scheduled-messages/schedule';
+import { aLocal, formatoLocal, proximoHorarioFuturo } from '@/lib/time/zona';
+import { pausarAutomatizacionesDelProgramado } from '@/lib/chats/pausar-automatizacion';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -90,6 +92,20 @@ export async function POST(request: Request) {
 
   const d = parsed.data;
 
+  // Un programado de una vez con la hora ya pasada saldría en la próxima
+  // corrida del cron, o sea AHORA, que nunca es lo que se quiso. Se rechaza
+  // con el próximo horario que tiene sentido para que la pantalla lo ofrezca.
+  if (d.scheduleType === 'once' && d.scheduledAt) {
+    const cuando = new Date(d.scheduledAt);
+    const proximo = proximoHorarioFuturo(cuando);
+    if (proximo.ajustado) {
+      return NextResponse.json(
+        { error: `La hora elegida (${formatoLocal(cuando)}) ya pasó. Sugerencia: ${formatoLocal(proximo.date)}.`, code: 'past_schedule', sugerencia: aLocal(proximo.date), sugerenciaIso: proximo.date.toISOString() },
+        { status: 422 },
+      );
+    }
+  }
+
   const nextRunAt = computeNextRunAt({
     scheduleType: d.scheduleType,
     scheduledAt: d.scheduledAt ? new Date(d.scheduledAt) : null,
@@ -140,5 +156,9 @@ export async function POST(request: Request) {
     })
     .returning();
 
-  return NextResponse.json(created, { status: 201 });
+  // Programar algo para un chat lo saca de los flujos automáticos: si no, el
+  // flujo se come la respuesta del cliente. Ver lib/chats/pausar-automatizacion.
+  const automatizaciones = await pausarAutomatizacionesDelProgramado(ctx.team.id, created);
+
+  return NextResponse.json({ ...created, automatizacionesPausadas: automatizaciones }, { status: 201 });
 }

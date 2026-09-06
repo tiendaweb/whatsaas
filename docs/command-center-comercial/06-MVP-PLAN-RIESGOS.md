@@ -12,7 +12,7 @@ Con lo que ya existe en el conector MCP (`whatspro_list_records`, `whatspro_chat
 2. **Auditoría + clasificación de cada uno** (prompt P2): el conector lee el chat, aplica las reglas del documento 04 y devuelve el contrato JSON.
 3. **Registro sin tocar el CRM**: el resultado se guarda como **documento** en la carpeta "🧭 Command Center Comercial / Auditoría" (un documento por lote, tabla con una fila por chat) y, opcionalmente, como **nota interna** en el chat (`isInternal`, el cliente nunca la ve). Nota: las notas internas son mensajes; **no** son CRM (no cambian etapa, etiqueta ni campo). Si el equipo prefiere cero rastro en el chat, se usa sólo el documento.
 4. **Cola manual** (prompt P4): el conector arma el documento "Cola — semana N" con los lotes propuestos por gate, la lista de contactos de cada lote y el texto por contacto. Noelia/Carlos aprueban escribiendo "APROBADO" en el documento.
-5. **Ejecución uno a uno** (prompt P5): con un lote aprobado, el conector envía con `whatspro_chat_send_message` (idempotencia `sales-ops:{fecha}:{chatId}`), uno por llamada, y anota el `messageId` en el documento.
+5. **Ejecución uno a uno** (prompt P5): con un lote aprobado, el conector envía con `whatspro_chat_send_message` (idempotencia `sales-ops:{actionId}`, la que trae el ítem de la cola), uno por llamada, y anota el `messageId` en el documento.
 6. **Radar manual** (prompt P6): dos veces al día, el conector lista mensajes entrantes desde el último corte (`whatspro_list_records messages fromMe=false`), los clasifica y actualiza el documento "Respuestas — fecha".
 7. **Caja**: Carlos registra cada cobro con `whatspro_register_sale`; el prompt P7 arma el resumen de meta de caja.
 

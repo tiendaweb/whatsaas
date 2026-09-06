@@ -14,6 +14,8 @@ const schema = z.union([
     status: z.enum(['in_progress', 'completed', 'failed', 'blocked', 'cancelled']),
     summary: z.string().max(4000).nullable().optional(),
     output: z.string().max(60000).nullable().optional(),
+    /** true = "lo hice a mano": alguien resolvió el pedido sin conector (contestó, programó, cargó). */
+    manual: z.boolean().optional(),
   }),
 ]);
 
@@ -30,7 +32,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if ('approved' in parsed.data) return NextResponse.json(await approveRun(ctx.team.id, ctx.user.id, runId));
     if ('humanResponse' in parsed.data) return NextResponse.json(await answerHumanDecision(ctx.team.id, ctx.user.id, runId, parsed.data.humanResponse));
     if (!('status' in parsed.data)) return NextResponse.json(await editQueuedRun(ctx.team.id, ctx.user.id, runId, parsed.data));
-    return NextResponse.json(await completePromptRun(ctx.team.id, ctx.user.id, runId, { ...parsed.data, connector: 'manual' }));
+    const { manual, ...resto } = parsed.data;
+    // Hecho a mano: queda dicho en metadata (el Muro y la ficha lo muestran) y
+    // el resumen es obligatorio, porque es lo único que cuenta qué pasó.
+    if (manual && resto.status === 'completed' && (resto.summary ?? '').trim().length < 5) {
+      return NextResponse.json({ error: 'Contá en una línea qué hiciste (mínimo 5 caracteres).' }, { status: 400 });
+    }
+    return NextResponse.json(await completePromptRun(ctx.team.id, ctx.user.id, runId, { ...resto, connector: 'manual', metadata: manual ? { hechoAMano: true, hechoPor: ctx.user.id, hechoAt: new Date().toISOString() } : undefined }));
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Error inesperado' }, { status: 422 });
   }

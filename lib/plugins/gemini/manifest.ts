@@ -11,6 +11,21 @@ const geminiSettingsSchema = z.object({
   defaultLimitRpm: z.number().default(10),
   defaultLimitRpd: z.number().default(20),
   defaultModel: z.string().default(MODELO_GEMINI_POR_DEFECTO),
+  /**
+   * Porcentaje de la cuota diaria del banco que NO consumen los procesos
+   * automáticos (worker de audios, clasificador por cron). Queda para lo que
+   * una persona pide a mano: "Transcribir ahora", "Ejecutar ahora" del Focus,
+   * un análisis puntual. Sin reserva, el 2026-09-05 el clasificador se comió
+   * los 2.600 pedidos del día antes del mediodía y a la tarde nada respondía.
+   */
+  reservaDiariaPct: z.number().min(0).max(90).default(30),
+  /**
+   * Usar el banco para transcribir notas de voz por cron (worker de audios).
+   * Apagado, la cuota queda entera para el Command Center (clasificar, Ejecutar
+   * ahora, skills) y para lo que una persona pide a mano: "Transcribir ahora"
+   * desde la vista Audios sigue funcionando igual.
+   */
+  transcribirAudios: z.boolean().default(true).describe('Usar Gemini para transcribir audios'),
 });
 
 const manifest: AppPluginManifest<typeof geminiSettingsSchema> = {

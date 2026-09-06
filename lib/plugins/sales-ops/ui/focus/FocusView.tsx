@@ -23,6 +23,7 @@ import { PanelChatIA } from './PanelChatIA';
 import { PanelResumen } from './PanelResumen';
 import { Button } from '@/components/ui/button';
 import { ETAPA_LABELS, FILTROS_INICIALES, guardarFiltros, leerFiltros, type FiltrosFocus } from './tipos';
+import { useAtajosTeclado } from './useAtajosTeclado';
 import { useBloque } from './useBloque';
 import { useColaFocus } from './useColaFocus';
 
@@ -47,12 +48,19 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
    * DESPUÉS del render, y en ese hueco el editor del cliente nuevo podía
    * quedarse con el texto que se escribió para el anterior.
    */
-  const [borrador, setBorrador] = useState<{ texto: string; token: number; chatId: number } | null>(null);
+  const [borrador, setBorrador] = useState<{ texto: string; cuando: string | null; token: number; chatId: number } | null>(null);
   const [pestana, setPestana] = useState<PestanaMovil>('accion');
   const [solapaCliente, setSolapaCliente] = useState<SolapaContacto>('chat');
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
   const [esMovil, setEsMovil] = useState(false);
   const tokenRef = useRef(0);
+  /**
+   * Chats que ya contaron como "ejecutados" en esta sesión. "Ejecutar ahora"
+   * puede resolver varias cosas sobre el mismo cliente (un borrador, después
+   * una corrección de CRM) y cada una avisa: el contador es de clientes, no de
+   * avisos.
+   */
+  const ejecutadosRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     setFiltros(leerFiltros());
@@ -152,10 +160,10 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
   }, [header?.remoteJid, programados, corridas?.runs]);
 
   const recibirTexto = useCallback(
-    (texto: string) => {
+    (texto: string, cuando?: string | null) => {
       if (!chatId) return;
       tokenRef.current += 1;
-      setBorrador({ texto, token: tokenRef.current, chatId });
+      setBorrador({ texto, cuando: cuando ?? null, token: tokenRef.current, chatId });
       // En el celular el borrador aterriza en otra pestaña: sin esto, "Ejecutar
       // ahora" parecía no haber hecho nada.
       if (esMovil) setPestana('programados');
@@ -171,20 +179,21 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
     if (cola.actual) cola.marcar(cola.actual.chatId, 'encolado');
   }, [cola]);
 
-  // Atajos. Se ignoran mientras se escribe: la `s` de "seguimiento" no puede
-  // saltear al cliente.
-  useEffect(() => {
-    const escuchar = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
-      if (e.key === 'ArrowRight') cola.avanzar();
-      else if (e.key === 'ArrowLeft') cola.retroceder();
-      else if (e.key.toLowerCase() === 's') saltar();
-    };
-    window.addEventListener('keydown', escuchar);
-    return () => window.removeEventListener('keydown', escuchar);
-  }, [cola, saltar]);
+  /**
+   * "Ejecutar ahora" resolvió algo acá mismo. Cuenta en la sesión pero NO
+   * avanza: la persona se queda en el cliente revisando lo que bajó. Antes
+   * nadie marcaba `ejecutado` y el marcador de la etapa decía siempre 0.
+   */
+  const ejecutado = useCallback(() => {
+    const id = cola.actual?.chatId;
+    if (!id || ejecutadosRef.current.has(id)) return;
+    ejecutadosRef.current.add(id);
+    cola.marcar(id, 'ejecutado', { avanzar: false });
+  }, [cola]);
+
+  // Las mismas teclas que la supervisión (← → S), con la misma regla de no
+  // interferir mientras se escribe.
+  useAtajosTeclado({ onSiguiente: cola.avanzar, onAnterior: cola.retroceder, onSaltar: saltar });
 
   const siguienteEtapa = cola.hayOtraEtapa ? cola.etapas[cola.etapaIdx + 1] : null;
 
@@ -198,9 +207,13 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
       accionRecomendada={cola.actual?.recommendedAction ?? null}
       onTexto={recibirTexto}
       onEncolado={encolado}
+      onEjecutado={ejecutado}
       movil={esMovil}
     />
   ) : null;
+
+  /** Hay un borrador de "Ejecutar ahora" esperando en el editor de este contacto. */
+  const hayBorradorDelContacto = Boolean(header && borrador?.chatId === header.chatId);
 
   const programadosDelContacto = header?.remoteJid ? (
     <LimiteDeError nombre="Programados">
@@ -211,7 +224,11 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
         chatId={header.chatId}
         inicialAbierto
         soloSiHay={!esMovil}
-        borradorExterno={borrador?.chatId === header.chatId ? borrador : null}
+        borradorExterno={hayBorradorDelContacto ? borrador : null}
+        // El editor no distingue "guardé el borrador" de "pausé uno": sólo se
+        // escucha mientras hay un borrador bajado, que es cuando guardar es lo
+        // que se está por hacer, y con eso el cliente cuenta como ejecutado.
+        onCambio={hayBorradorDelContacto ? ejecutado : undefined}
       />
     </LimiteDeError>
   ) : null;
@@ -267,8 +284,8 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
   return (
     <div className="fixed inset-0 z-50 flex h-dvh w-full flex-col bg-background text-foreground">
       {!esMovil && (
-          <BarraFocus
-            etapa={cola.etapa}
+        <BarraFocus
+          etapa={cola.etapa}
           procesados={cola.procesadosEtapa}
           total={cola.total}
           posicion={Math.min(cola.idx + 1, Math.max(cola.total, 1))}
