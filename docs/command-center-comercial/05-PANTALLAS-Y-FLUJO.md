@@ -122,7 +122,7 @@ DESTINO cobro                                              [Cambiar gate manualm
 
 Cada hito enlaza al mensaje en la pestaña Chat. Los hitos salen de `flags` + `evidence` + cambios de `who`; los tramos sin hitos se colapsan en "silencio".
 
-**Chat**: `ChatEmbebido` (cuando exista) o link al chat completo. Sólo lectura hasta la Fase 6.
+**Chat**: `ChatEmbebido` (cuando exista) o link al chat completo.
 
 **Acciones**: historial de `team_commercial_actions` del chat con estado y resultado. **Versiones**: lista de análisis con `diff` y quién/qué motor.
 
@@ -140,7 +140,7 @@ EN CURSO / HECHOS
 Reactivación G4 (28/08) · 70 · enviados 68 · respondieron 9 · recuperados 4      [Ver]
 ```
 
-Revisar un lote = lista completa de contactos incluidos (nombre, gate, último mensaje, texto que le llegaría con variables resueltas, aviso si `automation_active` o `auto_reply_detected` o si ya recibió un envío en 72 h), con checkbox por fila para sacar contactos, y **dos** botones: "Aprobar N" (pide rol) y "Rechazar lote". Aprobar no envía: pasa a `approved` con `approved_by`. Ejecutar (Fase 6) es otro paso, con el diálogo de revisión del Centro de Comandos (destinatario enmascarado, checkbox revisado, un envío por request, `confirm: 'EJECUTAR'`).
+Revisar un lote = lista completa de contactos incluidos (nombre, gate, último mensaje, texto que le llegaría con variables resueltas, aviso si `automation_active` o `auto_reply_detected` o si ya recibió un envío en 72 h), con checkbox por fila para sacar contactos, y **dos** botones: "Aprobar y \<verbo\> N" (pide rol) y "Rechazar lote". **Aprobar ejecuta** desde el 2026-09-05: lo que el servidor sabe hacer solo (`SERVER_EXECUTABLE_KINDS`) sale en el mismo request y la fila queda `executed`; el envío directo es el único que pide confirmación. Lo que queda `approved` sin ejecutar (una falla, o un lote aprobado con `execute:false`) se ejecuta después con "Ejecutar", un envío por acción y con clave idempotente `sales-ops:{actionId}`.
 
 Hasta la Fase 6, "Aprobado" habilita la **ejecución por conector**: el prompt `sales-ops.execute-batch` (documento 07) lee el lote aprobado y envía con `whatspro_chat_send_message` (idempotencia = `sales-ops:{actionId}`), anotando `result_message_id` con la tool de resultado. Sigue siendo un envío por llamada y con humano mirando.
 

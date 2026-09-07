@@ -18,7 +18,7 @@ import type { SkillIcon } from '../../shared/skills';
  * siendo editable después de elegirla: la plantilla es un punto de partida, no
  * un formulario.
  */
-export const ACCIONES_FOCUS = ['mensaje', 'programar', 'tareas', 'calendario', 'documento', 'planificacion', 'crm', 'cobro', 'libre'] as const;
+export const ACCIONES_FOCUS = ['mensaje', 'programar', 'tareas', 'produccion', 'calendario', 'documento', 'planificacion', 'crm', 'cobro', 'libre'] as const;
 export type AccionFocus = (typeof ACCIONES_FOCUS)[number];
 
 export type DefinicionAccion = {
@@ -92,6 +92,32 @@ export const ACCIONES: Record<AccionFocus, DefinicionAccion> = {
           '- Un cliente que arranca y todavía no tiene dónde → whatspro_manage_task_workspace para crear su espacio, y recién ahí el proyecto y sus tareas.',
           '- Si ya existe el proyecto, no lo dupliques: sumale las tareas con whatspro_manage_task y ordená columnas con whatspro_manage_task_column.',
           'Títulos imperativos y cortos, con fecha cuando el chat la diga.',
+        ].join('\n'),
+        cierre,
+      ].join('\n\n'),
+  },
+  produccion: {
+    key: 'produccion',
+    label: 'Producción',
+    ayuda: 'Pedir una demo o un trabajo de producción para este cliente.',
+    icon: 'wand',
+    // `whatspro_production_order_create` es la tool nueva de Producción OS, que
+    // se está armando en paralelo; `whatspro_production_create` es la que hoy
+    // existe y hace lo mismo. Van las dos para que el pedido no quede muerto
+    // mientras la primera no esté publicada.
+    tools: ['whatspro_sales_dossier', 'whatspro_production_order_create', 'whatspro_production_create'],
+    plantilla: (nombre, detalle) =>
+      [
+        `Mandá a producción el trabajo de ${nombre}.`,
+        detalle ? `QUÉ PIDIÓ:\n${detalle}` : 'QUÉ PIDIÓ: leé el chat y sacá qué producto le corresponde y con qué datos.',
+        [
+          'QUÉ HACER: leé el expediente con whatspro_sales_dossier y creá el pedido con whatspro_production_order_create (si no la tenés, whatspro_production_create hace lo mismo).',
+          'ELEGÍ EL TIPO según lo que pidió el cliente, no por costumbre (los productos no se convierten entre sí: elegir mal obliga a rehacer el trabajo):',
+          '- Antes de vender, para mostrarle algo → una demo: demo_sitio_aapp (una página), demo_tienda_aapp (tienda), demo_prosite (varias páginas), demo_html o demo_tienda_custom (a medida).',
+          '- Ya vendido → sitio_aapp, tienda_aapp, prosite, sitio_html, tienda_custom o desarrollo.',
+          '- Ya entregado y pide un retoque → cambio.',
+          'EL BRIEF va en el pedido y sale del chat: nombre del negocio, rubro, qué ofrece, paleta o estilo, secciones o productos con precio, tono y datos de contacto. Lo que el cliente no dijo se escribe "(falta confirmar)", no se inventa.',
+          'Vinculá el pedido al chat y al contacto, y no le escribas al cliente: avisarle es otra acción.',
         ].join('\n'),
         cierre,
       ].join('\n\n'),
@@ -176,7 +202,7 @@ export const ACCIONES: Record<AccionFocus, DefinicionAccion> = {
   },
 };
 
-export const ACCIONES_VISIBLES: AccionFocus[] = ['mensaje', 'programar', 'tareas', 'calendario', 'documento', 'planificacion', 'crm', 'cobro', 'libre'];
+export const ACCIONES_VISIBLES: AccionFocus[] = ['mensaje', 'programar', 'tareas', 'produccion', 'calendario', 'documento', 'planificacion', 'crm', 'cobro', 'libre'];
 
 /** Título de la corrida, para que en la Cola se lea qué es sin abrirla. */
 export function tituloDeAccion(accion: AccionFocus, nombre: string): string {
@@ -205,6 +231,9 @@ export function deducirAccion(texto: string): AccionFocus {
   if (/manage_document|documents_search|escribí un documento|informe/.test(t)) return 'documento';
   if (/register_payment|registrá el cobro|registra el cobro|contact_money/.test(t)) return 'cobro';
   if (/crm_stage|set_contact_tags|set_custom_fields|etapa del embudo|etiquetas/.test(t)) return 'crm';
+  // Antes que `tareas`: mandar a producción crea trabajo, pero no es una tarea
+  // suelta de Tareas OS, y las dos plantillas hablan del chat y del expediente.
+  if (/production_order_create|production_create|mandá a producción|manda a producción|work_kind|demo_/.test(t)) return 'produccion';
   if (/tareas_from_chat|create_contact_task|manage_task|tareas os/.test(t)) return 'tareas';
   if (/queue_propose|escribile|mensaje a /.test(t)) return 'mensaje';
   return 'libre';
@@ -221,6 +250,8 @@ export function deducirAccion(texto: string): AccionFocus {
 export const APP_DE_ACCION: Partial<Record<AccionFocus, string>> = {
   programar: '/plugins/scheduled-messages',
   tareas: '/plugins/tasks',
+  // Producción OS vive adentro de Tareas: sin esa app no hay dónde crear el pedido.
+  produccion: '/plugins/tasks',
   calendario: '/plugins/calendar',
   documento: '/plugins/documents',
 };

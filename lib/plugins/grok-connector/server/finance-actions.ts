@@ -28,6 +28,7 @@ import {
 } from '@/lib/plugins/finance/server/cost-centers';
 import { financeOsResumen } from '@/lib/plugins/finance/server/os';
 import { customerForContact } from '@/lib/customers/service';
+import { resolverCliente } from '@/lib/customers/es-cliente';
 import { db } from '@/lib/db/drizzle';
 import {
   contacts,
@@ -307,7 +308,9 @@ export const financeReadTools: GrokActionTool[] = [
   {
     name: 'whatspro_finance_list_entries',
     description:
-      'Lista paginada de movimientos financieros con los filtros que whatspro_list_records no sabe hacer y el cliente ya resuelto: tipo (ingreso/gasto), estado, rango de fechas, texto sobre título/descripción, contraparte, categoría, cliente, cuenta y centro de costo. Cada fila trae el nombre del cliente vinculado y cuánto se pagó hasta ahora. Es la tool para "todo lo que le pagamos a Martín este año" (type="expense", counterparty="Martín", from=…) o "los ingresos pendientes de agosto". Para agregados (saldos, utilidad, por categoría) usá whatspro_finance_summary.',
+      'Lista paginada de movimientos financieros con los filtros que whatspro_list_records no sabe hacer y el cliente ya resuelto: tipo (ingreso/gasto), estado, rango de fechas, texto sobre título/descripción, contraparte, categoría, cliente, cuenta y centro de costo. Cada fila trae el nombre del cliente vinculado y cuánto se pagó hasta ahora. Es la tool para "todo lo que le pagamos a Martín este año" (type="expense", counterparty="Martín", from=…) o "los ingresos pendientes de agosto". '
+      + 'Para "qué le facturamos a ESTE chat" no hace falta saber el customer_id: mandá chat_id o contact_id y el servidor resuelve la ficha de cliente con la misma regla que el resto del producto (vínculo, suscripción activa, venta pagada o teléfono que coincide). Si esa persona no tiene ficha, la lista vuelve vacía con la nota que lo explica. '
+      + 'Para agregados (saldos, utilidad, por categoría) usá whatspro_finance_summary.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -319,6 +322,8 @@ export const financeReadTools: GrokActionTool[] = [
         counterparty: { type: 'string', maxLength: 200, description: 'Contraparte (coincidencia parcial).' },
         category: { type: 'string', maxLength: 60, description: 'Categoría (coincidencia parcial).' },
         customer_id: { type: 'integer', minimum: 1 },
+        chat_id: { type: 'integer', minimum: 1, description: 'Chat de WhatsApp: el servidor resuelve su ficha de cliente. Se ignora si mandás customer_id.' },
+        contact_id: { type: 'integer', minimum: 1, description: 'Contacto del CRM: el servidor resuelve su ficha de cliente. Se ignora si mandás customer_id.' },
         account_id: { type: 'integer', minimum: 1 },
         cost_center_id: { type: 'integer', minimum: 1 },
         page: { type: 'integer', minimum: 1, default: 1 },
@@ -440,6 +445,8 @@ const listEntriesSchema = z.object({
   counterparty: z.string().trim().max(200).optional(),
   category: z.string().trim().max(60).optional(),
   customer_id: z.number().int().positive().optional(),
+  chat_id: z.number().int().positive().optional(),
+  contact_id: z.number().int().positive().optional(),
   account_id: z.number().int().positive().optional(),
   cost_center_id: z.number().int().positive().optional(),
   page: z.number().int().min(1).default(1),
@@ -746,6 +753,31 @@ async function listarAsientos(input: Record<string, unknown>, context: GrokActio
   await assertPermission(context, 'financeRead', 'finance');
   const data = parse(listEntriesSchema, input);
 
+  /*
+   * Resolver el cliente por chat o por contacto es lo que hace usable la tool
+   * desde una conversación: el conector tiene el chat a mano y NO el
+   * customer_id, y antes tenía que adivinarlo o pedirlo aparte. La regla es la
+   * única del producto (`lib/customers/es-cliente`), no un match por teléfono
+   * propio de Finanzas.
+   */
+  let customerId = data.customer_id ?? null;
+  let notaCliente: string | null = null;
+  if (customerId == null && (data.chat_id != null || data.contact_id != null)) {
+    const estado = data.contact_id != null
+      ? await resolverCliente(context.teamId, { contactId: data.contact_id })
+      : await resolverCliente(context.teamId, { chatId: data.chat_id! });
+    customerId = estado.customerId;
+    if (customerId == null) {
+      return {
+        object: 'finance_entries',
+        data: [],
+        meta: { page: data.page, perPage: data.per_page, total: 0, hasMore: false, nextPage: null },
+        note: 'Ese chat/contacto no tiene ficha de cliente en el equipo, así que no puede tener movimientos financieros a su nombre. Registralo con whatspro_register_customer (o vinculalo con whatspro_link_customer_contact) antes de volver a preguntar.',
+      };
+    }
+    notaCliente = `Movimientos del cliente ${customerId}, resuelto desde ${data.contact_id != null ? `el contacto ${data.contact_id}` : `el chat ${data.chat_id}`} por ${estado.fuente ?? 'coincidencia'}.`;
+  }
+
   const conditions = [eq(teamFinancialEntries.teamId, context.teamId)];
   if (data.type) conditions.push(eq(teamFinancialEntries.type, data.type));
   if (data.status) conditions.push(eq(teamFinancialEntries.status, data.status));
@@ -757,7 +789,7 @@ async function listarAsientos(input: Record<string, unknown>, context: GrokActio
   }
   if (data.counterparty) conditions.push(ilike(teamFinancialEntries.counterparty, `%${data.counterparty.replace(/([\\%_])/g, '\\$1')}%`));
   if (data.category) conditions.push(ilike(teamFinancialEntries.category, `%${data.category.replace(/([\\%_])/g, '\\$1')}%`));
-  if (data.customer_id) conditions.push(eq(teamFinancialEntries.customerId, data.customer_id));
+  if (customerId != null) conditions.push(eq(teamFinancialEntries.customerId, customerId));
   if (data.account_id) conditions.push(eq(teamFinancialEntries.accountId, data.account_id));
   if (data.cost_center_id) conditions.push(eq(teamFinancialEntries.costCenterId, data.cost_center_id));
 
@@ -809,7 +841,7 @@ async function listarAsientos(input: Record<string, unknown>, context: GrokActio
       hasMore: offset + rows.length < total,
       nextPage: offset + rows.length < total ? data.page + 1 : null,
     },
-    note: 'Los montos son enteros en la unidad mínima de cada moneda, y las monedas nunca se suman entre sí.',
+    note: `Los montos son enteros en la unidad mínima de cada moneda, y las monedas nunca se suman entre sí.${notaCliente ? ` ${notaCliente}` : ''}`,
   };
 }
 

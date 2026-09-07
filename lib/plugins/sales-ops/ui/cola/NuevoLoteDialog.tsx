@@ -10,7 +10,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { HORA_LABORAL, aLocal, desdeZona, fechaEnZona, parsearLocal, sumarDias } from '@/lib/time/zona';
-import { ACTION_ROLES, GATE_LABELS, type ActionKind, type ActionRole, type Gate } from '../../shared/taxonomy';
+import { ACTION_ROLES, GATE_LABELS, OWNERS, type ActionKind, type ActionRole, type Gate, type Owner } from '../../shared/taxonomy';
+import { OWNER_LABELS } from '../components/format';
 import { GATE_OPTIONS, KIND_LABELS, QUEUE_ENDPOINT, ROLE_LABELS, postJson, type ApiError } from './api';
 
 type ProposeResponse = {
@@ -26,6 +27,16 @@ const KIND_OPTIONS: ActionKind[] = ['send_message', 'schedule_message', 'create_
 function mananaALas10(): string {
   // Mañana a las 10 en hora del negocio, sin pasar por el reloj del navegador.
   return aLocal(desdeZona(sumarDias(fechaEnZona(), 1), HORA_LABORAL.porDefecto, 0));
+}
+
+/**
+ * Lo que escribió la persona en un `datetime-local`, en ISO.
+ *
+ * `parsearLocal` lo interpreta en la hora del negocio; el `new Date` del final
+ * es la red por si el navegador devolviera algo que no matchea el formato.
+ */
+function aIso(valor: string): string {
+  return parsearLocal(valor)?.toISOString() ?? new Date(valor).toISOString();
 }
 
 const REASON_LABELS: Record<string, string> = {
@@ -67,6 +78,10 @@ export function NuevoLoteDialog({
   const [ab, setAb] = useState(false);
   const [textB, setTextB] = useState('');
   const [sendAt, setSendAt] = useState(mananaALas10);
+  // Sin responsable elegido el ejecutor falla fila por fila con "sin_responsable",
+  // así que el selector arranca vacío y el lote no se puede crear hasta elegirlo.
+  const [owner, setOwner] = useState<Owner | ''>('');
+  const [callAt, setCallAt] = useState(mananaALas10);
   const [maxFollowups, setMaxFollowups] = useState('');
   const [minDaysSilent, setMinDaysSilent] = useState('');
   const [preview, setPreview] = useState<ProposeResponse | null>(null);
@@ -75,9 +90,19 @@ export function NuevoLoteDialog({
   const usesText = kind === 'send_message' || kind === 'schedule_message';
   const esProgramado = kind === 'schedule_message';
   const esDemo = kind === 'request_demo';
+  const esAsignar = kind === 'assign_owner';
+  const esLlamada = kind === 'schedule_call';
   const hasChats = Boolean(presetChatIds?.length);
   const canSubmit =
-    label.trim().length > 0 && (gates.length > 0 || hasChats) && (!usesText || text.trim().length > 0) && (!ab || textB.trim().length > 0) && (!esProgramado || sendAt.length > 0);
+    label.trim().length > 0 &&
+    (gates.length > 0 || hasChats) &&
+    (!usesText || text.trim().length > 0) &&
+    (!ab || textB.trim().length > 0) &&
+    (!esProgramado || sendAt.length > 0) &&
+    // Aprobar ejecuta: si el lote sale sin responsable o sin hora, el ejecutor
+    // decide por su cuenta (o falla). Se eligen acá o no hay lote.
+    (!esAsignar || owner !== '') &&
+    (!esLlamada || callAt.length > 0);
 
   function reset() {
     setLabel('');
@@ -87,6 +112,8 @@ export function NuevoLoteDialog({
     setText('');
     setAb(false);
     setTextB('');
+    setOwner('');
+    setCallAt(mananaALas10());
     setMaxFollowups('');
     setMinDaysSilent('');
     setPreview(null);
@@ -104,10 +131,14 @@ export function NuevoLoteDialog({
         ...(minDaysSilent !== '' ? { minDaysSilent: Number(minDaysSilent) } : {}),
       },
       payloadTemplate: usesText
-        ? { text: text.trim(), ...(ab && !esProgramado ? { textB: textB.trim() } : {}), ...(esProgramado ? { sendAt: parsearLocal(sendAt)?.toISOString() ?? new Date(sendAt).toISOString() } : {}) }
+        ? { text: text.trim(), ...(ab && !esProgramado ? { textB: textB.trim() } : {}), ...(esProgramado ? { sendAt: aIso(sendAt) } : {}) }
         : esDemo
           ? { taskTitle: 'Demo web — {{nombre}}', ...(text.trim() ? { text: text.trim() } : {}) }
-          : undefined,
+          : esAsignar
+            ? { extra: { owner } }
+            : esLlamada
+              ? { extra: { at: aIso(callAt) } }
+              : undefined,
       variantSplit: usesText && ab && !esProgramado,
       dryRun,
     };
@@ -229,6 +260,36 @@ export function NuevoLoteDialog({
               <Label htmlFor="lote-fecha">Sale el</Label>
               <Input id="lote-fecha" type="datetime-local" value={sendAt} onChange={(e) => setSendAt(e.target.value)} className="w-56" />
               <p className="text-[11px] text-muted-foreground">Al ejecutar el lote se crea un mensaje programado por contacto; lo manda el plugin Mensajes programados a esa hora.</p>
+            </div>
+          )}
+
+          {esAsignar && (
+            <div className="space-y-1.5">
+              <Label>Responsable</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {OWNERS.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setOwner(option)}
+                    className={cn(
+                      'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                      owner === option ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background text-foreground hover:bg-muted',
+                    )}
+                  >
+                    {OWNER_LABELS[option]}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground">Al aprobar el lote, cada contacto queda a cargo de esta persona.</p>
+            </div>
+          )}
+
+          {esLlamada && (
+            <div className="space-y-1.5">
+              <Label htmlFor="lote-llamada">Llamar el</Label>
+              <Input id="lote-llamada" type="datetime-local" value={callAt} onChange={(e) => setCallAt(e.target.value)} className="w-56" />
+              <p className="text-[11px] text-muted-foreground">Al aprobar el lote se crea un evento de 30 minutos en el Calendario por contacto, con recordatorio 15 minutos antes.</p>
             </div>
           )}
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { ZONA_NEGOCIO } from '@/lib/time/zona';
-import type { ActionKind, ActionRole, ActionStatus, Gate } from '../../shared/taxonomy';
+import type { ActionRole, ActionStatus, Gate } from '../../shared/taxonomy';
 
 export const QUEUE_ENDPOINT = '/api/plugins/sales-ops/queue';
 export const EXPERIMENTS_ENDPOINT = '/api/plugins/sales-ops/experiments';
@@ -33,31 +33,16 @@ export async function postJson<T>(url: string, body: unknown): Promise<T> {
   return payload as T;
 }
 
-export const KIND_LABELS: Record<ActionKind, string> = {
-  send_message: 'Mensaje',
-  schedule_message: 'Mensaje programado',
-  create_task: 'Tarea',
-  request_demo: 'Demo web (Tareas OS)',
-  register_sale: 'Registrar cobro',
-  mark_pre_descarte: 'Pre-descarte',
-  mark_descarte: 'Descarte definitivo',
-  assign_owner: 'Asignar responsable',
-  schedule_call: 'Agendar llamada',
-};
+/**
+ * Las etiquetas de tipo y estado de acción viven en un solo lugar
+ * (`ui/components/format.ts`, que es el que importa la mayoría de las
+ * pantallas). Acá se re-exportan con los nombres de siempre para no tocar a los
+ * consumidores: antes había dos mapas y la misma tarea decía "Enviado" en la
+ * Cola y "Ejecutada" en la ficha.
+ */
+export { ACTION_KIND_LABELS as KIND_LABELS, ACTION_STATUS_LABELS as STATUS_LABELS, verboEjecutado } from '../components/format';
 
 export const ROLE_LABELS: Record<ActionRole, string> = { noelia: 'Noelia', carlos: 'Carlos', any: 'Cualquiera' };
-
-export const STATUS_LABELS: Record<ActionStatus, string> = {
-  proposed: 'Propuesto',
-  pending_approval: 'Pendiente de aprobación',
-  approved: 'Aprobado',
-  executing: 'Ejecutando',
-  executed: 'Enviado',
-  resulted: 'Con resultado',
-  rejected: 'Rechazado',
-  expired: 'Vencido',
-  failed: 'Falló',
-};
 
 /** Estado "visible" de un lote a partir del conteo por estado. */
 export type BatchPhase = 'proposed' | 'approved' | 'done' | 'closed';

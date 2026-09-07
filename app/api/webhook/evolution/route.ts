@@ -13,9 +13,48 @@ import {
     type SavedEvolutionMediaDetails,
 } from '@/lib/evolution-message-media';
 
+/** Pusher rechaza los eventos de más de 10 KB con un 413. Dejamos margen. */
+const PUSHER_MAX_BYTES = 9000;
+
+/**
+ * Recorta los textos largos del evento hasta que entre en el límite de Pusher.
+ *
+ * Un mensaje largo, un caption de una imagen o una vCard hacían que el evento
+ * pesara más de 10 KB: Pusher devolvía 413, `safePusherTrigger` se lo tragaba y
+ * el mensaje no aparecía en pantalla hasta recargar. Recortar es mejor que
+ * perder el evento: la base tiene el texto completo, así que la conversación se
+ * arregla sola en cuanto el cliente vuelve a pedir el chat, y mientras tanto el
+ * mensaje aparece con un `…` y la marca `truncated`.
+ */
+function recortarParaPusher(data: unknown): unknown {
+    if (!data || typeof data !== 'object') return data;
+    const pesa = (value: unknown) => Buffer.byteLength(JSON.stringify(value) ?? '', 'utf8');
+    if (pesa(data) <= PUSHER_MAX_BYTES) return data;
+
+    const copia: Record<string, unknown> = { ...(data as Record<string, unknown>), truncated: true };
+    // De lo más largo a lo más corto, para no romper campos chicos que sí se usan.
+    const textos = Object.keys(copia)
+        .filter((key) => typeof copia[key] === 'string' && (copia[key] as string).length > 200)
+        .sort((a, b) => (copia[b] as string).length - (copia[a] as string).length);
+    for (const key of textos) {
+        if (pesa(copia) <= PUSHER_MAX_BYTES) break;
+        copia[key] = `${(copia[key] as string).slice(0, 500)}…`;
+    }
+    // Si aun así no entra, el culpable es un objeto anidado (media, quoted…):
+    // se cae al mínimo que el cliente necesita para ir a buscar el mensaje.
+    if (pesa(copia) > PUSHER_MAX_BYTES) {
+        const minimo: Record<string, unknown> = { truncated: true };
+        for (const key of ['id', 'messageId', 'chatId', 'remoteJid', 'fromMe', 'timestamp', 'messageType']) {
+            if (key in copia) minimo[key] = copia[key];
+        }
+        return minimo;
+    }
+    return copia;
+}
+
 async function safePusherTrigger(channel: string, event: string, data: any): Promise<void> {
     try {
-        await pusherServer.trigger(channel, event, data);
+        await pusherServer.trigger(channel, event, recortarParaPusher(data));
     } catch (err: any) {
         console.error(`[Pusher Error] ${channel}/${event}:`, err.message);
     }

@@ -17,7 +17,7 @@
  * los frenos de ejecución.
  */
 
-export const WORK_SOURCES = ['sales', 'tasks', 'inbox'] as const;
+export const WORK_SOURCES = ['sales', 'tasks', 'inbox', 'production'] as const;
 export type WorkSource = (typeof WORK_SOURCES)[number];
 
 /**
@@ -51,6 +51,8 @@ export type WorkApproval = (typeof WORK_APPROVALS)[number];
  */
 export const WORK_PRIORITY = {
   taskNeedsContext: 2600,
+  /** Un pedido de producción sin tomar: alguien prometió una demo y nadie la arrancó. */
+  production: 1800,
   taskPrepare: 2400,
   taskExecute: 2200,
   inboxUrgent: 1200,

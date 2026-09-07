@@ -169,7 +169,7 @@ Nunca más de un envío por llamada. Nunca reintentar un envío con timeout: ano
 
 **Cadena:** `whatspro_list_records sales {status:'paid'}` (período de la misión) + `whatspro_finance_summary` → total por moneda y en USD (fx provisorio) → comparar con las señales `pago` atendidas en los documentos "Respuestas" y con los `cobro` de la Cola → listar **cobros probables sin venta registrada** (chat, fecha de la señal, plan elegido).
 
-**Salida:** documento "Meta de caja — {fecha}": `USD cobrado / 1.000`, tabla de ventas, tabla de "faltan registrar" con el comando sugerido `whatspro_register_sale {contact_id, items:[{name, unit_price}], currency, status:'paid', idempotency_key:"sale:{chatId}:{fecha}"}` para que Carlos lo confirme.
+**Salida:** documento "Meta de caja — {fecha}": `USD cobrado / 1.000`, tabla de ventas, tabla de "faltan registrar" con el comando sugerido `whatspro_sales_register_payment {chat_id, amount, currency, method, paid_on, concept, idempotency_key, confirm:true}` para que Carlos lo confirme (registra venta, asiento y pago, vincula al contacto como cliente y pasa el chat a G11; el importe va en UNIDADES).
 
 ---
 

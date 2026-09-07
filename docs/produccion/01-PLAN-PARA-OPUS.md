@@ -61,3 +61,14 @@ Todo lo de abajo está pensado para ejecutarse **sin volver a relevar**: cada ta
 ## Bloque C — Verificación final de la sesión
 1. `tsc` en verde → `verify-connector-tools.mts` → smokes (`smoke-cobros.mts`, `smoke-focus-directo.mts`, `smoke-crm-fix.mts`, el nuevo de producción) → `deploy:saasfy` una vez → `git commit`.
 2. Actualizar `ESTADO.md` (tabla de fases 22 en adelante) y la memoria `project_produccion_os.md`.
+## Lo que queda después de la tanda del 2026-09-06/07
+
+Orden sugerido. Todo lo demás del plan anterior está hecho.
+
+1. **Asientos en pesos (plata, pedir confirmación primero).** `team_financial_entries` 185, 186 y 187 del equipo 2 están cargados en pesos y no en centavos: se ven 100 veces más chicos que el resto (la mediana de los otros ingresos pagos es 3.000.000 = $30.000). Son "Sur Bohemio — Tienda Online anual" (40000), "Raul Maurel — Saldo" (100000) y "Raul Maurel — Seña" (100000). Con el OK del usuario: `UPDATE team_financial_entries SET amount = amount * 100 WHERE team_id = 2 AND id IN (185,186,187);`.
+2. **Token de Meta.** `meta_ad_accounts.id=10` tiene `last_error` "Session has expired on 13-Jul-26". El proceso PM2 ya tiene `CRON_SECRET` y `APP_URL`; falta un System User token nuevo cargado desde la app.
+3. **`scripts/seed-sales-ops-quick-actions.ts` no es idempotente.** Compara la huella del texto contra la fila guardada, pero `variables` y `recommend_for` son `jsonb` y Postgres reordena las claves: cada corrida crea 12 versiones nuevas. `scripts/seed-production-skills.ts` ya tiene la solución (serializar con las claves ordenadas): copiarla.
+4. **`ListaClientes.tsx`** rotula "ventas pendientes" un número que ahora suma ventas, asientos y suscripciones impagas (`listCustomersPendingPayment` devuelve `sources`). Cambiar el rótulo a "pendiente de cobro" y mostrar el detalle.
+5. **`Enfoque.tsx` de Tareas OS** debería aceptar un pedido de producción: hoy hay dos relojes de 25 minutos (`LS_BLOQUE` de Tareas y `sales-ops:focus:bloque-produccion`).
+6. **B15, decisión de producto.** La acción "Mensaje" del Focus comercial hace que la persona apruebe dos veces: aprueba el pedido y después la fila. Si se quiere más automático, que la fila nazca aprobada y la ejecute el servidor; se dejó como está porque un mensaje a un cliente es lo único que conviene mirar dos veces.
+7. **Suscripciones `cancelled` impagas** quedaron fuera de cobranzas a propósito (no es plata que vaya a entrar). Confirmar con el usuario.

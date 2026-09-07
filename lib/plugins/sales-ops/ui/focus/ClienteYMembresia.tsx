@@ -2,15 +2,22 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
-import { BadgeCheck, CreditCard, Loader2, UserPlus, X } from 'lucide-react';
+import { BadgeCheck, CreditCard, Link2, Loader2, UserPlus, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { tituloCliente } from '../../shared/api-types';
 import { fetcher, fmtDate } from '../components/format';
 
-type Cliente = { id: number; name: string };
+/**
+ * Lo que devuelve `/api/plugins/customers/by-contact`: la ficha que le
+ * corresponde al contacto y POR QUÉ. `fuente === 'telefono'` es el caso
+ * incómodo: hay una ficha con el mismo teléfono pero nadie la vinculó, así que
+ * se muestra distinto y con el botón para vincularla de una.
+ */
+type VinculoCliente = { customerId: number | null; esCliente: boolean; fuente: string | null; customerName: string | null };
 type Plan = { id: number; name: string; price?: number | null; currency?: string | null; billingType?: string | null };
 type Suscripcion = { id: number; subscriptionNumber: string; status: string; paymentStatus: string; startDate: string; endDate: string | null; contactId?: number | null; customerId?: number | null; planId?: number | null };
 
@@ -30,12 +37,14 @@ type Suscripcion = { id: number; subscriptionNumber: string; status: string; pay
 export function ClienteYMembresia({ chatId, contactId, nombre, className }: { chatId: number; contactId: number | null; nombre: string; className?: string }) {
   const [abriendo, setAbriendo] = useState<'cliente' | 'membresia' | null>(null);
 
-  const clientes = useSWR<Cliente[]>(contactId ? `/api/plugins/customers/by-contact?contactId=${contactId}` : null, fetcher, { revalidateOnFocus: false });
+  const clientes = useSWR<VinculoCliente>(contactId ? `/api/plugins/customers/by-contact?contactId=${contactId}` : null, fetcher, { revalidateOnFocus: false });
   const suscripciones = useSWR<Suscripcion[]>('/api/plugins/memberships/subscriptions', fetcher, { revalidateOnFocus: false });
 
-  const cliente = clientes.data?.[0] ?? null;
+  const vinculo = clientes.data ?? null;
+  const customerId = vinculo?.customerId ?? null;
+  const sinVincular = customerId != null && vinculo?.fuente === 'telefono';
   const propias = (suscripciones.data ?? []).filter(
-    (s) => (contactId != null && s.contactId === contactId) || (cliente != null && s.customerId === cliente.id),
+    (s) => (contactId != null && s.contactId === contactId) || (customerId != null && s.customerId === customerId),
   );
 
   if (!contactId) {
@@ -49,10 +58,18 @@ export function ClienteYMembresia({ chatId, contactId, nombre, className }: { ch
   return (
     <section className={cn('rounded-xl border border-border bg-card p-2.5', className)}>
       <div className="flex flex-wrap items-center gap-1.5">
-        {cliente ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+        {customerId != null ? (
+          <span
+            title={tituloCliente(vinculo?.fuente)}
+            className={cn(
+              'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium',
+              sinVincular
+                ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
+            )}
+          >
             <BadgeCheck className="size-3" aria-hidden />
-            Cliente: {cliente.name}
+            Cliente: {vinculo?.customerName ?? `#${customerId}`}
           </span>
         ) : (
           <Button size="sm" variant="outline" className="h-7 gap-1.5 text-[11px]" onClick={() => setAbriendo(abriendo === 'cliente' ? null : 'cliente')}>
@@ -60,6 +77,10 @@ export function ClienteYMembresia({ chatId, contactId, nombre, className }: { ch
             Registrar como cliente
           </Button>
         )}
+
+        {/* Coincide por teléfono y nadie lo vinculó: la ficha existe pero el
+            motor lo sigue tratando como lead hasta que haya vínculo. */}
+        {sinVincular && <VincularCliente contactId={contactId} customerId={customerId} onListo={() => void clientes.mutate()} />}
 
         <Button size="sm" variant="outline" className="h-7 gap-1.5 text-[11px]" onClick={() => setAbriendo(abriendo === 'membresia' ? null : 'membresia')}>
           <CreditCard className="size-3.5" aria-hidden />
@@ -93,7 +114,7 @@ export function ClienteYMembresia({ chatId, contactId, nombre, className }: { ch
       {abriendo === 'membresia' && (
         <FormularioMembresia
           contactId={contactId}
-          customerId={cliente?.id ?? null}
+          customerId={customerId}
           nombre={nombre}
           onCerrar={() => setAbriendo(null)}
           onListo={() => {
@@ -103,6 +124,40 @@ export function ClienteYMembresia({ chatId, contactId, nombre, className }: { ch
         />
       )}
     </section>
+  );
+}
+
+/**
+ * Vincula el contacto a la ficha que YA coincide por teléfono. No crea nada:
+ * usa la misma ruta de vínculo que el alta de cliente, que es la que el motor
+ * comercial mira para dejar de tratar a esta persona como lead.
+ */
+function VincularCliente({ contactId, customerId, onListo }: { contactId: number; customerId: number; onListo: () => void }) {
+  const [guardando, setGuardando] = useState(false);
+
+  const vincular = async () => {
+    setGuardando(true);
+    try {
+      const res = await fetch(`/api/plugins/customers/${customerId}/contacts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contactId }),
+      });
+      if (!res.ok) throw new Error('No se pudo vincular el contacto con la ficha de cliente.');
+      toast.success('Contacto vinculado a la ficha de cliente.');
+      onListo();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo vincular.');
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <Button size="sm" variant="outline" className="h-7 gap-1.5 text-[11px]" onClick={() => void vincular()} disabled={guardando}>
+      {guardando ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Link2 className="size-3.5" aria-hidden />}
+      Coincide por teléfono, sin vincular · vincular
+    </Button>
   );
 }
 

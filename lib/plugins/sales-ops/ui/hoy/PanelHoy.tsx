@@ -1,7 +1,8 @@
 'use client';
 
-import { ArrowRight, Banknote, Flame, Inbox, MessageCircle, Trash2, UserCheck, Waves } from 'lucide-react';
+import { ArrowRight, Banknote, Factory, Flame, Inbox, MessageCircle, Trash2, UserCheck, Waves } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import useSWR from 'swr';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -11,6 +12,7 @@ import { CashGoalBar } from '../components/CashGoalBar';
 import { GATE_BAR_TONES } from '../components/GateBadge';
 import type { Vista } from '../components/vistas';
 import { fmtInt } from '../components/format';
+import { fetcher } from '../cola/api';
 import { Anillo } from './Anillo';
 import { CH, TONOS, type Tono } from './estilo';
 
@@ -102,6 +104,8 @@ export function PanelHoy({ data, onChangeVista }: Props) {
         ))}
       </div>
 
+      <ProduccionPendiente onChangeVista={onChangeVista} />
+
       <section className={cn('p-5', CH.card)} aria-label="Distribución por gate">
         <h2 className={CH.rotulo}>Distribución por etapa</h2>
         <ul className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
@@ -129,5 +133,61 @@ function Dato({ n, texto }: { n: number; texto: string }) {
     <li className={cn(n === 0 && 'opacity-50')}>
       <span className="font-bold tabular-nums text-foreground">{fmtInt(n)}</span> {texto}
     </li>
+  );
+}
+
+/** Sólo los contadores de Producción OS: es lo único que la tarjeta necesita. */
+type ResumenProduccion = { counts: { byStatus: Record<string, number>; waitingCustomer: number } };
+
+/**
+ * Qué está esperando producción, mirado desde el Command Center.
+ *
+ * Los tres números que deciden si hay que empujar algo: lo que llegó y nadie
+ * tomó, lo que se está haciendo, y lo que está frenado esperando material del
+ * cliente —eso último es trabajo de quien vendió, no de producción, así que
+ * tiene que verse desde acá y no sólo desde Tareas—.
+ *
+ * Si la app Tareas no está activa para el equipo, el endpoint responde 403 y la
+ * tarjeta directamente no se dibuja: una tarjeta en cero para algo que no
+ * existe es ruido.
+ */
+function ProduccionPendiente({ onChangeVista }: { onChangeVista: (vista: Vista) => void }) {
+  const { data } = useSWR<ResumenProduccion>('/api/plugins/tasks/production?summary=1', fetcher, { refreshInterval: 60_000, shouldRetryOnError: false });
+  if (!data?.counts) return null;
+
+  const { byStatus, waitingCustomer } = data.counts;
+  const filas = [
+    { label: 'Sin tomar', n: byStatus.pedido ?? 0, hint: 'nadie los aceptó' },
+    { label: 'En curso', n: (byStatus.aceptado ?? 0) + (byStatus.en_curso ?? 0), hint: 'se están haciendo' },
+    { label: 'Esperando al cliente', n: waitingCustomer, hint: 'falta material' },
+  ];
+
+  return (
+    <button
+      type="button"
+      onClick={() => onChangeVista('produccion')}
+      className={cn(
+        'flex w-full items-center gap-4 p-5 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        CH.card,
+      )}
+      aria-label="Producción pendiente"
+    >
+      <span className={cn(CH.iconoCaja, TONOS.slate)}>
+        <Factory className="size-5" aria-hidden />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className={cn('block', CH.rotulo)}>Producción pendiente</span>
+        <span className="mt-2 grid grid-cols-3 gap-3">
+          {filas.map(({ label, n, hint }) => (
+            <span key={label} className={cn('block min-w-0', n === 0 && 'opacity-50')}>
+              <span className="block text-2xl font-black tabular-nums leading-none tracking-tight text-foreground">{fmtInt(n)}</span>
+              <span className="mt-1 block truncate text-[11px] font-bold text-foreground">{label}</span>
+              <span className="block truncate text-[11px] text-muted-foreground">{hint}</span>
+            </span>
+          ))}
+        </span>
+      </span>
+      <ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+    </button>
   );
 }

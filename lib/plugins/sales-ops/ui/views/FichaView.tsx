@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import type { ActionRow, AnalysisDetail, AnalysisVersionRow, DetailPayload, HistoryEntry, HistoryPayload, SignalRow, TimelineGap, TimelineHit } from '../../shared/api-types';
+import { tituloCliente, type ActionRow, type AnalysisDetail, type AnalysisVersionRow, type DetailPayload, type HistoryEntry, type HistoryPayload, type SignalRow, type TimelineGap, type TimelineHit } from '../../shared/api-types';
 import { ANALYSIS_STATUSES, GATES, GATE_LABELS, type ActionKind, type AnalysisStatus, type Gate } from '../../shared/taxonomy';
 import { GateBadge } from '../components/GateBadge';
 import { FichaDock, type DockItem } from '../components/FichaDock';
@@ -402,8 +402,15 @@ function Resumen({
         </Field>
         <Field label="Último impacto">{a.lastFollowupAt ? tiempoRelativo(a.lastFollowupAt) : '—'}</Field>
         <Field label="Automatización">{a.automationActive ? 'sí' : 'no'}</Field>
+        {/* Mismo criterio que la lista y que el Focus: el análisis puede estar
+            viejo, pero si hay ficha resuelta es cliente igual. */}
         <Field label="Cliente">
-          {a.isExistingCustomer ? 'sí' : 'no'} <span className="text-muted-foreground">(evidencia: {a.customerEvidence})</span>
+          <span title={a.isExistingCustomer || a.customerId ? tituloCliente(a.cliente?.fuente) : undefined}>
+            {a.isExistingCustomer || a.customerId ? 'sí' : 'no'}
+          </span>{' '}
+          <span className="text-muted-foreground">
+            ({a.cliente?.fuente ? tituloCliente(a.cliente.fuente).toLowerCase() : `evidencia: ${a.customerEvidence}`})
+          </span>
         </Field>
         <Field label="Pago pendiente">{a.paymentPending ? 'sí' : 'no'}</Field>
         <Field label="Silencio">{diasTexto(a.daysSilent)}</Field>

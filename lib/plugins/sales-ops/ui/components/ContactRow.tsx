@@ -8,7 +8,7 @@ import { OWNERS, type Owner } from '../../shared/taxonomy';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
-import type { AnalysisRow } from '../../shared/api-types';
+import { tituloCliente, type AnalysisRow } from '../../shared/api-types';
 import { GateBadge } from './GateBadge';
 import { PriorityPill } from './PriorityPill';
 import { OWNER_LABELS, STATUS_LABELS, fmtDateTime, iniciales, tiempoRelativo } from './format';
@@ -138,7 +138,7 @@ export const ContactRow = memo(function ContactRow({ row, selected, active, sele
         row.customerId ? (
           <a
             href={`/plugins/customers/${row.customerId}`}
-            title="Es cliente · abrir la ficha de cliente"
+            title={`${tituloCliente(row.cliente?.fuente)} · abrir la ficha de cliente`}
             aria-label={`Abrir la ficha de cliente de ${row.name}`}
             className="shrink-0 rounded-lg p-1.5 text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400"
             onClick={(e) => e.stopPropagation()}
@@ -146,7 +146,7 @@ export const ContactRow = memo(function ContactRow({ row, selected, active, sele
             <Building2 className="size-4" aria-hidden />
           </a>
         ) : (
-          <span title="Es cliente (sin registro en Clientes todavía)" className="shrink-0 rounded-lg p-1.5 text-emerald-600/70 dark:text-emerald-400/70">
+          <span title={`${tituloCliente(row.cliente?.fuente)} (sin registro en Clientes todavía)`} className="shrink-0 rounded-lg p-1.5 text-emerald-600/70 dark:text-emerald-400/70">
             <Building2 className="size-4" aria-hidden />
           </span>
         )

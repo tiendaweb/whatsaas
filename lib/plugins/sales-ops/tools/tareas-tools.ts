@@ -2,10 +2,10 @@ import 'server-only';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/lib/db/drizzle';
-import { chats, contacts } from '@/lib/db/schema';
+import { chats, contacts, teamCommercialAnalysis } from '@/lib/db/schema';
 import { assertPermission, parse, type GrokActionContext, type GrokActionTool } from '@/lib/plugins/grok-connector/server/actions';
 import { createClientProject } from '@/lib/plugins/sales-ops/server/client-projects';
-import { createDemoTask } from '@/lib/plugins/sales-ops/server/demos';
+import { DEMO_WORK_KINDS, createDemoTask, demoKindParaNecesidad, esDemoWorkKind } from '@/lib/plugins/sales-ops/server/demos';
 import { SALES_OPS_PLUGIN_ID } from '@/lib/plugins/sales-ops/shared/taxonomy';
 import { createProductionOrder, loadProductionOs, updateProductionOrder } from '@/lib/plugins/tasks/server/production-os';
 import { WORK_KINDS, WORK_STATUSES } from '@/lib/plugins/tasks/shared/produccion';
@@ -40,7 +40,7 @@ export const tareasActionTools: GrokActionTool[] = [
     name: 'whatspro_sales_tareas_from_chat',
     description:
       'Convierte un chat en trabajo dentro de Tareas OS, separado donde corresponde. action="demo": crea (o completa) la tarea ' +
-      '"Demo web — {nombre}" en el workspace "Demos", con la investigación del chat en las notas y el prompt para generar el ' +
+      '"Demo web — {nombre}" en el workspace "Demos" tipada según lo que el cliente necesita (work_kind), con la investigación del chat en las notas y el prompt para generar el ' +
       'sitio en AAPP SPACE en ai_prompt; si pasás research y prompt se usan tal cual (los escribiste vos leyendo el chat), si ' +
       'no, los redacta la IA del equipo sobre el expediente. action="project": crea el proyecto del cliente en el workspace ' +
       '"Clientes" (o el que indiques) con columnas Por hacer / En curso / Hecho y las tareas que pases, vinculado al contacto; ' +
@@ -55,6 +55,12 @@ export const tareasActionTools: GrokActionTool[] = [
         research: { type: 'string', maxLength: 20000, description: 'demo: investigación del chat ya redactada (va a las notas de la tarea).' },
         prompt: { type: 'string', maxLength: 20000, description: 'demo: prompt listo para generar la web en AAPP SPACE (va a ai_prompt). project: prompt del proyecto.' },
         title: { type: 'string', maxLength: 200, description: 'demo: título de la tarea. project: nombre del proyecto (default: empresa o nombre del contacto).' },
+        work_kind: {
+          type: 'string',
+          enum: [...DEMO_WORK_KINDS],
+          description:
+            'demo: qué demo es. Si no lo pasás, sale de la necesidad del análisis del chat (sitio_web → demo_sitio_aapp, tienda_online → demo_tienda_aapp, tienda_profesional → demo_tienda_custom, sitio_profesional → demo_prosite, combo_full → demo_tienda_aapp, desarrollo_medida → demo_html). Pasalo sólo cuando el chat diga algo distinto de lo clasificado: los productos de AAPP SPACE no se convierten entre sí.',
+        },
         workspace_name: { type: 'string', maxLength: 200, description: 'project: workspace destino. Default "Clientes".' },
         due_date: { type: 'string', maxLength: 10, description: 'demo: vencimiento YYYY-MM-DD.' },
         tasks: {
@@ -123,6 +129,13 @@ export const tareasActionTools: GrokActionTool[] = [
         assignee_id: { type: ['integer', 'null'], minimum: 1 },
         delivery_url: { type: ['string', 'null'], maxLength: 2000 },
         blocked_reason: { type: ['string', 'null'], maxLength: 2000 },
+        checklist_done: {
+          type: 'array',
+          maxItems: 50,
+          items: { type: 'string', maxLength: 80 },
+          description: 'Ids de los ítems del checklist que quedaron cumplidos (los trae whatspro_production_get). Se tildan sin tener que reenviar el checklist entero.',
+        },
+        summary: { type: 'string', maxLength: 4000, description: 'Qué hiciste, en 1-3 líneas. Queda en el historial del pedido.' },
         dry_run: { type: 'boolean' },
       },
       additionalProperties: false,
@@ -137,6 +150,7 @@ const schema = z.object({
   research: z.string().max(20000).optional(),
   prompt: z.string().max(20000).optional(),
   title: z.string().max(200).optional(),
+  work_kind: z.enum(DEMO_WORK_KINDS as unknown as [string, ...string[]]).optional(),
   workspace_name: z.string().max(200).optional(),
   due_date: z.string().max(10).optional(),
   tasks: z.array(z.object({ title: z.string().min(1).max(200), notes: z.string().max(20000).optional(), due_date: z.string().max(10).optional(), column: z.string().max(200).optional() })).max(100).optional(),
@@ -174,6 +188,8 @@ const updateProductionSchema = z.object({
   assignee_id: z.number().int().positive().nullable().optional(),
   delivery_url: z.string().url().max(2000).nullable().optional(),
   blocked_reason: z.string().max(2000).nullable().optional(),
+  checklist_done: z.array(z.string().max(80)).max(50).optional(),
+  summary: z.string().max(4000).optional(),
   dry_run: z.boolean().optional(),
 });
 
@@ -220,6 +236,17 @@ export async function executeTareasTool(name: string, input: Record<string, unkn
     await assertPermission(context, 'tasksWrite', 'tasks');
     const data = parse(updateProductionSchema, input);
     if (data.dry_run) return { dryRun: true, taskId: data.task_id, changes: Object.keys(data).filter((key) => !['task_id', 'dry_run'].includes(key)) };
+    // El checklist se guarda entero, pero el conector manda sólo los ids que
+    // cumplió: reenviar el arreglo completo era pedirle que copie de vuelta lo
+    // que acabamos de darle, y ahí es donde se pierden ítems.
+    let checklist: Array<{ id: string; text: string; completed: boolean }> | undefined;
+    if (data.checklist_done?.length) {
+      const { orders } = await loadProductionOs(context.teamId);
+      const order = orders.find((row) => row.id === data.task_id);
+      if (!order) throw new Error(`No existe el pedido de producción ${data.task_id} en este equipo.`);
+      const hechos = new Set(data.checklist_done);
+      checklist = order.checklist.map((item) => (hechos.has(item.id) ? { ...item, completed: true } : item));
+    }
     const result = await updateProductionOrder(context.teamId, context.userId, data.task_id, {
       workKind: data.work_kind,
       workStatus: data.work_status,
@@ -229,8 +256,21 @@ export async function executeTareasTool(name: string, input: Record<string, unkn
       assigneeId: data.assignee_id,
       deliveryUrl: data.delivery_url,
       blockedReason: data.blocked_reason,
+      ...(checklist !== undefined && { checklist }),
     }, 'connector');
-    return { success: true, taskId: result.id, workKind: result.workKind, workStatus: result.workStatus, deliveryUrl: result.deliveryUrl };
+    return {
+      success: true,
+      taskId: result.id,
+      workKind: result.workKind,
+      workStatus: result.workStatus,
+      deliveryUrl: result.deliveryUrl,
+      summary: data.summary ?? null,
+      note: result.workStatus === 'entregado'
+        ? 'Entregado. Quien pidió el trabajo le avisa al cliente desde el Command Center; vos no le escribas.'
+        : result.workStatus === 'espera_cliente'
+          ? 'Queda esperando al cliente: pasá al siguiente pedido de whatspro_production_work_queue.'
+          : 'Actualizado.',
+    };
   }
 
   if (name !== 'whatspro_sales_tareas_from_chat') throw new Error(`sales-ops tareas: tool desconocida ${name}`);
@@ -249,6 +289,15 @@ export async function executeTareasTool(name: string, input: Record<string, unkn
 
   if (data.action === 'demo') {
     if (!data.prompt?.trim()) await assertPermission(context, 'messagesRead');
+    // El tipo de demo lo fija el conector si lo sabe; si no, sale de la
+    // necesidad que ya clasificó el análisis. Producción no puede adivinar si
+    // "demo" era un sitio o una tienda, y elegir mal obliga a rehacerla.
+    const [analisis] = await db
+      .select({ need: teamCommercialAnalysis.need })
+      .from(teamCommercialAnalysis)
+      .where(and(eq(teamCommercialAnalysis.teamId, context.teamId), eq(teamCommercialAnalysis.chatId, chat.id)))
+      .limit(1);
+    const workKind = esDemoWorkKind(data.work_kind) ? data.work_kind : demoKindParaNecesidad(analisis?.need);
     const result = await createDemoTask({
       teamId: context.teamId,
       userId: context.userId,
@@ -260,9 +309,10 @@ export async function executeTareasTool(name: string, input: Record<string, unkn
       dueDate: data.due_date ?? null,
       research: data.research,
       prompt: data.prompt,
+      workKind,
     });
     if ('error' in result) throw new Error(result.error);
-    return { ...result, name: nombre, note: 'Tarea creada en el workspace "Demos". Siguiente paso: generar el sitio en AAPP SPACE con el prompt (gobiz_sites_create) y mandarle el link al cliente.' };
+    return { ...result, workKind, name: nombre, note: `Tarea creada en el workspace "Demos" como ${workKind}. Siguiente paso: la cadena de tools de ese tipo (whatspro_production_list la trae) y después el link al cliente desde el Command Center.` };
   }
 
   const result = await createClientProject({

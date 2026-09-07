@@ -4,7 +4,7 @@ import { useState } from 'react';
 import useSWR from 'swr';
 import { AlertTriangle, ChevronRight, Clock, Coins, Flame, Radar as RadarIcon, Repeat2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { DetailPayload, TimelineGap, TimelineHit } from '../../shared/api-types';
+import { tituloCliente, type DetailPayload, type TimelineGap, type TimelineHit } from '../../shared/api-types';
 import type { SignalKind } from '../../shared/taxonomy';
 import { toast } from 'sonner';
 import { RadarPanel } from '@/lib/plugins/radar/ui/RadarPanel';
@@ -172,9 +172,13 @@ export function PanelResumen({ chatId, className }: { chatId: number; className?
           <Campo label="Último impacto">{a.lastFollowupAt ? tiempoRelativo(a.lastFollowupAt) : '—'}</Campo>
           <Campo label="Primer contacto">{a.firstContactAt ? fmtDate(a.firstContactAt) : '—'}</Campo>
           <Campo label="Próxima acción">{a.nextActionAt ? fmtDate(a.nextActionAt) : '—'}</Campo>
+          {/* Mismo criterio que la lista y que la ficha: `isExistingCustomer`
+              sale del análisis y se queda viejo; el customerId es de ahora. */}
           <Campo label="Cliente">
-            {a.isExistingCustomer ? 'sí' : 'no'}
-            <span className="block text-[10px] text-muted-foreground">{humanize(a.customerEvidence)}</span>
+            {a.isExistingCustomer || a.customerId ? 'sí' : 'no'}
+            <span className="block text-[10px] text-muted-foreground">
+              {a.cliente?.fuente ? tituloCliente(a.cliente.fuente) : humanize(a.customerEvidence)}
+            </span>
           </Campo>
           <Campo label="Pago pendiente">{a.paymentPending ? 'sí' : 'no'}</Campo>
           <Campo label="Automatización">{a.automationActive ? 'activa' : 'no'}</Campo>

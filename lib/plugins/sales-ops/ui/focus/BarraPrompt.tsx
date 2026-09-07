@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Check, Inbox, Loader2, Play, Sparkles, Wrench, X } from 'lucide-react';
+import { BadgeDollarSign, Check, Inbox, Loader2, Play, Wrench, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { mutate as mutateGlobal } from 'swr';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import type { CobroPropuesto } from '../../server/focus';
 import type { CrmFix } from '../../shared/crm-fix';
 import { classifyRunError } from '../../shared/run-errors';
 import { avisarEncolado } from '../components/eventos';
@@ -14,8 +15,9 @@ import { SALES_OPS_API } from '../components/format';
 import { componerPedido } from './acciones';
 import { useCapacidades } from './useCapacidades';
 import { atajosDe, recordarAtajo, type Atajo } from './atajos';
-import { LS_PROMPT, type Etapa } from './tipos';
-import { aplicarCrmPropuesto, dejarParaConector, ejecutarAhora } from './api';
+import { ChipsAtajos } from './ChipsAtajos';
+import { LS_PROMPT, tituloDePedido, type Etapa } from './tipos';
+import { aplicarCrmPropuesto, dejarParaConector, ejecutarAhora, registrarCobroPropuesto } from './api';
 
 type Props = {
   chatId: number;
@@ -43,13 +45,27 @@ type Props = {
 };
 
 /**
+ * El importe con su moneda, como lo va a leer quien aprieta el botón. Va con
+ * red: `Intl` tira `RangeError` con un código de moneda raro y eso tumbaría la
+ * pantalla entera justo cuando hay que confirmar plata.
+ */
+function formatearImporte(importe: number, moneda: string): string {
+  try {
+    return new Intl.NumberFormat('es-AR', { style: 'currency', currency: moneda, maximumFractionDigits: 2 }).format(importe);
+  } catch {
+    return `${importe} ${moneda}`;
+  }
+}
+
+/**
  * La barra de abajo: una línea para escribir qué hacer, y los dos botones que
  * terminan el cliente (doc 08 §5).
  *
  * **Ejecutar ahora** corre en el servidor con la IA del equipo y se queda en la
  * pantalla: lo que devuelve es un borrador que hay que leer, un programado con
- * la fecha puesta, o una corrección de CRM que se aplica con un botón. Nunca
- * envía un WhatsApp — el envío sigue pasando por aprobar y ejecutar.
+ * la fecha puesta, una corrección de CRM o un cobro, y las dos últimas se
+ * confirman con un botón que dice exactamente qué va a pasar. Nunca envía un
+ * WhatsApp — el envío sigue pasando por aprobar y ejecutar.
  *
  * **Listo para conector** encola el pedido y avanza. Con el prompt vacío encola
  * la acción recomendada del análisis, así pasar de largo igual deja trabajo
@@ -80,6 +96,13 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
    */
   const [crmPropuesto, setCrmPropuesto] = useState<{ fix: CrmFix; steps: string[]; skipped: string[]; reason: string | null } | null>(null);
   const [aplicandoCrm, setAplicandoCrm] = useState(false);
+  /**
+   * Cobro que propuso "Ejecutar ahora" y espera confirmación. Registrarlo crea
+   * la venta, el asiento y el pago: es plata, así que lo aprieta una persona
+   * después de leer el importe, no el modelo.
+   */
+  const [cobroPropuesto, setCobroPropuesto] = useState<{ cobro: CobroPropuesto; reason: string | null } | null>(null);
+  const [registrandoCobro, setRegistrandoCobro] = useState(false);
   const ref = useRef<HTMLTextAreaElement | null>(null);
 
   // Al cambiar de etapa se recupera lo último que quedó escrito sin encolar: un
@@ -104,6 +127,7 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
     setTexto(v);
     setMotivoConector(null);
     setCrmPropuesto(null);
+    setCobroPropuesto(null);
     try {
       window.localStorage.setItem(`${LS_PROMPT}:${etapa}`, v);
     } catch {
@@ -129,10 +153,15 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
         toast.success('Programado armado arriba, con la fecha puesta. Revisalo y guardá.');
       } else if (res.mode === 'crm') {
         setCrmPropuesto({ fix: res.fix, steps: res.steps, skipped: res.skipped, reason: res.reason });
+      } else if (res.mode === 'cobro') {
+        setCobroPropuesto({ cobro: res.cobro, reason: res.reason });
       } else {
         setMotivoConector(res.reason);
       }
-      if (res.mode !== 'conector') onEjecutado?.();
+      // El cobro no cuenta acá: cuenta cuando se registra (ver `registrar`).
+      // Proponerlo y descartarlo no movió nada, y sumarlo dos veces inflaría el
+      // progreso de la tanda con trabajo que no se hizo.
+      if (res.mode !== 'conector' && res.mode !== 'cobro') onEjecutado?.();
     } catch (e) {
       // Sin cuota de IA del equipo la salida es el conector, no reintentar. El
       // 429 de Gemini son 900 caracteres de JSON: se traduce antes de mostrarlo.
@@ -153,7 +182,7 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
     }
     setEncolando(true);
     try {
-      await dejarParaConector({ chatId, text: componerPedido(nombre, pedido, permitidas), title: `Focus · ${nombre}` });
+      await dejarParaConector({ chatId, text: componerPedido(nombre, pedido, permitidas), title: tituloDePedido(nombre) });
       recordarAtajo(etapa, pedido);
       avisarEncolado(chatId);
       // Se limpia al encolar: la pantalla pasa al siguiente cliente y un pedido
@@ -189,6 +218,27 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
     }
   };
 
+  const registrar = async () => {
+    if (!cobroPropuesto) return;
+    setRegistrandoCobro(true);
+    try {
+      const r = await registrarCobroPropuesto(chatId, cobroPropuesto.cobro);
+      toast.success(r.idempotent ? `Ya estaba registrado. ${r.summary}` : `Cobro registrado: ${r.summary}`);
+      setCobroPropuesto(null);
+      escribir('');
+      // Un cobro toca la ficha entera: cliente nuevo, deuda al día y el chat en
+      // G11. Las tres claves que mira el panel se refrescan juntas.
+      void mutateGlobal(`${SALES_OPS_API}/contacts/${chatId}`);
+      void mutateGlobal(`${SALES_OPS_API}/contacts/${chatId}/crm`);
+      void mutateGlobal(`${SALES_OPS_API}/contacts/${chatId}/cobros`);
+      onEjecutado?.();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo registrar el cobro.');
+    } finally {
+      setRegistrandoCobro(false);
+    }
+  };
+
   /** La corrección propuesta: qué va a cambiar, y los dos botones. */
   const tarjetaCrm = crmPropuesto && (
     <div className="mb-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5" data-crm-propuesto>
@@ -218,35 +268,49 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
     </div>
   );
 
-  const chips = atajos.length > 0 && (
-    <div className="-mx-0.5 flex gap-1.5 overflow-x-auto px-0.5 pb-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]{display:none}">
-      {atajos.map((atajo) => (
-        <button
-          key={atajo.texto}
-          type="button"
-          disabled={ocupado}
-          onClick={() => escribir(atajo.texto)}
-          title={atajo.texto}
-          className={cn(
-            'shrink-0 rounded-full border px-2.5 py-1 text-left text-[11px] leading-tight transition-colors disabled:opacity-50',
-            atajo.texto === texto
-              ? 'border-primary bg-primary/10 text-foreground'
-              : atajo.origen === 'analisis'
-                ? 'border-primary/40 bg-primary/5 text-foreground hover:bg-primary/10'
-                : 'border-border bg-card text-muted-foreground hover:text-foreground',
-          )}
-        >
-          {atajo.origen === 'analisis' && <Sparkles className="mr-1 inline size-2.5 text-primary" aria-hidden />}
-          <span className={cn('inline-block truncate align-middle', movil ? 'max-w-[62vw]' : 'max-w-[240px]')}>{atajo.texto}</span>
-        </button>
-      ))}
+  /**
+   * El cobro propuesto. Misma estructura que la del CRM, con una diferencia que
+   * no es de estilo: acá el importe se lee formateado ANTES de apretar, porque
+   * lo que se confirma es plata y "Aplicar" a secas no dice cuánta.
+   */
+  const tarjetaCobro = cobroPropuesto && (
+    <div className="mb-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-2.5" data-cobro-propuesto>
+      <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
+        <BadgeDollarSign className="size-3" aria-hidden />
+        Cobro por registrar
+      </p>
+      <p className="mt-1 text-sm font-semibold leading-snug text-foreground">
+        {formatearImporte(cobroPropuesto.cobro.importe, cobroPropuesto.cobro.moneda)} · {cobroPropuesto.cobro.concepto}
+      </p>
+      <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+        {cobroPropuesto.cobro.medio ? `Por ${cobroPropuesto.cobro.medio}. ` : ''}
+        Fecha de pago: {cobroPropuesto.cobro.fecha}.
+      </p>
+      {cobroPropuesto.reason && <p className="mt-1 text-[11px] leading-snug text-foreground/90">{cobroPropuesto.reason}</p>}
+      <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
+        Se registra la venta y el ingreso en Finanzas, {nombre} queda vinculado como cliente y el chat pasa a G11 · cliente.
+      </p>
+      <div className="mt-2 flex gap-1.5">
+        <Button type="button" size="sm" className="h-8 gap-1.5 bg-emerald-600 text-[11px] text-white hover:bg-emerald-700" disabled={registrandoCobro} onClick={() => void registrar()}>
+          {registrandoCobro ? <Loader2 className="size-3 animate-spin" aria-hidden /> : <Check className="size-3" aria-hidden />}
+          Registrar cobro
+        </Button>
+        <Button type="button" size="sm" variant="ghost" className="h-8 text-[11px]" disabled={registrandoCobro} onClick={() => setCobroPropuesto(null)}>
+          Descartar
+        </Button>
+      </div>
     </div>
   );
+
+  // Los mismos atajos que "Mandar otro pedido" de la supervisión: una sola fila
+  // de fichas para los dos Focus, así tocar un atajo se siente igual en ambos.
+  const chips = <ChipsAtajos atajos={atajos} seleccionado={texto} onElegir={escribir} disabled={ocupado} movil={movil} />;
 
   if (movil) {
     return (
       <div className="shrink-0 border-t border-border bg-background p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         {tarjetaCrm}
+        {tarjetaCobro}
         {motivoConector && (
           <p className="mb-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-800 dark:text-amber-200">
             {motivoConector}
@@ -303,6 +367,7 @@ export function BarraPrompt({ chatId, nombre, etapa, mensajeActual, accionRecome
     <div className="sticky bottom-0 shrink-0 border-t border-border bg-background pt-2">
       {chips}
       {tarjetaCrm}
+      {tarjetaCobro}
       {motivoConector && (
         <p className="mb-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-800 dark:text-amber-200">
           {motivoConector}

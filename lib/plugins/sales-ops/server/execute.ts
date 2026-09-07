@@ -9,7 +9,7 @@ import { createEvent } from '@/lib/plugins/calendar/server/events';
 import { HORA_LABORAL, desdeZona, fechaEnZona, proximoHorarioFuturo, sumarDias } from '@/lib/time/zona';
 import { OWNERS, type Gate, type Owner } from '../shared/taxonomy';
 import { setManualOverride } from './classifier';
-import { createDemoTask } from './demos';
+import { createDemoTask, demoKindParaNecesidad, esDemoWorkKind, type DemoWorkKind } from './demos';
 import { transferLead } from './lead';
 import { scheduleActionMessage } from './scheduled';
 import { markResult } from './queue';
@@ -237,6 +237,18 @@ export async function executeApprovedBatch(
           results.push({ ...base, status: 'failed', reason: 'El chat no tiene contacto asociado.' });
           continue;
         }
+        // El tipo de demo sale de lo que el análisis dice que el cliente
+        // necesita: producción no puede adivinar si "demo" era un sitio o una
+        // tienda, y los productos de AAPP SPACE no se convierten entre sí. Si
+        // el lote ya trae un tipo explícito (lo eligió una persona o un
+        // conector), ese manda; si no hay análisis, queda el default histórico.
+        const [analisis] = await db
+          .select({ need: teamCommercialAnalysis.need })
+          .from(teamCommercialAnalysis)
+          .where(and(eq(teamCommercialAnalysis.teamId, teamId), eq(teamCommercialAnalysis.chatId, row.chatId)))
+          .limit(1);
+        const pedido = extraDe(payload).workKind;
+        const workKind: DemoWorkKind = esDemoWorkKind(pedido) ? pedido : demoKindParaNecesidad(analisis?.need);
         const demo = await createDemoTask({
           teamId,
           userId,
@@ -246,13 +258,14 @@ export async function executeApprovedBatch(
           brief: typeof payload.text === 'string' ? payload.text : undefined,
           title: typeof payload.taskTitle === 'string' ? payload.taskTitle : undefined,
           dueDate: typeof payload.dueAt === 'string' ? payload.dueAt : typeof payload.dueDate === 'string' ? payload.dueDate : null,
+          workKind,
         });
         if ('error' in demo) {
           await markResult(teamId, row.id, { status: 'failed', result: { error: demo.error }, executedVia: 'command-center', userId });
           results.push({ ...base, status: 'failed', reason: demo.error });
           continue;
         }
-        await markResult(teamId, row.id, { status: 'executed', result: { taskId: demo.taskId, projectId: demo.projectId, promptSource: demo.promptSource }, executedVia: 'command-center', userId });
+        await markResult(teamId, row.id, { status: 'executed', result: { taskId: demo.taskId, projectId: demo.projectId, promptSource: demo.promptSource, workKind }, executedVia: 'command-center', userId });
         results.push({ ...base, status: 'executed' });
         continue;
       }

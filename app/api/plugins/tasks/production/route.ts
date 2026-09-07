@@ -20,11 +20,20 @@ const createSchema = z.object({
   aiPrompt: z.string().max(20000).optional(),
 });
 
-export async function GET() {
+/**
+ * GET → el tablero entero. GET ?summary=1 → sólo los contadores.
+ *
+ * La tarjeta "Producción pendiente" de Hoy necesita cinco números y se
+ * refresca sola cada minuto: mandarle los pedidos completos con sus checklists
+ * y sus prompts es varios cientos de kB por cliente para pintar un "12".
+ */
+export async function GET(request: NextRequest) {
   const ctx = await getPluginRequestContext('tasksRead');
   if (!ctx.ok) return NextResponse.json({ error: ctx.message }, { status: ctx.status });
   try {
-    return NextResponse.json(await loadProductionOs(ctx.team.id));
+    const data = await loadProductionOs(ctx.team.id);
+    if (new URL(request.url).searchParams.get('summary')) return NextResponse.json({ counts: data.counts });
+    return NextResponse.json(data);
   } catch (error) {
     console.error('[tasks/production GET]', error);
     return NextResponse.json({ error: 'No se pudo cargar Producción OS.' }, { status: 500 });

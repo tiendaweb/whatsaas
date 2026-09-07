@@ -83,6 +83,14 @@ export type AnalysisRow = {
   lastExecution?: { at: string; kind: string } | null;
   /** Cliente vinculado al contacto (registro de Clientes), para abrir su ficha. */
   customerId?: number | null;
+  /**
+   * Estado de cliente resuelto por `lib/customers/es-cliente` (la MISMA regla
+   * que usa el motor). `fuente` dice POR QUÉ es cliente —vínculo, suscripción
+   * activa, venta pagada o sólo coincidencia de teléfono—, que es lo que
+   * distingue a un cliente registrado de uno que la ficha mostraba como tal
+   * mientras el motor lo trataba como lead. Ausente si no se calculó.
+   */
+  cliente?: { fuente: string | null; customerId: number | null };
   /** Pospuesto hasta esta fecha (ISO); ausente si no está pospuesto. */
   snoozedUntil?: string | null;
   /** Señales del radar sin atender de este chat (nuevas o vistas). Ausente si no se calculó. */
@@ -348,7 +356,7 @@ export type HistoryEntry = {
   action: string;
   label: string;
   /** Familia del evento: la ficha elige ícono y color con esto. */
-  kind: 'analisis' | 'manual' | 'radar' | 'prompt' | 'cola' | 'envio' | 'crm' | 'cobro' | 'skill' | 'limpieza' | 'otro';
+  kind: 'analisis' | 'manual' | 'radar' | 'prompt' | 'cola' | 'envio' | 'crm' | 'cobro' | 'produccion' | 'skill' | 'limpieza' | 'otro';
   detail: string;
   at: string;
   /** null = lo hizo el cron o un conector, no una persona. */
@@ -379,3 +387,29 @@ export type WallEntry = HistoryEntry & {
 };
 
 export type WallPayload = { entries: WallEntry[]; nextCursor: string | null };
+
+/**
+ * Cómo se dice en pantalla POR QUÉ alguien es cliente.
+ *
+ * Las tres vistas (lista, ficha y Focus) decidían cada una por su cuenta si
+ * mostrar "cliente", con criterios distintos: la lista miraba el vínculo, la
+ * ficha y el Focus miraban `isExistingCustomer` del análisis. Con una sola
+ * función el texto es el mismo en las tres, y `telefono` queda marcado como lo
+ * que es: una coincidencia sin vincular, no un cliente registrado.
+ *
+ * Vive acá porque lo lee el cliente: `lib/customers/es-cliente` es server-only.
+ */
+export function tituloCliente(fuente: string | null | undefined): string {
+  switch (fuente) {
+    case 'vinculo':
+      return 'Cliente vinculado';
+    case 'suscripcion_activa':
+      return 'Cliente por suscripción activa';
+    case 'venta_pagada':
+      return 'Cliente por venta pagada';
+    case 'telefono':
+      return 'Cliente por teléfono (coincide la ficha, sin vincular)';
+    default:
+      return 'Es cliente';
+  }
+}

@@ -24,6 +24,7 @@ import { documentsPortalActionTools, documentsPortalReadTools } from '@/lib/plug
 import { messagingActionTools } from '@/lib/plugins/grok-connector/server/messaging-actions';
 import { operationsActionTools, operationsReadTools } from '@/lib/plugins/grok-connector/server/operations-actions';
 import { salesOpsActionTools, salesOpsReadTools } from '@/lib/plugins/grok-connector/server/sales-ops-actions';
+import { productionActionTools, productionReadTools } from '@/lib/plugins/grok-connector/server/production-actions';
 import { notifyActionTools, notifyReadTools } from '@/lib/notifications/tools';
 import { financeActionTools, financeReadTools } from '@/lib/plugins/grok-connector/server/finance-actions';
 import { attachmentsActionTools, attachmentsReadTools } from '@/lib/plugins/grok-connector/server/attachments-actions';
@@ -67,6 +68,7 @@ const grupos: Array<[string, Array<{ name: string; description: string; inputSch
   ['messaging', messagingActionTools],
   ['operations', [...operationsReadTools, ...operationsActionTools]],
   ['sales-ops', [...salesOpsReadTools, ...salesOpsActionTools]],
+  ['produccion', [...productionReadTools, ...productionActionTools]],
   ['notificaciones', [...notifyReadTools, ...notifyActionTools]],
   ['finance', [...financeReadTools, ...financeActionTools]],
   ['attachments', [...attachmentsReadTools, ...attachmentsActionTools]],

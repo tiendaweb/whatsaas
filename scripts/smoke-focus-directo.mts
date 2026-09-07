@@ -5,11 +5,12 @@
  *
  * No escribe nada y no gasta cuota. Prueba lo que `smoke-focus-ia.mts` no
  * puede cuando Gemini está sin cuota: que la fecha de "programar" se valide
- * bien y que una corrección de CRM se resuelva contra el catálogo del equipo
- * (nombres que existen se normalizan; los inventados se saltean sin romper).
+ * bien, que un cobro propuesto se acepte sólo con importe y moneda legibles, y
+ * que una corrección de CRM se resuelva contra el catálogo del equipo (nombres
+ * que existen se normalizan; los inventados se saltean sin romper).
  */
 import { listAnalyses } from '@/lib/plugins/sales-ops/server/queries';
-import { cuandoValido, validarFix } from '@/lib/plugins/sales-ops/server/focus';
+import { cuandoValido, validarCobro, validarFix } from '@/lib/plugins/sales-ops/server/focus';
 import { computeNextRunAt } from '@/lib/plugins/scheduled-messages/schedule';
 import { aLocal, desdeZona, fechaEnZona, parsearLocal, sumarDias } from '@/lib/time/zona';
 import { getCrm } from '@/lib/plugins/sales-ops/server/crm';
@@ -30,6 +31,25 @@ check('una fecha pasada se corre a un horario futuro y avisa', !!pasada && pasad
 const pasadaNoche = cuandoValido('2020-01-01T23:00');
 check('fuera del horario laboral cae a mañana a las 10', pasadaNoche?.when === `${manana}T10:00`, pasadaNoche?.when ?? '');
 check('basura se rechaza', cuandoValido('mañana a las 10') === null && cuandoValido(null) === null);
+
+console.log('\n── validarCobro (plata: nada se supone) ──');
+const hoy = fechaEnZona();
+const okCobro = validarCobro({ importe: 50000, moneda: 'ars', medio: 'transferencia', fecha: '2026-09-05', concepto: 'Seña sitio web' });
+check('un cobro completo pasa con el importe en unidades', !('error' in okCobro) && okCobro.cobro.importe === 50000 && okCobro.cobro.moneda === 'ARS' && okCobro.cobro.fecha === '2026-09-05', JSON.stringify(okCobro));
+// "50.000" en castellano es cincuenta mil, no cincuenta con tres decimales.
+const conPuntos = validarCobro({ importe: '50.000', moneda: 'ARS' });
+check('"50.000" es cincuenta mil, y sin fecha queda hoy', !('error' in conPuntos) && conPuntos.cobro.importe === 50000 && conPuntos.cobro.fecha === hoy, JSON.stringify(conPuntos));
+const decimal = validarCobro({ importe: '45,5', moneda: 'usd' });
+check('"45,5" son 45.5 USD', !('error' in decimal) && decimal.cobro.importe === 45.5 && decimal.cobro.moneda === 'USD', JSON.stringify(decimal));
+const sinMedio = validarCobro({ importe: 1000, moneda: 'PYG' });
+check('sin medio ni concepto no rompe: medio null y concepto "Cobro"', !('error' in sinMedio) && sinMedio.cobro.medio === null && sinMedio.cobro.concepto === 'Cobro', JSON.stringify(sinMedio));
+check('un importe basura NO es cero: es error', 'error' in validarCobro({ importe: 'lo que quedaba', moneda: 'ARS' }));
+check('un importe negativo o cero también', 'error' in validarCobro({ importe: -10, moneda: 'ARS' }) && 'error' in validarCobro({ importe: 0, moneda: 'ARS' }));
+check('sin moneda no hay cobro', 'error' in validarCobro({ importe: 50000 }));
+check('una moneda que no es de 3 letras se rechaza', 'error' in validarCobro({ importe: 50000, moneda: 'pesos' }) && 'error' in validarCobro({ importe: 50000, moneda: 'AR' }));
+check('un cobro que no es objeto se rechaza', 'error' in validarCobro(null) && 'error' in validarCobro('50000'));
+const fechaFea = validarCobro({ importe: 100, moneda: 'ARS', fecha: 'ayer' });
+check('una fecha ilegible cae en hoy en vez de romper', !('error' in fechaFea) && fechaFea.cobro.fecha === hoy, JSON.stringify(fechaFea));
 
 console.log('\n── zona horaria (servidor en UTC, negocio en Argentina) ──');
 const diez = desdeZona('2026-09-07', 10, 0);

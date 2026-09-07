@@ -17,9 +17,9 @@ import {
   teamCommercialSignals,
   teamPromptRuns,
   teamScheduledMessages,
-  teamCustomerContacts,
 } from '@/lib/db/schema';
 import { condicionDeChatMarcado } from '@/lib/chats/internos';
+import { resolverClientes } from '@/lib/customers/es-cliente';
 import { getSalesOpsSettings } from './settings';
 import { maskJid } from '@/lib/desktop/command-center/types';
 import type {
@@ -483,17 +483,27 @@ async function anotarRadar(teamId: number, rows: AnalysisRow[]): Promise<void> {
   }
 }
 
-/** Cliente vinculado a cada contacto, para mostrar el ícono y abrir su ficha. */
+/**
+ * Estado de cliente de cada contacto, con la MISMA regla que usa el motor.
+ *
+ * Antes acá se miraba sólo `team_customer_contacts`, así que la lista decía
+ * "no es cliente" de gente con membresía activa o con la ficha ya cargada por
+ * teléfono: el ícono no aparecía y el vendedor abría el chat creyendo que era
+ * un lead frío. `resolverClientes` es la única definición y además dice por qué
+ * lo es, que es lo que se muestra en el tooltip.
+ */
 async function anotarClientes(teamId: number, rows: AnalysisRow[]): Promise<void> {
   const contactIds = rows.map((r) => r.contactId).filter((id): id is number => typeof id === 'number');
   if (!contactIds.length) return;
   try {
-    const links = await db
-      .select({ contactId: teamCustomerContacts.contactId, customerId: teamCustomerContacts.customerId })
-      .from(teamCustomerContacts)
-      .where(and(eq(teamCustomerContacts.teamId, teamId), inArray(teamCustomerContacts.contactId, contactIds)));
-    const porContacto = new Map(links.map((l) => [l.contactId, l.customerId]));
-    for (const r of rows) r.customerId = r.contactId ? (porContacto.get(r.contactId) ?? null) : null;
+    const estados = await resolverClientes(teamId, contactIds);
+    for (const r of rows) {
+      const estado = r.contactId ? estados.get(r.contactId) : undefined;
+      // `customerId` se mantiene tal cual porque ya lo consumen la lista y la
+      // ficha para abrir /plugins/customers/<id>.
+      r.customerId = estado?.customerId ?? null;
+      r.cliente = estado ? { fuente: estado.fuente, customerId: estado.customerId } : { fuente: null, customerId: null };
+    }
   } catch (error) {
     console.error('[sales-ops/queries] clientes de la lista', error);
   }
@@ -775,6 +785,13 @@ export async function getAnalysisDetail(teamId: number, chatId: number): Promise
     ? { a: analysisRows[0], chat, contactName: contact?.name ?? null }
     : null;
   const analysis = joined ? toDetail(joined, now) : null;
+  // La ficha y el Focus dibujan "cliente" con la misma regla que la lista, así
+  // que el estado se resuelve acá y no se saca del análisis, que se queda viejo.
+  // Si el análisis no guardó el contacto, se usa el del chat.
+  if (analysis) {
+    if (analysis.contactId == null) analysis.contactId = contact?.id ?? null;
+    await anotarClientes(teamId, [analysis]);
+  }
   const name = displayName(contact?.name ?? null, chat.name, chat.pushName, chat.remoteJid);
 
   const transcripts = new Map<string, string>();

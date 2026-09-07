@@ -58,6 +58,11 @@ import {
   executeSalesOpsTool,
 } from '@/lib/plugins/grok-connector/server/sales-ops-actions';
 import {
+  productionActionTools,
+  productionReadTools,
+  executeProductionAction,
+} from '@/lib/plugins/grok-connector/server/production-actions';
+import {
   executeGrokExtendedAction,
   grokExtendedActionTools,
 } from '@/lib/plugins/grok-connector/server/extended-actions';
@@ -246,6 +251,7 @@ const readOnlyTools = [
   ...bulkReadTools,
   ...dealsReadTools,
   ...salesOpsReadTools,
+  ...productionReadTools,
   ...notifyReadTools,
   ...detailReadTools,
   ...desktopReadTools,
@@ -281,6 +287,7 @@ const actionTools = [
   ...bulkActionTools,
   ...dealsActionTools,
   ...salesOpsActionTools,
+  ...productionActionTools,
   ...notifyActionTools,
   ...desktopActionTools,
   ...commandCenterActionTools,
@@ -370,6 +377,12 @@ const PRIORITY_TOOLS = [
   'whatspro_sales_queue_result',
   'whatspro_sales_register_payment',
   'whatspro_sales_contact_money',
+  // Producción: la primera llamada de una pasada de producción.
+  'whatspro_production_work_queue',
+  'whatspro_production_get',
+  'whatspro_production_update',
+  'whatspro_production_create',
+  'whatspro_production_list',
   'whatspro_sales_signal_write',
   'whatspro_sales_signals_list',
   // Radar.
@@ -555,6 +568,9 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
   if (salesOpsReadTools.some((tool) => tool.name === name)) {
     return executeSalesOpsTool(name, args, { teamId, userId: context.userId });
   }
+  if (productionReadTools.some((tool) => tool.name === name)) {
+    return executeProductionAction(name, args, { teamId, userId: context.userId });
+  }
   if (notifyReadTools.some((tool) => tool.name === name) || notifyActionTools.some((tool) => tool.name === name)) {
     return executeNotifyTool(name, args, { teamId, userId: context.userId });
   }
@@ -597,6 +613,7 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
     if (bulkActionTools.some((tool) => tool.name === name)) return executeBulkTool(name, args, actionContext);
     if (dealsActionTools.some((tool) => tool.name === name)) return executeDealsAction(name, args, actionContext);
     if (salesOpsActionTools.some((tool) => tool.name === name)) return executeSalesOpsTool(name, args, actionContext);
+    if (productionActionTools.some((tool) => tool.name === name)) return executeProductionAction(name, args, actionContext);
     if (desktopActionTools.some((tool) => tool.name === name)) return executeDesktopTool(name, args, actionContext);
     if (commandCenterActionTools.some((tool) => tool.name === name)) return executeDesktopTool(name, args, actionContext);
     if (chatActionTools.some((tool) => tool.name === name)) return executeChatTool(name, args, actionContext);
@@ -652,7 +669,7 @@ async function handleRpc(message: JsonRpcRequest, context: McpContext) {
       capabilities: { tools: { listChanged: true } },
       serverInfo: { name: context.actionsEnabled || context.scopes.includes(APP_MAKER_WRITE_SCOPE) ? 'WhatsPro AI Connector' : 'WhatsPro AI Read-only Connector', version: '4.0.0' },
       instructions: context.actionsEnabled || context.scopes.includes(APP_MAKER_WRITE_SCOPE)
-        ? 'Enumera y consulta recursos antes de actuar. Para App Maker consulta whatspro_appmaker_catalog y la versión actual; usa expected_version, separa borrador de publicación y confirma eliminaciones. Los adjuntos son privados y solo deben solicitarse cuando hagan falta. Para automatizaciones consulta whatspro_automation_guide. Para el Command Center Comercial (clasificación G0-GX, cola aprobada, radar de respuestas) empezá por whatspro_sales_work_queue (o whatspro_work_queue, que federa todas las colas): cada ítem trae tools y steps; cerrá siempre con la tool de resultado; si falta una decisión humana devolvé status blocked con human_request; podés corregir el CRM del contacto que estás trabajando, de a uno y sólo lo que contradice ese chat; los cobros se registran con whatspro_sales_register_payment sólo desde filas aprobadas o por pedido explícito. Para sitios, conserva expected_updated_at antes de editar. Respeta el aislamiento del equipo y usa claves de idempotencia estables.'
+        ? 'Enumera y consulta recursos antes de actuar. Para App Maker consulta whatspro_appmaker_catalog y la versión actual; usa expected_version, separa borrador de publicación y confirma eliminaciones. Los adjuntos son privados y solo deben solicitarse cuando hagan falta. Para automatizaciones consulta whatspro_automation_guide. Para el Command Center Comercial (clasificación G0-GX, cola aprobada, radar de respuestas) empezá por whatspro_sales_work_queue (o whatspro_work_queue, que federa todas las colas): cada ítem trae tools y steps; cerrá siempre con la tool de resultado; si falta una decisión humana devolvé status blocked con human_request; podés corregir el CRM del contacto que estás trabajando, de a uno y sólo lo que contradice ese chat; los cobros se registran con whatspro_sales_register_payment sólo desde filas aprobadas o por pedido explícito. Para PRODUCCIÓN (demos, sitios, tiendas y cambios de clientes) empezá por whatspro_production_work_queue: cada pedido trae la cadena exacta de tools de su tipo, y se cierra con whatspro_production_update — no se entrega sin enlace, y si falta material del cliente queda en espera_cliente sin escribirle. Para sitios, conserva expected_updated_at antes de editar. Respeta el aislamiento del equipo y usa claves de idempotencia estables.'
         : 'Acceso de lectura. Enumera recursos y el catálogo de App Maker antes de consultar; pagina resultados, respeta audiencias y nunca solicites ni reveles secretos.',
     });
   }

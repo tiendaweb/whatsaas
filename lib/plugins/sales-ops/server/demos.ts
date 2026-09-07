@@ -3,7 +3,8 @@ import { and, desc, eq } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { contacts, messages, teamTaskProjects, teamTaskWorkspaces, type TaskChecklistItem } from '@/lib/db/schema';
 import { createTaskInColumn, getProjectFirstColumn, insertRelation } from '@/lib/plugins/tasks/server/task-os';
-import type { WorkKind } from '@/lib/plugins/tasks/shared/produccion';
+import { WORK_KINDS, type WorkKind } from '@/lib/plugins/tasks/shared/produccion';
+import type { Need } from '../shared/taxonomy';
 import { buildChatContext, runSkillWithApi } from './skill-runner';
 
 /**
@@ -19,6 +20,51 @@ import { buildChatContext, runSkillWithApi } from './skill-runner';
  * cuota está agotada, se arma uno base con los últimos mensajes del cliente
  * para que la tarea nunca quede vacía (`promptSource` dice cuál fue).
  */
+
+/** Los tipos de trabajo que son una demo. El resto es producción o cambio. */
+export type DemoWorkKind = Extract<WorkKind, `demo_${string}`>;
+export const DEMO_WORK_KINDS = WORK_KINDS.filter((k): k is DemoWorkKind => k.startsWith('demo_'));
+
+/**
+ * Qué demo se hace según lo que el análisis dice que el cliente necesita.
+ *
+ * Hasta ahora todo lo que salía del Command Center nacía como
+ * `demo_sitio_aapp`, así que a producción le llegaba "demo de sitio" para
+ * alguien que había pedido una tienda. Y los cuatro productos de AAPP SPACE no
+ * se convierten entre sí: elegir mal obliga a rehacer la demo entera.
+ *
+ * Las dos elecciones que no son obvias:
+ *  - `tienda_profesional` → `demo_tienda_custom`: "profesional" acá significa
+ *    que la tienda estándar no le alcanza, y eso se muestra con una demo a
+ *    medida, no con una tienda de la plataforma.
+ *  - `desarrollo_medida` → `demo_html`: no hay tool que genere un desarrollo;
+ *    lo que se le muestra antes de vender es una maqueta HTML.
+ * Lo que no es un producto web (publicidad, contenido, automatización) cae en
+ * `demo_sitio_aapp`, que es la demo más barata de hacer y la que sirve para
+ * mostrar algo mientras se define el resto.
+ */
+export const DEMO_KIND_POR_NECESIDAD: Record<Need, DemoWorkKind> = {
+  sitio_web: 'demo_sitio_aapp',
+  tienda_online: 'demo_tienda_aapp',
+  tienda_profesional: 'demo_tienda_custom',
+  sitio_profesional: 'demo_prosite',
+  combo_full: 'demo_tienda_aapp',
+  desarrollo_medida: 'demo_html',
+  publicidad: 'demo_sitio_aapp',
+  contenido: 'demo_sitio_aapp',
+  automatizacion: 'demo_sitio_aapp',
+  otro: 'demo_sitio_aapp',
+  indefinida: 'demo_sitio_aapp',
+};
+
+/** ¿Este valor suelto (payload de un lote, argumento de una tool) es un tipo de demo? */
+export const esDemoWorkKind = (v: unknown): v is DemoWorkKind =>
+  typeof v === 'string' && (DEMO_WORK_KINDS as readonly string[]).includes(v);
+
+/** El tipo de demo para una necesidad que puede venir vacía o desconocida. */
+export function demoKindParaNecesidad(need: string | null | undefined): DemoWorkKind {
+  return DEMO_KIND_POR_NECESIDAD[(need ?? '') as Need] ?? 'demo_sitio_aapp';
+}
 
 export const DEMOS_WORKSPACE_NAME = 'Demos';
 const DEMOS_PROJECT_NAME = 'Demos';
@@ -91,8 +137,8 @@ export async function createDemoTask(input: {
   /** Investigación y prompt ya redactados (por un conector que leyó el chat): se usan tal cual, sin llamar a la IA. */
   research?: string;
   prompt?: string;
-  /** El canal viejo crea sitios AAPP; Producción OS permite precisar el tipo. */
-  workKind?: Extract<WorkKind, `demo_${string}`>;
+  /** El canal viejo crea sitios AAPP; Producción OS permite precisar el tipo (ver `DEMO_KIND_POR_NECESIDAD`). */
+  workKind?: DemoWorkKind;
 }): Promise<{ taskId: number; projectId: number; workspaceId: number; promptSource: 'ia' | 'base' | 'connector' } | { error: string }> {
   const contact = await db.query.contacts.findFirst({ where: and(eq(contacts.id, input.contactId), eq(contacts.teamId, input.teamId)), columns: { id: true, name: true } });
   if (!contact) return { error: 'contact_not_found' };

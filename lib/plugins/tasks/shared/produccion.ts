@@ -88,6 +88,145 @@ export function estadoTareaPara(status: WorkStatus): 'open' | 'in_progress' | 'd
 }
 
 export const FAMILIA_LABEL: Record<Familia, string> = { demo: 'Demos', produccion: 'Producción', cambio: 'Cambios' };
+/** Las familias como lista cerrada, para enums de Zod y de JSON Schema. */
+export const FAMILIAS_LISTA = ['demo', 'produccion', 'cambio'] as const;
+
+/**
+ * Con qué se hace cada tipo de trabajo.
+ *
+ * Es el equivalente de los `steps` de la cola comercial: el conector no tiene
+ * que adivinar si "una tienda" se hace con `gobiz_stores_create` o con
+ * `gobiz_sites_create` —elegir mal obliga a rehacerlo, porque los productos de
+ * AAPP SPACE no se convierten entre sí—. Vive en `shared/` porque lo usan la
+ * cola de conectores Y la pantalla, que muestra la receta al lado del pedido.
+ *
+ * `{id}` se reemplaza con el id del pedido al armar los pasos.
+ */
+export type CadenaDeTrabajo = { tools: string[]; steps: string[] };
+
+const ENTREGAR = 'whatspro_production_update {task_id: {id}, work_status: "entregado", delivery_url: "<el enlace público>"}. Contá qué hiciste en notes si hace falta. — sin enlace no se puede entregar.';
+const FALTA_MATERIAL =
+  'Si falta material del cliente (logo, textos, fotos, accesos, dominio): whatspro_production_update {task_id: {id}, work_status: "espera_cliente", blocked_reason: "<qué falta, en una línea>"}. NO le escribas al cliente: el pedido sale por el Command Center.';
+
+export const CADENA_POR_TIPO: Record<WorkKind, CadenaDeTrabajo> = {
+  demo_sitio_aapp: {
+    tools: ['whatspro_production_get', 'gobiz_sites_create', 'gobiz_sites_sections_set', 'gobiz_sites_styles_set', 'whatspro_production_update'],
+    steps: [
+      'whatspro_production_get {task_id: {id}} → leer el brief, el checklist y el prompt del pedido.',
+      'gobiz_sites_create: sitio de UNA página (vcard) con el nombre del negocio, rubro y datos de contacto del brief.',
+      'gobiz_sites_sections_set y gobiz_sites_styles_set: secciones y paleta según el brief. Textos en el tono del cliente, sin relleno.',
+      ENTREGAR,
+      FALTA_MATERIAL,
+    ],
+  },
+  demo_tienda_aapp: {
+    tools: ['whatspro_production_get', 'gobiz_stores_create', 'gobiz_store_products_create', 'gobiz_stores_layout_install_preset', 'whatspro_production_update'],
+    steps: [
+      'whatspro_production_get {task_id: {id}} → leer el brief y el prompt.',
+      'gobiz_stores_create con el nombre y el rubro; gobiz_store_products_create para los productos que aparecen en el chat (si no hay precios, cargalos sin precio y anotalo).',
+      'gobiz_stores_layout_install_preset para que la tienda no quede en blanco.',
+      ENTREGAR,
+      FALTA_MATERIAL,
+    ],
+  },
+  demo_prosite: {
+    tools: ['whatspro_production_get', 'gobiz_prosites_create', 'gobiz_prosites_pages_create', 'gobiz_prosites_publish', 'whatspro_production_update'],
+    steps: [
+      'whatspro_production_get {task_id: {id}} → leer el brief y el prompt.',
+      'gobiz_prosites_create (sitio profesional de varias páginas) + gobiz_prosites_pages_create: Inicio, Servicios y Contacto como mínimo.',
+      'gobiz_prosites_publish para que el enlace se pueda ver.',
+      ENTREGAR,
+      FALTA_MATERIAL,
+    ],
+  },
+  demo_html: {
+    tools: ['whatspro_production_get', 'gobiz_html_create', 'whatspro_production_update'],
+    steps: [
+      'whatspro_production_get {task_id: {id}} → leer el brief y el prompt.',
+      'gobiz_html_create con el HTML completo (una sola página, responsive, sin dependencias externas salvo fuentes).',
+      ENTREGAR,
+      FALTA_MATERIAL,
+    ],
+  },
+  demo_tienda_custom: {
+    tools: ['whatspro_production_get', 'gobiz_html_create', 'whatspro_manage_task', 'whatspro_production_update'],
+    steps: [
+      'whatspro_production_get {task_id: {id}} → leer el brief y el prompt.',
+      'Una tienda a medida no se genera de una: armá la demo navegable (gobiz_html_create) y dejá en el checklist lo que falta para la versión vendida.',
+      ENTREGAR,
+      FALTA_MATERIAL,
+    ],
+  },
+  sitio_aapp: {
+    tools: ['whatspro_production_get', 'gobiz_sites_create', 'gobiz_sites_update', 'gobiz_sites_hours_set', 'whatspro_production_update'],
+    steps: [
+      'whatspro_production_get {task_id: {id}} → esto ya está vendido: leé el alcance y qué entregó el cliente.',
+      'gobiz_sites_create / gobiz_sites_update con los textos, imágenes y horarios reales (no de relleno).',
+      ENTREGAR,
+      FALTA_MATERIAL,
+    ],
+  },
+  tienda_aapp: {
+    tools: ['whatspro_production_get', 'gobiz_stores_create', 'gobiz_store_products_create', 'gobiz_stores_update', 'whatspro_production_update'],
+    steps: [
+      'whatspro_production_get {task_id: {id}} → alcance vendido y catálogo que mandó el cliente.',
+      'gobiz_stores_create / gobiz_store_products_create con los productos y precios reales; gobiz_stores_update para datos de contacto y envíos.',
+      ENTREGAR,
+      FALTA_MATERIAL,
+    ],
+  },
+  prosite: {
+    tools: ['whatspro_production_get', 'gobiz_prosites_create', 'gobiz_prosites_pages_create', 'gobiz_prosites_publish', 'whatspro_production_update'],
+    steps: [
+      'whatspro_production_get {task_id: {id}} → alcance vendido, páginas acordadas y material del cliente.',
+      'gobiz_prosites_create + gobiz_prosites_pages_create (una por página acordada) + gobiz_prosites_publish.',
+      ENTREGAR,
+      FALTA_MATERIAL,
+    ],
+  },
+  sitio_html: {
+    tools: ['whatspro_production_get', 'gobiz_html_create', 'gobiz_html_update', 'whatspro_production_update'],
+    steps: [
+      'whatspro_production_get {task_id: {id}} → alcance vendido y material del cliente.',
+      'gobiz_html_create / gobiz_html_update con el sitio completo.',
+      ENTREGAR,
+      FALTA_MATERIAL,
+    ],
+  },
+  tienda_custom: {
+    tools: ['whatspro_production_get', 'whatspro_manage_task', 'whatspro_manage_document', 'whatspro_production_update'],
+    steps: [
+      'whatspro_production_get {task_id: {id}} → alcance vendido.',
+      'Esto NO se genera con una tool: armá el plan. whatspro_manage_document para el brief técnico y whatspro_manage_task para las tareas del proyecto, en orden.',
+      'whatspro_production_update {task_id: {id}, work_status: "en_curso"}.',
+      FALTA_MATERIAL,
+    ],
+  },
+  desarrollo: {
+    tools: ['whatspro_production_get', 'whatspro_manage_task', 'whatspro_manage_document', 'whatspro_production_update'],
+    steps: [
+      'whatspro_production_get {task_id: {id}} → alcance vendido y qué hay que entregar.',
+      'whatspro_manage_document para el brief y whatspro_manage_task para las tareas del proyecto, una por entregable y en orden.',
+      'whatspro_production_update {task_id: {id}, work_status: "en_curso"}.',
+      FALTA_MATERIAL,
+    ],
+  },
+  cambio: {
+    tools: ['whatspro_production_get', 'gobiz_sites_update', 'gobiz_html_patch', 'gobiz_prosites_pages_patch', 'gobiz_stores_update', 'whatspro_production_update'],
+    steps: [
+      'whatspro_production_get {task_id: {id}} → qué pide el cliente y el enlace de lo que ya está entregado.',
+      'Abrí lo entregado y aplicá SÓLO el cambio pedido, con la tool del producto (gobiz_sites_update / gobiz_html_patch / gobiz_prosites_pages_patch / gobiz_stores_update).',
+      ENTREGAR,
+      FALTA_MATERIAL,
+    ],
+  },
+};
+
+/** La cadena de un pedido concreto, con el id ya reemplazado. */
+export function cadenaDeTrabajo(kind: WorkKind, taskId: number): CadenaDeTrabajo {
+  const base = CADENA_POR_TIPO[kind];
+  return { tools: base.tools, steps: base.steps.map((step) => step.replace(/\{id\}/g, String(taskId))) };
+}
 
 /** Checklist por defecto según el tipo: lo que producción hace siempre para ese trabajo. */
 export function checklistPorDefecto(kind: WorkKind): Array<{ id: string; text: string; completed: boolean }> {

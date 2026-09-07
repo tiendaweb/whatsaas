@@ -18,9 +18,12 @@ const schema = z.object({
  * POST → "Ejecutar ahora" del Focus.
  *
  * Devuelve `{ mode: 'texto', text }` cuando el servidor pudo resolverlo
- * redactando (la pantalla se queda en este cliente con el borrador cargado), o
- * `{ mode: 'conector', reason }` cuando hace falta un conector (la pantalla
- * ofrece el otro botón). No guarda nada: lo que se guarda lo decide la persona.
+ * redactando (la pantalla se queda en este cliente con el borrador cargado),
+ * `{ mode: 'programar' | 'crm' | 'cobro' }` cuando hay algo para confirmar de un
+ * botón, o `{ mode: 'conector', reason }` cuando hace falta un conector (la
+ * pantalla ofrece el otro botón). No guarda nada —tampoco el cobro, que se
+ * propone acá y se registra desde `contacts/{chatId}/cobros` cuando la persona
+ * lo confirma—: lo que se guarda lo decide la persona.
  */
 export async function POST(request: NextRequest) {
   const ctx = await getSalesOpsContext('salesOpsWrite');

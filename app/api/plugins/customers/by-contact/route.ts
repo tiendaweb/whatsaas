@@ -1,13 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { db } from '@/lib/db/drizzle';
-import { contacts, teamCustomerContacts, teamCustomers } from '@/lib/db/schema';
+import { teamCustomers } from '@/lib/db/schema';
+import { resolverCliente } from '@/lib/customers/es-cliente';
 import { getPluginRequestContext } from '@/lib/plugins/core/runtime-permissions';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * ¿Qué ficha de Clientes le corresponde a este contacto, y es cliente de verdad?
+ *
+ * Antes esta ruta hacía su propia versión de la pregunta: primero el vínculo y,
+ * si no había, la ficha con el mismo teléfono — y devolvía un `customerId` a
+ * secas, sin decir cuál de las dos cosas había pasado. La UI mostraba "Cliente"
+ * para alguien que el motor comercial trataba como lead, porque el motor exige
+ * vínculo, suscripción activa o venta pagada y la coincidencia de teléfono no
+ * alcanza. Ahora la pregunta la contesta `resolverCliente`, la misma que usa el
+ * motor, y la respuesta dice la fuente para que la pantalla pueda ser honesta.
+ *
+ * La forma de la respuesta conserva `customerId` porque ya la consumen la ficha
+ * de contacto del chat y la ficha de cliente de Tareas.
+ */
 const querySchema = z.object({ contactId: z.coerce.number().int().positive() });
 
 export async function GET(request: NextRequest) {
@@ -17,39 +32,22 @@ export async function GET(request: NextRequest) {
   const parsed = querySchema.safeParse({ contactId: request.nextUrl.searchParams.get('contactId') });
   if (!parsed.success) return NextResponse.json({ error: 'Invalid contact id' }, { status: 400 });
 
-  const [linked] = await db
-    .select({ customerId: teamCustomerContacts.customerId })
-    .from(teamCustomerContacts)
-    .innerJoin(teamCustomers, eq(teamCustomerContacts.customerId, teamCustomers.id))
-    .innerJoin(contacts, eq(teamCustomerContacts.contactId, contacts.id))
-    .where(and(
-      eq(teamCustomerContacts.teamId, ctx.team.id),
-      eq(teamCustomers.teamId, ctx.team.id),
-      eq(contacts.teamId, ctx.team.id),
-      eq(teamCustomerContacts.contactId, parsed.data.contactId),
-    ))
-    .orderBy(desc(teamCustomerContacts.createdAt))
-    .limit(1);
+  const estado = await resolverCliente(ctx.team.id, { contactId: parsed.data.contactId });
+  if (!estado.customerId) {
+    return NextResponse.json({ customerId: null, esCliente: false, fuente: null, customerName: null });
+  }
 
-  if (linked) return NextResponse.json({ customerId: linked.customerId });
-
-  const contact = await db.query.contacts.findFirst({
-    where: and(eq(contacts.id, parsed.data.contactId), eq(contacts.teamId, ctx.team.id)),
-    columns: { id: true },
-    with: { chat: { columns: { remoteJid: true } } },
+  // El nombre lo pide el Focus para mostrar "Cliente: <nombre>" sin una segunda
+  // vuelta; el filtro por equipo va igual aunque `resolverCliente` ya lo aplique.
+  const ficha = await db.query.teamCustomers.findFirst({
+    where: and(eq(teamCustomers.id, estado.customerId), eq(teamCustomers.teamId, ctx.team.id)),
+    columns: { id: true, name: true },
   });
-  const phoneDigits = contact?.chat?.remoteJid?.split('@')[0].replace(/\D/g, '') ?? '';
-  if (!phoneDigits) return NextResponse.json({ customerId: null });
 
-  const [customerByPhone] = await db
-    .select({ customerId: teamCustomers.id })
-    .from(teamCustomers)
-    .where(and(
-      eq(teamCustomers.teamId, ctx.team.id),
-      sql`regexp_replace(coalesce(${teamCustomers.phone}, ''), '[^0-9]', '', 'g') = ${phoneDigits}`,
-    ))
-    .orderBy(desc(teamCustomers.updatedAt))
-    .limit(1);
-
-  return NextResponse.json({ customerId: customerByPhone?.customerId ?? null });
+  return NextResponse.json({
+    customerId: ficha?.id ?? null,
+    esCliente: estado.esCliente,
+    fuente: estado.fuente,
+    customerName: ficha?.name ?? null,
+  });
 }

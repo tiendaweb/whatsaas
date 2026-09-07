@@ -4,6 +4,7 @@ import type { PermissionContext } from '@/lib/auth/permissions-guard';
 import { hasPermission } from '@/lib/permissions';
 import { resolveActivePluginsForTeam } from '@/lib/plugins/core/registry';
 import { listWorkQueue } from '@/lib/plugins/sales-ops/server/work-queue';
+import { listProductionWorkQueue } from '@/lib/plugins/tasks/server/production-work-queue';
 import { loadTaskAiWorklist, type TaskAiWorkItem } from '@/lib/plugins/tasks/server/ai-operations';
 import { getCommandCenter } from '@/lib/desktop/command-center/service';
 import type { CommandItem } from '@/lib/desktop/command-center/types';
@@ -106,7 +107,7 @@ export async function listUnifiedWorkQueue(
   // y una IA planificaría creyendo que eso es todo lo que hay. La ventana es
   // más ancha que la página a propósito.
   const window = Math.min(200, Math.max(limit, 60));
-  const wanted = new Set<WorkSource>(opts.sources?.length ? opts.sources : ['sales', 'tasks', 'inbox']);
+  const wanted = new Set<WorkSource>(opts.sources?.length ? opts.sources : ['sales', 'tasks', 'inbox', 'production']);
   const active = new Set((await resolveActivePluginsForTeam(ctx.teamId, ctx.userId)).map((item) => item.pluginId));
   const can = (permission: Parameters<typeof hasPermission>[2]) => hasPermission(ctx.role, ctx.permissions, permission);
 
@@ -114,6 +115,8 @@ export async function listUnifiedWorkQueue(
   const sources: WorkSourceStatus[] = [];
   /** Reglas propias de la cola comercial, que se suman a las generales cuando se incluye `sales`. */
   const salesRules: string[] = [];
+  /** Ídem para producción: sin sus reglas, los steps de un sitio quedan sin marco. */
+  const productionRules: string[] = [];
 
   const record = (source: WorkSource, skipped: string | null, count: number) => {
     sources.push({ source, available: skipped === null, skipped, count });
@@ -157,6 +160,42 @@ export async function listUnifiedWorkQueue(
       skipped = error instanceof Error ? error.message : String(error);
     }
     record('sales', skipped, count);
+  }
+
+  // ── Producción (demos, sitios, tiendas y cambios) ─────────────────────────
+  if (wanted.has('production')) {
+    let skipped: string | null = null;
+    let count = 0;
+    try {
+      if (!active.has('tasks')) throw new Error('La app Tareas no está activa en este equipo.');
+      if (!can('tasksRead')) throw new Error('Falta el permiso tasksRead.');
+      const queue = await listProductionWorkQueue(ctx.teamId, { limit: window, forUserId: ctx.userId });
+      for (const rule of queue.rules) if (!productionRules.includes(rule)) productionRules.push(rule);
+      for (const item of queue.items) {
+        items.push({
+          source: 'production',
+          kind: `produccion_${item.workKind}`,
+          key: String(item.taskId),
+          // Debajo de un pedido comercial ya aprobado (2000) y arriba de
+          // clasificar respuestas: producir algo que un cliente está esperando
+          // vale más que ordenar la base.
+          priority: WORK_PRIORITY.production + Math.min(199, item.priority % 200),
+          // Nadie de afuera se entera de lo que hace producción hasta que hay
+          // enlace: se puede ejecutar sin volver a preguntar.
+          approval: 'ready',
+          title: `${item.workKindLabel} · ${item.title}`,
+          detail: item.blockedReason ?? (item.notes.slice(0, 200) || null),
+          chatId: item.chatId,
+          tools: item.tools,
+          steps: item.steps,
+          payload: item as unknown as Record<string, unknown>,
+        });
+        count += 1;
+      }
+    } catch (error) {
+      skipped = error instanceof Error ? error.message : String(error);
+    }
+    record('production', skipped, count);
   }
 
   // ── Prompts de Tareas OS ──────────────────────────────────────────────────
@@ -269,6 +308,7 @@ export async function listUnifiedWorkQueue(
         sales: filtered.filter((item) => item.source === 'sales').length,
         tasks: filtered.filter((item) => item.source === 'tasks').length,
         inbox: filtered.filter((item) => item.source === 'inbox').length,
+        production: filtered.filter((item) => item.source === 'production').length,
       },
       byApproval: {
         ready: filtered.filter((item) => item.approval === 'ready').length,
@@ -278,6 +318,6 @@ export async function listUnifiedWorkQueue(
     },
     sources,
     items: page,
-    rules: [...RULES, ...salesRules.filter((rule) => !RULES.includes(rule))],
+    rules: [...RULES, ...salesRules.filter((rule) => !RULES.includes(rule)), ...productionRules.filter((rule) => !RULES.includes(rule))],
   };
 }

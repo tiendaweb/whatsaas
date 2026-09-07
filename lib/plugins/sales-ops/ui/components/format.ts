@@ -58,6 +58,11 @@ export const ACTION_KIND_LABELS: Record<ActionKind, string> = {
   schedule_call: 'Agendar llamada',
 };
 
+/**
+ * Mapa único de estados de acción de la Cola. `ui/cola/api.ts` lo re-exporta
+ * como `STATUS_LABELS`: había dos mapas para lo mismo y una tarea creada decía
+ * "Enviado" en una pantalla y "Ejecutada" en la de al lado.
+ */
 export const ACTION_STATUS_LABELS: Record<ActionStatus, string> = {
   proposed: 'Propuesta',
   pending_approval: 'Pendiente de aprobación',
@@ -69,6 +74,29 @@ export const ACTION_STATUS_LABELS: Record<ActionStatus, string> = {
   expired: 'Vencida',
   failed: 'Falló',
 };
+
+/**
+ * Qué se hizo, según el tipo de acción: `executed` no quiere decir lo mismo en
+ * un mensaje que en una tarea. "Ejecutada" a secas es correcto pero no dice
+ * nada; con el kind a la vista se puede escribir lo que de verdad pasó.
+ */
+export function verboEjecutado(kind: ActionKind): string {
+  switch (kind) {
+    case 'send_message':
+      return 'Enviado';
+    case 'schedule_message':
+      return 'Programado';
+    case 'create_task':
+    case 'request_demo':
+      return 'Creada';
+    case 'register_sale':
+      return 'Registrado';
+    case 'schedule_call':
+      return 'Agendada';
+    default:
+      return 'Aplicado';
+  }
+}
 
 export const TEMPERATURE_LABELS: Record<Temperature, string> = { hot: 'caliente', warm: 'tibio', cold: 'frío' };
 

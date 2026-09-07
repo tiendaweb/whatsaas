@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { and, asc, desc, eq, gte, inArray, lt, ne, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lt, ne, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import {
   contacts,
@@ -10,6 +10,7 @@ import {
   teamCustomers,
   teamDeals,
   teamEvents,
+  teamFinancialEntries,
   teamSales,
   users,
 } from '@/lib/db/schema';
@@ -79,6 +80,25 @@ export type ContactMoney = {
     saleNumber: string;
     status: string;
     total: number;
+    currency: string;
+    dueDate: string | null;
+    overdue: boolean;
+  }>;
+  /**
+   * Asientos de INGRESO de Finanzas del cliente vinculado. Es donde está la
+   * plata de verdad: `team_sales` puede estar casi vacía y aun así la persona
+   * tener cobros hechos y por hacer cargados como movimientos financieros.
+   * Los pendientes ya están sumados en `pendingByCurrency` y los cobrados en
+   * `paidByCurrency`, así que esto es el detalle, no un total aparte.
+   */
+  entries: Array<{
+    entryId: number;
+    title: string;
+    status: string;
+    /** Lo facturado. Lo que falta cobrar sale de `pending`. */
+    amount: number;
+    /** Lo que falta cobrar (monto menos pagos parciales); 0 si ya está cobrado. */
+    pending: number;
     currency: string;
     dueDate: string | null;
     overdue: boolean;
@@ -297,6 +317,13 @@ export async function getContactDeals(teamId: number, scope: ContactScope) {
  * Plata: lo que falta cobrar y lo que ya se cobró. Mismo criterio de "pendiente"
  * que el panel de Ventas y que la cobranza por MCP (`draft` o `confirmed`), para
  * que las tres pantallas nunca den números distintos.
+ *
+ * Dos fuentes, no una: las VENTAS del contacto (y de sus hermanos del mismo
+ * cliente) y los asientos de INGRESO de Finanzas del cliente vinculado. Mirar
+ * sólo `team_sales` mostraba "no debe nada" a gente con cobros cargados en
+ * Finanzas, que es como este negocio factura de verdad; y es la misma tabla que
+ * `lib/customers/es-cliente` usa para decidir que alguien ya pagó, así que el
+ * panel y el motor tienen que leerla igual.
  */
 export async function getContactMoney(teamId: number, scope: ContactScope): Promise<ContactMoney> {
   const filas = await db
@@ -313,10 +340,34 @@ export async function getContactMoney(teamId: number, scope: ContactScope): Prom
     .where(and(eq(teamSales.teamId, teamId), inArray(teamSales.contactId, scope.contactIds)))
     .orderBy(asc(teamSales.dueDate));
 
+  // Los asientos cuelgan del CLIENTE, no del contacto: sin ficha vinculada no
+  // hay nada que traer y no se consulta.
+  const asientos = scope.customerId != null
+    ? await db
+        .select({
+          id: teamFinancialEntries.id,
+          title: teamFinancialEntries.title,
+          status: teamFinancialEntries.status,
+          amount: teamFinancialEntries.amount,
+          currency: teamFinancialEntries.currency,
+          dueOn: teamFinancialEntries.dueOn,
+          pagado: sql<number>`coalesce((select sum(p.amount) from team_financial_entry_payments p where p.entry_id = ${teamFinancialEntries.id}), 0)::int`,
+        })
+        .from(teamFinancialEntries)
+        .where(and(
+          eq(teamFinancialEntries.teamId, teamId),
+          eq(teamFinancialEntries.type, 'income'),
+          eq(teamFinancialEntries.customerId, scope.customerId),
+          ne(teamFinancialEntries.status, 'cancelled'),
+        ))
+        .orderBy(asc(teamFinancialEntries.dueOn))
+    : [];
+
   const ahora = Date.now();
   const pendingByCurrency: Record<string, number> = {};
   const paidByCurrency: Record<string, number> = {};
   const sales: ContactMoney['sales'] = [];
+  const entries: ContactMoney['entries'] = [];
   let nextDueDate: string | null = null;
   let overdueCount = 0;
 
@@ -342,13 +393,35 @@ export async function getContactMoney(teamId: number, scope: ContactScope): Prom
     }
   }
 
+  for (const fila of asientos) {
+    // `due_on` es una fecha suelta (`YYYY-MM-DD`): se lee como UTC para que no
+    // se corra un día según la zona del servidor.
+    const vence = fila.dueOn ? new Date(`${fila.dueOn}T00:00:00.000Z`) : null;
+    const dueDate = vence && !Number.isNaN(vence.getTime()) ? vence.toISOString() : null;
+    const falta = Math.max(0, fila.amount - Number(fila.pagado));
+    const cobrado = fila.status === 'paid' ? fila.amount : Number(fila.pagado);
+    if (cobrado > 0) paidByCurrency[fila.currency] = (paidByCurrency[fila.currency] ?? 0) + cobrado;
+    if (fila.status === 'paid' || falta === 0) {
+      entries.push({ entryId: fila.id, title: fila.title, status: fila.status, amount: fila.amount, pending: 0, currency: fila.currency, dueDate, overdue: false });
+      continue;
+    }
+    const vencido = Boolean(dueDate && new Date(dueDate).getTime() < ahora);
+    pendingByCurrency[fila.currency] = (pendingByCurrency[fila.currency] ?? 0) + falta;
+    if (vencido) overdueCount += 1;
+    if (dueDate && (!nextDueDate || dueDate < nextDueDate)) nextDueDate = dueDate;
+    entries.push({ entryId: fila.id, title: fila.title, status: fila.status, amount: fila.amount, pending: falta, currency: fila.currency, dueDate, overdue: vencido });
+  }
+
   return {
-    pendingCount: sales.length,
+    // Cuenta las dos fuentes: una venta sin cobrar y un ingreso sin cobrar son
+    // lo mismo para quien va a reclamar la plata.
+    pendingCount: sales.length + entries.filter((e) => e.pending > 0).length,
     pendingByCurrency,
     paidByCurrency,
     nextDueDate,
     overdueCount,
     sales,
+    entries,
   };
 }
 
