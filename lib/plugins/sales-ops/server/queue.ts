@@ -167,11 +167,14 @@ function firstName(name: string): string {
 
 function formatPrice(amount: number | null, currency: string | null): string {
   if (amount == null || !currency) return '';
-  const units = amount / 100;
+  // `quoted_price` se guarda en UNIDADES, no en centavos: lo escribe el
+  // clasificador con el número que dice el chat y `usdFromQuoted` lo divide por
+  // el fx tal cual (60000 ARS / 1000 = 60 USD). Dividir por 100 acá hacía que
+  // {{precio}} le dijera "ARS 600" a un cliente cotizado en $60.000.
   try {
-    return `${currency} ${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(units)}`;
+    return `${currency} ${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(amount)}`;
   } catch {
-    return `${currency} ${Math.round(units)}`;
+    return `${currency} ${Math.round(amount)}`;
   }
 }
 

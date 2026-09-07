@@ -70,9 +70,9 @@ export function dineroEnJuego(a: AnalysisDetail | null): string {
     // Una moneda inválida en la base tumba la pantalla entera con un
     // RangeError, y el error boundary genérico no dice por qué. Ante datos
     // sucios se degrada al código de moneda crudo.
-    return new Intl.NumberFormat('es-AR', { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount / 100);
+    return new Intl.NumberFormat('es-AR', { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount);
   } catch {
-    return `${currency} ${Math.round(amount / 100).toLocaleString('es-AR')}`;
+    return `${currency} ${Math.round(amount).toLocaleString('es-AR')}`;
   }
 }
 

@@ -383,7 +383,7 @@ function Resumen({
           {humanize(a.need)}
           {a.needDetail && <span className="block text-xs text-muted-foreground">{a.needDetail}</span>}
         </Field>
-        <Field label="Precio conocido">{a.quotedPrice ? fmtMoney(a.quotedPrice.amount / 100, a.quotedPrice.currency) : '—'}</Field>
+        <Field label="Precio conocido">{a.quotedPrice ? fmtMoney(a.quotedPrice.amount, a.quotedPrice.currency) : '—'}</Field>
         <Field label="Rubro">{a.businessType || '—'}</Field>
         <Field label="Objeción">
           {humanize(a.objectionType)}

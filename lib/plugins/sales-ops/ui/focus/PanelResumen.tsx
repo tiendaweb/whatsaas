@@ -144,7 +144,7 @@ export function PanelResumen({ chatId, className }: { chatId: number; className?
             {humanize(a.need)}
             {a.needDetail && <span className="block text-[10px] text-muted-foreground">{a.needDetail}</span>}
           </Campo>
-          <Campo label="Precio conocido">{a.quotedPrice ? fmtMoney(a.quotedPrice.amount / 100, a.quotedPrice.currency) : '—'}</Campo>
+          <Campo label="Precio conocido">{a.quotedPrice ? fmtMoney(a.quotedPrice.amount, a.quotedPrice.currency) : '—'}</Campo>
           <Campo label="Rubro">{a.businessType || '—'}</Campo>
           <Campo label="Origen">
             {humanize(a.source)}
