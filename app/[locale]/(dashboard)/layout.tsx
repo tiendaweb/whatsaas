@@ -185,13 +185,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const pathWithoutLocale = pathname.replace(/^\/(pt|en|es)(?=\/|$)/, '') || '/';
   const isBusinessWoman = pathname.includes('/plugins/mini-apps/business-woman-planner');
   // Aplicaciones aparte: traen su propia navegación y ocupan toda la pantalla
-  // (Tareas OS, Command Center, Finanzas OS, Calendario). Sin esto se ven las
-  // dos barras a la vez y ninguna de las dos se lee.
+  // (Tareas OS, Command Center, Finanzas OS, Calendario, Centro de Desarrollo).
+  // Sin esto se ven las dos barras a la vez y ninguna de las dos se lee.
   const isTasksOS =
     pathWithoutLocale.startsWith('/plugins/tasks') ||
     pathWithoutLocale.startsWith('/plugins/sales-ops') ||
     pathWithoutLocale.startsWith('/plugins/finance') ||
-    pathWithoutLocale.startsWith('/plugins/calendar');
+    pathWithoutLocale.startsWith('/plugins/calendar') ||
+    pathWithoutLocale.startsWith('/plugins/dev-center');
   const isAutomationEditor = /\/automation\/\d+/.test(pathWithoutLocale);
   // Tareas OS y el constructor de flujos traen su propia navegación a pantalla
   // completa; dentro de una conversación la barra taparía el teclado.

@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import useSWR from 'swr';
-import { ArrowLeft, FolderGit2, Rocket, Sparkles, TerminalSquare } from 'lucide-react';
+import { ArrowLeft, CheckSquare, FolderGit2, LayoutGrid, Radar, Rocket, Sparkles, TerminalSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { TerminalAutoOpen } from '@/components/admin/terminal/TerminalWorkspace';
 import type { DevPromptRow } from '../shared/types';
@@ -35,6 +35,20 @@ const VISTAS: Array<{ id: Vista; label: string; icon: typeof Rocket; slug: strin
   { id: 'proyectos', label: 'Proyectos', icon: FolderGit2, slug: 'proyectos' },
 ];
 const vistaDeSlug = (slug: string | undefined): Vista => (VISTAS.find((v) => v.slug === (slug ?? ''))?.id ?? 'misiones');
+
+/**
+ * Salidas de la app. Como el Centro de Desarrollo hace takeover (`fixed
+ * inset-0`) y el panel esconde su barra inferior en estas rutas, la vuelta a
+ * WhatsPro y el salto a las otras apps tienen que vivir acá adentro: si no,
+ * desde el celular no hay forma de salir salvo el botón atrás del navegador.
+ */
+const ATAJOS: Array<{ href: string; label: string; corto: string; icon: typeof Rocket }> = [
+  { href: '/dashboard', label: 'Volver a WhatsPro', corto: 'WhatsPro', icon: ArrowLeft },
+  { href: '/plugins/sales-ops', label: 'Ir a Command Center', corto: 'Command', icon: Radar },
+  { href: '/plugins/tasks', label: 'Ir a Tareas', corto: 'Tareas', icon: CheckSquare },
+  { href: '/apps', label: 'Apps', corto: 'Apps', icon: LayoutGrid },
+];
+const atajoId = (href: string) => href.replace(/^\//, '').replace(/\//g, '-');
 
 type UserLite = { email?: string | null; name?: string | null } | null;
 type GatewayInfo = { gatewayOk?: boolean; sessions?: unknown[] };
@@ -104,9 +118,16 @@ function DevCenterShell({ slug }: { slug: string[] }) {
             </button>
           ))}
         </nav>
-        <div className="mt-auto space-y-2 px-4 py-4">
-          <EstadoGateway ok={gateway?.gatewayOk} />
-          <a href="/apps" className="flex h-9 items-center gap-2 rounded-xl border border-white/10 px-3 text-xs font-bold text-neutral-300 hover:bg-white/5"><ArrowLeft className="size-3.5" aria-hidden /> Volver a WhatsPro</a>
+        <div className="mt-auto space-y-2 px-3 py-4">
+          <div className="px-1"><EstadoGateway ok={gateway?.gatewayOk} /></div>
+          <p className="px-1 text-[10px] font-black uppercase tracking-[0.16em] text-neutral-600">Atajos</p>
+          <div className="space-y-1">
+            {ATAJOS.map(({ href, label, icon: Icon }) => (
+              <a key={href} href={href} data-testid={`devcenter-atajo-${atajoId(href)}`} className="flex h-9 items-center gap-2 rounded-xl border border-white/10 px-3 text-xs font-bold text-neutral-300 hover:bg-white/5 hover:text-neutral-100">
+                <Icon className="size-3.5" aria-hidden /> {label}
+              </a>
+            ))}
+          </div>
         </div>
       </aside>
 
@@ -114,13 +135,24 @@ function DevCenterShell({ slug }: { slug: string[] }) {
         {/* Cabecera (móvil) */}
         {!(vista === 'terminal' && barraOculta) && (
           <header className="flex shrink-0 items-center gap-2 border-b border-white/10 px-3 py-2 sm:hidden">
-            <a href="/apps" aria-label="Volver a WhatsPro" className="flex size-8 items-center justify-center rounded-full text-neutral-400 hover:bg-white/10"><ArrowLeft className="size-4" /></a>
+            <a href="/dashboard" aria-label="Volver a WhatsPro" className="flex size-8 items-center justify-center rounded-full text-neutral-400 hover:bg-white/10"><ArrowLeft className="size-4" /></a>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-black">Centro de Desarrollo</p>
               <p className="truncate text-[10px] text-neutral-500">sólo Noelia · {VISTAS.find((v) => v.id === vista)?.label}</p>
             </div>
             <EstadoGateway ok={gateway?.gatewayOk} compacto />
           </header>
+        )}
+
+        {/* Atajos (móvil): la única salida de la app en el celular. */}
+        {!(vista === 'terminal' && barraOculta) && (
+          <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-white/10 px-3 py-2 sm:hidden" aria-label="Atajos">
+            {ATAJOS.map(({ href, label, corto, icon: Icon }) => (
+              <a key={href} href={href} aria-label={label} title={label} data-testid={`devcenter-atajo-${atajoId(href)}`} className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3 text-[11px] font-black text-neutral-300 active:bg-white/10">
+                <Icon className="size-3.5" aria-hidden /> {corto}
+              </a>
+            ))}
+          </div>
         )}
 
         <main className="min-h-0 flex-1 overflow-hidden">
