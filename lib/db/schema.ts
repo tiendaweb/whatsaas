@@ -6214,6 +6214,65 @@ export const teamPromptRuns = pgTable(
   }),
 );
 
+/**
+ * Centro de Desarrollo (plugin `dev-center`). Biblioteca de prompts técnicos
+ * y misiones sobre los proyectos del registro (`config/terminal-projects.json`).
+ * Una misión de conector se encola en `team_prompt_runs` (`promptRunId`); una
+ * de terminal se tipea en la sesión tmux (`tmuxName`).
+ */
+export const developerPrompts = pgTable(
+  "developer_prompts",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    key: varchar("key", { length: 64 }).notNull(),
+    title: varchar("title", { length: 160 }).notNull(),
+    body: text("body").notNull().default(""),
+    description: text("description"),
+    agentDefault: varchar("agent_default", { length: 16 }).notNull().default("claude"),
+    projectDefault: varchar("project_default", { length: 40 }),
+    modeDefault: varchar("mode_default", { length: 16 }).notNull().default("editar"),
+    variables: jsonb("variables").$type<Array<{ key: string; label: string; placeholder?: string }>>().notNull().default([]),
+    pinned: boolean("pinned").notNull().default(false),
+    usageCount: integer("usage_count").notNull().default(0),
+    lastUsedAt: timestamp("last_used_at"),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    developerPromptsKeyIdx: uniqueIndex("developer_prompts_key_idx").on(table.teamId, table.key),
+  }),
+);
+
+export const developerMissions = pgTable(
+  "developer_missions",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+    project: varchar("project", { length: 40 }).notNull(),
+    agent: varchar("agent", { length: 16 }).notNull(),
+    mode: varchar("mode", { length: 16 }).notNull().default("editar"),
+    title: varchar("title", { length: 200 }).notNull(),
+    prompt: text("prompt").notNull().default(""),
+    status: varchar("status", { length: 16 }).notNull().default("draft"),
+    priority: smallint("priority").notNull().default(2),
+    promptId: integer("prompt_id").references(() => developerPrompts.id, { onDelete: "set null" }),
+    promptRunId: integer("prompt_run_id").references(() => teamPromptRuns.id, { onDelete: "set null" }),
+    tmuxName: varchar("tmux_name", { length: 80 }),
+    resultSummary: text("result_summary"),
+    tags: jsonb("tags").$type<string[]>().notNull().default([]),
+    startedAt: timestamp("started_at"),
+    finishedAt: timestamp("finished_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    developerMissionsTeamStatusIdx: index("developer_missions_team_status_idx").on(table.teamId, table.status, table.updatedAt),
+  }),
+);
+
 export type TeamCommercialAnalysis = typeof teamCommercialAnalysis.$inferSelect;
 export type NewTeamCommercialAnalysis = typeof teamCommercialAnalysis.$inferInsert;
 export type TeamCommercialAction = typeof teamCommercialActions.$inferSelect;

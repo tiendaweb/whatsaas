@@ -141,6 +141,16 @@ const pluginRouteRegistry: Record<string, PluginRouteRenderer[]> = {
       },
     },
   ],
+  // Centro de Desarrollo: takeover como el Command Center; la vista sale del slug.
+  'dev-center': [
+    {
+      routeMatcher: () => true,
+      loadRenderer: async () => {
+        const { DevCenterApp } = await import('@/lib/plugins/dev-center/ui/DevCenterApp');
+        return ({ slug }) => <DevCenterApp slug={slug ?? []} />;
+      },
+    },
+  ],
   deals: [
     {
       routeMatcher: (slug) => Boolean(slug?.[0]),

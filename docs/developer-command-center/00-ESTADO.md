@@ -60,3 +60,11 @@ tmux ls                                           # sesiones vivas (wp-3-whatspr
 - Fase 8 · AAPP SPACE sin SSH: diagnóstico desde la Terminal de cPanel (doc 05 §C), Runner con acciones firmadas, papelera. **No empezar por acá** (doc 04 §14).
 - Usuario técnico no-root (arriba).
 - Panel de sesiones vivas con CPU/RAM y «detener proceso» (doc 01 §8).
+
+## Tanda 7 · 2026-09-07
+
+La terminal se rediseñó para el celular (hoja inferior, barra de teclas, pantalla completa) y
+nació la app **Centro de Desarrollo** (`/plugins/dev-center`, sólo Noelia): misiones que se
+ejecutan en una terminal con Claude Code o Codex, o por un conector de IA a través de la cola
+de corridas; biblioteca de prompts con variables; proyectos del registro. Todo en
+**`01-CENTRO-DE-DESARROLLO.md`**.

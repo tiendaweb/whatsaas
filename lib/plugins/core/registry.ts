@@ -18,6 +18,7 @@ const pluginLoaders: Record<string, PluginLoader> = {
   sales: () => import('@/lib/plugins/sales/manifest'),
   deals: () => import('@/lib/plugins/deals/manifest'),
   'sales-ops': () => import('@/lib/plugins/sales-ops/manifest'),
+  'dev-center': () => import('@/lib/plugins/dev-center/manifest'),
   customers: () => import('@/lib/plugins/customers/manifest'),
   'aapp-space': () => import('@/lib/plugins/aapp-space/manifest'),
   memberships: () => import('@/lib/plugins/memberships/manifest'),

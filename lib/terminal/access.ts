@@ -72,6 +72,10 @@ export type TicketPayload = {
   mode: TerminalMode;
   slot: number;
   ip: string | null;
+  /** Misión del Centro de Desarrollo que abre esta terminal, si la hay. Sólo para auditar. */
+  mission?: number | null;
+  /** Título que la persona le puso a la pestaña; el gateway lo lista en /sessions. */
+  title?: string | null;
   nonce: string;
   iat: number;
   exp: number;

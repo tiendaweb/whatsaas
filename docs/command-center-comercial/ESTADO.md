@@ -276,3 +276,14 @@ Se ejecutó `docs/produccion/02-PLAN-AAPP-BUSINESS.md` entero salvo la reparaci�
 | 33 Catálogo en código + CAZA/PILOTO/TORRE + Evaluador | ✅ 2026-09-07 |
 | 34 Reparación de los 235 «desarrollo» en curso | ⏳ script listo, dry-run corrido, falta decisión |
 | 35 Terminales del admin (Developer Command Center F1–F3) | ✅ 2026-09-07 · gateway en PM2, smoke 9/9 directo y por el dominio |
+
+## Tanda 7 del 2026-09-07: Centro de Desarrollo y terminal móvil
+
+**La terminal del admin se rediseñó** (`components/admin/terminal/TerminalWorkspace.tsx`): panel de proyectos y sesiones a la izquierda en escritorio, hoja inferior para abrir una terminal en el celular, barra de teclas (Esc, Tab, Ctrl, flechas, Ctrl+C, pegar) porque el teclado del teléfono no las tiene, pantalla completa, tamaño de letra, y la salida no queda tapada por el teclado (`visualViewport`). El mismo componente se usa dentro de la app nueva.
+
+**Centro de Desarrollo** (plugin `dev-center`, `activationMode: 'user'`, activado sólo para Noelia; migración 0110): **misiones** sobre los proyectos del registro que se ejecutan de dos maneras —en una terminal con Claude Code o Codex, donde la pantalla tipea el prompt en la sesión tmux, o por un **conector de IA**, encolándola como corrida aprobada en `team_prompt_runs` para que la tome `whatspro_work_queue` y la cierre `whatspro_sales_prompt_result`; el estado se lee de la corrida—; **biblioteca de prompts** con `{{variables}}` (los huecos sin valor quedan a la vista, nunca en silencio) y semilla idempotente; tools `whatspro_dev_missions` / `whatspro_dev_mission_manage`; las misiones también las toman **Claude Desktop y Codex de escritorio** como clientes MCP (`for_agent`), y la biblioteca aparece en el menú «+» de Claude Desktop como prompts MCP `dev.<key>`. Dos puertas, las dos obligatorias: la activación por usuario y la lista blanca de las terminales; cualquier falla es 404. Detalle en `docs/developer-command-center/01-CENTRO-DE-DESARROLLO.md`; smoke `scripts/smoke-dev-center.mts`.
+
+| Fase | Estado |
+|---|---|
+| 36 Terminal del admin: móvil, barra de teclas, pantalla completa | ✅ 2026-09-07 |
+| 37 App Centro de Desarrollo: misiones, prompts, conector, terminales | ✅ 2026-09-07 |

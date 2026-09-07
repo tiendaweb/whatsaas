@@ -30,6 +30,9 @@ const schema = z.object({
   mode: z.enum(['shell', 'claude', 'codex']),
   slot: z.number().int().min(1).max(8),
   password: z.string().min(1).max(200),
+  /** Misión del Centro de Desarrollo que abre esta terminal: va en el ticket y en la auditoría, no cambia permisos. */
+  missionId: z.number().int().positive().optional(),
+  title: z.string().trim().max(120).optional(),
 });
 
 type Ventana = { hits: number[] };
@@ -74,7 +77,7 @@ export async function POST(request: NextRequest) {
   }
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Pedido inválido.' }, { status: 400 });
-  const { project, mode, slot, password } = parsed.data;
+  const { project, mode, slot, password, missionId, title } = parsed.data;
 
   if (excedeLimite(user.id, 1)) {
     await auditar(user.id, 'TERMINAL_DENIED', { reason: 'rate_limited' }, ip);
@@ -94,11 +97,11 @@ export async function POST(request: NextRequest) {
 
   let ticket: string;
   try {
-    ticket = mintTicket({ uid: user.id, email: user.email.toLowerCase(), project, mode, slot, ip });
+    ticket = mintTicket({ uid: user.id, email: user.email.toLowerCase(), project, mode, slot, ip, mission: missionId ?? null, title: title || null });
   } catch (error) {
     console.error('[terminal/ticket]', error);
     return NextResponse.json({ error: 'La terminal no está configurada en este servidor.' }, { status: 503 });
   }
-  await auditar(user.id, 'TERMINAL_TICKET_ISSUED', { project, mode, slot, cwd: proyecto.cwd, ttlMs: TICKET_TTL_MS }, ip);
+  await auditar(user.id, 'TERMINAL_TICKET_ISSUED', { project, mode, slot, cwd: proyecto.cwd, ttlMs: TICKET_TTL_MS, missionId: missionId ?? null, title: title || null }, ip);
   return NextResponse.json({ ticket, expiresInMs: TICKET_TTL_MS, wsPath: '/terminal-gateway/ws', project: proyecto.slug, cwd: proyecto.cwd });
 }

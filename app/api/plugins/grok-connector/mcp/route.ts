@@ -63,6 +63,12 @@ import {
   executeProductionAction,
 } from '@/lib/plugins/grok-connector/server/production-actions';
 import {
+  devCenterActionTools,
+  devCenterReadTools,
+  executeDevCenterAction,
+} from '@/lib/plugins/grok-connector/server/dev-center-actions';
+import { getMcpPrompt, listMcpPrompts } from '@/lib/plugins/dev-center/server/mcp-prompts';
+import {
   executeGrokExtendedAction,
   grokExtendedActionTools,
 } from '@/lib/plugins/grok-connector/server/extended-actions';
@@ -252,6 +258,7 @@ const readOnlyTools = [
   ...dealsReadTools,
   ...salesOpsReadTools,
   ...productionReadTools,
+  ...devCenterReadTools,
   ...notifyReadTools,
   ...detailReadTools,
   ...desktopReadTools,
@@ -288,6 +295,7 @@ const actionTools = [
   ...dealsActionTools,
   ...salesOpsActionTools,
   ...productionActionTools,
+  ...devCenterActionTools,
   ...notifyActionTools,
   ...desktopActionTools,
   ...commandCenterActionTools,
@@ -572,6 +580,9 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
   if (productionReadTools.some((tool) => tool.name === name)) {
     return executeProductionAction(name, args, { teamId, userId: context.userId });
   }
+  if (devCenterReadTools.some((tool) => tool.name === name)) {
+    return executeDevCenterAction(name, args, { teamId, userId: context.userId });
+  }
   if (notifyReadTools.some((tool) => tool.name === name) || notifyActionTools.some((tool) => tool.name === name)) {
     return executeNotifyTool(name, args, { teamId, userId: context.userId });
   }
@@ -615,6 +626,7 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
     if (dealsActionTools.some((tool) => tool.name === name)) return executeDealsAction(name, args, actionContext);
     if (salesOpsActionTools.some((tool) => tool.name === name)) return executeSalesOpsTool(name, args, actionContext);
     if (productionActionTools.some((tool) => tool.name === name)) return executeProductionAction(name, args, actionContext);
+    if (devCenterActionTools.some((tool) => tool.name === name)) return executeDevCenterAction(name, args, actionContext);
     if (desktopActionTools.some((tool) => tool.name === name)) return executeDesktopTool(name, args, actionContext);
     if (commandCenterActionTools.some((tool) => tool.name === name)) return executeDesktopTool(name, args, actionContext);
     if (chatActionTools.some((tool) => tool.name === name)) return executeChatTool(name, args, actionContext);
@@ -667,7 +679,9 @@ async function handleRpc(message: JsonRpcRequest, context: McpContext) {
       // listChanged en false los clientes cachean la lista de la primera
       // conexión y no vuelven a preguntar, así que las tools nuevas quedan
       // invisibles hasta que alguien reconecta a mano.
-      capabilities: { tools: { listChanged: true } },
+      // `prompts`: la biblioteca del Centro de Desarrollo (sólo la ve el
+      // operador de terminales; para el resto la lista es vacía).
+      capabilities: { tools: { listChanged: true }, prompts: { listChanged: true } },
       serverInfo: { name: context.actionsEnabled || context.scopes.includes(APP_MAKER_WRITE_SCOPE) ? 'WhatsPro AI Connector' : 'WhatsPro AI Read-only Connector', version: '4.0.0' },
       instructions: context.actionsEnabled || context.scopes.includes(APP_MAKER_WRITE_SCOPE)
         ? 'Enumera y consulta recursos antes de actuar. Para App Maker consulta whatspro_appmaker_catalog y la versión actual; usa expected_version, separa borrador de publicación y confirma eliminaciones. Los adjuntos son privados y solo deben solicitarse cuando hagan falta. Para automatizaciones consulta whatspro_automation_guide. Para el Command Center Comercial (clasificación G0-GX, cola aprobada, radar de respuestas) empezá por whatspro_sales_work_queue (o whatspro_work_queue, que federa todas las colas): cada ítem trae tools y steps; cerrá siempre con la tool de resultado; si falta una decisión humana devolvé status blocked con human_request; podés corregir el CRM del contacto que estás trabajando, de a uno y sólo lo que contradice ese chat; los cobros se registran con whatspro_sales_register_payment sólo desde filas aprobadas o por pedido explícito. Para PRODUCCIÓN (demos, sitios, tiendas y cambios de clientes) empezá por whatspro_production_work_queue: cada pedido trae la cadena exacta de tools de su tipo, y se cierra con whatspro_production_update — no se entrega sin enlace, y si falta material del cliente queda en espera_cliente sin escribirle. Para sitios, conserva expected_updated_at antes de editar. Respeta el aislamiento del equipo y usa claves de idempotencia estables.'
@@ -675,6 +689,18 @@ async function handleRpc(message: JsonRpcRequest, context: McpContext) {
     });
   }
   if (message.method === 'ping') return rpcResult(message.id, {});
+  if (message.method === 'prompts/list') {
+    return rpcResult(message.id, { prompts: await listMcpPrompts(context.teamId, context.userId) });
+  }
+  if (message.method === 'prompts/get') {
+    const name = typeof message.params?.name === 'string' ? message.params.name : '';
+    const args = message.params?.arguments && typeof message.params.arguments === 'object' && !Array.isArray(message.params.arguments)
+      ? message.params.arguments as Record<string, unknown>
+      : {};
+    const prompt = await getMcpPrompt(context.teamId, context.userId, name, args);
+    if (!prompt) return rpcError(message.id, -32602, `Unknown prompt: ${name}`);
+    return rpcResult(message.id, prompt);
+  }
   if (message.method === 'tools/list') {
     const appTools = [
       ...(context.scopes.includes(APP_MAKER_READ_SCOPE) ? appMakerReadTools : []),

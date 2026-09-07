@@ -223,7 +223,9 @@ function attach(ws, p, req) {
   const tmux = tmuxName(p);
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const transcript = new Transcript(`${LOG_DIR}/sessions/${stamp}-${p.uid}-${p.project}-${p.slot}.log`);
-  const meta = { sessionId, uid: p.uid, email: p.email, project: p.project, mode: p.mode, slot: p.slot, tmux, ip: clientIp(req), connectedAt: Date.now(), lastInputAt: Date.now() };
+  // `mission` y `title` vienen firmados en el ticket: sirven para que la lista
+  // de sesiones y la auditoría digan QUÉ se estaba haciendo, no sólo dónde.
+  const meta = { sessionId, uid: p.uid, email: p.email, project: p.project, mode: p.mode, slot: p.slot, tmux, mission: p.mission ?? null, title: typeof p.title === 'string' ? p.title.slice(0, 120) : null, ip: clientIp(req), connectedAt: Date.now(), lastInputAt: Date.now() };
 
   let term;
   try { term = spawnSession(p, project, cols, rows); } catch (error) {
