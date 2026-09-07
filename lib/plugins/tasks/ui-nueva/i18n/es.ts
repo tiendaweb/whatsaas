@@ -193,6 +193,17 @@ export const ES = {
     finalizar: 'Finalizar',
     salir: 'Salir de enfoque',
     sinTarea: 'No hay ninguna tarea activa para enfocar.',
+    // El reloj es el mismo que el del Focus de Producción: un solo bloque.
+    descanso: 'DESCANSO',
+    editarDuracion: 'Cambiar la duración del próximo bloque',
+    iniciar: 'Iniciar el bloque',
+    pausar: 'Pausar el bloque',
+    reanudar: 'Reanudar el bloque',
+    reiniciar: 'Terminar el bloque y volver a cero',
+    bloqueTerminado: (n: number) => `Bloque de ${n} minutos completo.`,
+    descansoTerminado: 'Se terminó el descanso.',
+    otroBloque: (n: number) => `Otro bloque de ${n} min`,
+    descansoCorto: 'Descanso de 5 min',
   },
 
   metricas: {

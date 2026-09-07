@@ -248,3 +248,17 @@ Sin tocar, con motivo: el reloj doble de `Enfoque.tsx` (es un rediseño, no un a
 |---|---|
 | 26 Cobranzas: canceladas pendientes de proceso + rótulo real | ✅ 2026-09-07 |
 | 27 Asientos 185/186/187 en centavos | ✅ 2026-09-07 |
+
+## Tanda 5 del 2026-09-07: un solo reloj, los demos con su enlace y el plan AAPP BUSINESS
+
+**Un solo reloj de 25 minutos en Tareas OS.** `Enfoque.tsx` tenía un `useState` que se perdía al cerrar la pantalla y Producción tenía `useBloqueProduccion` en localStorage: dos cronómetros que no se conocían. Ahora `Enfoque` usa el mismo hook con la misma clave (`sales-ops:focus:bloque-produccion`): arrancar en uno se ve en el otro, pausar pausa los dos, y el bloque sobrevive a cerrar el Enfoque o recargar. Los segundos se dibujan en la vista (el hook sólo agenda el vencimiento, como en Producción). La duración editable es la del PRÓXIMO bloque; el que corre no se toca. `data-testid="enfoque-reloj"` con `data-estado` para una IA con navegador.
+
+**12 de 15 pedidos de demo estaban «PUBLICADA» en el título y con `delivery_url` vacío.** Los 12 demos HTML del 06/09 en aapp.space (ids 569–579) nunca se enlazaron al pedido. Se cruzaron por nombre (exacto e inequívoco) y se escribió el enlace, sin tocar el estado. Quedan 3 (Dr. Soto `entregado` sin URL, Psicopedagogía en AAPP PRO, M3 con el título cortado) y un HTML sin pedido (`clasicourbanodemo`, demo Brian).
+
+**Plan `docs/produccion/02-PLAN-AAPP-BUSINESS.md`**, a partir de los cinco HTML operativos (Catálogo v1.2, Protocolo SPACE, Protocolo BUSINESS, Radiografía, Mapa Maestro). El dato clave que falta para gestionar la empresa según sus propios documentos: **horas reales por pedido y ticket → US$/h** (línea roja: >6 h con <US$250), que Producción OS no guarda en ninguna columna. Además: ficha de handoff estructurada, gate de pago antes de aceptar, rondas de revisión contadas, catálogo de productos en código con `catalog_key`, `qa` y `activado` como estados, CAZA/PILOTO/TORRE como tipos de trabajo. Y un dato sucio grande: **205 `desarrollo` en `en_curso`** (importación de proyectos de clientes) contra un WIP máximo de 3.
+
+| Fase | Estado |
+|---|---|
+| 28 Reloj unificado Enfoque/Producción | ✅ 2026-09-07 |
+| 29 Enlaces de los demos publicados | ✅ 12/15 · 2026-09-07 |
+| 30 Horas + ticket + handoff + catálogo (plan 02) | ⏳ planificado, listo para ejecutar |
