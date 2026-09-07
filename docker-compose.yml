@@ -20,10 +20,14 @@ services:
       # Claves de las terminales del admin, aparte del .env general: el gateway
       # del host las lee del mismo archivo (un solo secreto, dos lectores).
       - .env.terminal
+    # ffmpeg se instala al arrancar, pero el arranque NO depende de él: el
+    # 2026-09-07 el mirror de Alpine se colgó y la app estuvo 10 minutos sin
+    # levantar (502) por un `&&`. Con tope de 90 s y sin cortar la cadena, la
+    # app sube igual y ffmpeg queda para el próximo arranque si falló.
     command:
       - sh
       - -c
-      - apk add --no-cache ffmpeg && npm run start
+      - (timeout 90 apk add --no-cache ffmpeg || echo "[arranque] ffmpeg no se pudo instalar; la app sube igual") ; npm run start
     environment:
       NODE_ENV: production
       PORT: 3000
