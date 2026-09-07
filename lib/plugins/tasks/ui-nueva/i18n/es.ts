@@ -62,7 +62,16 @@ export const ES = {
     grupoLeads: 'Leads del CRM',
     recientes: 'Clientes recientes',
     esperandoPago: 'Esperando pago o seña',
-    ventasPendientes: (n: number) => (n === 1 ? '1 venta sin cobrar' : `${n} ventas sin cobrar`),
+    // El número suma tres cosas distintas (ventas, asientos de Finanzas y
+    // suscripciones), así que el rótulo no puede decir "ventas": el detalle
+    // por fuente va en el tooltip.
+    pendienteDeCobro: (n: number) => (n === 1 ? '1 pendiente de cobro' : `${n} pendientes de cobro`),
+    detalleVentas: (n: number) => (n === 1 ? '1 venta' : `${n} ventas`),
+    detalleAsientos: (n: number) => (n === 1 ? '1 asiento de Finanzas' : `${n} asientos de Finanzas`),
+    detalleSuscripciones: (n: number) => (n === 1 ? '1 suscripción' : `${n} suscripciones`),
+    canceladasPendientes: (n: number) =>
+      n === 1 ? '1 cancelada pendiente de proceso' : `${n} canceladas pendientes de proceso`,
+    canceladasDetalle: 'Suscripciones dadas de baja que nunca se cobraron. No entran en el total: hay que cerrarlas.',
     venceHoy: 'vence hoy',
     venceEn: (n: number) => (n === 1 ? 'vence mañana' : `vence en ${n} días`),
     vencidoHace: (n: number) => (n === 1 ? 'venció ayer' : `venció hace ${n} días`),

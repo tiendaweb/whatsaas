@@ -234,12 +234,35 @@ function valores(a: SeedSkill) {
   };
 }
 
+/**
+ * JSON con las claves de cada objeto ordenadas.
+ *
+ * `variables` y `recommend_for` son `jsonb`, y Postgres reordena las claves de
+ * un objeto jsonb al guardarlo. Comparando con `JSON.stringify` a secas, la
+ * huella de la semilla nunca coincide con la de la fila y el seed crea una
+ * versión nueva de las 12 skills cada vez que se corre, aunque no haya
+ * cambiado una coma. El orden de los arrays sí se respeta y sí importa.
+ *
+ * Misma función que en `seed-production-skills.ts`, por el mismo motivo.
+ */
+function estable(value: unknown): string {
+  const orden = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(orden);
+    if (v && typeof v === 'object') {
+      return Object.fromEntries(Object.keys(v as Record<string, unknown>).sort().map((k) => [k, orden((v as Record<string, unknown>)[k])]));
+    }
+    return v;
+  };
+  // El round-trip primero, para que `undefined` desaparezca igual que al guardar.
+  return JSON.stringify(orden(JSON.parse(JSON.stringify(value))));
+}
+
 /** Lo que define a la skill, en un orden fijo, para comparar la semilla con la fila activa. */
 function huella(v: ReturnType<typeof valores>): string {
-  return JSON.stringify([v.title, v.userTemplate, v.toolChain, v.notes, v.description, v.category, v.icon, v.recurrence, v.execution, v.scope, v.variables, v.recommendFor, v.pinned, v.audience]);
+  return estable([v.title, v.userTemplate, v.toolChain, v.notes, v.description, v.category, v.icon, v.recurrence, v.execution, v.scope, v.variables, v.recommendFor, v.pinned, v.audience]);
 }
 function huellaFila(p: typeof teamPrompts.$inferSelect): string {
-  return JSON.stringify([p.title, p.userTemplate, p.toolChain ?? [], p.notes ?? null, p.description ?? '', p.category, p.icon, p.recurrence, p.execution, p.scope, p.variables ?? [], p.recommendFor ?? {}, p.pinned ?? false, p.audience]);
+  return estable([p.title, p.userTemplate, p.toolChain ?? [], p.notes ?? null, p.description ?? '', p.category, p.icon, p.recurrence, p.execution, p.scope, p.variables ?? [], p.recommendFor ?? {}, p.pinned ?? false, p.audience]);
 }
 
 async function main() {

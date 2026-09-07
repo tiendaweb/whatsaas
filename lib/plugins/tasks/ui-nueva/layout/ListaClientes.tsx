@@ -12,6 +12,10 @@ export type ClienteIcono = {
 export type ClientePendiente = ClienteIcono & {
   salesCount: number;
   totalsByCurrency: Record<string, number>;
+  /** Opcionales porque una respuesta vieja en caché no los trae y no vale tumbar la lista por eso. */
+  sources?: { sales: number; entries: number; subscriptions: number; subscriptionsCancelled: number };
+  cancelledCount?: number;
+  cancelledByCurrency?: Record<string, number>;
   nextDueDate: string | null;
 };
 
@@ -32,6 +36,29 @@ function formatoMonto(minor: number, currency: string) {
   } catch {
     return `${currency} ${(minor / 100).toFixed(0)}`;
   }
+}
+
+/** Los montos de un mapa por moneda, sin sumar monedas distintas entre sí. */
+function montosPorMoneda(totales: Record<string, number> | undefined) {
+  return Object.entries(totales ?? {})
+    .map(([currency, total]) => formatoMonto(total, currency))
+    .join(' · ');
+}
+
+/**
+ * De qué está hecho el número de pendientes, para el tooltip: el contador suma
+ * ventas, asientos de Finanzas y suscripciones, y sin el detalle no hay forma
+ * de saber por qué un cliente figura acá.
+ */
+function detallePendientes(sources: ClientePendiente['sources']) {
+  if (!sources) return undefined;
+  return [
+    sources.sales > 0 && ES.clientes.detalleVentas(sources.sales),
+    sources.entries > 0 && ES.clientes.detalleAsientos(sources.entries),
+    sources.subscriptions > 0 && ES.clientes.detalleSuscripciones(sources.subscriptions),
+  ]
+    .filter(Boolean)
+    .join(' · ') || undefined;
 }
 
 function venceEn(iso: string | null) {
@@ -111,6 +138,8 @@ export function ListaEsperandoPago(props: {
           const activo = props.activoId === cliente.id;
           const vencimiento = venceEn(cliente.nextDueDate);
           const vencido = Boolean(cliente.nextDueDate && new Date(cliente.nextDueDate).getTime() < Date.now());
+          const canceladas = cliente.cancelledCount ?? 0;
+          const montoPendiente = montosPorMoneda(cliente.totalsByCurrency);
           return (
             <button
               key={cliente.id}
@@ -123,17 +152,30 @@ export function ListaEsperandoPago(props: {
               }`}
             >
               <span className="max-w-[12rem] truncate text-sm font-semibold">{cliente.name}</span>
-              <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-white/70">
-                <span className="font-bold tabular-nums text-amber-200">
-                  {Object.entries(cliente.totalsByCurrency)
-                    .map(([currency, total]) => formatoMonto(total, currency))
-                    .join(' · ')}
+              {cliente.salesCount > 0 && (
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-white/70">
+                  {montoPendiente && <span className="font-bold tabular-nums text-amber-200">{montoPendiente}</span>}
+                  <span title={detallePendientes(cliente.sources)}>
+                    {ES.clientes.pendienteDeCobro(cliente.salesCount)}
+                  </span>
+                  {vencimiento && (
+                    <span className={vencido ? 'font-semibold text-red-300' : 'text-white/60'}>{vencimiento}</span>
+                  )}
                 </span>
-                <span>{ES.clientes.ventasPendientes(cliente.salesCount)}</span>
-                {vencimiento && (
-                  <span className={vencido ? 'font-semibold text-red-300' : 'text-white/60'}>{vencimiento}</span>
-                )}
-              </span>
+              )}
+              {canceladas > 0 && (
+                // Aparte y en gris: no es plata que vaya a entrar, es trabajo
+                // administrativo pendiente.
+                <span
+                  className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-white/45"
+                  title={ES.clientes.canceladasDetalle}
+                >
+                  <span className="tabular-nums line-through decoration-white/30">
+                    {montosPorMoneda(cliente.cancelledByCurrency)}
+                  </span>
+                  <span>{ES.clientes.canceladasPendientes(canceladas)}</span>
+                </span>
+              )}
             </button>
           );
         })}

@@ -231,3 +231,20 @@ Cinco auditorías de sólo lectura (flujo Cola/Focus, definición de cliente, co
 | 23 Cola de producción para conectores + federación | ✅ 2026-09-06 |
 | 24 Focus comercial: modo cobro | ✅ 2026-09-06 |
 | 25 Pendientes B1–B7, B12–B14 de la auditoría | ✅ 2026-09-06 |
+
+## Tanda 4 del 2026-09-07: cobranzas que no esconden nada y el seed que dejó de versionar al pedo
+
+**Tres asientos del equipo 2 estaban cargados en pesos y no en centavos** (185 Sur Bohemio, 186 y 187 Raul Maurel / Mauben Travel): se veían 100 veces más chicos que el resto. Confirmados con el usuario contra los comprobantes —Sur Bohemio $40.000, Mauben $200.000 = seña $100.000 + saldo $100.000, todo cobrado— y corregidos con `UPDATE … SET amount = amount * 100 WHERE team_id = 2 AND id IN (185,186,187)`. La mínima de los ingresos pagos del equipo pasó de 40.000 a un número sano.
+
+**Las suscripciones canceladas e impagas dejaron de desaparecer.** `listCustomersPendingPayment` las excluía a propósito —un servicio dado de baja y nunca cobrado no es plata que vaya a entrar— pero el efecto era que nadie las veía nunca. Ahora son un **cuarto grupo aparte**: `sources.subscriptionsCancelled`, `cancelledCount` y `cancelledByCurrency`, **fuera de `totalsByCurrency`** (no inflan lo que el equipo cree que va a cobrar) y sin fecha de vencimiento (una baja no vence, se procesa). En `ListaClientes.tsx` aparecen en gris y tachadas, con el rótulo «N canceladas pendientes de proceso». Hoy el equipo 2 tiene 0, así que la pantalla no cambia todavía. `whatspro_customers_pending_payment` avisa la diferencia en su `note`.
+
+**Y el rótulo que mentía:** la lista decía «N ventas sin cobrar» sobre un número que desde la tanda anterior suma ventas + asientos de Finanzas + suscripciones. Ahora dice «N pendientes de cobro» y el detalle por fuente va en el tooltip.
+
+**`scripts/seed-sales-ops-quick-actions.ts` ya es idempotente.** Comparaba la huella con `JSON.stringify` a secas contra columnas `jsonb` que Postgres reordena, así que cada corrida retiraba las 12 skills `qa.*` y creaba 12 versiones nuevas aunque no hubiera cambiado una coma. Se copió `estable()` de `seed-production-skills.ts` (claves ordenadas, round-trip primero). Verificado: **0 versiones nuevas, 12 sin cambios**.
+
+Sin tocar, con motivo: el reloj doble de `Enfoque.tsx` (es un rediseño, no un arreglo) y la doble aprobación de la acción «Mensaje» del Focus (B15: un mensaje a un cliente es lo único que conviene mirar dos veces). El token de Meta sigue vencido por pedido del usuario.
+
+| Fase | Estado |
+|---|---|
+| 26 Cobranzas: canceladas pendientes de proceso + rótulo real | ✅ 2026-09-07 |
+| 27 Asientos 185/186/187 en centavos | ✅ 2026-09-07 |

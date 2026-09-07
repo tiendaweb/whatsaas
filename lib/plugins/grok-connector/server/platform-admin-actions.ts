@@ -1027,7 +1027,7 @@ export async function executePlatformAdminTool(name: string, input: Record<strin
     return {
       total: rows.length,
       returned: items.length,
-      note: 'Importes en la unidad menor de cada moneda (centavos). Los totales NO se suman entre monedas distintas.',
+      note: 'Importes en la unidad menor de cada moneda (centavos). Los totales NO se suman entre monedas distintas. `totalsByCurrency` es lo que hay para cobrar; `cancelledByCurrency` son suscripciones dadas de baja y nunca cobradas: hay que procesarlas, pero NO son plata que vaya a entrar y no se suman al total.',
       customers: items,
     };
   }
