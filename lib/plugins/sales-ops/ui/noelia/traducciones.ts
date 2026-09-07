@@ -1,0 +1,69 @@
+import type { AnalysisDetail, DetailPayload } from '../../shared/api-types';
+import { humanize } from '../components/format';
+
+const INTENCION: Record<string, string> = {
+  compra_activa: 'Quiere comprar',
+  fuerte: 'Tiene intención alta',
+  evaluando: 'Está evaluando',
+  curiosidad: 'Está averiguando',
+  ninguna: 'Todavía no mostró intención',
+};
+
+const BLOQUEO: Record<string, string> = {
+  payment: 'Se frenó en el pago',
+  pago: 'Se frenó en el pago',
+  precio: 'Está evaluando el precio',
+  presupuesto: 'Tiene una objeción de presupuesto',
+  tiempo: 'Necesita más tiempo',
+  confianza: 'Necesita más confianza',
+  competencia: 'Está comparando alternativas',
+  sin_respuesta: 'No respondió el seguimiento',
+};
+
+export function traducirIntencion(valor: string | null | undefined): string {
+  return INTENCION[valor ?? ''] ?? humanize(valor);
+}
+
+export function traducirBloqueoDominante(valor: string | null | undefined): string {
+  return BLOQUEO[valor ?? ''] ?? humanize(valor);
+}
+
+export function customString(custom: Record<string, unknown> | undefined, ...keys: string[]): string | null {
+  for (const key of keys) {
+    const value = custom?.[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+export function razonesHumanas(detalle: DetailPayload, custom: Record<string, unknown>): string[] {
+  const a = detalle.analysis;
+  const f = detalle.facts;
+  if (!a) return ['Este contacto todavía no tiene un análisis completo.'];
+  const out: string[] = [];
+  if (f?.never_answered_by_us) out.push('Nosotros quedamos debiendo una respuesta.');
+  if (f?.evidence_gap || a.evidenceGap) out.push('Hay audios o evidencia pendiente de revisar.');
+  if (f?.payment_pending || a.paymentPending) out.push('Hay un pago pendiente con evidencia.');
+  if (f?.automation_active || a.automationActive) out.push('Tiene una automatización activa; revisala antes de escribir a mano.');
+  if (f?.auto_reply_detected || a.autoReplyDetected) out.push('La última respuesta parece automática.');
+  if (f?.is_existing_customer || a.isExistingCustomer) out.push('Ya es cliente; no tratarlo como un prospecto nuevo.');
+  if (f?.days_silent != null) out.push(`Sin contacto hace ${f.days_silent} ${f.days_silent === 1 ? 'día' : 'días'}; habló ${f.who_spoke_last === 'cliente' ? 'el cliente' : f.who_spoke_last === 'nosotros' ? 'el equipo' : 'nadie' } al final.`);
+  if (f?.followups_manual === 0) out.push('Nadie del equipo hizo un seguimiento manual todavía.');
+  if (f?.forced_reason) out.push(f.forced_reason);
+  const evidencia = customString(custom, 'radar_evidencia_decision', 'radar_por_que');
+  if (evidencia) out.push(evidencia);
+  if (!out.length && a.statusReason) out.push(a.statusReason);
+  return [...new Set(out)].slice(0, 5);
+}
+
+export function nosotrosLoFrenamos(detalle: DetailPayload): boolean {
+  const a = detalle.analysis;
+  const texto = `${a?.recommendedAction ?? ''} ${a?.notesForHuman ?? ''} ${a?.lastTeamAction ?? ''}`.toLowerCase();
+  return Boolean(detalle.facts?.never_answered_by_us || /(demo|alias|llamada|pregunta|respuesta).*(pendiente|debiendo|falta)/.test(texto));
+}
+
+export function dineroEnJuego(a: AnalysisDetail | null): string {
+  if (!a) return 'Sin monto confirmado';
+  if (a.quotedPrice) return new Intl.NumberFormat('es-AR', { style: 'currency', currency: a.quotedPrice.currency, maximumFractionDigits: 0 }).format(a.quotedPrice.amount / 100);
+  return 'Precio a confirmar';
+}

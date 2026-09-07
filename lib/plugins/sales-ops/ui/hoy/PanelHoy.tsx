@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, Banknote, Factory, Flame, Inbox, MessageCircle, Trash2, UserCheck, Waves } from 'lucide-react';
+import { ArrowRight, Banknote, Factory, Flame, Inbox, MessageCircle, Trash2, UserCheck, Waves, Zap } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import useSWR from 'swr';
 import { Button } from '@/components/ui/button';
@@ -43,6 +43,19 @@ export function PanelHoy({ data, onChangeVista }: Props) {
 
   return (
     <div className="space-y-4">
+      <button
+        type="button"
+        onClick={() => onChangeVista('noelia')}
+        className="group flex w-full items-center gap-4 rounded-3xl border border-primary/30 bg-primary/10 p-5 text-left transition-colors hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground"><Zap className="size-6" aria-hidden /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-base font-black tracking-tight">Modo Noelia</span>
+          <span className="mt-0.5 block text-sm text-muted-foreground">El sistema ya revisó los clientes. Vos decidí qué hacemos.</span>
+        </span>
+        <span className="hidden items-center gap-1 text-xs font-black uppercase tracking-wide text-primary sm:flex">Empezar <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" /></span>
+      </button>
+
       <div className="grid gap-3 lg:grid-cols-2">
         <CashGoalBar cash={data.cash} />
 

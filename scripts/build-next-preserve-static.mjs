@@ -76,7 +76,10 @@ preserveActiveStatic();
  * lento pero mantiene la memoria adentro del heap, donde el tope sí manda.
  */
 const nextBuildArgs = ['exec', 'next', 'build'];
-if (!process.env.NEXT_NO_TURBOPACK) {
+if (process.env.NEXT_NO_TURBOPACK) {
+  // Next 16 usa Turbopack por defecto; omitir el flag ya no selecciona webpack.
+  nextBuildArgs.push('--webpack');
+} else {
   nextBuildArgs.push('--turbopack');
 }
 

@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
-import { Menu, Timer, X } from 'lucide-react';
+import { Menu, Timer, X, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
@@ -27,6 +27,7 @@ import { AudiosView } from './views/AudiosView';
 import { ProduccionView } from './views/ProduccionView';
 import { AyudaView } from './views/AyudaView';
 import { RespuestasView } from './views/RespuestasView';
+import { NoeliaView } from './noelia/NoeliaView';
 
 const LIST_VISTAS: ListaVista[] = ['dinero', 'oportunidades', 'barrido', 'limpieza', 'todos'];
 const LS_COLLAPSED = 'sales-ops:sidebar-collapsed';
@@ -120,6 +121,11 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
   const salirFocus = useCallback(() => {
     const desde = searchParams.get('desde');
     setParams({ vista: isVista(desde) && desde !== 'focus' ? desde : null, desde: null });
+  }, [setParams, searchParams]);
+  const entrarNoelia = useCallback(() => setParams({ vista: 'noelia', desde: vista === 'hoy' ? null : vista, chat: null, sec: null }), [setParams, vista]);
+  const salirNoelia = useCallback(() => {
+    const desde = searchParams.get('desde');
+    setParams({ vista: isVista(desde) && desde !== 'noelia' ? desde : null, desde: null });
   }, [setParams, searchParams]);
 
   const onOpen = useCallback((id: number) => setParams({ chat: String(id), sec: null }), [setParams]);
@@ -229,6 +235,14 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
       </LimiteDeError>
     );
   }
+  if (vista === 'noelia') {
+    const ownerNoelia = user?.email?.toLowerCase() === 'noelia@whatspro.uno' && owner === 'todos' ? 'noelia' : owner;
+    return (
+      <LimiteDeError nombre="Modo Noelia">
+        <NoeliaView owner={ownerNoelia} onSalir={salirNoelia} />
+      </LimiteDeError>
+    );
+  }
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
@@ -251,7 +265,11 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
             <h1 className="truncate text-base font-semibold leading-tight lg:text-lg">{VISTA_LABELS[vista]}</h1>
             <p className="truncate text-[11px] text-muted-foreground lg:text-xs">{subtitle}</p>
           </div>
-          <Button size="sm" className={cn('h-8 shrink-0 gap-1.5', contextFocus.className)} onClick={openContextFocus} title={contextFocus.title}>
+          <Button size="sm" className="h-9 shrink-0 gap-1.5 rounded-xl px-3 font-black" onClick={entrarNoelia} title="Abrir tu bandeja de decisiones">
+            <Zap className="size-4" aria-hidden />
+            <span>Modo Noelia</span>
+          </Button>
+          <Button size="sm" variant="outline" className={cn('h-8 shrink-0 gap-1.5', vista === 'cola' || vista === 'produccion' ? contextFocus.className : '')} onClick={openContextFocus} title={contextFocus.title}>
             <Timer className="size-4" aria-hidden />
             <span className="hidden sm:inline">{contextFocus.label}</span>
           </Button>

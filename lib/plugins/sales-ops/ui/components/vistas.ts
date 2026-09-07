@@ -1,4 +1,4 @@
-export const VISTAS = ['hoy', 'focus', 'dinero', 'oportunidades', 'barrido', 'limpieza', 'respuestas', 'cola', 'audios', 'programados', 'produccion', 'todos', 'clientes', 'experimentos', 'prompts', 'metricas', 'ayuda'] as const;
+export const VISTAS = ['hoy', 'focus', 'noelia', 'dinero', 'oportunidades', 'barrido', 'limpieza', 'respuestas', 'cola', 'audios', 'programados', 'produccion', 'todos', 'clientes', 'experimentos', 'prompts', 'metricas', 'ayuda'] as const;
 export type Vista = (typeof VISTAS)[number];
 
 /**
@@ -19,7 +19,7 @@ export type Vista = (typeof VISTAS)[number];
  * `clientes` (Contactos) se llega desde un botón dentro de Todos: es un corte de
  * la misma lista, no otro lugar.
  */
-export const VISTAS_OCULTAS: readonly Vista[] = ['experimentos', 'ayuda', 'clientes', 'focus'];
+export const VISTAS_OCULTAS: readonly Vista[] = ['experimentos', 'ayuda', 'clientes', 'focus', 'noelia'];
 
 /** Las que se dibujan en el rail y en la barra inferior. */
 export const VISTAS_VISIBLES = VISTAS.filter((v) => !VISTAS_OCULTAS.includes(v));
@@ -27,6 +27,7 @@ export const VISTAS_VISIBLES = VISTAS.filter((v) => !VISTAS_OCULTAS.includes(v))
 export const VISTA_LABELS: Record<Vista, string> = {
   hoy: 'Hoy',
   focus: 'Focus',
+  noelia: 'Modo Noelia',
   dinero: 'Dinero',
   oportunidades: 'Oportunidades',
   barrido: 'Barrido',

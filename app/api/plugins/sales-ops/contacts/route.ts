@@ -23,7 +23,7 @@ const listOf = <T extends readonly [string, ...string[]]>(values: T) =>
     .catch(undefined);
 
 const querySchema = z.object({
-  vista: z.enum(['dinero', 'oportunidades', 'barrido', 'limpieza', 'todos']).optional().catch(undefined),
+  vista: z.enum(['dinero', 'oportunidades', 'barrido', 'limpieza', 'revisar', 'todos']).optional().catch(undefined),
   gates: listOf(GATES),
   status: listOf(ANALYSIS_STATUSES),
   owner: z.enum(OWNERS).optional().catch(undefined),
@@ -40,7 +40,7 @@ const querySchema = z.object({
   followUp: z.enum(['con', 'sin']).optional().catch(undefined),
   executed: z.enum(['con', 'sin']).optional().catch(undefined),
   snoozed: z.enum(['con', 'sin']).optional().catch(undefined),
-  queued: z.enum(['con', 'sin']).optional().catch(undefined),
+  queued: z.enum(['con', 'sin', 'decision']).optional().catch(undefined),
   q: z.string().max(120).optional().catch(undefined),
   sort: z.enum(['priority', 'age', 'oldest', 'lastFollowup', 'name', 'gate']).optional().catch(undefined),
   cursor: z.string().max(400).optional().catch(undefined),

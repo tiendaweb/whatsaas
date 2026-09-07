@@ -833,6 +833,73 @@ export async function approveBatch(
   return { batchId, kind: actions[0].kind as ActionKind, approved: toApprove.length, rejected: toReject.length, approvedBy: userId, approvedIds: toApprove.map((a) => a.id) };
 }
 
+/**
+ * Aprueba una sola fila sin tocar al resto de su lote.
+ *
+ * Modo Noelia decide contacto por contacto. Reutilizar `approveBatch` con una
+ * lista de exclusión convertiría todas las demás filas en rechazadas, por eso
+ * esta operación pequeña conserva el lote y mantiene las mismas guardas de rol
+ * y de envío único. Nunca ejecuta el envío.
+ */
+export async function approveAction(
+  teamId: number,
+  userId: number,
+  actionId: number,
+  context: { recommendation?: string; originalText?: string; aiInstruction?: string } = {},
+): Promise<ApproveResult> {
+  const [action] = await db
+    .select()
+    .from(teamCommercialActions)
+    .where(and(eq(teamCommercialActions.teamId, teamId), eq(teamCommercialActions.id, actionId)))
+    .limit(1);
+  if (!action) throw new QueueError('not_found', 'La acción no existe en este equipo.');
+  await assertRole(teamId, userId, action.requiresRole as ActionRole);
+  if (action.status === 'approved') {
+    return { batchId: action.batchId, kind: action.kind as ActionKind, approved: 0, rejected: 0, approvedBy: action.approvedBy ?? userId, approvedIds: [action.id] };
+  }
+  if (action.status !== 'proposed' && action.status !== 'pending_approval') {
+    throw new QueueError('invalid', `Ya está ${action.status}: no se puede aprobar.`);
+  }
+  if (action.kind === 'send_message') {
+    const conflicts = await conflictingSends(teamId, action.batchId, [action.chatId]);
+    if (conflicts.length) throw new QueueError('conflict', 'El contacto ya tiene otro envío aprobado.', { blockedChats: conflicts });
+  }
+  const now = new Date();
+  try {
+    const updated = await db
+      .update(teamCommercialActions)
+      .set({ status: 'approved', approvedBy: userId, approvedAt: now, updatedAt: now })
+      .where(and(eq(teamCommercialActions.teamId, teamId), eq(teamCommercialActions.id, action.id), inArray(teamCommercialActions.status, ['proposed', 'pending_approval'])))
+      .returning({ id: teamCommercialActions.id });
+    if (!updated.length) {
+      const [current] = await db
+        .select({ status: teamCommercialActions.status, approvedBy: teamCommercialActions.approvedBy })
+        .from(teamCommercialActions)
+        .where(and(eq(teamCommercialActions.teamId, teamId), eq(teamCommercialActions.id, action.id)))
+        .limit(1);
+      if (current?.status === 'approved') {
+        return { batchId: action.batchId, kind: action.kind as ActionKind, approved: 0, rejected: 0, approvedBy: current.approvedBy ?? userId, approvedIds: [action.id] };
+      }
+      throw new QueueError('invalid', `La acción cambió a ${current?.status ?? 'desconocido'} antes de aprobar.`);
+    }
+  } catch (error) {
+    if (!isUniqueSendViolation(error)) throw error;
+    throw new QueueError('conflict', 'El contacto ya tiene otro envío aprobado.');
+  }
+  const payload = (action.payload ?? {}) as Record<string, unknown>;
+  await audit(teamId, 'ACTION_APPROVED', {
+    actionId: action.id,
+    batchId: action.batchId,
+    chatId: action.chatId,
+    recommendation: context.recommendation ?? null,
+    originalText: context.originalText ?? payload.text ?? null,
+    aiInstruction: context.aiInstruction ?? null,
+    approvedText: payload.text ?? null,
+    userId,
+  }, userId);
+  return { batchId: action.batchId, kind: action.kind as ActionKind, approved: 1, rejected: 0, approvedBy: userId, approvedIds: [action.id] };
+}
+
 export async function rejectBatch(teamId: number, userId: number, batchId: string, reason?: string): Promise<{ batchId: string; rejected: number }> {
   const actions = await batchActions(teamId, batchId);
   if (!actions.length) throw new QueueError('not_found', `El lote ${batchId} no existe en este equipo.`);
@@ -881,7 +948,14 @@ export async function editAction(
     .update(teamCommercialActions)
     .set({ payload, updatedAt: new Date() })
     .where(and(eq(teamCommercialActions.teamId, teamId), eq(teamCommercialActions.id, actionId)));
-  await audit(teamId, 'EDITED', { actionId, chatId: existing.chatId, batchId: existing.batchId, fields: Object.keys(patch) }, userId);
+  await audit(teamId, 'EDITED', {
+    actionId,
+    chatId: existing.chatId,
+    batchId: existing.batchId,
+    fields: Object.keys(patch),
+    originalText: (existing.payload as Record<string, unknown> | null)?.text ?? null,
+    editedText: patch.text ?? null,
+  }, userId);
   return { actionId, batchId: existing.batchId, chatId: existing.chatId, payload };
 }
 

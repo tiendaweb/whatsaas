@@ -33,12 +33,15 @@ const PAGINA = 50;
 /** Cuántos clientes antes del final se pide la página siguiente. */
 const MARGEN_PREFETCH = 6;
 
-function url(etapa: Etapa, filtros: FiltrosFocus, owner: OwnerFilterValue, cursor: string | null): string {
+export type FiltrosCola<T extends string> = Omit<FiltrosFocus, 'etapas'> & { etapas: T[]; modo?: 'focus' | 'decision' };
+
+function url<T extends string>(etapa: T, filtros: FiltrosCola<T>, owner: OwnerFilterValue, cursor: string | null): string {
   const p = new URLSearchParams();
   p.set('vista', etapa);
   if (owner !== 'todos') p.set('owner', owner);
   if (filtros.gates.length) p.set('gates', filtros.gates.join(','));
-  if (filtros.soloPendientes) p.set('queued', 'sin');
+  if (filtros.modo === 'decision') p.set('queued', 'decision');
+  else if (filtros.soloPendientes) p.set('queued', 'sin');
   p.set('sort', filtros.orden);
   p.set('limit', String(PAGINA));
   if (cursor) p.set('cursor', cursor);
@@ -57,8 +60,12 @@ function url(etapa: Etapa, filtros: FiltrosFocus, owner: OwnerFilterValue, curso
  * Los contadores de la sesión viven acá y sólo acá: son de esta sesión, no
  * métricas del equipo (invariante 6).
  */
-export function useColaFocus(filtros: FiltrosFocus, owner: OwnerFilterValue) {
-  const etapas = filtros.etapas.length ? filtros.etapas : [...ETAPAS];
+export function useColaFocus<T extends string = Etapa>(
+  filtros: FiltrosCola<T>,
+  owner: OwnerFilterValue,
+  etapasDefault: readonly T[] = ETAPAS as readonly T[],
+) {
+  const etapas = filtros.etapas.length ? filtros.etapas : [...etapasDefault];
   const [etapaIdx, setEtapaIdx] = useState(0);
   const etapa = etapas[Math.min(etapaIdx, etapas.length - 1)] ?? etapas[0];
 

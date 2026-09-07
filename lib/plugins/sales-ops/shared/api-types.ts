@@ -25,7 +25,7 @@ import type {
   Source,
   Temperature,
 } from './taxonomy';
-import type { DossierEntry, Evidence } from './contract';
+import type { DossierEntry, Evidence, RuleFacts } from './contract';
 import type { CrmFix } from './crm-fix';
 
 /** Fila de lista y cabecera de ficha. Nunca lleva el teléfono completo. */
@@ -245,12 +245,16 @@ export type OverviewPayload = {
     sweep: number;
     preDiscard: number;
     customers: number;
+    /** Conversaciones nuevas desde el inicio del día UTC. */
+    newToday: number;
   };
   audit: {
     analyzed: number;
     total: number;
     stale: number;
     toReview: number;
+    /** Contactos únicos con stale, confianza baja o evidencia/audio pendiente. */
+    review: number;
     audiosQueued: number;
     /** Ítems que esperan un conector: envíos aprobados + sin analizar + desactualizados. */
     connectorPending: number;
@@ -270,7 +274,8 @@ export type OverviewPayload = {
 };
 
 export type ListQuery = {
-  vista?: 'dinero' | 'oportunidades' | 'barrido' | 'limpieza' | 'todos';
+  /** `revisar` es calidad de dato (stale/baja confianza/audio), no una etapa comercial. */
+  vista?: 'dinero' | 'oportunidades' | 'barrido' | 'limpieza' | 'revisar' | 'todos';
   gates?: Gate[];
   status?: AnalysisStatus[];
   owner?: Owner;
@@ -296,7 +301,8 @@ export type ListQuery = {
    * ejecutar, prompt encolado o mensaje programado activo); `sin` = nadie le
    * puso nada en marcha todavía, así que espera que una persona lo verifique.
    */
-  queued?: 'con' | 'sin';
+  /** `decision` = libre o con propuesta pendiente, pero sin nada ya aprobado/ejecutándose. */
+  queued?: 'con' | 'sin' | 'decision';
   q?: string;
   /**
    * `age` = más nuevos primero, `oldest` = más viejos primero (el mismo campo al
@@ -316,6 +322,10 @@ export type ListPayload = {
 
 export type DetailPayload = {
   analysis: AnalysisDetail | null;
+  /** Hechos determinísticos del expediente; Modo Noelia los traduce, nunca muestra el JSON. */
+  facts?: RuleFacts | null;
+  /** Snapshot comercial del expediente (ventas, oportunidades y membresías). */
+  commercial?: unknown;
   timeline: Array<TimelineHit | TimelineGap>;
   versions: AnalysisVersionRow[];
   actions: ActionRow[];

@@ -5,7 +5,7 @@
  * Todo se agrega en JS sobre selects filtrados por equipo/estado. Las monedas
  * NUNCA se suman entre sí: cada una se convierte con el `fx` del plugin.
  */
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { countConnectorPending } from './work-queue';
 import {
@@ -157,7 +157,9 @@ export async function getOverview(teamId: number): Promise<OverviewPayload> {
   const fx: Record<string, number> = { ...settings.fx, USD: 1 };
   const since = settings.missionSince;
 
-  const [analyses, total, paidItems, audiosQueuedRow, recentSignals, urgentSignals] = await Promise.all([
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const [analyses, total, paidItems, audiosQueuedRow, recentSignals, urgentSignals, newTodayRow] = await Promise.all([
     loadAnalysesLite(teamId),
     countTeamChats(teamId),
     loadPaidItems(teamId, since, fx),
@@ -184,22 +186,28 @@ export async function getOverview(teamId: number): Promise<OverviewPayload> {
       .where(and(eq(teamCommercialSignals.teamId, teamId), eq(teamCommercialSignals.status, 'new'), inArray(teamCommercialSignals.kind, URGENT_SIGNALS)))
       .orderBy(desc(teamCommercialSignals.createdAt))
       .limit(5),
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(chats)
+      .where(and(eq(chats.teamId, teamId), gte(chats.createdAt, today), sql`${chats.remoteJid} not like '%@g.us'`, sql`${chats.remoteJid} not like '%@broadcast'`)),
   ]);
 
   const byChat = new Map(analyses.map((a) => [a.chatId, a]));
 
   // Contadores
-  const counters = { moneyNow: 0, respondedToday: 0, opportunities: 0, sweep: 0, preDiscard: 0, customers: 0 };
+  const counters = { moneyNow: 0, respondedToday: 0, opportunities: 0, sweep: 0, preDiscard: 0, customers: 0, newToday: newTodayRow[0]?.n ?? 0 };
   const distribution = Object.fromEntries(GATES.map((g) => [g, 0])) as Record<Gate, number>;
   let analyzed = 0;
   let stale = 0;
   let toReview = 0;
+  let review = 0;
   for (const a of analyses) {
     const gate = a.currentGate as Gate | null;
     if (gate && gate in distribution) distribution[gate] += 1;
     if (a.analyzedAt) analyzed += 1;
     if (a.stale) stale += 1;
     if (a.analyzedAt && a.confidence < 55) toReview += 1;
+    if (a.stale || (a.analyzedAt && a.confidence < 55) || a.evidenceGap) review += 1;
     if (gate && MONEY_GATES.includes(gate) && a.status !== 'cliente') counters.moneyNow += 1;
     if (gate && FRONT_OPPORTUNITY_GATES.includes(gate)) counters.opportunities += 1;
     if (gate && FRONT_SWEEP_GATES.includes(gate) && !(DISCARD_STATUSES as readonly string[]).includes(a.status)) counters.sweep += 1;
@@ -267,7 +275,7 @@ export async function getOverview(teamId: number): Promise<OverviewPayload> {
   return {
     cash: buildCashGoal(paidItems, settings.cashGoalUsd, since),
     counters,
-    audit: { analyzed, total, stale, toReview, audiosQueued: audiosQueuedRow[0]?.n ?? 0, connectorPending: await countConnectorPending(teamId, { total, analyzed, stale }) },
+    audit: { analyzed, total, stale, toReview, review, audiosQueued: audiosQueuedRow[0]?.n ?? 0, connectorPending: await countConnectorPending(teamId, { total, analyzed, stale }) },
     nextBest,
     distribution,
     generatedAt: new Date().toISOString(),

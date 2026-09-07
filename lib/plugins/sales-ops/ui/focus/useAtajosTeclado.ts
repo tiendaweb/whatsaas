@@ -9,6 +9,8 @@ export type AtajosTeclado = {
   onAnterior?: () => void;
   /** Tecla `S`: saltar el ítem actual sin resolverlo. */
   onSaltar?: () => void;
+  /** Teclas adicionales para modos que reutilizan la navegación del Focus. */
+  acciones?: Partial<Record<string, () => void>>;
 };
 
 /**
@@ -22,7 +24,7 @@ export type AtajosTeclado = {
  * Se ignoran mientras se escribe: la `s` de "seguimiento" no puede saltear al
  * cliente. Y con Ctrl/Cmd/Alt tampoco, para no pisar los atajos del navegador.
  */
-export function useAtajosTeclado({ onSiguiente, onAnterior, onSaltar }: AtajosTeclado) {
+export function useAtajosTeclado({ onSiguiente, onAnterior, onSaltar, acciones }: AtajosTeclado) {
   useEffect(() => {
     const escuchar = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
@@ -30,9 +32,13 @@ export function useAtajosTeclado({ onSiguiente, onAnterior, onSaltar }: AtajosTe
       if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
       if (e.key === 'ArrowRight') onSiguiente?.();
       else if (e.key === 'ArrowLeft') onAnterior?.();
-      else if (e.key.toLowerCase() === 's') onSaltar?.();
+      else {
+        const key = e.key.toLowerCase();
+        if (key === 's' && onSaltar) onSaltar();
+        else acciones?.[key]?.();
+      }
     };
     window.addEventListener('keydown', escuchar);
     return () => window.removeEventListener('keydown', escuchar);
-  }, [onSiguiente, onAnterior, onSaltar]);
+  }, [onSiguiente, onAnterior, onSaltar, acciones]);
 }

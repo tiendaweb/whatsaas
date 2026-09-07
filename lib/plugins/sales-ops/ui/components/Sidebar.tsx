@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, BarChart, Brush, Building2, CalendarClock, ChevronsLeft, ChevronsRight, CircleHelp, Coins, Factory, FlaskConical, Inbox, LayoutList, ListChecks, Mic, Radar, Sparkles, Sun, Timer, Wand2, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, BarChart, Bolt, Brush, Building2, CalendarClock, ChevronsLeft, ChevronsRight, CircleHelp, Coins, Factory, FlaskConical, Inbox, LayoutList, ListChecks, Mic, Radar, Sparkles, Sun, Timer, Wand2, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OwnerFilter, type OwnerFilterValue } from './OwnerFilter';
 import { VISTAS_VISIBLES, VISTA_LABELS, type Vista } from './vistas';
@@ -9,6 +9,7 @@ import { fmtInt, iniciales } from './format';
 export const VISTA_ICONS: Record<Vista, LucideIcon> = {
   hoy: Sun,
   focus: Timer,
+  noelia: Bolt,
   dinero: Coins,
   oportunidades: Sparkles,
   barrido: Brush,

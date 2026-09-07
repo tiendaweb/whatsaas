@@ -218,6 +218,10 @@ export function vistaWhere(vista: ListQuery['vista']): SQL | undefined {
       return and(inArray(a.currentGate, FRONT_SWEEP_GATES), notInArray(a.status, [...DISCARD_STATUSES]));
     case 'limpieza':
       return or(inArray(a.status, [...DISCARD_STATUSES]), eq(a.currentGate, 'GX'));
+    case 'revisar':
+      // Cola de calidad de dato de Modo Noelia. `evidenceGap` lo calcula
+      // RuleFacts cuando hay audio pendiente dentro de la evidencia reciente.
+      return or(eq(a.stale, true), and(isNotNull(a.analyzedAt), lt(a.confidence, 55)), eq(a.evidenceGap, true));
     default:
       return undefined;
   }
@@ -308,7 +312,32 @@ function buildWhere(teamId: number, q: ListQuery, snoozeIds: number[] = []): SQL
            )
       )
     )`;
-    parts.push(q.queued === 'con' ? tieneAlgoEnCola : sql`not ${tieneAlgoEnCola}`);
+    if (q.queued === 'con') parts.push(tieneAlgoEnCola);
+    else if (q.queued === 'sin') parts.push(sql`not ${tieneAlgoEnCola}`);
+    else {
+      // Modo Noelia sí debe ver propuestas para aprobar, pero nunca un caso
+      // que ya tiene algo aprobado, ejecutándose o programado para salir.
+      parts.push(sql`not (
+        exists (
+          select 1 from team_commercial_actions ac
+           where ac.team_id = ${teamId} and ac.chat_id = ${a.chatId}
+             and ac.status in ('approved', 'executing')
+        )
+        or exists (
+          select 1 from team_prompt_runs pr
+           where pr.team_id = ${teamId} and pr.target_kind = 'chat' and pr.target_id = ${a.chatId}::text
+             and pr.status in ('queued', 'in_progress')
+        )
+        or exists (
+          select 1 from team_scheduled_messages sm
+           where sm.team_id = ${teamId} and sm.status = 'active'
+             and exists (
+               select 1 from jsonb_array_elements_text(sm.target_numbers) as n(numero)
+                where regexp_replace(n.numero, '[^0-9]', '', 'g') = regexp_replace(split_part(${chats.remoteJid}, '@', 1), '[^0-9]', '', 'g')
+             )
+        )
+      )`);
+    }
   }
   if (q.scheduled) {
     // Los programados guardan teléfonos sueltos, no chatId: se cruzan por
@@ -739,7 +768,7 @@ export async function getAnalysisDetail(teamId: number, chatId: number): Promise
   if (!chat) return null;
 
   const now = Date.now();
-  const [contact, analysisRows, msgsDesc, audioRows, versionRows, actionRows, signalRows] = await Promise.all([
+  const [contact, analysisRows, msgsDesc, audioRows, versionRows, actionRows, signalRows, dossierBuilt] = await Promise.all([
     db.query.contacts.findFirst({ where: eq(contacts.chatId, chatId), columns: { id: true, name: true, notes: true, customData: true, funnelStageId: true }, with: { contactTags: { with: { tag: { columns: { id: true, name: true, color: true } } } } } }),
     db.select().from(teamCommercialAnalysis).where(and(eq(teamCommercialAnalysis.teamId, teamId), eq(teamCommercialAnalysis.chatId, chatId))).limit(1),
     db
@@ -779,6 +808,7 @@ export async function getAnalysisDetail(teamId: number, chatId: number): Promise
       .from(teamCommercialSignals)
       .where(and(eq(teamCommercialSignals.teamId, teamId), eq(teamCommercialSignals.chatId, chatId)))
       .orderBy(desc(teamCommercialSignals.createdAt)),
+    import('./dossier').then(({ buildChatDossierFull }) => buildChatDossierFull(teamId, chatId)).catch(() => null),
   ]);
 
   const joined: JoinedRow | null = analysisRows[0]
@@ -887,7 +917,17 @@ export async function getAnalysisDetail(teamId: number, chatId: number): Promise
     tags: (contact?.contactTags ?? []).map((ct) => ct.tag).filter(Boolean) as Array<{ id: number; name: string; color: string | null }>,
   };
 
-  return { analysis, timeline, versions, actions, signals, chatHref, header };
+  return {
+    analysis,
+    facts: dossierBuilt?.dossier.facts ?? null,
+    commercial: dossierBuilt?.dossier.commercial ?? null,
+    timeline,
+    versions,
+    actions,
+    signals,
+    chatHref,
+    header,
+  };
 }
 
 /** Cabecera mínima de un chat sin análisis (para la ficha). */
