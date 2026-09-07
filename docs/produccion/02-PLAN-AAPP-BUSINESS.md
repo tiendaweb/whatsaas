@@ -1,5 +1,7 @@
 # Producción OS ↔ AAPP SPACE / AAPP BUSINESS — qué falta para que todo vaya encaminado (2026-09-07)
 
+> **Ejecutado el 2026-09-07 (tanda 6)**: §1 (horas, sesiones, ticket, US$/h, gates, rondas), §2 (handoff), §4 (catálogo, `qa`/`activado`, CAZA/PILOTO/TORRE), smoke `scripts/smoke-produccion-horas.mts` (22 ✓). **Pendiente**: §3 — `scripts/repair-produccion-desarrollo.mts --dry-run` dio 0 / 0 / 235 (ninguno cumple los criterios automáticos; los 235 «desarrollo» en curso son de agosto y hay que decidir a mano). Ver `ESTADO.md` fases 31–34.
+
 Fuente: los HTML publicados en aapp.space entre el 04 y el 06/09 —
 `catalogo-operativo-aapp` (Catálogo Operativo v1.2), `protocolo-produccion-aapp-space`
 (Protocolo Maestro SPACE v1.0), `manual-business-operations` (Protocolo Maestro BUSINESS,

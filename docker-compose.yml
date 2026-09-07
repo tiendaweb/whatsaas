@@ -17,6 +17,9 @@ services:
     working_dir: /app
     env_file:
       - .env
+      # Claves de las terminales del admin, aparte del .env general: el gateway
+      # del host las lee del mismo archivo (un solo secreto, dos lectores).
+      - .env.terminal
     command:
       - sh
       - -c
@@ -51,6 +54,28 @@ services:
       - traefik.http.middlewares.whatsapro-to-whatspro.redirectregex.regex=^https?://(?:www\.)?whatsapro\.uno(?:/(.*))?
       - traefik.http.middlewares.whatsapro-to-whatspro.redirectregex.replacement=https://whatspro.uno/$${1}
       - traefik.http.middlewares.whatsapro-to-whatspro.redirectregex.permanent=true
+
+  # Puente del WebSocket de las terminales del admin hacia el Terminal Gateway
+  # del host (PM2 `terminal-gateway`, 172.19.0.1:3400). Traefik sólo enruta a
+  # contenedores; este nginx no hace nada más que pasar /terminal-gateway/*.
+  # Ver docs/developer-command-center/00-ESTADO.md.
+  terminal-proxy:
+    image: nginx:alpine
+    container_name: whatsaas-terminal-proxy
+    volumes:
+      - /root/whatsaas/config/terminal-proxy.nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=whatsaas_default
+      - traefik.http.routers.whatspro-terminal.rule=(Host(`whatspro.uno`) || Host(`www.whatspro.uno`) || Host(`chatpro.uno`)) && PathPrefix(`/terminal-gateway`)
+      - traefik.http.routers.whatspro-terminal.entrypoints=websecure
+      - traefik.http.routers.whatspro-terminal.tls=true
+      - traefik.http.routers.whatspro-terminal.tls.certresolver=letsencrypt
+      - traefik.http.routers.whatspro-terminal.priority=200
+      - traefik.http.services.whatspro-terminal.loadbalancer.server.port=3400
 
 volumes:
   postgres_data:

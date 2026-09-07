@@ -1,0 +1,52 @@
+{
+  "_comment": "Registro de proyectos del Developer Command Center (doc 00 §Registro unificado). Lo leen la app (para el selector) y el gateway (para decidir dónde abre la shell). Una ruta que no está acá no se abre: el frontend nunca manda rutas.",
+  "projects": [
+    {
+      "slug": "whatspro",
+      "name": "WhatsPro",
+      "server": "vps-main",
+      "connection": "local-pty",
+      "cwd": "/root/whatsaas",
+      "defaultBranch": "main",
+      "productionUrl": "https://whatspro.uno",
+      "stack": "Next.js 16 · pnpm · Postgres (docker) · PM2",
+      "commands": { "install": "pnpm install", "build": "pnpm build", "test": "pnpm run test:connectors", "deploy": "NEXT_SKIP_TYPECHECK=1 pnpm run deploy:saasfy" },
+      "agents": ["claude", "codex"],
+      "defaultAgent": "claude",
+      "maxSessions": 4
+    },
+    {
+      "slug": "aapp-pro",
+      "name": "AAPP PRO (aapphost)",
+      "server": "vps-main",
+      "connection": "local-pty",
+      "cwd": "/root/aapphost",
+      "defaultBranch": "main",
+      "productionUrl": "https://aapp.host",
+      "stack": "Node · docker (aapphost-app, mongodb)",
+      "commands": { "install": "npm install", "build": "npm run build", "test": "npm test --if-present", "deploy": "docker compose up -d --build app" },
+      "agents": ["claude", "codex"],
+      "defaultAgent": "claude",
+      "maxSessions": 3
+    },
+    {
+      "slug": "contrataya",
+      "name": "Contrataya",
+      "server": "vps-main",
+      "connection": "local-pty",
+      "cwd": "/opt/contrataya/site",
+      "defaultBranch": "main",
+      "productionUrl": "https://contrataya.uno",
+      "stack": "docker (contrataya-app)",
+      "commands": { "deploy": "docker compose up -d --build" },
+      "agents": ["claude", "codex"],
+      "defaultAgent": "claude",
+      "maxSessions": 2
+    }
+  ],
+  "agents": {
+    "shell": { "name": "Shell", "command": null },
+    "claude": { "name": "Claude Code", "command": "/root/.local/bin/claude" },
+    "codex": { "name": "Codex", "command": "/usr/bin/codex" }
+  }
+}

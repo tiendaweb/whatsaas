@@ -262,3 +262,17 @@ Sin tocar, con motivo: el reloj doble de `Enfoque.tsx` (es un rediseño, no un a
 | 28 Reloj unificado Enfoque/Producción | ✅ 2026-09-07 |
 | 29 Enlaces de los demos publicados | ✅ 12/15 · 2026-09-07 |
 | 30 Horas + ticket + handoff + catálogo (plan 02) | ⏳ planificado, listo para ejecutar |
+
+## Tanda 6 del 2026-09-07: horas, ticket y las tres reglas del protocolo (plan 02 ejecutado)
+
+Se ejecutó `docs/produccion/02-PLAN-AAPP-BUSINESS.md` entero salvo la reparación de datos (§3), que es decisión del usuario. **Migración 0109**: ticket, estimado, rondas, estado del pago, ficha de handoff y `catalog_key` sobre la tarea; `team_task_work_sessions` para las horas reales. **Las tres reglas** (`shared/produccion.ts`, sólo sobre lo vendido): sin pago no hay cola (`pedido→aceptado`), sin handoff no arranca (`aceptado→en_curso`), QA antes de entregar (`en_curso→qa→entregado`); estados nuevos `qa` y `activado`; rondas contadas y «Extra = presupuesto». **Catálogo en código** con el Evaluador (US$/h, línea roja >6 h con <US$250, ARS 1.530 = US$1 al 04/09, vigente hasta el 04/10). CAZA/PILOTO/TORRE como tipos de trabajo con sus checklists. El reloj de 25 min escribe sesiones sobre el pedido abierto. Pantallas: KPI WIP n/3, chips de horas y US$/h, bloque Ticket y pago · Handoff · Tiempo. Tools `whatspro_catalog_list` y `whatspro_production_log_time` (281). Smoke de 22 chequeos en verde. Dry-run de `repair-produccion-desarrollo.mts`: 0 automáticos, **235 a decidir a mano**.
+
+**Terminales del admin** (pedido del usuario, plan «Developer Command Center» de Documentos): Fase 1–3 implementadas, sólo `noelia@whatspro.uno`. Detalle y modelo de seguridad en `docs/developer-command-center/00-ESTADO.md`.
+
+| Fase | Estado |
+|---|---|
+| 31 Horas reales por pedido + sesiones del reloj | ✅ 2026-09-07 |
+| 32 Gates de pago/handoff/QA + estados `qa`/`activado` + rondas | ✅ 2026-09-07 |
+| 33 Catálogo en código + CAZA/PILOTO/TORRE + Evaluador | ✅ 2026-09-07 |
+| 34 Reparación de los 235 «desarrollo» en curso | ⏳ script listo, dry-run corrido, falta decisión |
+| 35 Terminales del admin (Developer Command Center F1–F3) | ✅ 2026-09-07 · falta arrancar el gateway con PM2 (comando en el doc) |

@@ -57,3 +57,7 @@ postgres_data/
 
 # local operational backups (may contain customer workflow data)
 /.backups/
+
+# Secreto de las terminales del admin: nunca al repo
+.env.terminal
+scripts/terminal-gateway/node_modules

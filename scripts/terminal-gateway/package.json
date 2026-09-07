@@ -1,0 +1,9 @@
+{
+  "name": "whatspro-terminal-gateway",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Terminal Gateway del Developer Command Center: PTY local detrás de tickets firmados, sólo para la lista blanca.",
+  "scripts": { "start": "node --env-file=/root/whatsaas/.env.terminal server.mjs" },
+  "dependencies": { "node-pty": "^1.0.0", "ws": "^8.18.0" }
+}
