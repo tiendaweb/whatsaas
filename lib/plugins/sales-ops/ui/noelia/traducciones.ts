@@ -64,6 +64,57 @@ export function nosotrosLoFrenamos(detalle: DetailPayload): boolean {
 
 export function dineroEnJuego(a: AnalysisDetail | null): string {
   if (!a) return 'Sin monto confirmado';
-  if (a.quotedPrice) return new Intl.NumberFormat('es-AR', { style: 'currency', currency: a.quotedPrice.currency, maximumFractionDigits: 0 }).format(a.quotedPrice.amount / 100);
-  return 'Precio a confirmar';
+  if (!a.quotedPrice) return 'Precio a confirmar';
+  const { amount, currency } = a.quotedPrice;
+  try {
+    // Una moneda inválida en la base tumba la pantalla entera con un
+    // RangeError, y el error boundary genérico no dice por qué. Ante datos
+    // sucios se degrada al código de moneda crudo.
+    return new Intl.NumberFormat('es-AR', { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount / 100);
+  } catch {
+    return `${currency} ${Math.round(amount / 100).toLocaleString('es-AR')}`;
+  }
+}
+
+const ORIGEN: Record<string, string> = {
+  ads_meta: 'META ADS',
+  ads_cta_sitio: 'CTA DEL SITIO',
+  importacion: 'IMPORTACIÓN',
+  organico: 'ORGÁNICO',
+  presencial: 'PRESENCIAL',
+  desconocido: 'SIN DATO',
+};
+
+/** `Origen:` de la cabecera de la tarjeta. La maqueta lo escribe en mayúsculas. */
+export function traducirOrigen(a: AnalysisDetail | null): string {
+  if (!a) return 'SIN DATO';
+  return ORIGEN[a.source] ?? humanize(a.source).toUpperCase();
+}
+
+/** `Producto:` — lo que pidió, no la taxonomía interna. */
+export function productoDelCaso(a: AnalysisDetail | null): string {
+  if (!a) return 'SIN DEFINIR';
+  const texto = a.needDetail?.trim() || humanize(a.need);
+  return texto === '—' ? 'SIN DEFINIR' : texto;
+}
+
+/**
+ * `Evidencia:` de la caja RADAR DICE. La maqueta muestra una cita textual del
+ * cliente; acá se toma la primera evidencia real del expediente.
+ */
+export function evidenciaRadar(detalle: DetailPayload): string | null {
+  const e = detalle.analysis?.evidence;
+  const id = e?.payment?.[0] ?? e?.price?.[0] ?? e?.intent?.[0] ?? e?.objection?.[0] ?? e?.gate?.[0] ?? null;
+  const hito = id ? detalle.timeline.find((t) => 'id' in t && t.id === id) : null;
+  const texto = hito && 'text' in hito ? hito.text.trim() : null;
+  if (!texto) return null;
+  return texto.length > 160 ? `${texto.slice(0, 159)}…` : texto;
+}
+
+/** `Confianza:` de la caja FOCUS RECOMIENDA. */
+export function nivelDeConfianza(a: AnalysisDetail | null): string {
+  if (!a?.analyzedAt) return 'SIN ANALIZAR';
+  if (a.confidence >= 80) return 'ALTA';
+  if (a.confidence >= 55) return 'MEDIA';
+  return 'BAJA';
 }

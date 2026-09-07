@@ -63,7 +63,7 @@ function url<T extends string>(etapa: T, filtros: FiltrosCola<T>, owner: OwnerFi
 export function useColaFocus<T extends string = Etapa>(
   filtros: FiltrosCola<T>,
   owner: OwnerFilterValue,
-  etapasDefault: readonly T[] = ETAPAS as readonly T[],
+  etapasDefault: readonly T[] = ETAPAS as unknown as readonly T[],
 ) {
   const etapas = filtros.etapas.length ? filtros.etapas : [...etapasDefault];
   const [etapaIdx, setEtapaIdx] = useState(0);

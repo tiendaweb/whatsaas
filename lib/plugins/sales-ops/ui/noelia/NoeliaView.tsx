@@ -2,18 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useSWR, { preload } from 'swr';
-import { ArrowLeft, Banknote, Check, Clock3, Flame, Loader2, Pause, Play, SearchCheck, Timer, TrendingUp } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { ArrowLeft, Check, Loader2, Pause, Play, Timer } from 'lucide-react';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
-import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import type { DetailPayload, OverviewPayload } from '../../shared/api-types';
 import type { OwnerFilterValue } from '../components/OwnerFilter';
-import { ErrorState } from '../components/States';
 import { SALES_OPS_API, fetcher, fmtInt } from '../components/format';
 import { AvisoBloque } from '../focus/AvisoBloque';
 import { Confeti } from '../focus/Confeti';
-import { LimiteDeError } from '../focus/LimiteDeError';
 import { PanelContacto, type SolapaContacto } from '../focus/PanelContacto';
 import { Reloj } from '../focus/Reloj';
 import { useAtajosTeclado } from '../focus/useAtajosTeclado';
@@ -22,16 +18,37 @@ import { porcentaje, useColaFocus } from '../focus/useColaFocus';
 import { NoeliaMovil } from './NoeliaMovil';
 import { TarjetaNoelia } from './TarjetaNoelia';
 import type { AccionesTarjetaHandle } from './AccionesTarjeta';
-import { ETAPAS_NOELIA, ETAPA_NOELIA_META, FILTROS_NOELIA, LS_BLOQUE_NOELIA, type EtapaNoelia, type FiltrosNoelia } from './tipos';
+import {
+  ATAJOS_NOELIA,
+  CADENA_MOTOR,
+  ETAPAS_NOELIA,
+  ETAPA_NOELIA_META,
+  FILTROS_NOELIA,
+  LS_BLOQUE_NOELIA,
+  type EtapaNoelia,
+  type FiltrosNoelia,
+} from './tipos';
 
 type Detalle = DetailPayload & { header: { chatId: number; name: string; customData: Record<string, unknown> } };
 const detalleUrl = (chatId: number) => `${SALES_OPS_API}/contacts/${chatId}`;
 
-const ICONOS = { dinero: Banknote, oportunidades: Flame, barrido: TrendingUp, revisar: SearchCheck };
+const BTN_GHOST = 'inline-flex min-h-[46px] items-center justify-center gap-2 rounded-xl border border-[var(--mn-line)] bg-transparent px-4 py-[11px] text-sm font-black text-white outline-none transition-colors hover:border-[var(--mn-accent)] focus-visible:ring-2 focus-visible:ring-[var(--mn-accent)] disabled:cursor-not-allowed disabled:opacity-40';
 
+/**
+ * Modo Noelia: la interfaz de decisión humana de TORRE.
+ *
+ * Reproduce la maqueta aprobada de `aapp.space/business-command#modo-noelia`:
+ * fila de cuatro colas con contador, barra de velocidad con progreso y atajos,
+ * una sola tarjeta de decisión, y la cadena del motor abajo. Un cliente, una
+ * decisión, siguiente — nunca una lista.
+ *
+ * La cabina fija su propia paleta oscura (ver `.modo-noelia` en globals.css):
+ * los tonos son parte de la identidad del producto, igual que en la landing que
+ * el cliente vio antes de comprar.
+ */
 export function NoeliaView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir: () => void }) {
   const [filtros, setFiltros] = useState<FiltrosNoelia>(FILTROS_NOELIA);
-  const [contexto, setContexto] = useState(false);
+  const [conversacion, setConversacion] = useState(false);
   const [solapa, setSolapa] = useState<SolapaContacto>('chat');
   const acciones = useRef<AccionesTarjetaHandle | null>(null);
   const cola = useColaFocus(filtros, owner, ETAPAS_NOELIA);
@@ -55,7 +72,7 @@ export function NoeliaView({ owner, onSalir }: { owner: OwnerFilterValue; onSali
   }, []);
 
   useEffect(() => {
-    setContexto(false);
+    setConversacion(false);
     setSolapa('chat');
     if (cola.siguiente) preload(detalleUrl(cola.siguiente.chatId), fetcher).catch(() => {});
   }, [chatId, cola.siguiente]);
@@ -86,29 +103,29 @@ export function NoeliaView({ owner, onSalir }: { owner: OwnerFilterValue; onSali
   };
 
   const body = (() => {
-    if (cola.error) return <ErrorState message={cola.error} onRetry={cola.recargar} />;
-    if (cola.cargando) return <TarjetaSkeleton />;
+    if (cola.error) return <Aviso titulo="No se pudo cargar la cola" detalle={cola.error} accion="Reintentar" onAccion={cola.recargar} />;
+    if (cola.cargando) return <Analizando />;
     if (cola.terminada || !cola.actual) {
       return (
-        <div className="mx-auto flex min-h-[420px] max-w-md flex-col items-center justify-center text-center">
-          <span className="flex size-14 items-center justify-center rounded-full bg-primary/15 text-primary"><Check className="size-7" aria-hidden /></span>
-          <h2 className="mt-4 text-xl font-black">Todo revisado</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Focus no tiene decisiones pendientes para vos en {ETAPA_NOELIA_META[cola.etapa].label.toLowerCase()}.</p>
+        <div className="mx-auto flex min-h-[320px] max-w-md flex-col items-center justify-center rounded-[18px] border border-[var(--mn-box-line)] bg-[var(--mn-case)] p-8 text-center">
+          <span className="flex size-14 items-center justify-center rounded-full bg-[var(--mn-msg-bg)] text-[var(--mn-green)]"><Check className="size-7" aria-hidden /></span>
+          <h2 className="mt-4 text-xl font-black">TODO REVISADO</h2>
+          <p className="mt-1 text-sm text-[var(--mn-muted)]">Hoy la bandeja no tiene prioridad visible en {ETAPA_NOELIA_META[cola.etapa].label.toLowerCase()}.</p>
           <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-            {siguienteEtapa && <Button onClick={cola.pasarASiguienteEtapa}>Ver {ETAPA_NOELIA_META[siguienteEtapa].label}</Button>}
-            <Button variant="outline" onClick={onSalir}>Volver al Command Center</Button>
+            {siguienteEtapa && <button type="button" className="inline-flex min-h-[46px] items-center justify-center rounded-xl bg-[var(--mn-accent)] px-4 text-sm font-black text-[#0d0718]" onClick={cola.pasarASiguienteEtapa}>VER {ETAPA_NOELIA_META[siguienteEtapa].label.toUpperCase()}</button>}
+            <button type="button" className={BTN_GHOST} onClick={onSalir}>VOLVER AL COMMAND CENTER</button>
           </div>
         </div>
       );
     }
-    if (detalleError) return <ErrorState message="No se pudo cargar el caso. La cola conserva tu lugar." onRetry={() => void mutate()} />;
-    if (!detalle || detalle.header.chatId !== cola.actual.chatId) return <TarjetaSkeleton />;
+    if (detalleError) return <Aviso titulo="No se pudo cargar el caso" detalle="La cola conserva tu lugar." accion="Reintentar" onAccion={() => void mutate()} />;
+    if (!detalle || detalle.header.chatId !== cola.actual.chatId) return <Analizando />;
     return (
       <TarjetaNoelia
         ref={acciones}
         chatId={cola.actual.chatId}
         detalle={detalle}
-        onContexto={() => setContexto(true)}
+        onVerConversacion={() => setConversacion(true)}
         onResuelto={resuelto}
         onSaltar={saltar}
         onDetalleCambio={() => void mutate()}
@@ -117,44 +134,106 @@ export function NoeliaView({ owner, onSalir }: { owner: OwnerFilterValue; onSali
   })();
 
   return (
-    <div className="fixed inset-0 z-50 flex h-dvh flex-col bg-background text-foreground">
-      <header className="shrink-0 border-b border-border bg-background/95 backdrop-blur">
-        <div className="flex min-h-12 items-center gap-2 px-2 sm:px-4">
-          <Button variant="ghost" size="sm" className="h-9 gap-1.5 px-2 text-muted-foreground" onClick={onSalir}><ArrowLeft className="size-4" /> Salir</Button>
+    <div className="modo-noelia fixed inset-0 z-50 flex h-dvh flex-col bg-[var(--mn-bg)] text-[var(--mn-text)]">
+      <header className="shrink-0 border-b border-[var(--mn-shell-line)] bg-[var(--mn-shell)]">
+        <div className="mx-auto flex min-h-14 w-full max-w-[1120px] items-center gap-2 px-3 sm:px-4">
+          <button type="button" onClick={onSalir} className="flex h-9 items-center gap-1.5 rounded-lg px-2 text-sm font-black text-[var(--mn-muted)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mn-accent)]">
+            <ArrowLeft className="size-4" aria-hidden /> Salir
+          </button>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-sm font-black sm:text-base">Modo Noelia</h1>
-            <p className="hidden truncate text-[11px] text-muted-foreground sm:block">El sistema investigó. Vos decidí.</p>
+            <p className="truncate text-[11px] font-black uppercase tracking-[0.15em] text-[var(--mn-accent)]">⚡ Modo Noelia</p>
+            <p className="hidden truncate text-[11px] text-[var(--mn-muted)] sm:block">Torre ve todo. Acá aparece sólo lo que necesita de vos.</p>
           </div>
-          <div className="hidden items-center gap-2 text-[11px] font-bold text-muted-foreground sm:flex">
-            <span>{fmtInt(cola.procesadosEtapa)} / {fmtInt(cola.total)} revisados</span>
-            <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={pct}><div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${pct}%` }} /></div>
-          </div>
-          <button type="button" onClick={() => !bloque.hayBloque ? bloque.arrancar('foco') : bloque.pausado ? bloque.reanudar() : bloque.pausar()} className="flex h-9 items-center gap-1.5 rounded-xl border border-border px-2 font-mono text-xs tabular-nums">
-            {!bloque.hayBloque ? <Timer className="size-3.5" /> : bloque.pausado ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
+          <button
+            type="button"
+            onClick={() => !bloque.hayBloque ? bloque.arrancar('foco') : bloque.pausado ? bloque.reanudar() : bloque.pausar()}
+            className="flex h-9 items-center gap-1.5 rounded-xl border border-[var(--mn-key-line)] px-2 font-mono text-xs tabular-nums text-[var(--mn-soft)]"
+          >
+            {!bloque.hayBloque ? <Timer className="size-3.5" aria-hidden /> : bloque.pausado ? <Play className="size-3.5" aria-hidden /> : <Pause className="size-3.5" aria-hidden />}
             {bloque.hayBloque ? <Reloj terminaEn={bloque.terminaEn} pausadoCon={bloque.pausadoCon} /> : '25:00'}
           </button>
         </div>
-
-        <div className="flex gap-1.5 overflow-x-auto px-3 pb-2 [scrollbar-width:none] sm:px-4" role="tablist" aria-label="Categorías">
-          {ETAPAS_NOELIA.map((etapa) => {
-            const Icon = ICONOS[etapa];
-            const activa = cola.etapa === etapa;
-            return <button key={etapa} type="button" role="tab" aria-selected={activa} onClick={() => elegirEtapa(etapa)} className={cn('flex min-h-10 shrink-0 items-center gap-2 rounded-xl border px-3 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', activa ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-muted-foreground hover:text-foreground')}><Icon className="size-4" /><span>{ETAPA_NOELIA_META[etapa].label}</span><span className={cn('rounded-full px-1.5 py-0.5 tabular-nums', activa ? 'bg-primary-foreground/20' : 'bg-muted')}>{fmtInt(counts[etapa])}</span></button>;
-          })}
-        </div>
       </header>
 
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-muted/25 px-4 py-2 text-[11px] text-muted-foreground">
-        <span className="truncate">Vos no tenés que leer todo. El sistema ya investigó. Decidí qué hacemos.</span>
-        <span className="shrink-0 font-bold">Desafío 60 · nuevas hoy: {fmtInt(overview?.counters.newToday)} / 60</span>
-      </div>
+      <NoeliaMovil>
+        <div className="mx-auto w-full max-w-[1120px] rounded-[22px] border border-[var(--mn-shell-line)] bg-[var(--mn-shell)] p-3 shadow-[0_28px_70px_rgba(0,0,0,.32)] sm:p-[18px]">
+          {/* Las cuatro colas: filtro con contador, no navegación. */}
+          <div className="grid grid-cols-2 gap-2.5 min-[820px]:grid-cols-4" role="tablist" aria-label="Colas de decisión">
+            {ETAPAS_NOELIA.map((etapa) => {
+              const activa = cola.etapa === etapa;
+              const meta = ETAPA_NOELIA_META[etapa];
+              return (
+                <button
+                  key={etapa}
+                  type="button"
+                  role="tab"
+                  aria-selected={activa}
+                  title={meta.hint}
+                  onClick={() => elegirEtapa(etapa)}
+                  className={cn(
+                    'rounded-[13px] border bg-[var(--mn-panel)] p-3 text-left text-white outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--mn-accent)]',
+                    activa ? 'border-[var(--mn-accent)] shadow-[inset_0_0_0_1px_var(--mn-accent-soft)]' : 'border-[var(--mn-kpi-line)] hover:border-[var(--mn-accent)]',
+                  )}
+                >
+                  <small className="block text-[11px] font-black uppercase text-[#d6e1eb]">{meta.emoji} {meta.label}</small>
+                  <b className="mt-1 block text-[25px] font-black tabular-nums leading-none">{fmtInt(counts[etapa])}</b>
+                </button>
+              );
+            })}
+          </div>
 
-      <NoeliaMovil>{body}</NoeliaMovil>
+          {/* Barra de velocidad: progreso del bloque y atajos. */}
+          <div className="mt-2.5 grid items-center gap-3.5 rounded-[14px] border border-[var(--mn-speed-line)] bg-[var(--mn-panel)] p-3 min-[820px]:grid-cols-[auto_1fr_auto]">
+            <div>
+              <small className="block text-[11px] font-black text-[var(--mn-green)]">MODO VELOCIDAD</small>
+              <b className="block text-[13px] font-black">{fmtInt(cola.procesadosEtapa)} / {fmtInt(cola.total)} decisiones revisadas</b>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-[var(--mn-track)]" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+              <div className="mn-progress-fill h-full rounded-full transition-[width] duration-[250ms]" style={{ width: `${pct}%` }} />
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {ATAJOS_NOELIA.map(({ tecla, accion }) => (
+                <span key={tecla} className="rounded-[7px] border border-[var(--mn-key-line)] px-1.5 py-1 text-[11px] text-[var(--mn-soft)]">
+                  <b className="font-black">{tecla}</b> {accion}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-3">{body}</div>
+
+          {/* Navegación entre casos: cliente → decisión → siguiente. */}
+          {cola.actual && !cola.terminada && (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-[#a8b7c7]">
+              <button type="button" className={cn(BTN_GHOST, 'max-[820px]:order-2')} onClick={cola.retroceder}>← ANTERIOR</button>
+              <span className="max-[820px]:order-1 max-[820px]:w-full max-[820px]:text-center">Cliente → decisión → siguiente</span>
+              <button type="button" className={cn(BTN_GHOST, 'max-[820px]:order-3')} onClick={cola.avanzar}>SIGUIENTE →</button>
+            </div>
+          )}
+
+          {/* La cadena del motor: de dónde sale lo que estás viendo. */}
+          <div className="mt-4 grid gap-2 min-[820px]:grid-cols-5">
+            {CADENA_MOTOR.map(({ paso, detalle: texto }) => (
+              <div key={paso} className="rounded-xl border border-[var(--mn-chain-line)] bg-[var(--mn-panel)] p-3">
+                <b className="block text-[12px] font-black text-[#d8e3ee]">{paso}</b>
+                <small className="mt-1 block text-[11px] text-[var(--mn-dim)]">{texto}</small>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <p className="mx-auto mt-3 w-full max-w-[1120px] text-[13px] text-[#9fb0c1]">
+          Aprobar guarda la decisión y la cola la ejecuta: desde acá nunca sale un mensaje solo.
+          Modo Noelia forma parte de TORRE; no es un producto separado.
+          {overview && <> · Nuevas hoy: <b className="font-black">{fmtInt(overview.counters.newToday)}</b></>}
+        </p>
+      </NoeliaMovil>
+
       <Confeti activo={cola.terminada && cola.procesadosEtapa > 0} />
 
-      <Sheet open={contexto} onOpenChange={setContexto}>
+      <Sheet open={conversacion} onOpenChange={setConversacion}>
         <SheetContent side="right" className="flex w-full max-w-full flex-col p-0 sm:max-w-xl">
-          <SheetTitle className="border-b border-border px-4 py-3 text-base">Más contexto</SheetTitle>
+          <SheetTitle className="border-b border-border px-4 py-3 text-base">Conversación completa</SheetTitle>
           {chatId && <PanelContacto chatId={chatId} solapa={solapa} onSolapa={setSolapa} className="min-h-0 flex-1 p-3" />}
         </SheetContent>
       </Sheet>
@@ -171,6 +250,27 @@ export function NoeliaView({ owner, onSalir }: { owner: OwnerFilterValue; onSali
   );
 }
 
-function TarjetaSkeleton() {
-  return <div className="mx-auto w-full max-w-3xl space-y-4 rounded-3xl border border-border bg-card p-5" aria-busy="true"><div className="flex gap-3"><Skeleton className="size-11 rounded-2xl" /><div className="flex-1 space-y-2"><Skeleton className="h-6 w-1/2" /><Skeleton className="h-4 w-2/3" /></div></div><div className="grid gap-3 sm:grid-cols-2"><Skeleton className="h-28 rounded-2xl" /><Skeleton className="h-28 rounded-2xl" /></div><Skeleton className="h-28 rounded-2xl" /><Skeleton className="h-44 rounded-2xl" /></div>;
+/** El «Analizando conversaciones…» de la maqueta hermana de la misma landing. */
+function Analizando() {
+  return (
+    <div className="mx-auto w-full max-w-4xl rounded-[18px] border border-[var(--mn-box-line)] bg-[var(--mn-case)] p-6 text-center" aria-busy="true">
+      <b className="flex items-center justify-center gap-2 text-sm font-black">
+        <Loader2 className="size-4 animate-spin" aria-hidden /> Analizando conversaciones…
+      </b>
+      <div className="mx-auto mt-3 h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-[var(--mn-track)]">
+        <div className="mn-progress-fill h-full w-1/3 rounded-full motion-safe:animate-pulse" />
+      </div>
+      <small className="mt-3 block text-[12px] text-[var(--mn-dim)]">Buscando intención, bloqueos, pagos y próximos pasos.</small>
+    </div>
+  );
+}
+
+function Aviso({ titulo, detalle, accion, onAccion }: { titulo: string; detalle: string; accion: string; onAccion: () => void }) {
+  return (
+    <div className="mx-auto w-full max-w-md rounded-[18px] border border-[var(--mn-amber-soft)] bg-[var(--mn-amber-bg)] p-6 text-center">
+      <h2 className="text-base font-black text-[var(--mn-amber-soft)]">{titulo}</h2>
+      <p className="mt-1 text-sm text-[var(--mn-soft)]">{detalle}</p>
+      <button type="button" className={cn(BTN_GHOST, 'mt-4')} onClick={onAccion}>{accion.toUpperCase()}</button>
+    </div>
+  );
 }

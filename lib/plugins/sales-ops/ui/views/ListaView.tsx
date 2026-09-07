@@ -25,7 +25,8 @@ import { useEncolado } from '../components/eventos';
 import { SALES_OPS_API, fetcher, fmtInt, humanize, panel } from '../components/format';
 import { toast } from 'sonner';
 
-export type ListaVista = NonNullable<ListQuery['vista']>;
+/** `revisar` es una cola interna de Modo Noelia, no una vista de lista clásica. */
+export type ListaVista = Exclude<NonNullable<ListQuery['vista']>, 'revisar'>;
 
 const DEFAULT_SORT: Record<ListaVista, NonNullable<ListQuery['sort']>> = {
   dinero: 'priority',

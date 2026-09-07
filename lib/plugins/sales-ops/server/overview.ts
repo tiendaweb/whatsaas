@@ -188,8 +188,8 @@ export async function getOverview(teamId: number): Promise<OverviewPayload> {
       .limit(5),
     db
       .select({ n: sql<number>`count(*)::int` })
-      .from(chats)
-      .where(and(eq(chats.teamId, teamId), gte(chats.createdAt, today), sql`${chats.remoteJid} not like '%@g.us'`, sql`${chats.remoteJid} not like '%@broadcast'`)),
+      .from(teamCommercialAnalysis)
+      .where(and(eq(teamCommercialAnalysis.teamId, teamId), gte(teamCommercialAnalysis.firstContactAt, today))),
   ]);
 
   const byChat = new Map(analyses.map((a) => [a.chatId, a]));

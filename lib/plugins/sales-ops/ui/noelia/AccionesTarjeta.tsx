@@ -1,10 +1,11 @@
 'use client';
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { Check, Clock3, Loader2, Pencil, RefreshCw, Sparkles, X } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import type { ActionRow, DetailPayload } from '../../shared/api-types';
+import type { EstadoCaso } from './tipos';
 
 export type AccionesTarjetaHandle = {
   aprobar: () => void;
@@ -18,6 +19,9 @@ type Detalle = DetailPayload & { header: { name: string } };
 type Props = {
   chatId: number;
   detalle: Detalle;
+  contextoAbierto: boolean;
+  onContexto: () => void;
+  onEstado: (estado: EstadoCaso | null) => void;
   onResuelto: (tipo: 'aprobado' | 'pospuesto') => void;
   onSaltar: () => void;
   onDetalleCambio: () => void;
@@ -25,6 +29,11 @@ type Props = {
 
 const VIVAS = ['proposed', 'pending_approval', 'approved'] as const;
 const CHIPS = ['Más corto', 'Más cálido', 'Quiero cerrar', 'No menciones el precio', 'Recordale lo que pidió', 'Que parezca más humano'];
+
+/** `.btn` de la maqueta: 46px de alto, radio 12, peso 900. */
+const BTN = 'inline-flex min-h-[46px] items-center justify-center gap-2 rounded-xl px-4 py-[11px] text-sm font-black outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--mn-accent)] disabled:cursor-not-allowed disabled:opacity-40';
+const BTN_PRIMARIO = `${BTN} border-0 bg-[var(--mn-accent)] text-[#0d0718] hover:brightness-110`;
+const BTN_GHOST = `${BTN} border border-[var(--mn-line)] bg-transparent text-white hover:border-[var(--mn-accent)]`;
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -38,7 +47,7 @@ function textoDe(action: ActionRow | null): string {
 }
 
 export const AccionesTarjeta = forwardRef<AccionesTarjetaHandle, Props>(function AccionesTarjeta(
-  { chatId, detalle, onResuelto, onSaltar, onDetalleCambio },
+  { chatId, detalle, contextoAbierto, onContexto, onEstado, onResuelto, onSaltar, onDetalleCambio },
   ref,
 ) {
   const action = useMemo(() => detalle.actions.find((a) => VIVAS.includes(a.status as (typeof VIVAS)[number]) && a.kind === 'send_message') ?? null, [detalle.actions]);
@@ -48,12 +57,14 @@ export const AccionesTarjeta = forwardRef<AccionesTarjetaHandle, Props>(function
   const [instruccion, setInstruccion] = useState('');
   const [generando, setGenerando] = useState(false);
   const [guardando, setGuardando] = useState(false);
+  const [aprobado, setAprobado] = useState(false);
   const intentoAutomatico = useRef<number | null>(null);
 
   useEffect(() => {
     setMensaje(original);
     setModo('ver');
     setInstruccion('');
+    setAprobado(false);
     intentoAutomatico.current = null;
   }, [chatId, original]);
 
@@ -76,13 +87,14 @@ export const AccionesTarjeta = forwardRef<AccionesTarjetaHandle, Props>(function
       const next = body.content?.trim();
       if (!next) throw new Error('La IA no devolvió un mensaje.');
       setMensaje(next);
+      onEstado({ texto: 'VERSIÓN IA GENERADA · REQUIERE APROBACIÓN', tono: 'neutro' });
       if (volverAVer) setModo('ver');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo preparar el mensaje.');
     } finally {
       setGenerando(false);
     }
-  }, [detalle, generando, mensaje]);
+  }, [detalle, generando, mensaje, onEstado]);
 
   // Sólo prepara la tarjeta actual y una vez. No crea lote ni aprueba nada.
   useEffect(() => {
@@ -139,6 +151,8 @@ export const AccionesTarjeta = forwardRef<AccionesTarjetaHandle, Props>(function
           body: JSON.stringify({ recommendation: detalle.analysis?.recommendedAction, originalText: original || mensaje, aiInstruction: instruccion || undefined }),
         });
       }
+      setAprobado(true);
+      onEstado({ texto: '✓ APROBADO · LISTO PARA EJECUTAR', tono: 'verde' });
       toast.success('Listo. Quedó aprobado, todavía no se envió.');
       onDetalleCambio();
       onResuelto('aprobado');
@@ -147,7 +161,7 @@ export const AccionesTarjeta = forwardRef<AccionesTarjetaHandle, Props>(function
     } finally {
       setGuardando(false);
     }
-  }, [asegurarAction, detalle.analysis?.recommendedAction, guardando, instruccion, mensaje, onDetalleCambio, onResuelto, original]);
+  }, [asegurarAction, detalle.analysis?.recommendedAction, guardando, instruccion, mensaje, onDetalleCambio, onEstado, onResuelto, original]);
 
   const posponer = useCallback(async () => {
     if (guardando) return;
@@ -158,6 +172,7 @@ export const AccionesTarjeta = forwardRef<AccionesTarjetaHandle, Props>(function
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'snooze', days: 1, note: 'Pospuesto 24 h desde Modo Noelia' }),
       });
+      onEstado({ texto: '⏱ POSPUESTO 24 HORAS', tono: 'ambar' });
       toast.success('Pospuesto por 24 horas.');
       onResuelto('pospuesto');
     } catch (error) {
@@ -165,50 +180,93 @@ export const AccionesTarjeta = forwardRef<AccionesTarjetaHandle, Props>(function
     } finally {
       setGuardando(false);
     }
-  }, [chatId, guardando, onResuelto]);
+  }, [chatId, guardando, onEstado, onResuelto]);
 
-  useImperativeHandle(ref, () => ({ aprobar: () => void aprobar(), editar: () => setModo('editar'), ia: () => setModo('ia'), posponer: () => void posponer() }), [aprobar, posponer]);
+  const abrirEdicion = useCallback(() => {
+    setModo('editar');
+    onEstado({ texto: 'EDITANDO MENSAJE · NO ENVIADO', tono: 'neutro' });
+  }, [onEstado]);
 
-  if (modo === 'editar') {
-    return (
-      <div className="space-y-3">
-        <textarea value={mensaje} onChange={(e) => setMensaje(e.target.value)} rows={6} autoFocus className="w-full resize-y rounded-2xl border border-border bg-background p-3 text-sm leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="Editar mensaje" />
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Button className="min-h-11 flex-1 gap-2" onClick={() => void aprobar()} disabled={guardando || !mensaje.trim()}>{guardando ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} Guardar y aprobar</Button>
-          <Button variant="outline" className="min-h-11" onClick={() => { setMensaje(original || mensaje); setModo('ver'); }}><X className="size-4" /> Cancelar</Button>
-        </div>
-      </div>
-    );
-  }
+  useImperativeHandle(ref, () => ({
+    aprobar: () => void aprobar(),
+    editar: abrirEdicion,
+    ia: () => setModo('ia'),
+    posponer: () => void posponer(),
+  }), [abrirEdicion, aprobar, posponer]);
 
-  if (modo === 'ia') {
-    return (
-      <div className="space-y-3 rounded-2xl border border-primary/25 bg-primary/5 p-3">
-        <p className="text-xs font-black uppercase tracking-[0.15em]">¿Qué querés cambiar?</p>
-        <div className="flex flex-wrap gap-1.5">{CHIPS.map((chip) => <button key={chip} type="button" onClick={() => setInstruccion(chip)} className="rounded-full border border-border bg-background px-2.5 py-1.5 text-xs font-semibold hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{chip}</button>)}</div>
-        <input value={instruccion} onChange={(e) => setInstruccion(e.target.value)} placeholder="Otra indicación" className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" className="gap-1.5" disabled={generando || !instruccion.trim()} onClick={() => void generar(instruccion, true)}>{generando ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />} Usar esta</Button>
-          <Button size="sm" variant="outline" className="gap-1.5" disabled={generando} onClick={() => void generar(instruccion)}><RefreshCw className="size-4" /> Cambiar otra vez</Button>
-          <Button size="sm" variant="ghost" onClick={() => { setMensaje(original); setModo('ver'); }}>Volver al original</Button>
-        </div>
-      </div>
-    );
-  }
+  const puedeAprobar = !guardando && !generando && Boolean(mensaje.trim());
 
   return (
-    <div className="space-y-3">
-      <div className="min-h-24 whitespace-pre-wrap rounded-2xl border border-border bg-muted/30 p-3 text-sm leading-relaxed" aria-live="polite">
-        {generando ? <span className="flex items-center gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Preparando un mensaje con los datos del caso…</span> : mensaje || <span className="text-muted-foreground">No hay un mensaje listo. Usá Cambiar con IA para prepararlo.</span>}
+    <>
+      {/* MENSAJE LISTO — caja verde de la maqueta. */}
+      <section className="mt-2.5 rounded-[13px] border border-[var(--mn-msg-line)] bg-[var(--mn-msg-bg)] p-3.5" aria-label="Mensaje listo">
+        <small className="block text-[12px] font-black tracking-[0.06em] text-[var(--mn-green-soft)]">MENSAJE LISTO</small>
+        {modo === 'editar' ? (
+          <textarea
+            value={mensaje}
+            onChange={(e) => setMensaje(e.target.value)}
+            rows={5}
+            autoFocus
+            aria-label="Editar mensaje"
+            className="mt-2 w-full resize-y rounded-xl border border-[var(--mn-msg-line)] bg-[var(--mn-context)] p-3 text-[15px] font-[750] leading-relaxed text-[var(--mn-text)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--mn-green)]"
+          />
+        ) : (
+          <p className="mb-0 mt-1.5 whitespace-pre-wrap text-[15px] font-[750] leading-relaxed text-[var(--mn-text)]" aria-live="polite">
+            {generando
+              ? <span className="flex items-center gap-2 text-[var(--mn-dim)]"><Loader2 className="size-4 animate-spin" aria-hidden /> Preparando un mensaje con los datos del caso…</span>
+              : mensaje || <span className="text-[var(--mn-dim)]">No hay un mensaje listo. Usá «Cambiar con IA» para prepararlo.</span>}
+          </p>
+        )}
+      </section>
+
+      {modo === 'ia' && (
+        <section className="mt-2.5 rounded-[13px] border border-[var(--mn-tools-line)] bg-[var(--mn-panel)] p-3.5" aria-label="Cambiar con IA">
+          <small className="block text-[12px] font-black tracking-[0.06em] text-[var(--mn-label)]">¿QUÉ QUERÉS CAMBIAR?</small>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {CHIPS.map((chip) => (
+              <button key={chip} type="button" onClick={() => setInstruccion(chip)} className={cn('rounded-full border px-2.5 py-1.5 text-xs font-black transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mn-accent)]', instruccion === chip ? 'border-[var(--mn-accent)] text-[var(--mn-accent)]' : 'border-[var(--mn-key-line)] text-[var(--mn-soft)] hover:border-[var(--mn-accent)]')}>
+                {chip}
+              </button>
+            ))}
+          </div>
+          <input
+            value={instruccion}
+            onChange={(e) => setInstruccion(e.target.value)}
+            placeholder="Otra indicación"
+            aria-label="Otra indicación para la IA"
+            className="mt-2.5 h-11 w-full rounded-xl border border-[var(--mn-key-line)] bg-[var(--mn-context)] px-3 text-sm text-[var(--mn-text)] outline-none placeholder:text-[var(--mn-dim)] focus-visible:ring-2 focus-visible:ring-[var(--mn-accent)]"
+          />
+          <div className="mt-2.5 flex flex-wrap gap-2">
+            <button type="button" className={BTN_PRIMARIO} disabled={generando || !instruccion.trim()} onClick={() => void generar(instruccion, true)}>
+              {generando ? <Loader2 className="size-4 animate-spin" aria-hidden /> : '✨'} USAR ESTA
+            </button>
+            <button type="button" className={BTN_GHOST} disabled={generando} onClick={() => void generar(instruccion)}>↻ CAMBIAR OTRA VEZ</button>
+            <button type="button" className={BTN_GHOST} onClick={() => { setMensaje(original); setModo('ver'); onEstado(null); }}>VOLVER AL ORIGINAL</button>
+          </div>
+        </section>
+      )}
+
+      {/* Las cinco acciones, en el orden y con los textos de la maqueta. */}
+      {/* Bajo 820px la maqueta pone dos por fila (`flex:1 1 44%`). */}
+      <div className="mt-3 grid grid-cols-2 gap-2 min-[820px]:flex min-[820px]:flex-wrap min-[820px]:items-center">
+        <button type="button" className={BTN_PRIMARIO} onClick={() => void aprobar()} disabled={!puedeAprobar}>
+          {guardando ? <Loader2 className="size-4 animate-spin" aria-hidden /> : '✓'} {aprobado ? 'APROBADO' : 'APROBAR'}
+        </button>
+        <button type="button" className={BTN_GHOST} onClick={() => (modo === 'editar' ? (setModo('ver'), onEstado(null)) : abrirEdicion())}>
+          {modo === 'editar' ? '✓ GUARDAR' : '✎ EDITAR'}
+        </button>
+        <button type="button" className={BTN_GHOST} onClick={() => setModo(modo === 'ia' ? 'ver' : 'ia')}>✨ CAMBIAR CON IA</button>
+        <button type="button" className={BTN_GHOST} onClick={() => void posponer()} disabled={guardando}>⏰ POSPONER</button>
+        <button type="button" className={BTN_GHOST} onClick={onSaltar}>→ SALTAR</button>
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-        <Button className="col-span-2 min-h-12 gap-1.5 sm:col-span-1" onClick={() => void aprobar()} disabled={guardando || generando || !mensaje.trim()}>{guardando ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} Aprobar</Button>
-        <Button variant="outline" className="min-h-12 gap-1.5" onClick={() => setModo('editar')}><Pencil className="size-4" /> Editar</Button>
-        <Button variant="outline" className="min-h-12 gap-1.5" onClick={() => setModo('ia')}><Sparkles className="size-4" /> IA</Button>
-        <Button variant="outline" className="min-h-12 gap-1.5" onClick={() => void posponer()} disabled={guardando}><Clock3 className="size-4" /> Posponer</Button>
-        <Button variant="ghost" className="min-h-12" onClick={onSaltar}>Saltar →</Button>
+
+      {/* Fila de herramientas: contexto + el recordatorio de que nada sale solo. */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button type="button" className={BTN_GHOST} aria-expanded={contextoAbierto} onClick={onContexto}>MÁS CONTEXTO</button>
+        <span className="rounded-full border border-[var(--mn-tools-line)] px-2.5 py-1.5 text-[11px] font-black text-[var(--mn-tools-text)]">
+          APROBAR NO ENVÍA · LA COLA EJECUTA
+        </span>
       </div>
-      <p className="text-[11px] text-muted-foreground">Aprobar guarda la decisión; no envía el mensaje. Atajos: A aprobar · E editar · I IA · P posponer · S saltar.</p>
-    </div>
+    </>
   );
 });

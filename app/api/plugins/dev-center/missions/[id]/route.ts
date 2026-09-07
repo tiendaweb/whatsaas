@@ -17,7 +17,7 @@ const patchSchema = z.object({
   mode: z.enum(MISSION_MODES).optional(),
 }).refine((v) => Object.keys(v).length > 0, { message: 'No hay cambios.' });
 
-export const idDe = async (params: Promise<{ id: string }>) => {
+const idDe = async (params: Promise<{ id: string }>) => {
   const { id } = await params;
   const n = Number(id);
   return Number.isInteger(n) && n > 0 ? n : null;

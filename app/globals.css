@@ -337,3 +337,54 @@
   height: 0;
   pointer-events: none;
 }
+
+/* ── Modo Noelia ───────────────────────────────────────────────────────────
+   Cabina de decisión de TORRE. La maqueta aprobada vive en
+   aapp.space/business-command#modo-noelia y es un diseño oscuro cerrado: los
+   tonos son parte de la identidad del producto, no del tema del panel. Por eso
+   la cabina fija su propia paleta y no sigue claro/oscuro; `color-scheme`
+   mantiene coherentes los controles nativos (scrollbars, textarea, inputs). */
+.modo-noelia {
+  color-scheme: dark;
+
+  --mn-bg: #050b14;
+  --mn-shell: #07111e;
+  --mn-panel: #0a1726;
+  --mn-case: #0b1829;
+  --mn-context: #081421;
+
+  --mn-accent: #ad8cff;
+  --mn-accent-soft: rgba(173, 140, 255, 0.25);
+
+  --mn-line: #20344d;
+  --mn-shell-line: #263b55;
+  --mn-kpi-line: #31465f;
+  --mn-speed-line: #293e57;
+  --mn-box-line: #293f59;
+  --mn-key-line: #29415d;
+  --mn-case-line: #745ac8;
+  --mn-tools-line: #584597;
+  --mn-chain-line: #2a405a;
+
+  --mn-green: #55e7b1;
+  --mn-green-soft: #54e5b0;
+  --mn-msg-line: #23705f;
+  --mn-msg-bg: rgba(27, 119, 92, 0.1);
+
+  --mn-amber: #ffc451;
+  --mn-amber-soft: #ffd16c;
+  --mn-amber-bg: rgba(255, 184, 64, 0.12);
+
+  --mn-label: #91cfff;
+  --mn-text: #f5f8fc;
+  --mn-muted: #a9b8c8;
+  --mn-soft: #d5deea;
+  --mn-dim: #91a6bb;
+  --mn-tools-text: #d9ccff;
+  --mn-track: #14263a;
+}
+
+/* La barra de progreso de la maqueta: 6px, violeta → verde. */
+.modo-noelia .mn-progress-fill {
+  background: linear-gradient(90deg, var(--mn-accent), var(--mn-green));
+}

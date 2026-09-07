@@ -362,7 +362,7 @@ function HomeScreenApp({ app, openLabel, onOpen }: { app: LauncherApp; openLabel
     >
       <span className="relative flex size-16 items-center justify-center overflow-hidden rounded-[1.25rem] border border-border bg-card shadow-sm motion-safe:transition motion-safe:duration-200 motion-safe:group-hover:-translate-y-1 group-hover:shadow-md sm:size-[4.5rem]">
         {app.visual.imageUrl ? (
-          <span className="flex size-full items-center justify-center bg-background p-3">
+          <span className="flex size-full items-center justify-center p-3">
             <Image
               src={app.visual.imageUrl}
               alt={app.visual.imageAlt ?? app.label}
@@ -580,13 +580,16 @@ function MarketplaceStoreCard({ item, active, locale, onOpen, t }: {
 function AppStoreIcon({ icon: Icon, imageUrl, imageAlt, invertInDark }: { icon: LucideIcon; imageUrl?: string; imageAlt: string; invertInDark?: boolean }) {
   return (
     <span className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border bg-primary/10 text-primary shadow-xs">
+      {/* Sin placa propia: `bg-background` y `bg-card` son el mismo blanco en claro
+          pero distintos en oscuro, así que pintarla dejaba un cuadrado negro dentro
+          del tile. El logo va directamente sobre el fondo del tile. */}
       {imageUrl ? (
         <Image
           src={imageUrl}
           alt={imageAlt}
           width={56}
           height={56}
-          className={cn('size-full object-contain p-2.5', invertInDark ? 'bg-background dark:bg-transparent dark:invert' : 'bg-background')}
+          className={cn('size-full object-contain p-2.5', invertInDark && 'dark:invert')}
         />
       ) : (
         <Icon className="size-6" />
@@ -600,7 +603,10 @@ function RemoteIcon({ iconUrl, title, size = 'card' }: { iconUrl: string | null;
   return (
     <span className={cn('flex shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border bg-primary/10 text-primary', size === 'dialog' ? 'size-20' : 'size-14')}>
       {iconUrl && !failed ? (
-        <img src={iconUrl} alt={title} className="size-full bg-background object-contain p-2.5" loading="lazy" onError={() => setFailed(true)} />
+        /* Icono remoto de diseño desconocido: la placa se queda blanca en los dos
+           temas a propósito. Con `bg-background` en oscuro quedaba casi negra y los
+           logos oscuros sobre transparente desaparecían. */
+        <img src={iconUrl} alt={title} className="size-full bg-white object-contain p-2.5" loading="lazy" onError={() => setFailed(true)} />
       ) : (
         <span className="text-base font-bold">{initials(title)}</span>
       )}
