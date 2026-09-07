@@ -13,7 +13,7 @@ selector de agente de la Fase 5. Ruta: **`/admin/terminal`**. Acceso: **sólo `n
 | API | `app/api/admin/terminal/ticket` · `…/sessions` | `POST ticket`: sesión válida y **no impersonada** + lista blanca + **contraseña de nuevo cada vez** + proyecto/modo/ranura del registro + 10 intentos por 10 min (las contraseñas erradas cuentan) → ticket de un solo uso atado a la IP. `GET sessions`: proyectos + conexiones vivas del operador. `DELETE sessions`: mata la sesión tmux (sólo las propias). Todo en `activity_logs`. |
 | Pantalla | `app/[locale]/(terminal)/admin/terminal` + `components/admin/terminal/TerminalWorkspace.tsx` | Grupo de rutas propio (**fuera de `(admin)`**, cuyo layout sólo deja pasar `role='admin'`); `notFound()` para quien no está en la lista. xterm.js, pestañas hasta el tope del proyecto, dividir en dos, modo Shell / Claude Code / Codex, «reconectar» a la misma sesión tmux, «■» para matar de verdad. |
 | Gateway | `scripts/terminal-gateway/server.mjs` (PM2 `terminal-gateway`) | Corre en el **host** (ahí viven los proyectos, docker, pm2, `claude` y `codex`). Escucha **sólo en 172.19.0.1:3400** (IP del host en el bridge de docker; ninguna interfaz pública). Verifica firma, vencimiento, nonce único, email en su propia lista blanca, proyecto/modo/ranura y `Origin`. Abre `tmux new-session -A -s wp-<uid>-<proyecto>-<n> -c <cwd>` con un **entorno limpio** (los secretos no llegan a la shell). 30 min sin teclear → desconecta (tmux sigue); 8 h → corta. |
-| Puente | `docker-compose.yml` › `terminal-proxy` + `config/terminal-proxy.nginx.conf` | Traefik sólo enruta a contenedores: un nginx recibe `/terminal-gateway/*` y lo pasa al host. Sin ticket el gateway rechaza el upgrade igual. |
+| Puente | `docker-compose.yml` › `terminal-proxy` + `config/terminal-proxy.nginx.conf` | Traefik sólo enruta a contenedores: un nginx recibe `/terminal-gateway/*` y lo pasa a **172.19.0.1:3400** (la IP fija, no `host.docker.internal`: ese nombre resuelve al docker0 y el gateway no escucha ahí). Sin ticket el gateway rechaza el upgrade igual. |
 | Auditoría | `/var/log/whatspro-terminal/` (0700) | `audit.jsonl` (aperturas, cierres, rechazos con motivo, IP) y **una transcripción completa por sesión** (entrada y salida, 0600, tope 25 MB). Más `activity_logs`: `TERMINAL_TICKET_ISSUED`, `TERMINAL_DENIED` (motivo), `TERMINAL_SESSION_KILLED`. |
 | Secretos | `.env.terminal` (0600, ignorado por git) | Un solo secreto, dos lectores: el contenedor de la app (env_file) y el gateway (`--env-file`). **El gateway no lee el `.env` general.** |
 
@@ -31,14 +31,20 @@ selector de agente de la Fase 5. Ruta: **`/admin/terminal`**. Acceso: **sólo `n
 
 **La shell es root.** El servidor entero corre como root y los proyectos son de root (`/root/whatsaas`, `/root/aapphost`); crear un usuario técnico con acceso a esas carpetas (doc 01 §10) implica reasignar permisos de tres proyectos y de docker/pm2. No se hizo en esta tanda para no romper despliegues. Mitigación real: quién entra (una persona), transcripción completa, tmux nominal por usuario. Filtrar comandos dentro de una PTY no es seguridad (se esquiva con un alias): no se simuló.
 
-## Cómo se arranca (una vez) y cómo se opera
+## Cómo se arranca (ya está arrancado el 2026-09-07) y cómo se opera
 
 ```bash
-# gateway en el host (lo inicia PM2; sobrevive a reinicios con pm2 save + startup)
+# gateway en el host (PM2 `terminal-gateway`, guardado con pm2 save; sobrevive a reinicios)
 pm2 start /root/whatsaas/scripts/terminal-gateway/server.mjs --name terminal-gateway \
   --node-args="--env-file=/root/whatsaas/.env.terminal" --time && pm2 save
 curl -s http://172.19.0.1:3400/health            # {"ok":true,...}
 curl -s https://whatspro.uno/terminal-gateway/health   # lo mismo, por Traefik + nginx
+
+# smoke de punta a punta (firma un ticket con el mismo secreto, abre el WS, manda pwd,
+# prueba nonce, vencimiento, lista blanca, proyecto, firma alterada y reconexión a tmux):
+cd /root/whatsaas/scripts/terminal-gateway && node --env-file=/root/whatsaas/.env.terminal smoke.mjs
+node --env-file=/root/whatsaas/.env.terminal smoke.mjs wss://whatspro.uno/terminal-gateway/ws   # por el dominio
+# Verificado el 2026-09-07: 9/9 en los dos caminos.
 
 # dar acceso a alguien más: agregar el email en .env.terminal (los DOS lectores lo leen),
 # reiniciar el gateway (pm2 restart terminal-gateway) y recrear la app (deploy).

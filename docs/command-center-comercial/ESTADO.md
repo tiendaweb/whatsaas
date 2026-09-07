@@ -275,4 +275,4 @@ Se ejecutó `docs/produccion/02-PLAN-AAPP-BUSINESS.md` entero salvo la reparaci�
 | 32 Gates de pago/handoff/QA + estados `qa`/`activado` + rondas | ✅ 2026-09-07 |
 | 33 Catálogo en código + CAZA/PILOTO/TORRE + Evaluador | ✅ 2026-09-07 |
 | 34 Reparación de los 235 «desarrollo» en curso | ⏳ script listo, dry-run corrido, falta decisión |
-| 35 Terminales del admin (Developer Command Center F1–F3) | ✅ 2026-09-07 · falta arrancar el gateway con PM2 (comando en el doc) |
+| 35 Terminales del admin (Developer Command Center F1–F3) | ✅ 2026-09-07 · gateway en PM2, smoke 9/9 directo y por el dominio |
