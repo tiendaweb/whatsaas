@@ -35,14 +35,15 @@ import {
   WORK_KIND_META,
   WORK_STATUS_META,
   WORK_STATUS_ORDER,
-  WORK_STATUS_TRANSITIONS,
-  puedeTransicionar,
+  motivoBloqueo,
+  transicionesDisponibles,
   type Familia,
   type WorkKind,
   type WorkStatus,
 } from '@/lib/plugins/tasks/shared/produccion';
 import { C } from '../data/clases';
 import { ProductionFocusView } from './ProductionFocusView';
+import { ChipHoras, ChipUsdHora, PedidoProtocolo, wipTexto } from './PedidoProtocolo';
 
 const API = '/api/plugins/tasks/production';
 const fetcher = async (url: string) => {
@@ -61,8 +62,10 @@ const STATUS_TONE: Record<WorkStatus, string> = {
   pedido: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300',
   aceptado: 'border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300',
   en_curso: 'border-primary/30 bg-primary/10 text-primary',
+  qa: 'border-cyan-500/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300',
   espera_cliente: 'border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-300',
   entregado: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+  activado: 'border-emerald-600/50 bg-emerald-600/20 text-emerald-800 dark:text-emerald-200',
   cambios: 'border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300',
   descartado: 'border-border bg-muted text-muted-foreground',
 };
@@ -78,8 +81,10 @@ const ACCION_LABEL: Record<WorkStatus, string> = {
   pedido: 'Reabrir como pedido',
   aceptado: 'Aceptar el pedido',
   en_curso: 'Empezar a trabajarlo',
+  qa: 'Mandar a QA',
   espera_cliente: 'Marcar: esperando al cliente',
   entregado: 'Entregar con el enlace',
+  activado: 'Marcar activado: el cliente ya lo usa',
   cambios: 'Registrar cambios del cliente',
   descartado: 'Descartar el pedido',
 };
@@ -226,8 +231,9 @@ export function ProduccionOS({ onOpenTask, embedded = false, focusRequest = 0 }:
         </div>
       </header>
 
-      <div className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
+      <div className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-5">
         <Kpi icon={CircleDashed} label="Trabajo abierto" value={data?.counts.open ?? 0} testId="produccion-contador-abierto" />
+        <Kpi icon={Factory} label="WIP en producción" value={wipTexto(data?.counts.wip ?? 0, data?.counts.wipMaximo).texto} emphasis={wipTexto(data?.counts.wip ?? 0, data?.counts.wipMaximo).excedido} danger={wipTexto(data?.counts.wip ?? 0, data?.counts.wipMaximo).excedido} testId="produccion-contador-wip" />
         <Kpi icon={UserRound} label="Sin responsable" value={data?.counts.unassigned ?? 0} emphasis={Boolean(data?.counts.unassigned)} testId="produccion-contador-sin-responsable" />
         <Kpi icon={UsersRound} label="Esperando cliente" value={data?.counts.waitingCustomer ?? 0} testId="produccion-contador-espera-cliente" />
         <Kpi icon={CalendarClock} label="Vencidos" value={data?.counts.due ?? 0} emphasis={Boolean(data?.counts.due)} testId="produccion-contador-vencidos" />
@@ -337,14 +343,16 @@ export function ProduccionOS({ onOpenTask, embedded = false, focusRequest = 0 }:
   );
 }
 
-function Kpi({ icon: Icon, label, value, emphasis, testId }: { icon: typeof Factory; label: string; value: number; emphasis?: boolean; testId: string }) {
+function Kpi({ icon: Icon, label, value, emphasis, danger, testId }: { icon: typeof Factory; label: string; value: number | string; emphasis?: boolean; danger?: boolean; testId: string }) {
+  // El WIP es el único que puede ponerse rojo: «3 trabajos activos máximo, el
+  // cuarto espera» es la regla del protocolo, no una preferencia.
   return (
-    <div data-testid={testId} data-valor={value} className={cn('rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] p-3 sm:p-4', emphasis && 'border-amber-500/30')}>
+    <div data-testid={testId} data-valor={value} className={cn('rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] p-3 sm:p-4', emphasis && 'border-amber-500/30', danger && 'border-destructive/50')}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--t-muted)]">{label}</p>
-        <Icon className={cn('size-4 text-[var(--t-muted)]', emphasis && 'text-amber-600')} aria-hidden />
+        <Icon className={cn('size-4 text-[var(--t-muted)]', emphasis && 'text-amber-600', danger && 'text-destructive')} aria-hidden />
       </div>
-      <p className="mt-1 text-2xl font-black tabular-nums text-[var(--t-text)]">{value}</p>
+      <p className={cn('mt-1 text-2xl font-black tabular-nums text-[var(--t-text)]', danger && 'text-destructive')}>{value}</p>
     </div>
   );
 }
@@ -418,6 +426,8 @@ function FilaPedido({ order, activo, onSelect }: { order: ProductionOrder; activ
               {order.checklist.length ? `${order.checklistDone} de ${order.checklist.length}` : 'Sin checklist'}
             </span>
             <span className="h-1.5 min-w-16 flex-1 overflow-hidden rounded-full bg-[var(--t-hover)]"><span className="block h-full rounded-full bg-primary" style={{ width: `${Math.round(order.progress * 100)}%` }} /></span>
+            <ChipHoras order={order} />
+            <ChipUsdHora order={order} />
             {order.deliveryUrl && (
               <a
                 href={order.deliveryUrl}
@@ -478,9 +488,12 @@ export function ProductionOrderWorkspace({ order, members, onChanged, onOpenTask
     void patch({ workStatus: next, ...(next === 'espera_cliente' ? { blockedReason } : {}), ...(next === 'entregado' ? { deliveryUrl } : {}) }, `${ACCION_LABEL[next]}: hecho.`);
   };
 
-  const transiciones = WORK_STATUS_TRANSITIONS[order.workStatus].filter((next) => puedeTransicionar(order.workStatus, next));
+  const transiciones = transicionesDisponibles(order);
   const pideMotivo = transiciones.includes('espera_cliente');
   const pideEnlace = transiciones.includes('entregado');
+  // El motivo del protocolo con lo que hay escrito en pantalla (enlace, motivo)
+  // y no sólo con lo guardado: así el botón se habilita apenas se pega el link.
+  const bloqueo = (next: WorkStatus) => motivoBloqueo({ ...order, deliveryUrl: deliveryUrl.trim() || order.deliveryUrl, blockedReason: blockedReason.trim() || order.blockedReason }, next);
 
   return (
     <article className="min-w-0 border-b border-[var(--t-border)] bg-[var(--t-surface)] p-4 sm:p-5" data-testid="produccion-detalle" data-pedido={order.id}>
@@ -512,6 +525,8 @@ export function ProductionOrderWorkspace({ order, members, onChanged, onOpenTask
       </div>
 
       {order.parties.length > 0 && <div className="mt-4 flex flex-wrap gap-2">{order.parties.map((party) => party.chatId ? <a key={`${party.type}-${party.id}`} href={`/dashboard/chat/${party.chatId}`} className={C.chip}><UserRound className="size-3.5" /> {party.name} <ExternalLink className="size-3" /></a> : <span key={`${party.type}-${party.id}`} className={C.chip}><UserRound className="size-3.5" /> {party.name}</span>)}</div>}
+
+      <PedidoProtocolo order={order} busy={busy} onPatch={patch} onChanged={onChanged} />
 
       <section className="mt-5 rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface-2)] p-4" data-testid="produccion-checklist">
         <div className="flex items-center justify-between"><h3 className="text-sm font-black text-[var(--t-text)]">Qué falta para entregar</h3><span className="text-xs font-bold tabular-nums text-[var(--t-muted)]">{order.checklistDone} de {order.checklist.length}</span></div>
@@ -565,15 +580,16 @@ export function ProductionOrderWorkspace({ order, members, onChanged, onOpenTask
         <div className="flex flex-wrap gap-2">
           {transiciones.map((next, index) => {
             const faltaMotivo = next === 'espera_cliente' && !blockedReason.trim();
-            const faltaEnlace = next === 'entregado' && !deliveryUrl.trim();
+            const motivo = faltaMotivo ? 'Escribí qué falta del cliente' : bloqueo(next);
             const Icon = ACCION_ICON[next];
             return (
               <Button
                 key={next}
                 type="button"
                 data-testid={`produccion-accion-${next}`}
-                disabled={busy || faltaMotivo || faltaEnlace}
-                title={faltaEnlace ? 'Pegá el enlace de la entrega para poder entregar' : faltaMotivo ? 'Escribí qué falta del cliente' : WORK_STATUS_META[next].ayuda}
+                data-bloqueado={Boolean(motivo)}
+                disabled={busy || Boolean(motivo)}
+                title={motivo ?? WORK_STATUS_META[next].ayuda}
                 variant={index === 0 ? 'default' : next === 'descartado' ? 'ghost' : 'outline'}
                 size="sm"
                 className="gap-1.5"
@@ -585,7 +601,11 @@ export function ProductionOrderWorkspace({ order, members, onChanged, onOpenTask
             );
           })}
         </div>
-        {pideEnlace && !deliveryUrl.trim() && <p className="text-xs font-semibold text-[var(--t-muted)]" data-testid="produccion-aviso-delivery_url">Para entregar hace falta el enlace: pegalo arriba y el botón se habilita.</p>}
+        {/* El primer motivo de bloqueo del protocolo, visible: el botón gris
+            solo no dice si falta el pago, el handoff o el QA. */}
+        {transiciones.map((next) => bloqueo(next)).filter((m): m is string => Boolean(m)).slice(0, 1).map((motivo) => (
+          <p key={motivo} className="text-xs font-semibold text-amber-700 dark:text-amber-300" data-testid="produccion-aviso-protocolo">{motivo}</p>
+        ))}
         {pideMotivo && !blockedReason.trim() && <p className="text-xs font-semibold text-[var(--t-muted)]" data-testid="produccion-aviso-blocked_reason">Para dejarlo esperando al cliente hay que decir qué falta.</p>}
       </section>
 

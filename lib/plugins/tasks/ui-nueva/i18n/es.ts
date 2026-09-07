@@ -204,6 +204,8 @@ export const ES = {
     descansoTerminado: 'Se terminó el descanso.',
     otroBloque: (n: number) => `Otro bloque de ${n} min`,
     descansoCorto: 'Descanso de 5 min',
+    pedidoProduccion: (tipo: string) => `Pedido de producción · ${tipo}`,
+    pedidoProduccionAyuda: 'El tiempo de este bloque se suma a las horas del pedido.',
   },
 
   metricas: {

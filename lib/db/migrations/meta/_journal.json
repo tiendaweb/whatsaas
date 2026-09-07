@@ -694,6 +694,13 @@
       "when": 1788560000000,
       "tag": "0108_produccion_os",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1788660000000,
+      "tag": "0109_produccion_horas",
+      "breakpoints": true
     }
   ]
 }

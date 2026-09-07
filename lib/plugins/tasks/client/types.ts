@@ -59,6 +59,9 @@ export type TaskItem = {
   aiContextQuestion?: string;
   aiContextAnswer?: string;
   aiReadyAt?: string | null;
+  /** Producción OS: tipo y estado del pedido. NULL = tarea común. */
+  workKind?: string | null;
+  workStatus?: string | null;
   labelIds: string[];
   checklist: ChecklistItemWithSource[];
   status: string;

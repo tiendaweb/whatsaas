@@ -42,13 +42,14 @@ import {
   FAMILIA_LABEL,
   WORK_KIND_META,
   WORK_STATUS_META,
-  WORK_STATUS_TRANSITIONS,
   cadenaDeTrabajo,
-  puedeTransicionar,
+  motivoBloqueo,
+  transicionesDisponibles,
   type Familia,
   type WorkStatus,
 } from '@/lib/plugins/tasks/shared/produccion';
 import { relojBloque, useBloqueProduccion, type BloqueProduccion } from '../hooks/useBloqueProduccion';
+import { ChipHoras, ChipUsdHora, PedidoProtocolo, postSesion } from './PedidoProtocolo';
 
 type FocusScope = 'all' | Familia;
 type ContextTab = 'chat' | 'audios' | 'archivos' | 'links' | 'crm';
@@ -86,8 +87,10 @@ const ACCION_LABEL: Record<WorkStatus, string> = {
   pedido: 'Reabrir como pedido',
   aceptado: 'Aceptar el pedido',
   en_curso: 'Empezar a trabajarlo',
+  qa: 'Mandar a QA',
   espera_cliente: 'Marcar: esperando al cliente',
   entregado: 'Entregar con el enlace',
+  activado: 'Marcar activado: el cliente ya lo usa',
   cambios: 'Registrar cambios del cliente',
   descartado: 'Descartar el pedido',
 };
@@ -154,6 +157,30 @@ export function ProductionFocusView({ orders, initialOrderId, members, onClose, 
     setChatId(order.parties.find((party) => party.chatId)?.chatId ?? null);
   }, [order?.id]);
 
+  // El reloj escribe las horas: mientras corre un bloque de foco con un pedido
+  // abierto, hay una sesión abierta sobre ESE pedido. Cambiar de pedido, pausar,
+  // pasar a descanso o cerrar el Focus la cierra (el servidor calcula los
+  // minutos). Así las horas reales salen solas del trabajo, sin que nadie
+  // tenga que acordarse de anotarlas.
+  const sesionDe = useRef<number | null>(null);
+  const corriendoFoco = bloque.hayBloque && !bloque.pausado && bloque.tipo === 'foco';
+  useEffect(() => {
+    let cancelado = false;
+    const refrescar = () => { if (!cancelado) window.setTimeout(onChanged, 400); };
+    if (corriendoFoco && order) {
+      if (sesionDe.current === order.id) return;
+      sesionDe.current = order.id;
+      void postSesion(order.id, { action: 'open', kind: 'foco' }).then(refrescar);
+    } else if (sesionDe.current != null) {
+      const anterior = sesionDe.current;
+      sesionDe.current = null;
+      void postSesion(anterior, { action: 'close' }).then(refrescar);
+    }
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order?.id, corriendoFoco]);
+  useEffect(() => () => { if (sesionDe.current != null) void postSesion(sesionDe.current, { action: 'close' }); }, []);
+
   useEffect(() => {
     if (!scoped.some((candidate) => candidate.id === selectedId) && scoped[0]) setSelectedId(scoped[0].id);
   }, [scoped, selectedId]);
@@ -211,6 +238,7 @@ export function ProductionFocusView({ orders, initialOrderId, members, onClose, 
           <ArrowLeft className="size-4" aria-hidden /> <span className="hidden sm:inline">Volver a Producción</span>
         </Button>
         <TimerButton bloque={bloque} />
+        {order && <span className="hidden items-center gap-2 sm:flex"><ChipHoras order={order} /><ChipUsdHora order={order} /></span>}
         <div className="min-w-0 flex-1 px-1">
           <p className="truncate text-sm font-black">{order?.title ?? 'Sin pedidos en este recorte'}</p>
           <p className="hidden truncate text-[11px] text-muted-foreground sm:block">{order ? `${WORK_KIND_META[order.workKind].corto} · ${clienteDe(order) ?? 'Sin cliente'} · ${WORK_STATUS_META[order.workStatus].label}` : 'Cambiá el filtro para continuar'}</p>
@@ -408,9 +436,10 @@ function ProjectWorkPanel({ order, members, onChanged, onAdvance }: { order: Pro
 
   // Sólo se ofrecen los caminos que el servidor va a aceptar: un botón que
   // siempre falla es peor que no tenerlo, y una IA lo intentaría igual.
-  const transiciones = WORK_STATUS_TRANSITIONS[order.workStatus].filter((next) => puedeTransicionar(order.workStatus, next));
+  const transiciones = transicionesDisponibles(order);
   const pideMotivo = transiciones.includes('espera_cliente');
   const pideEnlace = transiciones.includes('entregado');
+  const bloqueo = (next: WorkStatus) => motivoBloqueo({ ...order, deliveryUrl: deliveryUrl.trim() || order.deliveryUrl, blockedReason: blockedReason.trim() || order.blockedReason }, next);
   const receta = cadenaDeTrabajo(order.workKind, order.id);
   const jsonPedido = JSON.stringify(order, null, 2);
 
@@ -439,6 +468,8 @@ function ProjectWorkPanel({ order, members, onChanged, onAdvance }: { order: Pro
         </label>
         <div className="rounded-xl border border-border bg-card p-3"><p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Avance</p><p className="mt-1 text-xl font-black tabular-nums">{order.checklist.length ? `${order.checklistDone} de ${order.checklist.length}` : `${Math.round(order.progress * 100)} %`}</p></div>
       </div>
+
+      <PedidoProtocolo order={order} busy={busy} onPatch={patch} onChanged={onChanged} compact />
 
       <section className="mt-5 rounded-2xl border border-border bg-card p-4" data-testid="produccion-checklist">
         <div className="flex items-center justify-between"><h2 className="text-sm font-black">Qué falta</h2><span className="text-xs font-bold tabular-nums text-muted-foreground">{order.checklistDone} de {order.checklist.length}</span></div>
@@ -523,15 +554,16 @@ function ProjectWorkPanel({ order, members, onChanged, onAdvance }: { order: Pro
         <div className="flex flex-wrap gap-2">
           {transiciones.map((next, index) => {
             const faltaMotivo = next === 'espera_cliente' && !blockedReason.trim();
-            const faltaEnlace = next === 'entregado' && !deliveryUrl.trim();
+            const motivo = faltaMotivo ? 'Escribí qué falta del cliente' : bloqueo(next);
             const Icon = ACCION_ICON[next];
             return (
               <Button
                 key={next}
                 type="button"
                 data-testid={`produccion-accion-${next}`}
-                disabled={busy || faltaMotivo || faltaEnlace}
-                title={faltaEnlace ? 'Pegá el enlace de la entrega para poder entregar' : faltaMotivo ? 'Escribí qué falta del cliente' : WORK_STATUS_META[next].ayuda}
+                data-bloqueado={Boolean(motivo)}
+                disabled={busy || Boolean(motivo)}
+                title={motivo ?? WORK_STATUS_META[next].ayuda}
                 variant={index === 0 ? 'default' : next === 'descartado' ? 'ghost' : 'outline'}
                 size="sm"
                 className="gap-1.5"
@@ -543,7 +575,9 @@ function ProjectWorkPanel({ order, members, onChanged, onAdvance }: { order: Pro
             );
           })}
         </div>
-        {pideEnlace && !deliveryUrl.trim() && <p className="text-xs font-semibold text-muted-foreground" data-testid="produccion-aviso-delivery_url">Para entregar hace falta el enlace: pegalo arriba y el botón se habilita.</p>}
+        {transiciones.map((next) => bloqueo(next)).filter((m): m is string => Boolean(m)).slice(0, 1).map((motivo) => (
+          <p key={motivo} className="text-xs font-semibold text-amber-700 dark:text-amber-300" data-testid="produccion-aviso-protocolo">{motivo}</p>
+        ))}
         {pideMotivo && !blockedReason.trim() && <p className="text-xs font-semibold text-muted-foreground" data-testid="produccion-aviso-blocked_reason">Para dejarlo esperando al cliente hay que decir qué falta.</p>}
       </section>
 

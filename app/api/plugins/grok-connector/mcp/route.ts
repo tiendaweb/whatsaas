@@ -381,6 +381,7 @@ const PRIORITY_TOOLS = [
   'whatspro_production_work_queue',
   'whatspro_production_get',
   'whatspro_production_update',
+  'whatspro_production_log_time',
   'whatspro_production_create',
   'whatspro_production_list',
   'whatspro_sales_signal_write',

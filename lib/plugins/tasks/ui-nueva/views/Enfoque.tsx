@@ -1,13 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Check, CheckCircle, Coffee, ListTree, Pause, Play, RotateCcw, Target, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Check, CheckCircle, Coffee, Factory, ListTree, Pause, Play, RotateCcw, Target, X } from 'lucide-react';
 import { isRadarTaskTitle, radarTaskTitle } from '@/lib/plugins/radar/shared/display';
 import { RadarTag } from '@/lib/plugins/radar/ui/RadarTag';
 import { AnilloProgreso } from '../components/AnilloProgreso';
 import { C } from '../data/clases';
 import type { Tarea } from '../data/tipos';
 import { relojBloque, useBloqueProduccion } from '../hooks/useBloqueProduccion';
+import { WORK_KIND_META, esWorkKind } from '@/lib/plugins/tasks/shared/produccion';
+import { postSesion } from './PedidoProtocolo';
 import { ES } from '../i18n/es';
 import { cn } from '@/lib/utils';
 
@@ -57,6 +59,26 @@ export function Enfoque(props: {
   }, [bloque.hayBloque, bloque.pausado, bloque.terminaEn, bloque.pausadoCon, totalMs]);
 
   const running = bloque.hayBloque && !bloque.pausado;
+
+  // Si la tarea es un pedido de producción, el bloque también suma a sus horas:
+  // misma sesión que abre el Focus de Producción, sobre el mismo reloj.
+  const pedidoKind = props.tarea && esWorkKind(props.tarea.workKind) ? props.tarea.workKind : null;
+  const pedidoId = pedidoKind ? props.tarea!.id : null;
+  const sesionDe = useRef<number | null>(null);
+  const corriendoFoco = running && bloque.tipo === 'foco';
+  useEffect(() => {
+    if (corriendoFoco && pedidoId != null) {
+      if (sesionDe.current === pedidoId) return;
+      sesionDe.current = pedidoId;
+      void postSesion(pedidoId, { action: 'open', kind: 'foco' });
+    } else if (sesionDe.current != null) {
+      const anterior = sesionDe.current;
+      sesionDe.current = null;
+      void postSesion(anterior, { action: 'close' });
+    }
+  }, [pedidoId, corriendoFoco]);
+  useEffect(() => () => { if (sesionDe.current != null) void postSesion(sesionDe.current, { action: 'close' }); }, []);
+
   const togglePlay = () => {
     if (!bloque.hayBloque) bloque.arrancar('foco');
     else if (bloque.pausado) bloque.reanudar();
@@ -169,6 +191,11 @@ export function Enfoque(props: {
           </div>
           {props.tarea ? (
             <>
+              {pedidoKind && (
+                <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-[var(--tareas-accent)]/30 bg-[var(--tareas-accent)]/10 px-3 py-1 text-[11px] font-black text-[var(--tareas-accent)]" title={ES.enfoque.pedidoProduccionAyuda} data-testid="enfoque-pedido-produccion">
+                  <Factory className="w-3.5 h-3.5" aria-hidden /> {ES.enfoque.pedidoProduccion(WORK_KIND_META[pedidoKind].corto)}
+                </div>
+              )}
               {isRadarTaskTitle(props.tarea.title) && (
                 <div className="mt-4">
                   <RadarTag label="Radar" />

@@ -43,6 +43,9 @@ export type Tarea = {
   aiContextQuestion: string;
   aiContextAnswer: string;
   aiReadyAt: string | null;
+  /** Producción OS: si la tarea es un pedido, su tipo y estado; si no, null. */
+  workKind?: string | null;
+  workStatus?: string | null;
   dueDate: string | null;
   completedAt: string | null;
   status: 'open' | 'in_progress' | 'done';

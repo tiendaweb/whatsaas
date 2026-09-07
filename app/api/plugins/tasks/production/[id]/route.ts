@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getPluginRequestContext } from '@/lib/plugins/core/runtime-permissions';
 import { updateProductionOrder } from '@/lib/plugins/tasks/server/production-os';
-import { WORK_KINDS, WORK_STATUSES } from '@/lib/plugins/tasks/shared/produccion';
+import { PAYMENT_STATES, WORK_KINDS, WORK_STATUSES } from '@/lib/plugins/tasks/shared/produccion';
+import { CATALOGO_KEYS } from '@/lib/plugins/tasks/shared/catalogo';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +20,14 @@ const updateSchema = z.object({
   checklist: z.array(checklistItem).max(100).optional(),
   aiPrompt: z.string().max(20000).optional(),
   aiReadyAt: z.string().datetime({ offset: true }).nullable().optional(),
+  catalogKey: z.enum(CATALOGO_KEYS as [string, ...string[]]).nullable().optional(),
+  ticketAmount: z.number().int().min(0).nullable().optional(),
+  ticketCurrency: z.enum(['ARS', 'USD']).nullable().optional(),
+  estimatedMinutes: z.number().int().min(0).max(100000).nullable().optional(),
+  revisionRoundsIncluded: z.number().int().min(0).max(5).nullable().optional(),
+  paymentState: z.enum(PAYMENT_STATES).nullable().optional(),
+  // Se mezcla con el guardado y se limpia en el servidor (`limpiarHandoff`).
+  handoff: z.record(z.string(), z.unknown()).optional(),
 }).refine((value) => Object.keys(value).length > 0, { message: 'No hay cambios.' });
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

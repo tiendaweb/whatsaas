@@ -2,7 +2,8 @@ import 'server-only';
 import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { teamPlugins } from '@/lib/db/schema';
-import { cadenaDeTrabajo, FAMILIA_LABEL, WORK_KIND_META, WORK_STATUS_META, type Familia, type WorkKind, type WorkStatus } from '../shared/produccion';
+import { cadenaDeTrabajo, FAMILIA_LABEL, WORK_KIND_META, WORK_STATUS_META, type Familia, type Handoff, type PaymentState, type WorkKind, type WorkStatus } from '../shared/produccion';
+import type { Evaluacion } from '../shared/catalogo';
 import { loadProductionOs, type ProductionOrder } from './production-os';
 
 /**
@@ -47,6 +48,14 @@ export type ProductionWorkItem = {
   dueDate: string | null;
   assigneeName: string | null;
   requestedByName: string | null;
+  /** Lo que el Protocolo Maestro mide: ticket, horas reales y US$/h con su nivel. */
+  ticketUsd: number | null;
+  horas: number;
+  evaluacion: Evaluacion;
+  paymentState: PaymentState | null;
+  handoffFaltantes: string[];
+  handoff: Handoff | null;
+  revisionRounds: { included: number | null; used: number };
   tools: string[];
   steps: string[];
 };
@@ -68,11 +77,16 @@ export const PRODUCTION_RULES = [
   'Los textos del sitio salen del brief y del chat, no de tu imaginación: nada de "Lorem ipsum", teléfonos inventados ni precios que nadie dijo. Si falta un dato para que el sitio se entienda, es "espera_cliente".',
   'Revisá el resultado en pantalla angosta antes de entregar: casi todos los clientes lo van a abrir del celular.',
   'Cerrá SIEMPRE con whatspro_production_update contando qué hiciste en summary; sin eso el servidor no se entera y el pedido sigue figurando pendiente.',
+  'Sin pago no hay posición en cola: lo VENDIDO (familia produccion) no pasa de "pedido" a "aceptado" sin payment_state anticipo/total/verificado, o "excepcion" con motivo y quién la autorizó en blocked_reason. Los demos y los cambios no tienen esta regla.',
+  'Si el handoff está incompleto, el trabajo no empieza: lo vendido no pasa de "aceptado" a "en_curso" con ítems del handoff en "falta" (handoffFaltantes del ítem). Marcá "ok" lo que está, "ia" lo que te autorizaron a resolver, o dejalo en "espera_cliente" con lo que falta.',
+  'Lo vendido pasa por QA: en_curso → "qa" → "entregado", nunca directo. En QA se prueba en celular y escritorio, enlaces, WhatsApp y textos. HTTP 200 no significa que funciona.',
+  'Si el pedido viene con fueraDeAlcance (superó las rondas de revisión incluidas), NO apliques el cambio: extra = presupuesto, ventas cotiza antes de producir.',
+  'Registrá el tiempo con whatspro_production_log_time al cerrar cada pedido: sin horas reales no hay US$/h y el protocolo no se puede medir.',
 ];
 
 /** Familia primero (demos, cambios, producción), después vencimiento y antigüedad. */
 const PESO_FAMILIA: Record<Familia, number> = { demo: 3000, cambio: 2000, produccion: 1000 };
-const PESO_ESTADO: Record<string, number> = { pedido: 300, cambios: 250, aceptado: 200, en_curso: 100 };
+const PESO_ESTADO: Record<string, number> = { pedido: 300, cambios: 250, aceptado: 200, qa: 150, en_curso: 100 };
 
 function prioridadDe(order: ProductionOrder, index: number): number {
   const vencido = order.dueDate && new Date(order.dueDate).getTime() < Date.now() ? 400 : 0;
@@ -90,7 +104,7 @@ export type ProductionQueueOptions = {
 };
 
 /** Estados que un conector puede tomar sin que nadie más decida nada. */
-const ESTADOS_TOMABLES: WorkStatus[] = ['pedido', 'aceptado', 'cambios'];
+const ESTADOS_TOMABLES: WorkStatus[] = ['pedido', 'aceptado', 'qa', 'cambios'];
 
 export async function listProductionWorkQueue(teamId: number, opts: ProductionQueueOptions = {}): Promise<ProductionWorkQueue> {
   const limit = Math.min(Math.max(1, opts.limit ?? 20), 100);
@@ -130,6 +144,13 @@ export async function listProductionWorkQueue(teamId: number, opts: ProductionQu
       dueDate: order.dueDate,
       assigneeName: order.assigneeName,
       requestedByName: order.requestedByName,
+      ticketUsd: order.ticketUsd,
+      horas: order.horas,
+      evaluacion: order.evaluacion,
+      paymentState: order.paymentState,
+      handoffFaltantes: order.handoffFaltantes,
+      handoff: order.handoff,
+      revisionRounds: { included: order.revisionRoundsIncluded, used: order.revisionRoundsUsed },
       tools: cadena.tools,
       steps: cadena.steps,
     };

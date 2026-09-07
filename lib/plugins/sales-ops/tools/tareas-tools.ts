@@ -8,7 +8,38 @@ import { createClientProject } from '@/lib/plugins/sales-ops/server/client-proje
 import { DEMO_WORK_KINDS, createDemoTask, demoKindParaNecesidad, esDemoWorkKind } from '@/lib/plugins/sales-ops/server/demos';
 import { SALES_OPS_PLUGIN_ID } from '@/lib/plugins/sales-ops/shared/taxonomy';
 import { createProductionOrder, loadProductionOs, updateProductionOrder } from '@/lib/plugins/tasks/server/production-os';
-import { WORK_KINDS, WORK_STATUSES } from '@/lib/plugins/tasks/shared/produccion';
+import { HANDOFF_ITEMS, PAYMENT_STATES, WORK_KINDS, WORK_STATUSES, limpiarHandoff } from '@/lib/plugins/tasks/shared/produccion';
+import { CATALOGO_KEYS } from '@/lib/plugins/tasks/shared/catalogo';
+
+/**
+ * Campos del Protocolo Maestro que viajan iguales en create y update. JSON
+ * Schema puro: el enum del handoff sale de HANDOFF_ITEMS para que una clave
+ * nueva en shared/ aparezca acá sin tocar nada.
+ */
+const HANDOFF_SCHEMA = {
+  type: 'object',
+  description:
+    'Ficha de handoff (Protocolo SPACE §06 / BUSINESS etapa 03). Cada ítem: "ok" = está, "falta" = hay que pedirlo, "ia" = autorizado a resolverlo con IA o recursos propios. '
+    + 'Lo vendido no pasa de aceptado a en_curso hasta que los 8 estén en ok o ia. Se mergea: mandá sólo lo que cambió.',
+  properties: Object.fromEntries(HANDOFF_ITEMS.map((item) => [item.id, { type: 'string', enum: ['ok', 'falta', 'ia'], description: `${item.label}. ${item.ayuda}` }])),
+  additionalProperties: false,
+} as const;
+
+const CAMPOS_PROTOCOLO = {
+  catalog_key: { type: 'string', enum: [...CATALOGO_KEYS], description: 'Ítem del Catálogo Operativo AAPP SPACE 2026 (whatspro_catalog_list). Rellena solo ticket, moneda, rondas incluidas y minutos estimados; lo que pases explícito manda.' },
+  ticket_amount: { type: ['integer', 'null'], minimum: 0, description: 'Precio acordado en la UNIDAD MENOR de la moneda (centavos), como Finanzas. ARS 200.000 = 20000000.' },
+  ticket_currency: { type: ['string', 'null'], enum: ['ARS', 'USD', null], description: 'Moneda del ticket.' },
+  estimated_minutes: { type: ['integer', 'null'], minimum: 0, description: 'Minutos de producción estimados por ventas. Las horas REALES salen de las sesiones (whatspro_production_log_time).' },
+  revision_rounds_included: { type: ['integer', 'null'], minimum: 0, maximum: 10, description: 'Rondas de revisión incluidas: 1 express, 2 premium. Superarlas marca el pedido como fuera de alcance → extra = presupuesto.' },
+  payment_state: { type: ['string', 'null'], enum: [...PAYMENT_STATES, null], description: 'pendiente | anticipo | total | verificado | excepcion. Sin pago no hay posición en cola: lo vendido no pasa de pedido a aceptado sin anticipo/total/verificado o una excepción con motivo en blocked_reason.' },
+  handoff: HANDOFF_SCHEMA,
+} as const;
+
+const REGLAS_PROTOCOLO =
+  'Tres reglas del Protocolo Maestro que el servidor hace cumplir sobre lo VENDIDO (familia produccion; los demos y los cambios no las tienen): '
+  + '(1) sin pago no hay posición en cola: pedido → aceptado exige payment_state anticipo/total/verificado, o excepcion con el motivo y quién la autorizó en blocked_reason; '
+  + '(2) si el handoff está incompleto el trabajo no empieza: aceptado → en_curso exige los 8 ítems del handoff en ok o ia, o dejarlo en espera_cliente con lo que falta; '
+  + '(3) lo vendido pasa por QA: en_curso → qa → entregado, nunca en_curso → entregado directo. Además: entregado exige delivery_url, y entregado → activado sólo cuando el cliente hizo su primera acción real.';
 
 /**
  * Del chat a Tareas OS, con la misma lógica que usa el servidor cuando ejecuta
@@ -87,9 +118,10 @@ export const tareasActionTools: GrokActionTool[] = [
   {
     name: 'whatspro_production_create',
     description:
-      'Crea un pedido tipado en Producción OS dentro de la MISMA Tarea OS: demo, trabajo vendido o cambio. Nace en estado pedido, con checklist y auditoría. '
+      'Crea un pedido tipado en Producción OS dentro de la MISMA Tarea OS: demo, trabajo vendido, AAPP BUSINESS (business_caza/piloto/torre) o cambio. Nace en estado pedido, con checklist y auditoría. '
+      + 'Pasá catalog_key para que ticket, moneda, rondas incluidas y minutos estimados salgan del Catálogo Operativo real (whatspro_catalog_list) en vez de inventarlos. '
       + 'Puede vincularlo al chat/contacto/cliente y elegir proyecto; si no, el destino se resuelve por tipo. No envía mensajes ni cambia el CRM. '
-      + 'Usá idempotency_key para que un reintento no duplique el pedido. Requiere tasksWrite y la app Tareas activa.',
+      + `Usá idempotency_key para que un reintento no duplique el pedido. ${REGLAS_PROTOCOLO} Requiere tasksWrite y la app Tareas activa.`,
     inputSchema: {
       type: 'object',
       required: ['title', 'work_kind'],
@@ -105,6 +137,7 @@ export const tareasActionTools: GrokActionTool[] = [
         contact_id: { type: ['integer', 'null'], minimum: 1 },
         customer_id: { type: ['integer', 'null'], minimum: 1 },
         ai_prompt: { type: 'string', maxLength: 20000 },
+        ...CAMPOS_PROTOCOLO,
         idempotency_key: { type: 'string', minLength: 8, maxLength: 100 },
         dry_run: { type: 'boolean' },
       },
@@ -115,7 +148,9 @@ export const tareasActionTools: GrokActionTool[] = [
     name: 'whatspro_production_update',
     description:
       'Avanza o corrige un pedido de Producción OS. Las transiciones están controladas; para espera_cliente exige explicar qué falta y para entregado exige delivery_url. '
-      + 'Sincroniza el estado general de Tareas y registra auditoría. No le avisa al cliente: la comunicación sigue siendo una acción separada. Requiere tasksWrite.',
+      + `${REGLAS_PROTOCOLO} `
+      + 'Cada entregado → cambios cuenta una ronda de revisión; si supera las incluidas la respuesta trae fueraDeAlcance: true (extra = presupuesto, ventas cotiza antes de producir). '
+      + 'Acepta ticket, pago, rondas, handoff (se mergea) y catalog_key. Sincroniza el estado general de Tareas y registra auditoría. No le avisa al cliente: la comunicación sigue siendo una acción separada. Requiere tasksWrite.',
     inputSchema: {
       type: 'object',
       required: ['task_id'],
@@ -136,12 +171,24 @@ export const tareasActionTools: GrokActionTool[] = [
           description: 'Ids de los ítems del checklist que quedaron cumplidos (los trae whatspro_production_get). Se tildan sin tener que reenviar el checklist entero.',
         },
         summary: { type: 'string', maxLength: 4000, description: 'Qué hiciste, en 1-3 líneas. Queda en el historial del pedido.' },
+        ...CAMPOS_PROTOCOLO,
         dry_run: { type: 'boolean' },
       },
       additionalProperties: false,
     },
   },
 ];
+
+/** Los mismos campos, validados con zod para el servidor (el JSON Schema es sólo para el conector). */
+const protocoloSchema = {
+  catalog_key: z.enum(CATALOGO_KEYS as [string, ...string[]]).optional(),
+  ticket_amount: z.number().int().min(0).nullable().optional(),
+  ticket_currency: z.enum(['ARS', 'USD']).nullable().optional(),
+  estimated_minutes: z.number().int().min(0).nullable().optional(),
+  revision_rounds_included: z.number().int().min(0).max(10).nullable().optional(),
+  payment_state: z.enum(PAYMENT_STATES).nullable().optional(),
+  handoff: z.record(z.string(), z.unknown()).optional(),
+};
 
 const schema = z.object({
   action: z.enum(['demo', 'project']),
@@ -175,6 +222,7 @@ const createProductionSchema = z.object({
   contact_id: z.number().int().positive().nullable().optional(),
   customer_id: z.number().int().positive().nullable().optional(),
   ai_prompt: z.string().max(20000).optional(),
+  ...protocoloSchema,
   idempotency_key: z.string().min(8).max(100).optional(),
   dry_run: z.boolean().optional(),
 });
@@ -190,8 +238,25 @@ const updateProductionSchema = z.object({
   blocked_reason: z.string().max(2000).nullable().optional(),
   checklist_done: z.array(z.string().max(80)).max(50).optional(),
   summary: z.string().max(4000).optional(),
+  ...protocoloSchema,
   dry_run: z.boolean().optional(),
 });
+
+/** snake_case del conector → camelCase del servidor, sólo lo que vino. */
+function camposProtocolo(data: {
+  catalog_key?: string; ticket_amount?: number | null; ticket_currency?: 'ARS' | 'USD' | null; estimated_minutes?: number | null;
+  revision_rounds_included?: number | null; payment_state?: (typeof PAYMENT_STATES)[number] | null; handoff?: Record<string, unknown>;
+}) {
+  return {
+    ...(data.catalog_key !== undefined && { catalogKey: data.catalog_key }),
+    ...(data.ticket_amount !== undefined && { ticketAmount: data.ticket_amount }),
+    ...(data.ticket_currency !== undefined && { ticketCurrency: data.ticket_currency }),
+    ...(data.estimated_minutes !== undefined && { estimatedMinutes: data.estimated_minutes }),
+    ...(data.revision_rounds_included !== undefined && { revisionRoundsIncluded: data.revision_rounds_included }),
+    ...(data.payment_state !== undefined && { paymentState: data.payment_state }),
+    ...(data.handoff !== undefined && { handoff: limpiarHandoff(data.handoff) }),
+  };
+}
 
 export async function executeTareasTool(name: string, input: Record<string, unknown>, context: GrokActionContext): Promise<unknown> {
   if (name === 'whatspro_production_list') {
@@ -226,10 +291,11 @@ export async function executeTareasTool(name: string, input: Record<string, unkn
       contactId: data.contact_id,
       customerId: data.customer_id,
       aiPrompt: data.ai_prompt,
+      ...camposProtocolo(data),
       idempotencyKey: data.idempotency_key,
       source: 'connector',
     });
-    return { success: true, created: result.created, idempotent: result.idempotent, taskId: result.task.id, status: result.task.workStatus };
+    return { success: true, created: result.created, idempotent: result.idempotent, taskId: result.task.id, status: result.task.workStatus, catalogKey: result.task.catalogKey ?? null, paymentState: result.task.paymentState ?? null };
   }
 
   if (name === 'whatspro_production_update') {
@@ -256,20 +322,29 @@ export async function executeTareasTool(name: string, input: Record<string, unkn
       assigneeId: data.assignee_id,
       deliveryUrl: data.delivery_url,
       blockedReason: data.blocked_reason,
+      ...camposProtocolo(data),
       ...(checklist !== undefined && { checklist }),
     }, 'connector');
+    const fueraDeAlcance = Boolean((result as { fueraDeAlcance?: boolean }).fueraDeAlcance);
     return {
       success: true,
       taskId: result.id,
       workKind: result.workKind,
       workStatus: result.workStatus,
       deliveryUrl: result.deliveryUrl,
+      paymentState: result.paymentState ?? null,
+      revisionRounds: { included: result.revisionRoundsIncluded ?? null, used: result.revisionRoundsUsed ?? 0 },
+      fueraDeAlcance,
       summary: data.summary ?? null,
-      note: result.workStatus === 'entregado'
-        ? 'Entregado. Quien pidió el trabajo le avisa al cliente desde el Command Center; vos no le escribas.'
-        : result.workStatus === 'espera_cliente'
-          ? 'Queda esperando al cliente: pasá al siguiente pedido de whatspro_production_work_queue.'
-          : 'Actualizado.',
+      note: fueraDeAlcance
+        ? 'Extra = presupuesto: superó las rondas incluidas, ventas cotiza antes de producir. No apliques el cambio hasta que haya presupuesto aprobado.'
+        : result.workStatus === 'entregado'
+          ? 'Entregado. Quien pidió el trabajo le avisa al cliente desde el Command Center; vos no le escribas. Registrá el tiempo con whatspro_production_log_time.'
+          : result.workStatus === 'espera_cliente'
+            ? 'Queda esperando al cliente: pasá al siguiente pedido de whatspro_production_work_queue.'
+            : result.workStatus === 'qa'
+              ? 'En QA: probá en celular y escritorio, enlaces, WhatsApp y textos antes de entregar. HTTP 200 no significa que funciona.'
+              : 'Actualizado.',
     };
   }
 

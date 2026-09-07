@@ -60,6 +60,8 @@ export function mapearTarea(
     aiContextQuestion: item.aiContextQuestion ?? '',
     aiContextAnswer: item.aiContextAnswer ?? '',
     aiReadyAt: isoDue(item.aiReadyAt),
+    workKind: item.workKind ?? null,
+    workStatus: item.workStatus ?? null,
   };
 }
 

@@ -23,15 +23,24 @@ import {
   WORK_KIND_META,
   WORK_STATUS_META,
   checklistPorDefecto,
+  esPaymentState,
   esWorkKind,
   esWorkStatus,
   estadoTareaPara,
   familiaDe,
-  puedeTransicionar,
+  handoffCompleto,
+  handoffFaltantes,
+  limpiarHandoff,
+  motivoBloqueo,
   type Familia,
+  type Handoff,
+  type HandoffItemId,
+  type PaymentState,
   type WorkKind,
   type WorkStatus,
 } from '../shared/produccion';
+import { WIP_MAXIMO, catalogoPorKey, evaluarOportunidad, ticketEnUsd, type Evaluacion } from '../shared/catalogo';
+import { resumenHorasPorTarea } from './work-sessions';
 
 export type ProductionParty = { type: 'contact' | 'customer'; id: number; name: string; chatId: number | null };
 
@@ -62,6 +71,32 @@ export type ProductionOrder = {
   aiReadyAt: string | null;
   lastAiRun: { status: 'completed' | 'blocked' | 'failed'; summary: string; connector: string; at: string } | null;
   parties: ProductionParty[];
+  /**
+   * Lo que el Protocolo Maestro pide medir. Ticket en la unidad menor de su
+   * moneda (como Finanzas) y en US$ con la referencia del catálogo; horas
+   * reales sumadas de `team_task_work_sessions`; y la evaluación del
+   * catálogo (US$/h, línea roja) sobre esos dos números.
+   */
+  ticketAmount: number | null;
+  ticketCurrency: string | null;
+  ticketUsd: number | null;
+  estimatedMinutes: number | null;
+  revisionRoundsIncluded: number | null;
+  revisionRoundsUsed: number;
+  /** Rondas usadas por encima de las incluidas: «Extra = presupuesto». */
+  fueraDeAlcance: boolean;
+  paymentState: PaymentState | null;
+  handoff: Handoff;
+  handoffCompleto: boolean;
+  handoffFaltantes: HandoffItemId[];
+  catalogKey: string | null;
+  catalogo: { key: string; nombre: string; precioUsd: number; rondasIncluidas: number; horasObjetivo: number | null } | null;
+  minutosTrabajados: number;
+  /** Horas reales, con un decimal. */
+  horas: number;
+  sesiones: number;
+  sesionAbierta: { id: number; startedAt: string } | null;
+  evaluacion: Evaluacion;
   createdAt: string;
   updatedAt: string;
 };
@@ -83,6 +118,9 @@ export type ProductionOsPayload = {
     unassigned: number;
     waitingCustomer: number;
     due: number;
+    /** Trabajos vendidos en curso o en QA. El protocolo dice: máximo 3, el cuarto espera. */
+    wip: number;
+    wipMaximo: number;
     byStatus: Record<WorkStatus, number>;
     byFamily: Record<Familia, number>;
   };
@@ -125,7 +163,7 @@ export async function loadProductionOs(teamId: number): Promise<ProductionOsPayl
   const projectIds = Array.from(new Set(rows.map((row) => row.task.projectId)));
   const userIds = Array.from(new Set(rows.flatMap((row) => [row.task.assigneeId, row.task.requestedBy]).filter((id): id is number => Boolean(id))));
 
-  const [personRows, memberRows, relationRows, targetRows, aiRunRows] = await Promise.all([
+  const [personRows, memberRows, relationRows, targetRows, aiRunRows, horasPorTarea] = await Promise.all([
     userIds.length
       ? db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, userIds))
       : Promise.resolve([]),
@@ -166,6 +204,7 @@ export async function loadProductionOs(teamId: number): Promise<ProductionOsPayl
           inArray(teamTaskAiRuns.targetId, taskIds),
         )).orderBy(desc(teamTaskAiRuns.createdAt))
       : Promise.resolve([]),
+    resumenHorasPorTarea(teamId, taskIds),
   ]);
 
   const latestAiRun = new Map<number, (typeof aiRunRows)[number]>();
@@ -221,6 +260,11 @@ export async function loadProductionOs(teamId: number): Promise<ProductionOsPayl
       ? row.task.checklist.map((item) => ({ id: String(item.id), text: String(item.text), completed: Boolean(item.completed) }))
       : [];
     const checklistDone = checklist.filter((item) => item.completed).length;
+    const horasResumen = horasPorTarea.get(row.task.id) ?? { minutosFoco: 0, sesiones: 0, sesionAbierta: null };
+    const horas = Math.round((horasResumen.minutosFoco / 60) * 10) / 10;
+    const ticketUsd = ticketEnUsd(row.task.ticketAmount, row.task.ticketCurrency);
+    const handoff = limpiarHandoff(row.task.handoff);
+    const catalogo = catalogoPorKey(row.task.catalogKey);
     return [{
       id: row.task.id,
       title: row.task.title,
@@ -253,6 +297,24 @@ export async function loadProductionOs(teamId: number): Promise<ProductionOsPayl
         at: latestAiRun.get(row.task.id)!.createdAt.toISOString(),
       } : null,
       parties: relationsFor(row.task.id, row.task.projectId),
+      ticketAmount: row.task.ticketAmount,
+      ticketCurrency: row.task.ticketCurrency,
+      ticketUsd,
+      estimatedMinutes: row.task.estimatedMinutes,
+      revisionRoundsIncluded: row.task.revisionRoundsIncluded,
+      revisionRoundsUsed: row.task.revisionRoundsUsed,
+      fueraDeAlcance: row.task.revisionRoundsIncluded != null && row.task.revisionRoundsUsed > row.task.revisionRoundsIncluded,
+      paymentState: esPaymentState(row.task.paymentState) ? row.task.paymentState : null,
+      handoff,
+      handoffCompleto: handoffCompleto(handoff),
+      handoffFaltantes: handoffFaltantes(handoff),
+      catalogKey: row.task.catalogKey,
+      catalogo: catalogo ? { key: catalogo.key, nombre: catalogo.nombre, precioUsd: catalogo.precioUsd, rondasIncluidas: catalogo.rondasIncluidas, horasObjetivo: catalogo.horasObjetivo } : null,
+      minutosTrabajados: horasResumen.minutosFoco,
+      horas,
+      sesiones: horasResumen.sesiones,
+      sesionAbierta: horasResumen.sesionAbierta,
+      evaluacion: evaluarOportunidad(ticketUsd, horas > 0 ? horas : null),
       createdAt: iso(row.task.createdAt)!,
       updatedAt: iso(row.task.updatedAt)!,
     }];
@@ -290,6 +352,8 @@ export async function loadProductionOs(teamId: number): Promise<ProductionOsPayl
       unassigned: orders.filter((order) => WORK_STATUS_META[order.workStatus].abierto && !order.assigneeId).length,
       waitingCustomer: byStatus.espera_cliente,
       due: orders.filter((order) => WORK_STATUS_META[order.workStatus].abierto && order.dueDate && new Date(order.dueDate) < today).length,
+      wip: orders.filter((order) => order.family === 'produccion' && (order.workStatus === 'en_curso' || order.workStatus === 'qa')).length,
+      wipMaximo: WIP_MAXIMO,
       byStatus,
       byFamily,
     },
@@ -337,7 +401,37 @@ export type CreateProductionOrderInput = {
   aiPrompt?: string;
   idempotencyKey?: string;
   source?: 'user' | 'connector' | 'command-center';
+  /** Ítem del catálogo del que nace el pedido: rellena ticket, rondas y estimado si no vienen. */
+  catalogKey?: string | null;
+  ticketAmount?: number | null;
+  ticketCurrency?: string | null;
+  estimatedMinutes?: number | null;
+  revisionRoundsIncluded?: number | null;
+  paymentState?: PaymentState | null;
+  handoff?: Handoff | null;
 };
+
+/**
+ * Los campos comerciales del pedido, con el catálogo rellenando lo que falta.
+ * El precio del catálogo va en ARS cuando lo tiene (es lo que cobra Noelia) y
+ * en USD si sólo está en dólares (AAPP BUSINESS). Lo que viene explícito manda.
+ */
+function camposComerciales(input: Pick<CreateProductionOrderInput, 'catalogKey' | 'ticketAmount' | 'ticketCurrency' | 'estimatedMinutes' | 'revisionRoundsIncluded' | 'paymentState' | 'handoff'>) {
+  const catalogo = catalogoPorKey(input.catalogKey);
+  const ticketDelCatalogo = catalogo
+    ? catalogo.precioArs != null ? { amount: catalogo.precioArs * 100, currency: 'ARS' } : catalogo.precioUsd > 0 ? { amount: catalogo.precioUsd * 100, currency: 'USD' } : null
+    : null;
+  const conTicket = input.ticketAmount != null && input.ticketCurrency;
+  return {
+    catalogKey: catalogo?.key ?? null,
+    ticketAmount: conTicket ? input.ticketAmount! : ticketDelCatalogo?.amount ?? null,
+    ticketCurrency: conTicket ? input.ticketCurrency! : ticketDelCatalogo?.currency ?? null,
+    estimatedMinutes: input.estimatedMinutes ?? (catalogo?.horasObjetivo != null ? Math.round(catalogo.horasObjetivo * 60) : null),
+    revisionRoundsIncluded: input.revisionRoundsIncluded ?? catalogo?.rondasIncluidas ?? null,
+    paymentState: input.paymentState ?? null,
+    handoff: input.handoff ? limpiarHandoff(input.handoff) : null,
+  };
+}
 
 export async function createProductionOrder(teamId: number, userId: number, input: CreateProductionOrderInput) {
   if (input.idempotencyKey) {
@@ -410,6 +504,13 @@ export async function createProductionOrder(teamId: number, userId: number, inpu
     requestedBy: userId,
   });
   if (!task) throw new Error('No se pudo crear el pedido.');
+  // `createTaskInColumn` no conoce los campos comerciales: se escriben en un
+  // segundo paso sobre la tarea recién creada.
+  const comerciales = camposComerciales(input);
+  if (Object.values(comerciales).some((value) => value != null)) {
+    await db.update(teamTaskItems).set(comerciales).where(and(eq(teamTaskItems.teamId, teamId), eq(teamTaskItems.id, task.id)));
+    Object.assign(task, comerciales);
+  }
   if (contactId) await insertRelation({ teamId, userId, sourceType: 'task', sourceId: task.id, targetType: 'contact', targetId: contactId, relationType: 'related', metadata: { source: `production-os:${input.source ?? 'user'}`, chatId: input.chatId ?? null } });
   if (input.customerId) await insertRelation({ teamId, userId, sourceType: 'task', sourceId: task.id, targetType: 'customer', targetId: input.customerId, relationType: 'related', metadata: { source: `production-os:${input.source ?? 'user'}` } });
   await audit(teamId, userId, 'PRODUCTION_OS_ORDER_CREATED', { taskId: task.id, workKind: input.workKind, source: input.source ?? 'user', idempotencyKey: input.idempotencyKey ?? null });
@@ -428,23 +529,52 @@ export type UpdateProductionOrderInput = Partial<{
   checklist: Array<{ id: string; text: string; completed: boolean }>;
   aiPrompt: string;
   aiReadyAt: string | null;
+  catalogKey: string | null;
+  ticketAmount: number | null;
+  ticketCurrency: string | null;
+  estimatedMinutes: number | null;
+  revisionRoundsIncluded: number | null;
+  paymentState: PaymentState | null;
+  /** Se MEZCLA con el handoff guardado: marcar un ítem no borra los otros. */
+  handoff: Handoff;
 }>;
 
 export async function updateProductionOrder(teamId: number, userId: number, taskId: number, patch: UpdateProductionOrderInput, source: 'user' | 'connector' | 'command-center' = 'user') {
   const current = await db.query.teamTaskItems.findFirst({ where: and(eq(teamTaskItems.teamId, teamId), eq(teamTaskItems.id, taskId)) });
   if (!current || !esWorkKind(current.workKind) || !esWorkStatus(current.workStatus)) throw new Error('No existe el pedido de producción.');
-  if (patch.workStatus && !puedeTransicionar(current.workStatus, patch.workStatus)) {
-    throw new Error(`No se puede pasar de ${WORK_STATUS_META[current.workStatus].label} a ${WORK_STATUS_META[patch.workStatus].label}.`);
+  // El handoff se mezcla: un conector que marca «logo: ok» no tiene por qué
+  // reenviar los otros siete ítems, y si los reenviara vacíos los borraría.
+  const handoff = patch.handoff !== undefined ? { ...limpiarHandoff(current.handoff), ...limpiarHandoff(patch.handoff) } : undefined;
+  const paymentState = patch.paymentState !== undefined ? patch.paymentState : esPaymentState(current.paymentState) ? current.paymentState : null;
+  const deliveryUrl = patch.deliveryUrl !== undefined ? patch.deliveryUrl : current.deliveryUrl;
+  const blockedReason = patch.blockedReason !== undefined ? patch.blockedReason : current.blockedReason;
+  if (patch.workStatus) {
+    // Las reglas del protocolo (pago antes de aceptar, handoff antes de
+    // empezar, QA antes de entregar, enlace para entregar) viven en `shared`
+    // para que las pantallas no ofrezcan un botón que acá se rechaza. Se
+    // evalúan sobre el pedido CON el patch aplicado: registrar el pago y
+    // aceptar en el mismo pedido es válido.
+    const motivo = motivoBloqueo({
+      workKind: patch.workKind ?? current.workKind,
+      workStatus: current.workStatus,
+      paymentState,
+      blockedReason,
+      handoff: handoff ?? limpiarHandoff(current.handoff),
+      deliveryUrl,
+    }, patch.workStatus);
+    if (motivo) throw new Error(motivo);
   }
   if (patch.assigneeId) {
     const member = await db.query.teamMembers.findFirst({ where: and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, patch.assigneeId)) });
     if (!member) throw new Error('La persona asignada no pertenece al equipo.');
   }
-  const nextStatus = patch.workStatus ?? current.workStatus;
-  const deliveryUrl = patch.deliveryUrl !== undefined ? patch.deliveryUrl : current.deliveryUrl;
-  if (nextStatus === 'entregado' && !deliveryUrl?.trim()) throw new Error('Pegá el enlace de entrega antes de marcar el trabajo como entregado.');
+  if (patch.catalogKey && !catalogoPorKey(patch.catalogKey)) throw new Error('Ese ítem no está en el catálogo.');
   if (patch.aiReadyAt && !(patch.aiPrompt ?? current.aiPrompt).trim()) throw new Error('Agregá un prompt antes de dejar el trabajo para un conector.');
   const nextTaskStatus = patch.workStatus ? estadoTareaPara(patch.workStatus) : undefined;
+  // Cada vuelta de «entregado/activado → cambios» es una ronda de revisión.
+  // Se cuenta acá y no en la UI para que las tools MCP y los botones sumen igual.
+  const nuevaRonda = patch.workStatus === 'cambios' && (current.workStatus === 'entregado' || current.workStatus === 'activado');
+  const revisionRoundsUsed = current.revisionRoundsUsed + (nuevaRonda ? 1 : 0);
   const [updated] = await db.update(teamTaskItems).set({
     ...(patch.workKind !== undefined && { workKind: patch.workKind }),
     ...(patch.workStatus !== undefined && { workStatus: patch.workStatus }),
@@ -457,7 +587,16 @@ export async function updateProductionOrder(teamId: number, userId: number, task
     ...(patch.checklist !== undefined && { checklist: patch.checklist }),
     ...(patch.aiPrompt !== undefined && { aiPrompt: patch.aiPrompt.slice(0, 20000) }),
     ...(patch.aiReadyAt !== undefined && { aiReadyAt: patch.aiReadyAt ? new Date(patch.aiReadyAt) : null }),
-    ...(patch.workStatus !== undefined && patch.workStatus !== 'espera_cliente' && patch.blockedReason === undefined && { blockedReason: null }),
+    ...(patch.catalogKey !== undefined && { catalogKey: patch.catalogKey }),
+    ...(patch.ticketAmount !== undefined && { ticketAmount: patch.ticketAmount }),
+    ...(patch.ticketCurrency !== undefined && { ticketCurrency: patch.ticketCurrency }),
+    ...(patch.estimatedMinutes !== undefined && { estimatedMinutes: patch.estimatedMinutes }),
+    ...(patch.revisionRoundsIncluded !== undefined && { revisionRoundsIncluded: patch.revisionRoundsIncluded }),
+    ...(patch.paymentState !== undefined && { paymentState: patch.paymentState }),
+    ...(handoff !== undefined && { handoff }),
+    ...(nuevaRonda && { revisionRoundsUsed }),
+    // Una excepción de pago guarda su motivo en blockedReason: no se borra al avanzar.
+    ...(patch.workStatus !== undefined && patch.workStatus !== 'espera_cliente' && patch.blockedReason === undefined && paymentState !== 'excepcion' && { blockedReason: null }),
     ...(nextTaskStatus !== undefined && { status: nextTaskStatus, completedAt: nextTaskStatus === 'done' ? new Date() : null }),
     updatedAt: new Date(),
   }).where(and(eq(teamTaskItems.teamId, teamId), eq(teamTaskItems.id, taskId))).returning();
@@ -468,8 +607,10 @@ export async function updateProductionOrder(teamId: number, userId: number, task
     fromStatus: current.workStatus,
     toStatus: updated.workStatus,
     changed: Object.keys(patch),
+    ...(nuevaRonda && { revisionRoundsUsed }),
   });
-  return updated;
+  const fueraDeAlcance = updated.revisionRoundsIncluded != null && updated.revisionRoundsUsed > updated.revisionRoundsIncluded;
+  return { ...updated, fueraDeAlcance };
 }
 
 /**

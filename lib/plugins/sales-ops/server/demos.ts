@@ -1,9 +1,10 @@
 import 'server-only';
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
-import { contacts, messages, teamTaskProjects, teamTaskWorkspaces, type TaskChecklistItem } from '@/lib/db/schema';
+import { contacts, messages, teamTaskItems, teamTaskProjects, teamTaskWorkspaces, type TaskChecklistItem } from '@/lib/db/schema';
 import { createTaskInColumn, getProjectFirstColumn, insertRelation } from '@/lib/plugins/tasks/server/task-os';
-import { WORK_KINDS, type WorkKind } from '@/lib/plugins/tasks/shared/produccion';
+import { WORK_KINDS, type Handoff, type WorkKind } from '@/lib/plugins/tasks/shared/produccion';
+import { CATALOGO_POR_NECESIDAD } from '@/lib/plugins/tasks/shared/catalogo';
 import type { Need } from '../shared/taxonomy';
 import { buildChatContext, runSkillWithApi } from './skill-runner';
 
@@ -139,6 +140,8 @@ export async function createDemoTask(input: {
   prompt?: string;
   /** El canal viejo crea sitios AAPP; Producción OS permite precisar el tipo (ver `DEMO_KIND_POR_NECESIDAD`). */
   workKind?: DemoWorkKind;
+  /** Necesidad del análisis comercial, si quien llama la tiene: fija el ítem del catálogo del pedido. */
+  need?: string | null;
 }): Promise<{ taskId: number; projectId: number; workspaceId: number; promptSource: 'ia' | 'base' | 'connector' } | { error: string }> {
   const contact = await db.query.contacts.findFirst({ where: and(eq(contacts.id, input.contactId), eq(contacts.teamId, input.teamId)), columns: { id: true, name: true } });
   if (!contact) return { error: 'contact_not_found' };
@@ -186,6 +189,14 @@ export async function createDemoTask(input: {
     requestedBy: input.userId,
   });
   if (!task) return { error: 'task_not_created' };
+
+  // La ficha de handoff con lo que el chat ya dice: el contacto tiene WhatsApp
+  // (por eso existe el pedido), y textos y colores se resuelven con IA a
+  // propósito —un demo se hace para mostrar, no para esperar material—. El
+  // resto falta hasta que alguien lo marque.
+  const handoff: Handoff = { whatsapp: 'ok', textos: 'ia', colores: 'ia', logo: 'falta', fotos: 'falta', accesos: 'falta', alcance: 'falta', revision: 'falta' };
+  const catalogKey = input.need ? CATALOGO_POR_NECESIDAD[input.need] ?? null : null;
+  await db.update(teamTaskItems).set({ handoff, ...(catalogKey && { catalogKey }) }).where(and(eq(teamTaskItems.id, task.id), eq(teamTaskItems.teamId, input.teamId)));
 
   await insertRelation({
     teamId: input.teamId,

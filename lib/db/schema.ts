@@ -4498,6 +4498,20 @@ export const teamTaskItems = pgTable(
     deliveryUrl: text("delivery_url"),
     /** Qué falta del cliente cuando el pedido está en espera. */
     blockedReason: text("blocked_reason"),
+    /**
+     * Lo que el Protocolo Maestro pide medir y Producción OS no tenía: ticket
+     * (unidad menor, como Finanzas), horas estimadas, rondas de revisión
+     * incluidas/usadas, estado del pago, ficha de handoff y de qué ítem del
+     * catálogo nació. Las horas REALES están en `team_task_work_sessions`.
+     */
+    ticketAmount: integer("ticket_amount"),
+    ticketCurrency: varchar("ticket_currency", { length: 3 }),
+    estimatedMinutes: integer("estimated_minutes"),
+    revisionRoundsIncluded: smallint("revision_rounds_included"),
+    revisionRoundsUsed: smallint("revision_rounds_used").notNull().default(0),
+    paymentState: varchar("payment_state", { length: 24 }),
+    handoff: jsonb("handoff").$type<Record<string, 'ok' | 'falta' | 'ia'>>(),
+    catalogKey: varchar("catalog_key", { length: 48 }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -4510,6 +4524,34 @@ export const teamTaskItems = pgTable(
     teamTaskItemsDueIdx: index("team_task_items_due_idx").on(table.teamId, table.dueDate),
     teamTaskItemsScheduleIdx: index("team_task_items_schedule_idx").on(table.teamId, table.startDate, table.endDate),
     teamTaskItemsAssigneeIdx: index("team_task_items_assignee_idx").on(table.teamId, table.assigneeId),
+  }),
+);
+
+/**
+ * Sesiones de trabajo sobre un pedido de producción: cada bloque de 25 minutos
+ * (o un registro a mano) es una fila con inicio y fin. Las horas reales de un
+ * pedido son la suma de `minutes` con `kind = 'foco'`; el descanso no cuenta.
+ * `ended_at IS NULL` = sesión abierta (la pestaña sigue trabajando o se cerró
+ * sin avisar: al sumar se acota a un bloque, nunca más).
+ */
+export const teamTaskWorkSessions = pgTable(
+  "team_task_work_sessions",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    taskId: integer("task_id").notNull().references(() => teamTaskItems.id, { onDelete: "cascade" }),
+    userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+    startedAt: timestamp("started_at").notNull(),
+    endedAt: timestamp("ended_at"),
+    minutes: integer("minutes"),
+    kind: varchar("kind", { length: 16 }).notNull().default("foco"),
+    source: varchar("source", { length: 16 }).notNull().default("bloque"),
+    note: text("note"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamTaskWorkSessionsTaskIdx: index("team_task_work_sessions_task_idx").on(table.teamId, table.taskId),
+    teamTaskWorkSessionsOpenIdx: index("team_task_work_sessions_open_idx").on(table.teamId, table.userId, table.endedAt),
   }),
 );
 

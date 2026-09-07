@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getPluginRequestContext } from '@/lib/plugins/core/runtime-permissions';
 import { createProductionOrder, loadProductionOs } from '@/lib/plugins/tasks/server/production-os';
-import { WORK_KINDS } from '@/lib/plugins/tasks/shared/produccion';
+import { PAYMENT_STATES, WORK_KINDS } from '@/lib/plugins/tasks/shared/produccion';
+import { CATALOGO_KEYS } from '@/lib/plugins/tasks/shared/catalogo';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +19,15 @@ const createSchema = z.object({
   customerId: z.number().int().positive().nullable().optional(),
   chatId: z.number().int().positive().nullable().optional(),
   aiPrompt: z.string().max(20000).optional(),
+  // Lo comercial: si viene `catalogKey`, el servidor rellena lo que falte.
+  catalogKey: z.enum(CATALOGO_KEYS as [string, ...string[]]).nullable().optional(),
+  ticketAmount: z.number().int().min(0).nullable().optional(),
+  ticketCurrency: z.enum(['ARS', 'USD']).nullable().optional(),
+  estimatedMinutes: z.number().int().min(0).max(100000).nullable().optional(),
+  revisionRoundsIncluded: z.number().int().min(0).max(5).nullable().optional(),
+  paymentState: z.enum(PAYMENT_STATES).nullable().optional(),
+  // Se limpia en el servidor (`limpiarHandoff`): sólo entran claves y valores conocidos.
+  handoff: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 /**
