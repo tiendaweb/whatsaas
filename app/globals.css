@@ -339,52 +339,55 @@
 }
 
 /* ── Modo Noelia ───────────────────────────────────────────────────────────
-   Cabina de decisión de TORRE. La maqueta aprobada vive en
-   aapp.space/business-command#modo-noelia y es un diseño oscuro cerrado: los
-   tonos son parte de la identidad del producto, no del tema del panel. Por eso
-   la cabina fija su propia paleta y no sigue claro/oscuro; `color-scheme`
-   mantiene coherentes los controles nativos (scrollbars, textarea, inputs). */
+   Cabina de decisión de TORRE. La maqueta de aapp.space usaba azules marinos
+   propios, pero adentro de la app tiene que ser el MISMO negro del Command
+   Center: por eso las superficies salen de los tokens del tema (el contenedor
+   lleva `dark`, así que son los valores oscuros) y sólo los colores con
+   significado —violeta de marca, verde de enviado, ámbar de bloqueo— quedan
+   fijos. `color-scheme` mantiene coherentes los controles nativos. */
 .modo-noelia {
   color-scheme: dark;
 
-  --mn-bg: #050b14;
-  --mn-shell: #07111e;
-  --mn-panel: #0a1726;
-  --mn-case: #0b1829;
-  --mn-context: #081421;
+  --mn-bg: var(--background);
+  --mn-shell: var(--card);
+  --mn-panel: var(--muted);
+  --mn-case: var(--card);
+  --mn-context: var(--background);
 
   --mn-accent: #ad8cff;
   --mn-accent-soft: rgba(173, 140, 255, 0.25);
 
-  --mn-line: #20344d;
-  --mn-shell-line: #263b55;
-  --mn-kpi-line: #31465f;
-  --mn-speed-line: #293e57;
-  --mn-box-line: #293f59;
-  --mn-key-line: #29415d;
-  --mn-case-line: #745ac8;
-  --mn-tools-line: #584597;
-  --mn-chain-line: #2a405a;
+  --mn-line: var(--border);
+  --mn-shell-line: var(--border);
+  --mn-kpi-line: var(--border);
+  --mn-speed-line: var(--border);
+  --mn-box-line: var(--border);
+  --mn-key-line: var(--border);
+  --mn-case-line: rgba(173, 140, 255, 0.45);
+  --mn-tools-line: rgba(173, 140, 255, 0.35);
+  --mn-chain-line: var(--border);
 
   --mn-green: #55e7b1;
   --mn-green-soft: #54e5b0;
-  --mn-msg-line: #23705f;
-  --mn-msg-bg: rgba(27, 119, 92, 0.1);
+  --mn-msg-line: rgba(85, 231, 177, 0.35);
+  --mn-msg-bg: rgba(85, 231, 177, 0.08);
 
   --mn-amber: #ffc451;
   --mn-amber-soft: #ffd16c;
   --mn-amber-bg: rgba(255, 184, 64, 0.12);
 
-  --mn-label: #91cfff;
-  --mn-text: #f5f8fc;
-  --mn-muted: #a9b8c8;
-  --mn-soft: #d5deea;
-  --mn-dim: #91a6bb;
+  /* Los rótulos eran celestes en la maqueta; acá son el gris del panel para no
+     meter un segundo azul al lado del negro del Command Center. */
+  --mn-label: var(--muted-foreground);
+  --mn-text: var(--foreground);
+  --mn-muted: var(--muted-foreground);
+  --mn-soft: var(--foreground);
+  --mn-dim: var(--muted-foreground);
   --mn-tools-text: #d9ccff;
-  --mn-track: #14263a;
+  --mn-track: var(--muted);
 }
 
-/* La barra de progreso de la maqueta: 6px, violeta → verde. */
+/* La barra de progreso: violeta → verde. */
 .modo-noelia .mn-progress-fill {
   background: linear-gradient(90deg, var(--mn-accent), var(--mn-green));
 }

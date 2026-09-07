@@ -74,6 +74,18 @@ function classifyItem(p: PendingChat, index: number): WorkItem {
   };
 }
 
+/**
+ * La indicación que una persona dejó escrita para el conector al mandar la fila
+ * a la cola en vez de ejecutarla ella. `extra` se guarda aplanado y anidado, así
+ * que se busca en los dos lados.
+ */
+export function instruccionDeLaFila(payload: unknown): string | null {
+  const p = (payload ?? {}) as Record<string, unknown>;
+  const extra = (p.extra ?? {}) as Record<string, unknown>;
+  const valor = p.instruccionConector ?? extra.instruccionConector;
+  return typeof valor === 'string' && valor.trim() ? valor.trim() : null;
+}
+
 export async function listWorkQueue(teamId: number, opts: { kinds?: WorkKind[]; limit?: number } = {}): Promise<WorkQueue> {
   const kinds = new Set(opts.kinds?.length ? opts.kinds : WORK_KINDS);
   const limit = Math.min(Math.max(1, opts.limit ?? 30), 200);
@@ -137,6 +149,10 @@ export async function listWorkQueue(teamId: number, opts: { kinds?: WorkKind[]; 
   if (kinds.has('execute_action')) {
     for (const a of approved) {
       const idempotencyKey = `sales-ops:${a.id}`;
+      // Indicación que dejó una persona al mandar la fila a la cola ("mejorá el
+      // texto y mandalo", "confirmá el precio antes"). Va primero en los pasos:
+      // es lo único de la fila que no se deduce del payload.
+      const indicacion = instruccionDeLaFila(a.payload);
       const tools =
         a.kind === 'send_message'
           ? ['whatspro_chat_send_message', 'whatspro_sales_queue_result']
@@ -162,7 +178,7 @@ export async function listWorkQueue(teamId: number, opts: { kinds?: WorkKind[]; 
         idempotencyKey,
         approvedAt: a.approvedAt ? a.approvedAt.toISOString() : null,
         tools,
-        steps:
+        steps: (indicacion ? [`INDICACIÓN DE LA PERSONA (mandá): ${indicacion}`] : []).concat(
           a.kind === 'send_message'
             ? [
                 `verificar que el chat ${a.chatId} no tenga mensaje del cliente posterior a ${a.approvedAt?.toISOString() ?? 'la aprobación'}`,
@@ -187,6 +203,7 @@ export async function listWorkQueue(teamId: number, opts: { kinds?: WorkKind[]; 
                     `whatspro_sales_queue_result {action_id: ${a.id}, status: "executed", result: { taskId }}`,
                   ]
                 : [`ejecutar ${a.kind} según payload`, `whatspro_sales_queue_result {action_id: ${a.id}, status: "executed"|"failed", result}`],
+        ),
       });
     }
   }

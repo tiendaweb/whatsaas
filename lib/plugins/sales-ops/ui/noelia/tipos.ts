@@ -16,24 +16,6 @@ export const ETAPA_NOELIA_META: Record<EtapaNoelia, { label: string; emoji: stri
   revisar: { label: 'Revisar', emoji: '⚠', hint: 'Datos dudosos o incompletos' },
 };
 
-/** Los cinco eslabones que la maqueta muestra debajo de la tarjeta. */
-export const CADENA_MOTOR = [
-  { paso: '1 · RADAR', detalle: 'Lee conversaciones' },
-  { paso: '2 · FOCUS', detalle: 'Interpreta señales' },
-  { paso: '3 · TORRE', detalle: 'Ordena prioridades' },
-  { paso: '4 · HUMANO', detalle: 'Aprueba la decisión' },
-  { paso: '5 · CLOUD', detalle: 'Ejecuta si está habilitado' },
-] as const;
-
-/** Atajos que la maqueta declara como chips en la barra de velocidad. */
-export const ATAJOS_NOELIA = [
-  { tecla: 'A', accion: 'Aprobar' },
-  { tecla: 'E', accion: 'Editar' },
-  { tecla: 'I', accion: 'IA' },
-  { tecla: 'P', accion: 'Posponer' },
-  { tecla: 'S', accion: 'Saltar' },
-] as const;
-
 /**
  * Badge de estado de la tarjeta. Arranca con lo que dice el expediente y las
  * acciones lo pisan mientras el operador trabaja el caso.

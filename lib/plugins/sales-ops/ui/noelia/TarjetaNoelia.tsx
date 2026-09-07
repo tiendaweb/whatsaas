@@ -1,6 +1,6 @@
 'use client';
 
-import { forwardRef, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { forwardRef, useEffect, useMemo, useState } from 'react';
 import type { DetailPayload } from '../../shared/api-types';
 import { AccionesTarjeta, type AccionesTarjetaHandle } from './AccionesTarjeta';
 import type { EstadoCaso } from './tipos';
@@ -26,17 +26,19 @@ const TONO_ESTADO: Record<EstadoCaso['tono'], string> = {
 };
 
 /**
- * Tarjeta de decisión de Modo Noelia. Reproduce la maqueta aprobada de
- * aapp.space/business-command#modo-noelia: cabecera con píldora de prioridad,
- * nombre grande y metadatos en una línea; dos cajas de lectura (RADAR DICE y
- * FOCUS RECOMIENDA); el mensaje listo en verde; las cinco acciones; y el panel
- * de contexto plegado con TIMELINE y POR QUÉ ESTÁ PRIMERO.
+ * Tarjeta de decisión de Modo Noelia.
+ *
+ * Sigue la maqueta de aapp.space/business-command#modo-noelia (píldora de
+ * prioridad, nombre grande, metadatos en una línea, RADAR DICE / FOCUS
+ * RECOMIENDA, mensaje listo y acciones), pero comprimida: la tarjeta ocupa el
+ * alto disponible y sólo el mensaje scrollea adentro, así el caso entero entra
+ * en una pantalla tanto en el celular como en el escritorio.
  */
 export const TarjetaNoelia = forwardRef<AccionesTarjetaHandle, {
   chatId: number;
   detalle: Detalle;
   onVerConversacion: () => void;
-  onResuelto: (tipo: 'aprobado' | 'pospuesto') => void;
+  onResuelto: (tipo: 'enviado' | 'encolado' | 'programado' | 'pospuesto') => void;
   onSaltar: () => void;
   onDetalleCambio: () => void;
 }>(function TarjetaNoelia({ chatId, detalle, onVerConversacion, onResuelto, onSaltar, onDetalleCambio }, ref) {
@@ -56,40 +58,50 @@ export const TarjetaNoelia = forwardRef<AccionesTarjetaHandle, {
   const bloqueo = customString(custom, 'radar_bloqueo_dominante') || a?.objectionType;
   const prioridadAlta = Boolean(critico || a?.paymentPending || (a?.priorityScore ?? 0) >= 70);
   const evidencia = useMemo(() => evidenciaRadar(detalle), [detalle]);
-  const linea = useMemo(() => resumenDelTimeline(detalle), [detalle]);
 
   const estadoBase: EstadoCaso = critico
-    ? { texto: '⚠ ESPERANDO EQUIPO · NOSOTROS LO FRENAMOS', tono: 'ambar' }
+    ? { texto: '⚠ NOSOTROS LO FRENAMOS', tono: 'ambar' }
     : a?.paymentPending
-      ? { texto: '⚠ PAGO PENDIENTE · CONFIRMAR CON EL CLIENTE', tono: 'ambar' }
-      : { texto: '⚠ ESPERANDO TU DECISIÓN', tono: 'ambar' };
+      ? { texto: '⚠ PAGO PENDIENTE', tono: 'ambar' }
+      : { texto: '⚠ ESPERA TU DECISIÓN', tono: 'ambar' };
   const estado = estadoAccion ?? estadoBase;
 
   return (
-    <article className="mx-auto w-full max-w-4xl rounded-[18px] border border-[var(--mn-case-line)] bg-[var(--mn-case)] p-4 sm:p-[18px]">
-      <header className="flex flex-col gap-3 min-[820px]:flex-row min-[820px]:items-start min-[820px]:justify-between min-[820px]:gap-4">
-        <div className="min-w-0">
-          <span className="inline-flex rounded-full bg-[var(--mn-amber-bg)] px-2 py-[5px] text-[11px] font-black text-[var(--mn-amber)]">
-            {prioridadAlta ? '🔥 OPORTUNIDAD ALTA' : '⚡ DECISIÓN PENDIENTE'}
+    <article className="flex min-h-0 flex-1 flex-col gap-2 rounded-2xl border border-[var(--mn-case-line)] bg-[var(--mn-case)] p-2.5 sm:p-3.5">
+      <header className="shrink-0">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="rounded-full bg-[var(--mn-amber-bg)] px-2 py-0.5 text-[10px] font-black text-[var(--mn-amber)]">
+            {prioridadAlta ? '🔥 ALTA' : '⚡ PENDIENTE'}
           </span>
-          <h2 className="mb-0.5 mt-2 truncate text-[25px] font-black leading-tight tracking-tight">{detalle.header.name.toUpperCase()}</h2>
-          <p className="m-0 text-[13px] text-[var(--mn-soft)]">
-            Origen: <b className="font-black">{traducirOrigen(a)}</b>
-            <span className="px-2" aria-hidden>&nbsp;</span>
-            Producto: <b className="font-black">{productoDelCaso(a)}</b>
-            <span className="px-2" aria-hidden>&nbsp;</span>
-            Valor: <b className="font-black">{dineroEnJuego(a)}</b>
-          </p>
+          <h2 className="min-w-0 flex-1 truncate text-lg font-black leading-tight tracking-tight sm:text-[22px]">{detalle.header.name.toUpperCase()}</h2>
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${TONO_ESTADO[estado.tono]}`} role="status">{estado.texto}</span>
         </div>
-        <span className={`inline-flex shrink-0 self-start rounded-full px-2 py-[5px] text-[11px] font-black ${TONO_ESTADO[estado.tono]}`} role="status">
-          {estado.texto}
-        </span>
+        <p className="mt-0.5 truncate text-[11px] text-[var(--mn-muted)] sm:text-xs">
+          {traducirOrigen(a)} · {productoDelCaso(a)} · <b className="font-black text-[var(--mn-text)]">{dineroEnJuego(a)}</b>
+        </p>
       </header>
 
-      <div className="mt-4 grid gap-2.5 min-[820px]:grid-cols-2">
-        <Caja label="RADAR DICE" texto={`${traducirIntencion(intencion)} · ${traducirBloqueoDominante(bloqueo)}`} pie={evidencia ? `Evidencia: “${evidencia}”` : 'Evidencia: sin cita textual en el expediente.'} />
+      <div className="grid shrink-0 gap-1.5 sm:grid-cols-2">
+        <Caja label="RADAR DICE" texto={`${traducirIntencion(intencion)} · ${traducirBloqueoDominante(bloqueo)}`} pie={evidencia ? `“${evidencia}”` : null} />
         <Caja label="FOCUS RECOMIENDA" texto={a?.recommendedAction || 'Revisar el contexto antes de decidir.'} pie={`Confianza: ${nivelDeConfianza(a)}`} />
       </div>
+
+      {contexto && (
+        <section className="shrink-0 rounded-xl border border-[var(--mn-box-line)] bg-[var(--mn-context)] p-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <small className="text-[11px] font-black tracking-[0.06em] text-[var(--mn-label)]">POR QUÉ ESTÁ PRIMERO</small>
+            <button type="button" onClick={onVerConversacion} className="shrink-0 text-[11px] font-black text-[var(--mn-accent)] hover:underline xl:hidden">Ver el chat</button>
+          </div>
+          <ul className="mt-1 max-h-24 space-y-1 overflow-y-auto text-[12px] leading-snug text-[var(--mn-soft)]">
+            {razones.map((razon) => (
+              <li key={razon} className="flex gap-1.5">
+                <span className="mt-1.5 size-1 shrink-0 rounded-full bg-[var(--mn-accent)]" aria-hidden />
+                <span>{razon}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <AccionesTarjeta
         ref={ref}
@@ -102,55 +114,16 @@ export const TarjetaNoelia = forwardRef<AccionesTarjetaHandle, {
         onSaltar={onSaltar}
         onDetalleCambio={onDetalleCambio}
       />
-
-      {contexto && (
-        <div className="mt-3 grid gap-2.5 min-[820px]:grid-cols-2">
-          <Caja fondo="contexto" label="TIMELINE" texto={linea}>
-            <button type="button" onClick={onVerConversacion} className="mt-2 text-[12px] font-black text-[var(--mn-accent)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mn-accent)]">
-              Ver la conversación completa
-            </button>
-          </Caja>
-          <Caja fondo="contexto" label="POR QUÉ ESTÁ PRIMERO">
-            <ul className="m-0 space-y-1.5 text-[14px] leading-relaxed text-[var(--mn-soft)]">
-              {razones.map((razon) => (
-                <li key={razon} className="flex gap-2">
-                  <span className="mt-[7px] size-1.5 shrink-0 rounded-full bg-[var(--mn-accent)]" aria-hidden />
-                  <span>{razon}</span>
-                </li>
-              ))}
-            </ul>
-          </Caja>
-        </div>
-      )}
     </article>
   );
 });
 
-function Caja({ label, texto, pie, fondo = 'panel', children }: {
-  label: string;
-  texto?: string;
-  pie?: string;
-  fondo?: 'panel' | 'contexto';
-  children?: ReactNode;
-}) {
+function Caja({ label, texto, pie }: { label: string; texto: string; pie?: string | null }) {
   return (
-    <section className={`rounded-[13px] border border-[var(--mn-box-line)] p-3.5 ${fondo === 'panel' ? 'bg-[var(--mn-panel)]' : 'bg-[var(--mn-context)]'}`}>
-      <small className="block text-[12px] font-black tracking-[0.06em] text-[var(--mn-label)]">{label}</small>
-      {texto && <p className="mb-0 mt-1.5 text-[14px] leading-relaxed text-[var(--mn-text)]">{texto}</p>}
-      {children}
-      {pie && <em className="mt-1.5 block text-[12px] not-italic text-[var(--mn-dim)]">{pie}</em>}
+    <section className="rounded-xl border border-[var(--mn-box-line)] bg-[var(--mn-panel)] p-2">
+      <small className="block text-[10px] font-black tracking-[0.06em] text-[var(--mn-label)]">{label}</small>
+      <p className="mb-0 mt-0.5 line-clamp-3 text-[12.5px] leading-snug text-[var(--mn-text)]">{texto}</p>
+      {pie && <em className="mt-0.5 block truncate text-[11px] not-italic text-[var(--mn-dim)]">{pie}</em>}
     </section>
   );
-}
-
-/** Una línea con el recorrido del caso, al estilo «consultó → aceptó → esperando». */
-function resumenDelTimeline(detalle: DetailPayload): string {
-  const hitos = detalle.timeline.filter((t): t is Extract<typeof t, { who: string }> => 'who' in t);
-  if (!hitos.length) return 'Todavía no hay hitos registrados en el expediente.';
-  const pasos = hitos.slice(-5).map((h) => {
-    const quien = h.who === 'cliente' ? 'cliente' : h.who === 'nota' ? 'nota' : 'equipo';
-    const texto = h.text.trim().replace(/\s+/g, ' ');
-    return `${quien}: ${texto.length > 60 ? `${texto.slice(0, 59)}…` : texto}`;
-  });
-  return pasos.join(' → ');
 }
