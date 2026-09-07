@@ -3,6 +3,7 @@ import 'server-only';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { aiConfigs } from '@/lib/db/schema';
+import { analizarTextoConBanco, esErrorDeCuota } from '@/lib/gemini/key-bank';
 import { getAIProviderForConfig } from '@/lib/plugins/ai-chat/service';
 import type { AIMessage } from '@/lib/plugins/ai-chat/types';
 import { DraftError } from './service';
@@ -57,19 +58,54 @@ export async function generateDraft(teamId: number, _userId: number, input: Draf
   const draftType = input.draftType === 'dynamic' ? 'dynamic' : 'static';
   const mode = resolveDraftGenerateMode(input.mode);
 
+  const texto = buildPrompt({ prompt, mode, baseContent, draftType });
   const config = await db.query.aiConfigs.findFirst({ where: eq(aiConfigs.teamId, teamId) });
-  if (!config) throw new DraftError('AI provider is not configured for this team.');
 
-  const provider = await getAIProviderForConfig(config);
-  const messages: AIMessage[] = [{ role: 'user', content: buildPrompt({ prompt, mode, baseContent, draftType }) }];
+  let content = '';
+  let via: 'proveedor' | 'banco' = 'proveedor';
+  let fallaProveedor = '';
 
-  const response = await provider.generateResponse(messages);
-  const content = response.content?.trim() ?? '';
-  if (!content) throw new DraftError('The AI provider returned an empty draft.', 502);
+  if (config) {
+    try {
+      const provider = await getAIProviderForConfig(config);
+      const messages: AIMessage[] = [{ role: 'user', content: texto }];
+      const response = await provider.generateResponse(messages);
+      content = response.content?.trim() ?? '';
+    } catch (error) {
+      // La cuota agotada del proveedor del equipo no es un error del pedido:
+      // hay un banco de keys de Gemini justo para esto. Cualquier otra falla
+      // también cae al banco antes de darse por vencida.
+      fallaProveedor = error instanceof Error ? error.message : String(error);
+      if (!esErrorDeCuota(error)) console.error('Proveedor de IA del equipo falló al redactar:', fallaProveedor);
+    }
+  }
+
+  if (!content) {
+    const banco = await analizarTextoConBanco({
+      teamId,
+      prompt: texto,
+      automatico: false,
+      // Redactar no es analizar: con temperatura 0 "cambiar otra vez" devolvía
+      // siempre el mismo texto.
+      temperatura: 0.9,
+    });
+    if (banco.ok) {
+      content = banco.texto.trim();
+      via = 'banco';
+    } else {
+      const detalle = config ? banco.error : 'El equipo no tiene proveedor de IA configurado.';
+      throw new DraftError(
+        `No se pudo redactar con IA: ${detalle} Podés escribir el mensaje a mano y aprobarlo igual.`,
+        banco.reintentable ? 429 : 502,
+      );
+    }
+  }
+
+  if (!content) throw new DraftError('La IA devolvió un borrador vacío.', 502);
 
   return {
     content,
     draftType,
-    metadata: { prompt, mode, generatedAt: new Date().toISOString() },
+    metadata: { prompt, mode, via, generatedAt: new Date().toISOString() },
   };
 }

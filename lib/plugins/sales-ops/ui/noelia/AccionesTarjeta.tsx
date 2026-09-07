@@ -27,6 +27,12 @@ type Props = {
   onDetalleCambio: () => void;
 };
 
+type AprobarRespuesta = {
+  batchId: string;
+  approvedIds: number[];
+  execution: { executed: number; skipped: number; failed: number; results: Array<{ status: 'executed' | 'skipped' | 'failed'; reason?: string }> } | null;
+};
+
 const VIVAS = ['proposed', 'pending_approval', 'approved'] as const;
 const CHIPS = ['Más corto', 'Más cálido', 'Quiero cerrar', 'No menciones el precio', 'Recordale lo que pidió', 'Que parezca más humano'];
 
@@ -144,16 +150,30 @@ export const AccionesTarjeta = forwardRef<AccionesTarjetaHandle, Props>(function
     setGuardando(true);
     try {
       const current = await asegurarAction();
-      if (current.status !== 'approved') {
-        await json(`/api/plugins/sales-ops/queue/actions/${current.id}/approve`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ recommendation: detalle.analysis?.recommendedAction, originalText: original || mensaje, aiInstruction: instruccion || undefined }),
-        });
+      // Aprobar manda: la ruta ejecuta la fila en el mismo request. Si la fila
+      // ya estaba aprobada de antes se la vuelve a pasar igual, porque puede
+      // haber quedado aprobada sin ejecutar.
+      const res = await json<AprobarRespuesta>(`/api/plugins/sales-ops/queue/actions/${current.id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recommendation: detalle.analysis?.recommendedAction, originalText: original || mensaje, aiInstruction: instruccion || undefined }),
+      });
+
+      const fila = res.execution?.results?.[0] ?? null;
+      if (fila?.status === 'failed') {
+        onEstado({ texto: '⚠ NO SE PUDO ENVIAR', tono: 'ambar' });
+        toast.error(fila.reason || 'Quedó aprobado pero el envío falló. Reintentá desde la Cola.');
+        onDetalleCambio();
+        return;
       }
       setAprobado(true);
-      onEstado({ texto: '✓ APROBADO · LISTO PARA EJECUTAR', tono: 'verde' });
-      toast.success('Listo. Quedó aprobado, todavía no se envió.');
+      if (res.execution && res.execution.executed > 0) {
+        onEstado({ texto: '✓ ENVIADO', tono: 'verde' });
+        toast.success('Enviado.');
+      } else {
+        onEstado({ texto: '✓ APROBADO · LISTO PARA EJECUTAR', tono: 'verde' });
+        toast.success('Aprobado. Queda en la cola para salir.');
+      }
       onDetalleCambio();
       onResuelto('aprobado');
     } catch (error) {
@@ -264,7 +284,7 @@ export const AccionesTarjeta = forwardRef<AccionesTarjetaHandle, Props>(function
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button type="button" className={BTN_GHOST} aria-expanded={contextoAbierto} onClick={onContexto}>MÁS CONTEXTO</button>
         <span className="rounded-full border border-[var(--mn-tools-line)] px-2.5 py-1.5 text-[11px] font-black text-[var(--mn-tools-text)]">
-          APROBAR NO ENVÍA · LA COLA EJECUTA
+          APROBAR ENVÍA · PASA POR LA COLA Y QUEDA AUDITADO
         </span>
       </div>
     </>

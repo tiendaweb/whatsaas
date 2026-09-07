@@ -1,4 +1,4 @@
-const STATIC_CACHE = 'whatspro-static-v3';
+const STATIC_CACHE = 'whatspro-static-v4';
 const STATIC_ASSETS = [
   '/pwa-icon-192.png',
   '/pwa-icon-512.png',
@@ -39,15 +39,27 @@ self.addEventListener('fetch', (event) => {
   const isNotificationSound = url.pathname.startsWith('/sounds/');
   if (!isVersionedStaticAsset && !isPwaAsset && !isNotificationSound) return;
 
+  // `<audio>` pide el mp3 por rangos y el navegador contesta 206. `Cache.put`
+  // no acepta respuestas parciales: tiraba y, como el throw pasaba dentro del
+  // respondWith, el fetch entero fallaba con ERR_FAILED y el sonido no sonaba.
+  // Un pedido con Range se deja pasar sin tocar la caché.
+  if (request.headers.has('range')) return;
+
   event.respondWith(
     caches.open(STATIC_CACHE).then(async (cache) => {
       const cached = await cache.match(request);
       if (cached) return cached;
 
       const response = await fetch(request);
-      if (response.ok) await cache.put(request, response.clone());
+      // Sólo se guarda un 200 completo: `response.ok` también es cierto para
+      // 206, y una opaca (`type: 'opaque'`) no sirve para servir después.
+      if (response.status === 200 && response.type === 'basic') {
+        // Guardar es best-effort: si la caché está llena o rechaza la entrada,
+        // el usuario igual tiene que recibir su respuesta.
+        cache.put(request, response.clone()).catch(() => {});
+      }
       return response;
-    }),
+    }).catch(() => fetch(request)),
   );
 });
 

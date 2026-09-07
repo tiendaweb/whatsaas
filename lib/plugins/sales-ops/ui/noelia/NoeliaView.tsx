@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useSWR, { preload } from 'swr';
-import { ArrowLeft, Check, Loader2, Pause, Play, Timer } from 'lucide-react';
+import { ArrowLeft, Check, Loader2, MessageSquare, Pause, Play, Timer } from 'lucide-react';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import type { DetailPayload, OverviewPayload } from '../../shared/api-types';
@@ -48,7 +48,7 @@ const BTN_GHOST = 'inline-flex min-h-[46px] items-center justify-center gap-2 ro
  */
 export function NoeliaView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir: () => void }) {
   const [filtros, setFiltros] = useState<FiltrosNoelia>(FILTROS_NOELIA);
-  const [conversacion, setConversacion] = useState(false);
+  const [chatMovil, setChatMovil] = useState(false);
   const [solapa, setSolapa] = useState<SolapaContacto>('chat');
   const acciones = useRef<AccionesTarjetaHandle | null>(null);
   const cola = useColaFocus(filtros, owner, ETAPAS_NOELIA);
@@ -72,7 +72,7 @@ export function NoeliaView({ owner, onSalir }: { owner: OwnerFilterValue; onSali
   }, []);
 
   useEffect(() => {
-    setConversacion(false);
+    setChatMovil(false);
     setSolapa('chat');
     if (cola.siguiente) preload(detalleUrl(cola.siguiente.chatId), fetcher).catch(() => {});
   }, [chatId, cola.siguiente]);
@@ -125,7 +125,7 @@ export function NoeliaView({ owner, onSalir }: { owner: OwnerFilterValue; onSali
         ref={acciones}
         chatId={cola.actual.chatId}
         detalle={detalle}
-        onVerConversacion={() => setConversacion(true)}
+        onVerConversacion={() => setChatMovil(true)}
         onResuelto={resuelto}
         onSaltar={saltar}
         onDetalleCambio={() => void mutate()}
@@ -134,7 +134,10 @@ export function NoeliaView({ owner, onSalir }: { owner: OwnerFilterValue; onSali
   })();
 
   return (
-    <div className="modo-noelia fixed inset-0 z-50 flex h-dvh flex-col bg-[var(--mn-bg)] text-[var(--mn-text)]">
+    // `dark` además de `modo-noelia`: la cabina es oscura siempre, y el panel de
+    // contacto usa los tokens del tema, así que sin esto quedaba un panel blanco
+    // pegado a una cabina negra cuando el usuario tiene el tema claro.
+    <div className="dark modo-noelia fixed inset-0 z-50 flex h-dvh flex-col bg-[var(--mn-bg)] text-[var(--mn-text)]">
       <header className="shrink-0 border-b border-[var(--mn-shell-line)] bg-[var(--mn-shell)]">
         <div className="mx-auto flex min-h-14 w-full max-w-[1120px] items-center gap-2 px-3 sm:px-4">
           <button type="button" onClick={onSalir} className="flex h-9 items-center gap-1.5 rounded-lg px-2 text-sm font-black text-[var(--mn-muted)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mn-accent)]">
@@ -144,6 +147,15 @@ export function NoeliaView({ owner, onSalir }: { owner: OwnerFilterValue; onSali
             <p className="truncate text-[11px] font-black uppercase tracking-[0.15em] text-[var(--mn-accent)]">⚡ Modo Noelia</p>
             <p className="hidden truncate text-[11px] text-[var(--mn-muted)] sm:block">Torre ve todo. Acá aparece sólo lo que necesita de vos.</p>
           </div>
+          {/* Debajo de xl no entra la columna: el mismo panel se abre en hoja. */}
+          <button
+            type="button"
+            onClick={() => setChatMovil(true)}
+            disabled={!chatId}
+            className="flex h-9 items-center gap-1.5 rounded-xl border border-[var(--mn-key-line)] px-2.5 text-xs font-black text-[var(--mn-soft)] hover:border-[var(--mn-accent)] disabled:opacity-40 xl:hidden"
+          >
+            <MessageSquare className="size-3.5" aria-hidden /> Chat
+          </button>
           <button
             type="button"
             onClick={() => !bloque.hayBloque ? bloque.arrancar('foco') : bloque.pausado ? bloque.reanudar() : bloque.pausar()}
@@ -155,7 +167,8 @@ export function NoeliaView({ owner, onSalir }: { owner: OwnerFilterValue; onSali
         </div>
       </header>
 
-      <NoeliaMovil>
+      <div className="flex min-h-0 flex-1">
+        <NoeliaMovil>
         <div className="mx-auto w-full max-w-[1120px] rounded-[22px] border border-[var(--mn-shell-line)] bg-[var(--mn-shell)] p-3 shadow-[0_28px_70px_rgba(0,0,0,.32)] sm:p-[18px]">
           {/* Las cuatro colas: filtro con contador, no navegación. */}
           <div className="grid grid-cols-2 gap-2.5 min-[820px]:grid-cols-4" role="tablist" aria-label="Colas de decisión">
@@ -223,17 +236,26 @@ export function NoeliaView({ owner, onSalir }: { owner: OwnerFilterValue; onSali
         </div>
 
         <p className="mx-auto mt-3 w-full max-w-[1120px] text-[13px] text-[#9fb0c1]">
-          Aprobar guarda la decisión y la cola la ejecuta: desde acá nunca sale un mensaje solo.
+          Aprobar manda el mensaje: pasa por la cola, con clave de idempotencia y auditoría.
           Modo Noelia forma parte de TORRE; no es un producto separado.
           {overview && <> · Nuevas hoy: <b className="font-black">{fmtInt(overview.counters.newToday)}</b></>}
         </p>
-      </NoeliaMovil>
+        </NoeliaMovil>
+
+        {/* El mismo panel de contacto que usa Focus, fijo a la derecha. Modo
+            Noelia decide sobre una conversación: tenerla al lado evita abrir y
+            cerrar una hoja en cada caso. */}
+        <aside className="hidden shrink-0 flex-col border-l border-[var(--mn-shell-line)] bg-[var(--mn-shell)] p-3 xl:flex xl:w-[420px]" aria-label="Conversación">
+          {chatId ? <PanelContacto chatId={chatId} solapa={solapa} onSolapa={setSolapa} className="min-h-0 flex-1" /> : null}
+        </aside>
+      </div>
 
       <Confeti activo={cola.terminada && cola.procesadosEtapa > 0} />
 
-      <Sheet open={conversacion} onOpenChange={setConversacion}>
-        <SheetContent side="right" className="flex w-full max-w-full flex-col p-0 sm:max-w-xl">
-          <SheetTitle className="border-b border-border px-4 py-3 text-base">Conversación completa</SheetTitle>
+      {/* En el celular el mismo panel entra como hoja: no hay lugar para la columna. */}
+      <Sheet open={chatMovil} onOpenChange={setChatMovil}>
+        <SheetContent side="right" className="dark flex w-full max-w-full flex-col p-0 sm:max-w-xl">
+          <SheetTitle className="border-b border-border px-4 py-3 text-base">Conversación</SheetTitle>
           {chatId && <PanelContacto chatId={chatId} solapa={solapa} onSolapa={setSolapa} className="min-h-0 flex-1 p-3" />}
         </SheetContent>
       </Sheet>

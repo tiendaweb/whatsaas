@@ -455,7 +455,7 @@ async function registrarError(keyId: number, mensaje: string) {
 }
 
 /** Un 429 (o "quota"/"rate limit") significa que esta key tocó el techo, no que el audio esté mal. */
-function esErrorDeCuota(error: unknown) {
+export function esErrorDeCuota(error: unknown) {
   const texto = (error instanceof Error ? error.message : String(error)).toLowerCase();
   return texto.includes('429') || texto.includes('quota') || texto.includes('rate limit') || texto.includes('resource_exhausted');
 }
@@ -629,7 +629,15 @@ export async function transcribirConBanco(input: {
 }
 
 /** Análisis sobre texto ya transcripto: mismo banco, sin mandar el audio otra vez. */
-export async function analizarTextoConBanco(input: { teamId: number; prompt: string; automatico?: boolean }): Promise<TranscripcionBanco> {
+export async function analizarTextoConBanco(input: {
+  teamId: number;
+  prompt: string;
+  automatico?: boolean;
+  /** 0 (default) para análisis reproducible; subirla cuando se redacta y se
+   *  espera una versión distinta en cada pedido ("cambiar otra vez"). */
+  temperatura?: number;
+  maxTokens?: number;
+}): Promise<TranscripcionBanco> {
   const intentadas: number[] = [];
   let ultimoError = '';
   for (let intento = 0; intento < 10; intento += 1) {
@@ -649,7 +657,7 @@ export async function analizarTextoConBanco(input: { teamId: number; prompt: str
       const respuesta = await cliente.models.generateContent({
         model: key.model,
         contents: [{ role: 'user', parts: [{ text: input.prompt }] }],
-        config: { temperature: 0, maxOutputTokens: 2000 },
+        config: { temperature: input.temperatura ?? 0, maxOutputTokens: input.maxTokens ?? 2000 },
       });
       const texto = respuesta.text?.trim();
       await registrarUso(key.id, { error: !texto });
