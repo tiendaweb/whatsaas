@@ -4,6 +4,8 @@ import { forwardRef, useEffect, useMemo, useState } from 'react';
 import type { DetailPayload } from '../../shared/api-types';
 import { AccionesTarjeta, type AccionesTarjetaHandle } from './AccionesTarjeta';
 import type { EstadoCaso } from './tipos';
+import { SituacionBadge } from '../components/SituacionBadge';
+import type { Situacion } from '../../shared/situacion';
 import {
   customString,
   dineroEnJuego,
@@ -37,11 +39,13 @@ const TONO_ESTADO: Record<EstadoCaso['tono'], string> = {
 export const TarjetaNoelia = forwardRef<AccionesTarjetaHandle, {
   chatId: number;
   detalle: Detalle;
+  /** En qué situación entró a la cola. La calcula el listado, no el detalle. */
+  situacion?: Situacion;
   onVerConversacion: () => void;
   onResuelto: (tipo: 'enviado' | 'encolado' | 'programado' | 'pospuesto') => void;
   onSaltar: () => void;
   onDetalleCambio: () => void;
-}>(function TarjetaNoelia({ chatId, detalle, onVerConversacion, onResuelto, onSaltar, onDetalleCambio }, ref) {
+}>(function TarjetaNoelia({ chatId, detalle, situacion, onVerConversacion, onResuelto, onSaltar, onDetalleCambio }, ref) {
   const a = detalle.analysis;
   const custom = detalle.header.customData ?? {};
   const [contexto, setContexto] = useState(false);
@@ -76,8 +80,13 @@ export const TarjetaNoelia = forwardRef<AccionesTarjetaHandle, {
           <h2 className="min-w-0 flex-1 truncate text-lg font-black leading-tight tracking-tight sm:text-[22px]">{detalle.header.name.toUpperCase()}</h2>
           <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${TONO_ESTADO[estado.tono]}`} role="status">{estado.texto}</span>
         </div>
-        <p className="mt-0.5 truncate text-[11px] text-[var(--mn-muted)] sm:text-xs">
-          {traducirOrigen(a)} · {productoDelCaso(a)} · <b className="font-black text-[var(--mn-text)]">{dineroEnJuego(a)}</b>
+        {/* La situación entra en la línea que ya existe, no en una nueva: la
+            cabina es una sola pantalla y un renglón más se lo saca al mensaje. */}
+        <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 truncate text-[11px] text-[var(--mn-muted)] sm:text-xs">
+          <span className="truncate">
+            {traducirOrigen(a)} · {productoDelCaso(a)} · <b className="font-black text-[var(--mn-text)]">{dineroEnJuego(a)}</b>
+          </span>
+          {situacion && <SituacionBadge situacion={situacion} />}
         </p>
       </header>
 

@@ -35,6 +35,7 @@ import type {
   TimelineHit,
 } from '../shared/api-types';
 import type { DossierEntry } from '../shared/contract';
+import { SITUACIONES, esSituacion, type Situacion } from '../shared/situacion';
 import {
   FRONT_OPPORTUNITY_GATES,
   FRONT_SWEEP_GATES,
@@ -115,6 +116,8 @@ type JoinedRow = {
   a: typeof teamCommercialAnalysis.$inferSelect;
   chat: { remoteJid: string; name: string | null; pushName: string | null; profilePicUrl: string | null; instanceId: number | null };
   contactName: string | null;
+  /** Sólo lo trae el listado; el detalle no la pide. */
+  situacion?: Situacion | null;
 };
 
 function toRow(r: JoinedRow, now: number): AnalysisRow {
@@ -158,6 +161,7 @@ function toRow(r: JoinedRow, now: number): AnalysisRow {
     analyzedBy: (a.analyzedBy ?? null) as AnalysisRow['analyzedBy'],
     version: a.version,
     source: a.source as AnalysisRow['source'],
+    ...(r.situacion ? { situacion: r.situacion } : {}),
   };
 }
 
@@ -235,6 +239,103 @@ const AGE_INTERVALS: Record<NonNullable<ListQuery['ageBucket']>, SQL> = {
   gt180: sql`${teamCommercialAnalysis.lastCustomerMessageAt} < now() - interval '180 days'`,
 };
 
+/**
+ * "Le salió algo después del análisis": un envío ejecutado o una corrida de
+ * prompt cerrada, siempre POSTERIOR al análisis vigente (lo de antes es de
+ * otra auditoría). Comparación de columna contra columna dentro del SQL: nada
+ * de `Date` en el filtro, que revienta en runtime y el build lo deja pasar.
+ */
+function sqlTuvoSeguimiento(teamId: number): SQL {
+  const a = teamCommercialAnalysis;
+  return sql`(
+    exists (
+      select 1 from team_commercial_actions ac
+       where ac.team_id = ${teamId} and ac.chat_id = ${a.chatId}
+         and ac.status in ('executed', 'resulted')
+         and ac.executed_at is not null and ac.executed_at > ${a.analyzedAt}
+    )
+    or exists (
+      select 1 from team_prompt_runs pr
+       where pr.team_id = ${teamId} and pr.target_kind = 'chat' and pr.target_id = ${a.chatId}::text
+         and pr.status = 'completed'
+         and pr.completed_at is not null and pr.completed_at > ${a.analyzedAt}
+    )
+  )`;
+}
+
+/**
+ * "Ya tiene algo esperando salir": una sola pregunta con tres orígenes —una
+ * acción del Command Center sin ejecutar, un prompt esperando conector, o un
+ * mensaje programado vivo—. Si se mira sólo uno de los tres, el contacto
+ * aparece como libre y alguien le escribe encima de algo que ya iba a salir.
+ */
+function sqlAlgoEnCola(teamId: number): SQL {
+  const a = teamCommercialAnalysis;
+  return sql`(
+    exists (
+      select 1 from team_commercial_actions ac
+       where ac.team_id = ${teamId} and ac.chat_id = ${a.chatId}
+         and ac.status in ('proposed', 'pending_approval', 'approved', 'executing')
+    )
+    or exists (
+      select 1 from team_prompt_runs pr
+       where pr.team_id = ${teamId} and pr.target_kind = 'chat' and pr.target_id = ${a.chatId}::text
+         and pr.status in ('queued', 'in_progress')
+    )
+    or exists (
+      select 1 from team_scheduled_messages sm
+       where sm.team_id = ${teamId}
+         and sm.status = 'active'
+         and exists (
+           select 1 from jsonb_array_elements_text(sm.target_numbers) as n(numero)
+            where regexp_replace(n.numero, '[^0-9]', '', 'g') = regexp_replace(split_part(${chats.remoteJid}, '@', 1), '[^0-9]', '', 'g')
+         )
+    )
+  )`;
+}
+
+/**
+ * Está dormido hasta una fecha. Los pospuestos no son una tabla: viven en los
+ * settings del equipo y llegan ya resueltos a lista de chatIds.
+ *
+ * `inArray` y no `= any(${ids})`: interpolar un array JS dentro de un template
+ * de drizzle lo expande como lista de parámetros —`= any(($1,$2,$3))`— y
+ * Postgres rechaza eso con 42809 ("requires array on right side"). Pasa el
+ * chequeo de tipos y el build, y revienta al abrir la lista con un solo
+ * contacto pospuesto.
+ */
+function sqlPospuesto(snoozeIds: number[]): SQL {
+  const a = teamCommercialAnalysis;
+  if (!snoozeIds.length) return sql`false`;
+  return sql`${inArray(a.chatId, snoozeIds)}`;
+}
+
+/**
+ * La situación del contacto, como un CASE de SQL.
+ *
+ * **Esta es la única definición que existe.** Sale en cada fila (para el icono)
+ * y se repite tal cual en el WHERE (para el filtro), así que el icono y el
+ * filtro no pueden discrepar: son la misma expresión. El orden de los WHEN es
+ * la precedencia documentada en `shared/situacion.ts` — cambiarlo acá sin
+ * cambiarlo allá deja el comentario mintiendo, que es peor que no tenerlo.
+ */
+export function situacionExpr(teamId: number, snoozeIds: number[] = []): SQL<Situacion> {
+  const a = teamCommercialAnalysis;
+  return sql<Situacion>`(case
+    when ${a.status} in ('pre_descarte', 'descarte_definitivo') or ${a.currentGate} = 'GX' then 'descartado'
+    when ${sqlPospuesto(snoozeIds)} then 'pospuesto'
+    when ${a.lastTeamMessageAt} is not null and ${a.lastCustomerMessageAt} is not null
+         and ${a.lastCustomerMessageAt} > ${a.lastTeamMessageAt} then 'contesto'
+    when ${a.automationActive} then 'automatizacion'
+    when ${sqlAlgoEnCola(teamId)} then 'en_cola'
+    when ${a.analyzedAt} is null or ${a.status} = 'sin_analizar' then 'sin_analizar'
+    when ${a.paymentPending} then 'cobro'
+    when ${sqlTuvoSeguimiento(teamId)} then 'escrito'
+    when ${a.isExistingCustomer} then 'cliente'
+    else 'sin_tocar'
+  end)`;
+}
+
 function buildWhere(teamId: number, q: ListQuery, snoozeIds: number[] = []): SQL {
   const a = teamCommercialAnalysis;
   // Los chats marcados en Limpieza (personal / equipo / otros) no aparecen en
@@ -257,23 +358,7 @@ function buildWhere(teamId: number, q: ListQuery, snoozeIds: number[] = []): SQL
   if (typeof q.stale === 'boolean') parts.push(eq(a.stale, q.stale));
   if (q.toReview) parts.push(and(isNotNull(a.analyzedAt), lt(a.confidence, 55)));
   if (q.followUp) {
-    // Comparación de columna contra columna dentro del SQL: nada de `Date` en
-    // el filtro. Cuenta un envío ejecutado o una corrida de prompt cerrada
-    // POSTERIOR al análisis; lo anterior es de otra auditoría.
-    const tuvoSeguimiento = sql`(
-      exists (
-        select 1 from team_commercial_actions ac
-         where ac.team_id = ${teamId} and ac.chat_id = ${a.chatId}
-           and ac.status in ('executed', 'resulted')
-           and ac.executed_at is not null and ac.executed_at > ${a.analyzedAt}
-      )
-      or exists (
-        select 1 from team_prompt_runs pr
-         where pr.team_id = ${teamId} and pr.target_kind = 'chat' and pr.target_id = ${a.chatId}::text
-           and pr.status = 'completed'
-           and pr.completed_at is not null and pr.completed_at > ${a.analyzedAt}
-      )
-    )`;
+    const tuvoSeguimiento = sqlTuvoSeguimiento(teamId);
     parts.push(q.followUp === 'con' ? tuvoSeguimiento : sql`${a.analyzedAt} is not null and not ${tuvoSeguimiento}`);
   }
   if (snoozeIds.length) parts.push(q.snoozed === 'con' ? inArray(a.chatId, snoozeIds) : notInArray(a.chatId, snoozeIds));
@@ -287,31 +372,7 @@ function buildWhere(teamId: number, q: ListQuery, snoozeIds: number[] = []): SQL
     parts.push(q.executed === 'con' ? leSalioAlgo : sql`not ${leSalioAlgo}`);
   }
   if (q.queued) {
-    // "En cola" es una sola pregunta con tres orígenes: una acción del Command
-    // Center todavía sin ejecutar, un prompt esperando conector, o un mensaje
-    // programado vivo. Si se mira sólo uno de los tres, el contacto aparece
-    // como libre y alguien le escribe encima de algo que ya iba a salir.
-    const tieneAlgoEnCola = sql`(
-      exists (
-        select 1 from team_commercial_actions ac
-         where ac.team_id = ${teamId} and ac.chat_id = ${a.chatId}
-           and ac.status in ('proposed', 'pending_approval', 'approved', 'executing')
-      )
-      or exists (
-        select 1 from team_prompt_runs pr
-         where pr.team_id = ${teamId} and pr.target_kind = 'chat' and pr.target_id = ${a.chatId}::text
-           and pr.status in ('queued', 'in_progress')
-      )
-      or exists (
-        select 1 from team_scheduled_messages sm
-         where sm.team_id = ${teamId}
-           and sm.status = 'active'
-           and exists (
-             select 1 from jsonb_array_elements_text(sm.target_numbers) as n(numero)
-              where regexp_replace(n.numero, '[^0-9]', '', 'g') = regexp_replace(split_part(${chats.remoteJid}, '@', 1), '[^0-9]', '', 'g')
-           )
-      )
-    )`;
+    const tieneAlgoEnCola = sqlAlgoEnCola(teamId);
     if (q.queued === 'con') parts.push(tieneAlgoEnCola);
     else if (q.queued === 'sin') parts.push(sql`not ${tieneAlgoEnCola}`);
     else {
@@ -354,6 +415,17 @@ function buildWhere(teamId: number, q: ListQuery, snoozeIds: number[] = []): SQL
     parts.push(q.scheduled === 'con' ? tieneProgramado : sql`not ${tieneProgramado}`);
   }
 
+  /**
+   * Situación: la misma expresión que viaja en la fila, así que filtrar por
+   * "Contestó, sin atender" devuelve exactamente las filas que muestran ese
+   * icono. Sin esto habría dos definiciones y el día que una cambie la lista
+   * mostraría un icono y el filtro otra cosa.
+   */
+  if (q.situaciones?.length) parts.push(inArray(situacionExpr(teamId, snoozeIds), q.situaciones));
+  // Cliente o no cliente. `isExistingCustomer` es la misma marca que usa el
+  // motor, no una coincidencia de teléfono suelta.
+  if (q.cliente) parts.push(eq(a.isExistingCustomer, q.cliente === 'con'));
+
   const term = (q.q ?? '').trim();
   if (term) {
     const like = `%${term.replace(/[%_]/g, (m) => `\\${m}`)}%`;
@@ -395,6 +467,37 @@ function orderFor(sort: ListQuery['sort']): SQL[] {
 
 // ── Lista ───────────────────────────────────────────────────────────────────
 
+/**
+ * Cuántos hay en cada situación, con los filtros puestos menos el de situación.
+ *
+ * "Menos el de situación" es la parte que importa: los números tienen que
+ * decir a dónde iría la persona si tocara otro chip, no cuántos quedan del que
+ * ya tocó. Sin esto, dos de los diez chips muestran cero para siempre —hoy no
+ * hay pospuestos ni contactos sin analizar— y no hay forma de saber si es que
+ * no hay o es que el filtro está roto.
+ */
+export async function contarPorSituacion(teamId: number, query: ListQuery): Promise<Record<Situacion, number>> {
+  const a = teamCommercialAnalysis;
+  const snoozes = await vigentesSnoozes(teamId);
+  const ids = snoozes.map((x) => x.chatId);
+  const expr = situacionExpr(teamId, ids);
+  const rows = await db
+    .select({ situacion: expr, n: sql<number>`count(*)::int` })
+    .from(a)
+    .innerJoin(chats, eq(chats.id, a.chatId))
+    .leftJoin(contacts, eq(contacts.chatId, a.chatId))
+    .where(buildWhere(teamId, { ...query, situaciones: undefined }, ids))
+    // `group by 1` (posición) y no la expresión de nuevo: el CASE lleva
+    // parámetros, drizzle los vuelve a numerar en el GROUP BY y Postgres deja
+    // de reconocerlo como la misma expresión ("status must appear in the GROUP
+    // BY clause"). Es la misma trampa del date_trunc parametrizado.
+    .groupBy(sql`1`);
+
+  const counts = Object.fromEntries(SITUACIONES.map((s) => [s, 0])) as Record<Situacion, number>;
+  for (const row of rows) if (esSituacion(row.situacion)) counts[row.situacion] = row.n;
+  return counts;
+}
+
 export async function listAnalyses(teamId: number, query: ListQuery): Promise<ListPayload> {
   const a = teamCommercialAnalysis;
   const sort = query.sort ?? 'priority';
@@ -418,7 +521,7 @@ export async function listAnalyses(teamId: number, query: ListQuery): Promise<Li
   }
 
   const base = db
-    .select({ a, chat: chatCols, contactName: contacts.name })
+    .select({ a, chat: chatCols, contactName: contacts.name, situacion: situacionExpr(teamId, snoozes.map((x) => x.chatId)) })
     .from(a)
     .innerJoin(chats, eq(chats.id, a.chatId))
     .leftJoin(contacts, eq(contacts.chatId, a.chatId));
@@ -456,7 +559,10 @@ export async function listAnalyses(teamId: number, query: ListQuery): Promise<Li
         : encodeCursor({ sort, offset: offset + page.length });
   }
 
-  return { rows, total: totalRow[0]?.n ?? 0, nextCursor };
+  // Los conteos son una consulta más: sólo salen si la pantalla los pide.
+  const situaciones = query.conConteos ? await contarPorSituacion(teamId, query) : undefined;
+
+  return { rows, total: totalRow[0]?.n ?? 0, nextCursor, ...(situaciones ? { situaciones } : {}) };
 }
 
 /**

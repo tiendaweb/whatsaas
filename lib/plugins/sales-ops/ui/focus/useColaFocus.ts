@@ -40,6 +40,8 @@ function url<T extends string>(etapa: T, filtros: FiltrosCola<T>, owner: OwnerFi
   p.set('vista', etapa);
   if (owner !== 'todos') p.set('owner', owner);
   if (filtros.gates.length) p.set('gates', filtros.gates.join(','));
+  if (filtros.situaciones.length) p.set('situaciones', filtros.situaciones.join(','));
+  if (filtros.cliente) p.set('cliente', filtros.cliente);
   if (filtros.modo === 'decision') p.set('queued', 'decision');
   else if (filtros.soloPendientes) p.set('queued', 'sin');
   p.set('sort', filtros.orden);

@@ -242,7 +242,7 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
       return (
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           <LimiteDeError nombre="Resumen">
-            <PanelResumen chatId={chatId} />
+            <PanelResumen chatId={chatId} situacion={cola.actual?.situacion} />
           </LimiteDeError>
         </div>
       );
@@ -349,7 +349,7 @@ export function FocusView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto xl:flex-row xl:overflow-hidden">
           {/* Izquierda: quién es. */}
           <aside className="shrink-0 border-border p-3 xl:w-[300px] xl:overflow-y-auto xl:border-r" aria-label="Resumen del cliente">
-            <LimiteDeError nombre="Resumen">{chatId && <PanelResumen chatId={chatId} />}</LimiteDeError>
+            <LimiteDeError nombre="Resumen">{chatId && <PanelResumen chatId={chatId} situacion={cola.actual?.situacion} />}</LimiteDeError>
           </aside>
 
           {/* Centro: lo que le va a salir, y lo que la IA dijo. */}

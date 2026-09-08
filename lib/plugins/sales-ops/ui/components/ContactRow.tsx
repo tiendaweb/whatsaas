@@ -10,6 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { tituloCliente, type AnalysisRow } from '../../shared/api-types';
 import { GateBadge } from './GateBadge';
+import { SituacionIcono } from './SituacionBadge';
 import { ItemsIgnorar, type ExclusionKind } from './IgnorarContacto';
 import { PriorityPill } from './PriorityPill';
 import { OWNER_LABELS, STATUS_LABELS, fmtDateTime, iniciales, tiempoRelativo } from './format';
@@ -86,9 +87,12 @@ export const ContactRow = memo(function ContactRow({ row, selected, active, sele
         </Avatar>
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex items-center gap-2">
-            {/* Sin esto, "recién auditado" y "auditado y ya trabajado" se veían
-                igual, y alguien volvía a trabajar al que ya estaba en curso. */}
-            <EstadoSeguimiento row={row} />
+            {/* En qué situación está: contestó y nadie fue, ya tiene algo por
+                salir, hay un bot escribiéndole, está dormido… Antes eran cuatro
+                iconos sin nombre y sin filtro, así que "recién auditado" y "ya
+                trabajado" se veían casi igual y alguien volvía a trabajar al que
+                ya estaba en curso. */}
+            {row.situacion ? <SituacionIcono situacion={row.situacion} /> : <EstadoSeguimiento row={row} />}
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{row.name}</span>
             <span className="flex shrink-0 items-center gap-1.5">
               {/* Radar: lo que contestó y todavía nadie atendió. Es lo que decide

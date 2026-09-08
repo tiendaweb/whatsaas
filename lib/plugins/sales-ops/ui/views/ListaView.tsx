@@ -18,6 +18,7 @@ import { ContactRow } from '../components/ContactRow';
 import { ProgramadosDialog } from '../components/ProgramadosDialog';
 import { GateBadge } from '../components/GateBadge';
 import { FiltroGates } from '../components/FiltroGates';
+import { FiltroSituacion } from '../components/FiltroSituacion';
 import type { OwnerFilterValue } from '../components/OwnerFilter';
 import { IgnoradosPanel } from '../components/IgnoradosPanel';
 import { useIgnorarContacto, type ExclusionKind } from '../components/IgnorarContacto';
@@ -86,6 +87,8 @@ function buildUrl(vista: ListaVista, owner: OwnerFilterValue, q: string, filters
   if (owner !== 'todos') p.set('owner', owner);
   if (q.trim()) p.set('q', q.trim());
   if (filters.gates?.length) p.set('gates', filters.gates.join(','));
+  if (filters.situaciones?.length) p.set('situaciones', filters.situaciones.join(','));
+  if (filters.cliente) p.set('cliente', filters.cliente);
   if (filters.status?.length) p.set('status', filters.status.join(','));
   if (filters.objection) p.set('objection', filters.objection);
   if (filters.need) p.set('need', filters.need);
@@ -101,6 +104,8 @@ function buildUrl(vista: ListaVista, owner: OwnerFilterValue, q: string, filters
   if (filters.queued) p.set('queued', filters.queued);
   if (filters.executed) p.set('executed', filters.executed);
   if (filters.sort) p.set('sort', filters.sort);
+  // Los conteos de los chips de situación viajan con la misma consulta.
+  p.set('conConteos', '1');
   p.set('limit', '50');
   if (cursor) p.set('cursor', cursor);
   return `${SALES_OPS_API}/contacts?${p.toString()}`;
@@ -109,6 +114,8 @@ function buildUrl(vista: ListaVista, owner: OwnerFilterValue, q: string, filters
 function countActive(filters: Filters, vista: ListaVista): number {
   let n = 0;
   if (filters.gates?.length) n += 1;
+  if (filters.situaciones?.length) n += 1;
+  if (filters.cliente) n += 1;
   if (filters.objection) n += 1;
   if (filters.need) n += 1;
   if (filters.source) n += 1;
@@ -163,6 +170,8 @@ function usePagedList(url: string) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Cuántos hay en cada situación: los números de los chips. Sólo la primera página los trae. */
+  const [situaciones, setSituaciones] = useState<ListPayload['situaciones']>(undefined);
   const reqRef = useRef(0);
 
   const load = useCallback(
@@ -179,6 +188,7 @@ function usePagedList(url: string) {
         if (id !== reqRef.current) return;
         setRows((prev) => (cursor ? [...prev, ...payload.rows] : payload.rows));
         setTotal(payload.total);
+        if (!cursor && payload.situaciones) setSituaciones(payload.situaciones);
         setNextCursor(payload.nextCursor);
       } catch (e) {
         if (id !== reqRef.current) return;
@@ -212,7 +222,7 @@ function usePagedList(url: string) {
     });
   }, []);
 
-  return { rows, total, nextCursor, loading, loadingMore, error, quitar, reload: () => load(null), loadMore: () => nextCursor && load(nextCursor) };
+  return { rows, total, nextCursor, loading, loadingMore, error, situaciones, quitar, reload: () => load(null), loadMore: () => nextCursor && load(nextCursor) };
 }
 
 export function ListaView({ vista, owner, selectedChatId, onOpen, extraFilters, embebida, onNav, onOpenChat }: Props) {
@@ -265,7 +275,7 @@ export function ListaView({ vista, owner, selectedChatId, onOpen, extraFilters, 
           ),
     [vista, owner, qDebounced, filters, extraFilters, embebida, cola, grupo],
   );
-  const { rows, total, nextCursor, loading, loadingMore, error, quitar, reload, loadMore } = usePagedList(url);
+  const { rows, total, nextCursor, loading, loadingMore, error, situaciones: conteos, quitar, reload, loadMore } = usePagedList(url);
 
   /**
    * Posponer o transferir desde la fila. Posponer lo saca de esta lista hasta
@@ -435,6 +445,18 @@ export function ListaView({ vista, owner, selectedChatId, onOpen, extraFilters, 
 
       {/* Las etapas, a la vista y no enterradas en el panel de filtros. */}
       <FiltroGates seleccionados={filters.gates} onChange={(gates) => setFilters((f) => ({ ...f, gates }))} className="pb-0.5" />
+
+      {/* La situación, al lado del grado y con los mismos iconos que muestran
+          las filas: tildar "Contestó, sin atender" deja exactamente las filas
+          que tienen esa llamita. */}
+      <FiltroSituacion
+        compacto
+        conteos={conteos}
+        situaciones={filters.situaciones ?? []}
+        cliente={filters.cliente ?? null}
+        onSituaciones={(situaciones) => setFilters((f) => ({ ...f, situaciones: situaciones.length ? situaciones : undefined }))}
+        onCliente={(cliente) => setFilters((f) => ({ ...f, cliente: cliente ?? undefined }))}
+      />
 
       {/* Contactos / Clientes ya no está en el menú: es un corte de esta misma lista, así que se llega desde acá. */}
       {vista === 'todos' && !embebida && onNav && (

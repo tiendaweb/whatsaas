@@ -27,6 +27,8 @@ export type FiltrosNoelia = FiltrosCola<EtapaNoelia>;
 export const FILTROS_NOELIA: FiltrosNoelia = {
   etapas: [...ETAPAS_NOELIA],
   gates: [] as Gate[],
+  situaciones: [],
+  cliente: null,
   // Incluye propuestas que esperan aprobación; la tarjeta evita duplicados y
   // el backend sigue excluyendo pospuestos.
   soloPendientes: false,

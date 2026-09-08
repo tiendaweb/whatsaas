@@ -4,6 +4,7 @@ import { getSalesOpsContext } from '@/lib/plugins/sales-ops/server/access';
 import { listAnalyses } from '@/lib/plugins/sales-ops/server/queries';
 import type { ListQuery } from '@/lib/plugins/sales-ops/shared/api-types';
 import { ANALYSIS_STATUSES, GATES, NEEDS, OBJECTIONS, OWNERS, SOURCES } from '@/lib/plugins/sales-ops/shared/taxonomy';
+import { SITUACIONES } from '@/lib/plugins/sales-ops/shared/situacion';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -41,6 +42,9 @@ const querySchema = z.object({
   executed: z.enum(['con', 'sin']).optional().catch(undefined),
   snoozed: z.enum(['con', 'sin']).optional().catch(undefined),
   queued: z.enum(['con', 'sin', 'decision']).optional().catch(undefined),
+  situaciones: listOf(SITUACIONES),
+  cliente: z.enum(['con', 'sin']).optional().catch(undefined),
+  conConteos: boolParam,
   q: z.string().max(120).optional().catch(undefined),
   sort: z.enum(['priority', 'age', 'oldest', 'lastFollowup', 'name', 'gate']).optional().catch(undefined),
   cursor: z.string().max(400).optional().catch(undefined),

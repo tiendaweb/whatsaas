@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useSWR, { preload } from 'swr';
-import { ArrowLeft, Check, Loader2, MessageSquare, Pause, Play, Timer } from 'lucide-react';
+import { ArrowLeft, Check, Loader2, MessageSquare, Pause, Play, SlidersHorizontal, Timer } from 'lucide-react';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import type { DetailPayload, OverviewPayload } from '../../shared/api-types';
 import type { OwnerFilterValue } from '../components/OwnerFilter';
+import { FiltroSituacion } from '../components/FiltroSituacion';
 import { SALES_OPS_API, fetcher, fmtInt } from '../components/format';
 import { AvisoBloque } from '../focus/AvisoBloque';
 import { Confeti } from '../focus/Confeti';
@@ -43,6 +44,7 @@ const BTN_GHOST = 'inline-flex min-h-10 items-center justify-center gap-1.5 roun
 export function NoeliaView({ owner, onSalir }: { owner: OwnerFilterValue; onSalir: () => void }) {
   const [filtros, setFiltros] = useState<FiltrosNoelia>(FILTROS_NOELIA);
   const [chatMovil, setChatMovil] = useState(false);
+  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
   const [solapa, setSolapa] = useState<SolapaContacto>('chat');
   const acciones = useRef<AccionesTarjetaHandle | null>(null);
   const cola = useColaFocus(filtros, owner, ETAPAS_NOELIA);
@@ -121,6 +123,7 @@ export function NoeliaView({ owner, onSalir }: { owner: OwnerFilterValue; onSali
         ref={acciones}
         chatId={cola.actual.chatId}
         detalle={detalle}
+        situacion={cola.actual.situacion}
         onVerConversacion={() => setChatMovil(true)}
         onResuelto={resuelto}
         onSaltar={saltar}
@@ -156,6 +159,23 @@ export function NoeliaView({ owner, onSalir }: { owner: OwnerFilterValue; onSali
           className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-[var(--mn-line)] px-2 text-[11px] font-black text-[var(--mn-muted)] hover:border-[var(--mn-accent)] disabled:opacity-40 xl:hidden"
         >
           <MessageSquare className="size-3.5" aria-hidden /> Chat
+        </button>
+        {/* La cabina es una sola pantalla y no scrollea, así que los filtros
+            viven en una hoja: el pedido de "quiero ver sólo los que contestaron
+            y nadie fue" no puede costar salir del modo. */}
+        <button
+          type="button"
+          onClick={() => setFiltrosAbiertos(true)}
+          aria-label="Filtros de la cola"
+          className={cn(
+            'flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-[11px] font-black hover:border-[var(--mn-accent)]',
+            filtros.situaciones.length || filtros.cliente
+              ? 'border-[var(--mn-accent)] text-[var(--mn-accent)]'
+              : 'border-[var(--mn-line)] text-[var(--mn-muted)]',
+          )}
+        >
+          <SlidersHorizontal className="size-3.5" aria-hidden />
+          {filtros.situaciones.length > 0 && <span className="tabular-nums">{filtros.situaciones.length}</span>}
         </button>
         <button
           type="button"
@@ -210,6 +230,22 @@ export function NoeliaView({ owner, onSalir }: { owner: OwnerFilterValue; onSali
         <SheetContent side="right" className="dark flex w-full max-w-full flex-col p-0 sm:max-w-xl">
           <SheetTitle className="border-b border-border px-4 py-3 text-base">Conversación</SheetTitle>
           {chatId && <PanelContacto chatId={chatId} solapa={solapa} onSolapa={setSolapa} className="min-h-0 flex-1 p-3" />}
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={filtrosAbiertos} onOpenChange={setFiltrosAbiertos}>
+        <SheetContent side="bottom" className="dark max-h-[80vh] overflow-y-auto rounded-t-2xl p-4">
+          <SheetTitle className="text-base">Filtros de la cola</SheetTitle>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            La cola se rearma al tocar. Sin nada tildado entran todos los casos de la etapa.
+          </p>
+          <FiltroSituacion
+            className="mt-3"
+            situaciones={filtros.situaciones}
+            cliente={filtros.cliente}
+            onSituaciones={(situaciones) => setFiltros((f) => ({ ...f, situaciones }))}
+            onCliente={(cliente) => setFiltros((f) => ({ ...f, cliente }))}
+          />
         </SheetContent>
       </Sheet>
 

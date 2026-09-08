@@ -27,6 +27,7 @@ import type {
 } from './taxonomy';
 import type { DossierEntry, Evidence, RuleFacts } from './contract';
 import type { CrmFix } from './crm-fix';
+import type { Situacion } from './situacion';
 
 /** Fila de lista y cabecera de ficha. Nunca lleva el teléfono completo. */
 export type AnalysisRow = {
@@ -95,6 +96,12 @@ export type AnalysisRow = {
   snoozedUntil?: string | null;
   /** Señales del radar sin atender de este chat (nuevas o vistas). Ausente si no se calculó. */
   radar?: { kinds: SignalKind[]; count: number; urgent: boolean; lastAt: string } | null;
+  /**
+   * En qué situación está el contacto (una sola de las diez). La calcula el
+   * servidor con la misma expresión con la que filtra, así que el icono de la
+   * fila y el filtro no pueden discrepar. Ausente en el detalle, que no la pide.
+   */
+  situacion?: Situacion;
 };
 
 export type AnalysisDetail = AnalysisRow & {
@@ -274,6 +281,12 @@ export type OverviewPayload = {
 };
 
 export type ListQuery = {
+  /** Situaciones que entran (ver `shared/situacion.ts`). Vacío = todas. */
+  situaciones?: Situacion[];
+  /** `con` = sólo clientes, `sin` = sólo los que todavía no lo son. */
+  cliente?: 'con' | 'sin';
+  /** Pide de yapa cuántos hay en cada situación (una consulta más). */
+  conConteos?: boolean;
   /** `revisar` es calidad de dato (stale/baja confianza/audio), no una etapa comercial. */
   vista?: 'dinero' | 'oportunidades' | 'barrido' | 'limpieza' | 'revisar' | 'todos';
   gates?: Gate[];
@@ -318,6 +331,8 @@ export type ListPayload = {
   rows: AnalysisRow[];
   total: number;
   nextCursor: string | null;
+  /** Cuántos hay en cada situación con estos mismos filtros. Sólo si se pidió. */
+  situaciones?: Record<Situacion, number>;
 };
 
 export type DetailPayload = {

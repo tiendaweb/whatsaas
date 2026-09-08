@@ -4,6 +4,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { GATES, type Gate } from '../../shared/taxonomy';
 import { GateBadge } from '../components/GateBadge';
+import { FiltroSituacion } from '../components/FiltroSituacion';
 import { ETAPAS, ETAPA_HINTS, ETAPA_LABELS, ORDENES, type Etapa, type FiltrosFocus, type OrdenFocus } from './tipos';
 
 /**
@@ -44,6 +45,16 @@ export function PanelFiltros({ filtros, onFiltros }: { filtros: FiltrosFocus; on
           </label>
         ))}
       </div>
+
+      {/* La situación va arriba del grado a propósito: "¿alguien ya lo tocó?"
+          se pregunta antes que "¿qué tan cerca está de comprar?". */}
+      <FiltroSituacion
+        className="mt-3"
+        situaciones={filtros.situaciones}
+        cliente={filtros.cliente}
+        onSituaciones={(situaciones) => onFiltros({ ...filtros, situaciones })}
+        onCliente={(cliente) => onFiltros({ ...filtros, cliente })}
+      />
 
       <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Grado</p>
       <div className="mt-1.5 flex flex-wrap gap-1">

@@ -1,4 +1,5 @@
 import type { ListQuery } from '../../shared/api-types';
+import { esSituacion, type Situacion } from '../../shared/situacion';
 import { FRONT_SWEEP_GATES, type Gate } from '../../shared/taxonomy';
 
 /** Los gates de "Dinero". Mismo corte que `MONEY_GATES` del servidor, que no se importa acá porque ese módulo es `server-only`. */
@@ -44,6 +45,17 @@ export type FiltrosFocus = {
   etapas: Etapa[];
   /** Gates sueltos, para afinar dentro de la etapa. Vacío = los de la etapa. */
   gates: Gate[];
+  /**
+   * En qué situación tienen que estar. Vacío = todas.
+   *
+   * Es otro eje que la etapa y el grado: la etapa dice qué tan cerca está de
+   * comprar y la situación dice si alguien ya lo tocó. Cruzarlos es lo que
+   * permite una ronda de "Dinero + contestó y nadie fue", que es la media hora
+   * más cara del día.
+   */
+  situaciones: Situacion[];
+  /** `con` = sólo clientes, `sin` = sólo los que no lo son, `null` = todos. */
+  cliente: 'con' | 'sin' | null;
   /** Sólo los que nadie puso en marcha todavía (`queued=sin`). */
   soloPendientes: boolean;
   orden: OrdenFocus;
@@ -52,6 +64,8 @@ export type FiltrosFocus = {
 export const FILTROS_INICIALES: FiltrosFocus = {
   etapas: [...ETAPAS],
   gates: [],
+  situaciones: [],
+  cliente: null,
   // Focus es una cola de trabajo: lo que ya tiene algo esperando salir no se
   // vuelve a trabajar. Se puede apagar, pero el default es el que sirve.
   soloPendientes: true,
@@ -108,6 +122,8 @@ export function leerFiltros(): FiltrosFocus {
     return {
       etapas: etapas.length ? ETAPAS.filter((e) => etapas.includes(e)) : FILTROS_INICIALES.etapas,
       gates: Array.isArray(parsed.gates) ? (parsed.gates.filter((g) => typeof g === 'string') as Gate[]) : [],
+      situaciones: Array.isArray(parsed.situaciones) ? parsed.situaciones.filter(esSituacion) : [],
+      cliente: parsed.cliente === 'con' || parsed.cliente === 'sin' ? parsed.cliente : null,
       soloPendientes: parsed.soloPendientes !== false,
       orden,
     };

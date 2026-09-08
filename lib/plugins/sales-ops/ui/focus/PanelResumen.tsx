@@ -9,6 +9,8 @@ import type { SignalKind } from '../../shared/taxonomy';
 import { toast } from 'sonner';
 import { RadarPanel } from '@/lib/plugins/radar/ui/RadarPanel';
 import { GateBadge } from '../components/GateBadge';
+import { SituacionBadge } from '../components/SituacionBadge';
+import type { Situacion } from '../../shared/situacion';
 import { ProgramadosContacto } from '../components/ProgramadosContacto';
 import { ScoreRadar, ejesDeAnalisis } from '../components/ScoreRadar';
 import { ErrorState, LoadingRows } from '../components/States';
@@ -25,7 +27,12 @@ import { ACTION_KIND_LABELS, ACTION_STATUS_LABELS, OWNER_LABELS, SIGNAL_LABELS, 
  */
 type DetalleConCabecera = DetailPayload & { header?: { remoteJid: string; contactId: number | null } | null };
 
-export function PanelResumen({ chatId, className }: { chatId: number; className?: string }) {
+/**
+ * `situacion` llega por prop y no del detalle: la calcula el listado (es la
+ * misma expresión con la que filtra la cola), así que la tarjeta muestra
+ * exactamente el estado por el que ese contacto entró a esta ronda.
+ */
+export function PanelResumen({ chatId, className, situacion }: { chatId: number; className?: string; situacion?: Situacion }) {
   const { data, error, isLoading, mutate } = useSWR<DetalleConCabecera>(`${SALES_OPS_API}/contacts/${chatId}`, fetcher, {
     revalidateOnFocus: false,
     keepPreviousData: false,
@@ -54,7 +61,10 @@ export function PanelResumen({ chatId, className }: { chatId: number; className?
             <p className="truncate text-sm font-semibold leading-tight" title={a.name}>{a.name}</p>
             <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{a.phoneMasked}</p>
           </div>
-          <GateBadge gate={a.currentGate} />
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <GateBadge gate={a.currentGate} />
+            {situacion && <SituacionBadge situacion={situacion} />}
+          </div>
         </div>
 
         <p className="mt-2 text-[13px] font-medium leading-snug text-foreground">{a.recommendedAction || 'Sin acción recomendada.'}</p>
