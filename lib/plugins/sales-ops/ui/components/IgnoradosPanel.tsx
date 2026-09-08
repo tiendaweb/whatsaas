@@ -7,8 +7,10 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SALES_OPS_API, fetcher, tiempoRelativo } from './format';
+// Una sola definición del grupo: la del componente que hace el marcado.
+import type { ExclusionKind } from './IgnorarContacto';
 
-export type ExclusionKind = 'personal' | 'equipo' | 'otros';
+export type { ExclusionKind };
 
 type Row = {
   chatId: number;

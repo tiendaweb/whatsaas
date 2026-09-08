@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { tituloCliente, type ActionRow, type AnalysisDetail, type AnalysisVersionRow, type DetailPayload, type HistoryEntry, type HistoryPayload, type SignalRow, type TimelineGap, type TimelineHit } from '../../shared/api-types';
 import { ANALYSIS_STATUSES, GATES, GATE_LABELS, type ActionKind, type AnalysisStatus, type Gate } from '../../shared/taxonomy';
 import { GateBadge } from '../components/GateBadge';
+import { MenuIgnorar } from '../components/IgnorarContacto';
 import { FichaDock, type DockItem } from '../components/FichaDock';
 import { HISTORIAL_ICONOS, HISTORIAL_TONOS } from '../components/historial-meta';
 import { FallaCorrida } from '../skills/FallaCorrida';
@@ -87,7 +88,7 @@ type Seccion = 'resumen' | 'chat' | 'ia' | 'crm' | 'acciones' | 'radar' | 'versi
  * de texto en una tira con flechas —en 440 px entraban tres— y el encabezado se
  * comía cuatro renglones antes de que empezara lo importante.
  */
-export function FichaView({ chatId, seccionInicial }: Props) {
+export function FichaView({ chatId, seccionInicial, onClose }: Props) {
   const { data, error, isLoading, mutate } = useSWR<Payload>(`${SALES_OPS_API}/contacts/${chatId}`, fetcher);
   const [seccion, setSeccion] = useState<Seccion>(seccionInicial === 'chat' ? 'chat' : 'resumen');
 
@@ -125,6 +126,11 @@ export function FichaView({ chatId, seccionInicial }: Props) {
             {a?.firstContactAt && <span className="truncate">· entró {fmtDate(a.firstContactAt)} por {humanize(a.source).toLowerCase()}</span>}
           </p>
         </div>
+        {/* Acá es donde se decide: se abre la ficha para ver quién es, y a veces
+            la respuesta es que no es nadie. Cerrar la ficha después de sacarlo
+            evita quedar mirando el análisis de alguien que ya no existe para el
+            circuito. */}
+        <MenuIgnorar chatId={chatId} nombre={h.name} onHecho={() => onClose?.()} />
       </header>
 
       {/* Sin marco: el panel ya es un contenedor con su propio borde, y la caja

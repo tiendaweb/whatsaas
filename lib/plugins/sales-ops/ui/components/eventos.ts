@@ -33,3 +33,30 @@ export function useEncolado(handler: (chatId: number) => void) {
     return () => window.removeEventListener(EVENTO, escuchar);
   }, [handler]);
 }
+
+/**
+ * Aviso de "a este chat lo sacaron (o lo devolvieron) del circuito".
+ *
+ * Mismo problema que el de arriba y misma solución: sacar a alguien desde la
+ * ficha lo borra del servidor, pero la fila seguía a la vista en la lista de
+ * atrás. Viaja además si fue una devolución, porque no son simétricos: sacar
+ * es quitar una fila que ya está en pantalla, devolver es una fila que hay que
+ * ir a buscar, así que la lista tiene que volver a pedirse.
+ */
+const EVENTO_IGNORADO = 'sales-ops:ignorado';
+
+export function avisarIgnorado(chatId: number | null | undefined, opts: { devuelto?: boolean } = {}) {
+  if (!chatId || typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(EVENTO_IGNORADO, { detail: { chatId, devuelto: Boolean(opts.devuelto) } }));
+}
+
+export function useIgnorado(handler: (chatId: number, devuelto: boolean) => void) {
+  useEffect(() => {
+    const escuchar = (evento: Event) => {
+      const detalle = (evento as CustomEvent<{ chatId?: number; devuelto?: boolean }>).detail;
+      if (detalle?.chatId) handler(detalle.chatId, Boolean(detalle.devuelto));
+    };
+    window.addEventListener(EVENTO_IGNORADO, escuchar);
+    return () => window.removeEventListener(EVENTO_IGNORADO, escuchar);
+  }, [handler]);
+}

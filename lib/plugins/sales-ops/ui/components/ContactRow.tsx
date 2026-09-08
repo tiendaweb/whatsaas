@@ -10,6 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { tituloCliente, type AnalysisRow } from '../../shared/api-types';
 import { GateBadge } from './GateBadge';
+import { ItemsIgnorar, type ExclusionKind } from './IgnorarContacto';
 import { PriorityPill } from './PriorityPill';
 import { OWNER_LABELS, STATUS_LABELS, fmtDateTime, iniciales, tiempoRelativo } from './format';
 
@@ -26,6 +27,14 @@ type Props = {
   onChat?: (chatId: number) => void;
   /** Posponer o transferir el lead desde la fila. Sin esto el menú ⋯ no se dibuja. */
   onLead?: (row: AnalysisRow, action: { kind: 'snooze'; days: number } | { kind: 'transfer'; owner: Owner } | { kind: 'unsnooze' }) => void;
+  /**
+   * Sacar a la persona del circuito comercial desde la fila.
+   *
+   * Va en el mismo menú ⋯ que posponer y transferir porque es la tercera cosa
+   * que se hace mirando una fila: este no es ahora, este es de otro, y este no
+   * es un cliente. Antes la última obligaba a irse a Barrido y usar casillas.
+   */
+  onIgnorar?: (row: AnalysisRow, kind: ExclusionKind) => void;
 };
 
 const POSPONER = [
@@ -40,7 +49,7 @@ const POSPONER = [
  *   ◯ Nombre                         G10 · 187 · 🔥
  *     Acción recomendada…            hace 6 h · Carlos   ›
  */
-export const ContactRow = memo(function ContactRow({ row, selected, active, selectable, onOpen, onToggle, onProgramados, onChat, onLead }: Props) {
+export const ContactRow = memo(function ContactRow({ row, selected, active, selectable, onOpen, onToggle, onProgramados, onChat, onLead, onIgnorar }: Props) {
   const tiempo = tiempoRelativo(row.lastCustomerMessageAt);
   const marcas: string[] = [];
   if (row.stale) marcas.push('desactualizado');
@@ -171,42 +180,52 @@ export const ContactRow = memo(function ContactRow({ row, selected, active, sele
           ) : null}
         </button>
       ) : null}
-      {onLead && (
+      {(onLead || onIgnorar) && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button type="button" aria-label={`Más acciones para ${row.name}`} title="Posponer o transferir" className="shrink-0 rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground">
+            <button type="button" aria-label={`Más acciones para ${row.name}`} title={onLead ? 'Posponer, transferir o sacar de las listas' : 'Sacar de las listas'} className="shrink-0 rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground">
               <MoreHorizontal className="size-4" aria-hidden />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-52">
-            {row.snoozedUntil ? (
-              <DropdownMenuItem onClick={() => onLead(row, { kind: 'unsnooze' })}>
-                <AlarmClock className="mr-2 size-4" aria-hidden />
-                Quitar la pospuesta (hasta {fmtDateTime(row.snoozedUntil).slice(0, 5)})
-              </DropdownMenuItem>
-            ) : (
+            {onLead && (
               <>
-                <DropdownMenuLabel className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                  <AlarmClock className="size-3" aria-hidden />
-                  Posponer
-                </DropdownMenuLabel>
-                {POSPONER.map((p) => (
-                  <DropdownMenuItem key={p.days} onClick={() => onLead(row, { kind: 'snooze', days: p.days })}>
-                    {p.label}
-                  </DropdownMenuItem>
-                ))}
+              {row.snoozedUntil ? (
+                <DropdownMenuItem onClick={() => onLead(row, { kind: 'unsnooze' })}>
+                  <AlarmClock className="mr-2 size-4" aria-hidden />
+                  Quitar la pospuesta (hasta {fmtDateTime(row.snoozedUntil).slice(0, 5)})
+                </DropdownMenuItem>
+              ) : (
+                <>
+                  <DropdownMenuLabel className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                    <AlarmClock className="size-3" aria-hidden />
+                    Posponer
+                  </DropdownMenuLabel>
+                  {POSPONER.map((p) => (
+                    <DropdownMenuItem key={p.days} onClick={() => onLead(row, { kind: 'snooze', days: p.days })}>
+                      {p.label}
+                    </DropdownMenuItem>
+                  ))}
+                </>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                <ArrowRightLeft className="size-3" aria-hidden />
+                Transferir a
+              </DropdownMenuLabel>
+              {OWNERS.filter((o) => o !== row.recommendedOwner).map((o) => (
+                <DropdownMenuItem key={o} onClick={() => onLead(row, { kind: 'transfer', owner: o })}>
+                  {OWNER_LABELS[o]}
+                </DropdownMenuItem>
+              ))}
               </>
             )}
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-              <ArrowRightLeft className="size-3" aria-hidden />
-              Transferir a
-            </DropdownMenuLabel>
-            {OWNERS.filter((o) => o !== row.recommendedOwner).map((o) => (
-              <DropdownMenuItem key={o} onClick={() => onLead(row, { kind: 'transfer', owner: o })}>
-                {OWNER_LABELS[o]}
-              </DropdownMenuItem>
-            ))}
+            {onIgnorar && (
+              <>
+                {onLead && <DropdownMenuSeparator />}
+                <ItemsIgnorar onElegir={(kind) => onIgnorar(row, kind)} />
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       )}

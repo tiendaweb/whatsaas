@@ -19,9 +19,10 @@ import { ProgramadosDialog } from '../components/ProgramadosDialog';
 import { GateBadge } from '../components/GateBadge';
 import { FiltroGates } from '../components/FiltroGates';
 import type { OwnerFilterValue } from '../components/OwnerFilter';
-import { IgnoradosPanel, type ExclusionKind } from '../components/IgnoradosPanel';
+import { IgnoradosPanel } from '../components/IgnoradosPanel';
+import { useIgnorarContacto, type ExclusionKind } from '../components/IgnorarContacto';
 import { EmptyState, ErrorState, LoadingRows } from '../components/States';
-import { useEncolado } from '../components/eventos';
+import { useEncolado, useIgnorado } from '../components/eventos';
 import { SALES_OPS_API, fetcher, fmtInt, humanize, panel } from '../components/format';
 import { toast } from 'sonner';
 
@@ -296,6 +297,37 @@ export function ListaView({ vista, owner, selectedChatId, onOpen, extraFilters, 
     [filters.snoozed, owner, quitar, reload],
   );
 
+  /**
+   * Sacar a una persona desde su propia fila, sin pasar por la selección.
+   *
+   * La barra de selección sigue estando para el barrido de a muchos, pero
+   * vive sólo en tres vistas; el caso frecuente es reconocer al contador en
+   * Dinero y sacarlo ahí. Se quita la fila a mano en vez de recargar: la
+   * lista está paginada por cursor y recargar tira el scroll justo cuando la
+   * persona está barriendo.
+   */
+  const { ignorar } = useIgnorarContacto(quitar);
+  const ignorarFila = useCallback(
+    (row: AnalysisRow, kind: ExclusionKind) => void ignorar(row.chatId, row.name, kind),
+    [ignorar],
+  );
+
+  // Sacar o devolver desde otra pantalla (la ficha, otra lista): la fila que
+  // esta lista tiene en pantalla ya no corresponde. Devolver sí obliga a
+  // recargar porque la fila hay que ir a buscarla al servidor.
+  useIgnorado(
+    useCallback(
+      (chatId: number, devuelto: boolean) => {
+        if (devuelto) reload();
+        else quitar(chatId);
+      },
+      // `reload` se recrea en cada render del hook, igual que en el efecto de
+      // encolado: se lo llama por referencia y se lo deja fuera de las deps.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [quitar],
+    ),
+  );
+
   // Encolar algo desde la ficha limpia la fila de "Pendiente de verificación";
   // en "En cola" es al revés (aparece), así que ahí se vuelve a pedir.
   useEncolado(
@@ -562,6 +594,7 @@ export function ListaView({ vista, owner, selectedChatId, onOpen, extraFilters, 
                 onProgramados={(r) => setProgramados({ chatId: r.chatId, nombre: r.name })}
                 onChat={onOpenChat}
                 onLead={lead}
+                onIgnorar={ignorarFila}
               />
             ))}
           </div>
