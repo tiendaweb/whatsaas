@@ -15,8 +15,6 @@ import { LS_OWNER, SALES_OPS_API, fetcher, fmtInt } from './components/format';
 import { FocusView } from './focus/FocusView';
 import { LimiteDeError } from './focus/LimiteDeError';
 import { ColaView } from './views/ColaView';
-import { ExperimentosView } from './views/ExperimentosView';
-import { PromptStudioView } from './views/PromptStudioView';
 import { ContactosView } from './views/ContactosView';
 import { FichaView } from './views/FichaView';
 import { HoyView } from './views/HoyView';
@@ -133,6 +131,18 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
   const onOpenChat = useCallback((id: number) => setParams({ chat: String(id), sec: 'chat' }), [setParams]);
   const onClose = useCallback(() => setParams({ chat: null, sec: null }), [setParams]);
 
+  /**
+   * El Prompt Studio dejó de ser una vista y pasó a ser una aplicación aparte,
+   * y Experimentos se fue con él (se usa mientras se escriben los textos, no
+   * mientras se opera). Los enlaces viejos —`?vista=prompts`, la Ayuda, el
+   * favorito de alguien— siguen llegando acá: en vez de romperse, entran al
+   * Studio en la sección que corresponde.
+   */
+  useEffect(() => {
+    if (vista === 'prompts') router.replace('/plugins/sales-ops/studio');
+    else if (vista === 'experimentos') router.replace('/plugins/sales-ops/studio?s=experimentos');
+  }, [vista, router]);
+
   const onOwner = (v: OwnerFilterValue) => {
     setOwner(v);
     try {
@@ -188,8 +198,10 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
     if (vista === 'audios') return <AudiosView onOpen={onOpen} />;
     if (vista === 'produccion') return <ProduccionView onOpen={onOpen} focusRequest={contextFocusRequest} />;
     if (vista === 'ayuda') return <AyudaView onNav={onNav} />;
-    if (vista === 'experimentos') return <ExperimentosView />;
-    if (vista === 'prompts') return <PromptStudioView onOpen={onOpen} onNav={onNav} />;
+    // `prompts` y `experimentos` ya no se dibujan acá: el efecto de arriba
+    // manda al Studio. Sin este renglón caerían en Métricas mientras dura la
+    // redirección.
+    if (vista === 'prompts' || vista === 'experimentos') return null;
     if (vista === 'clientes') return <ContactosView onOpen={onOpen} onOpenChat={onOpenChat} owner={owner} />;
     return <MetricasView />;
   })();

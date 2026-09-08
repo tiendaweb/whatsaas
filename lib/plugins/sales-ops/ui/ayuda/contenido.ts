@@ -353,15 +353,21 @@ export const TEMAS: Partial<Record<Vista, Tema>> = {
     verTambien: ['todos', 'dinero'],
   },
   prompts: {
-    enUnaFrase: 'Las instrucciones que el equipo repite.',
+    enUnaFrase: 'Las instrucciones que el equipo repite. Ahora es una aplicación aparte.',
     titulo: 'Prompt Studio',
-    queEs: 'Las skills del equipo: prompts guardados con cómo se usan (rutina o puntual, con formulario, por API o por cola) y la actividad de cada corrida.',
+    queEs: 'Las skills del equipo: prompts guardados con cómo se usan (rutina o puntual, con formulario, por API o por cola) y la actividad de cada corrida. Salió del rail del Command Center y vive en /plugins/sales-ops/studio, con su propia pantalla; se llega desde el lanzador de apps o desde el botón «Studio» del pie del menú.',
     cuando: 'Cuando algo se pide más de dos veces igual: se convierte en skill para que todos usen el mismo discurso.',
-    comoSeUsa: ['Crear, versionar, fijar y retirar skills. Lanzarlas sobre un chat o el equipo.', 'Actividad: en cola, sin cuota, otros fallos y hechas; cada falla dice qué pasó en castellano y ofrece reintentar o dejar en la cola.'],
+    comoSeUsa: [
+      'Biblioteca: crear, versionar, fijar, duplicar y retirar skills; lanzarlas sobre el equipo.',
+      'Componer: completás los datos de una skill a la izquierda y ves el prompt final a la derecha antes de mandarlo. Es lo que conviene con formularios largos.',
+      'Actividad: en cola, sin cuota, otros fallos y hechas; cada falla dice qué pasó en castellano y ofrece reintentar o dejar en la cola.',
+      'Sobre un chat puntual la skill se sigue lanzando desde la ficha del contacto, acá en el Command Center.',
+    ],
     primerUso: [
-      'Abrí una skill y mirá el texto y el formulario.',
-      'Lanzala sobre un chat: elegí IA del equipo (rápido, sin tools) o cola (conector, con tools).',
-      'Mirá la Actividad: si falló, reintentá o dejala en la cola.',
+      'Abrí el Studio desde el botón «Studio» del pie del menú.',
+      'Elegí una skill en Biblioteca y mirá su texto y su formulario.',
+      'Pasá a Componer, completá los datos y mandala a la cola: la toma el próximo conector.',
+      'Volvé a Actividad: si falló, reintentá o dejala en la cola.',
     ],
     ejemplos: [
       { situacion: 'Siempre pido lo mismo: «resumime el chat en 5 líneas».', queHacer: 'Creala como skill puntual; queda en la ficha con un clic.' },

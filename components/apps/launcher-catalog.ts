@@ -34,6 +34,7 @@ import {
   UserCheck,
   UserCog,
   Users,
+  Wand2,
   LifeBuoy,
   FileSignature,
   Zap,
@@ -108,6 +109,7 @@ const PLUGIN_NAV_ICON_MAP: Record<string, LucideIcon> = {
   Radar,
   Handshake,
   Sparkles,
+  Wand2,
 };
 
 const APP_VISUAL: Record<string, LauncherApp['visual']> = {
@@ -148,6 +150,8 @@ const APP_VISUAL: Record<string, LauncherApp['visual']> = {
   '/plugins/radar': { gradient: 'from-indigo-500 to-violet-600', iconColor: 'text-white' },
   '/plugins/deals': { gradient: 'from-green-600 to-emerald-500', iconColor: 'text-white' },
   '/plugins/sales-ops': { gradient: 'from-slate-800 to-emerald-600', iconColor: 'text-white' },
+  // El rosa de la cabina del Studio, igual adentro que en el lanzador.
+  '/plugins/sales-ops/studio': { gradient: 'from-[#f43f8e] to-[#ff2e4d]', iconColor: 'text-white' },
   '/plugins/grok-connector': {
     gradient: 'from-white to-white',
     iconColor: 'text-slate-950',
@@ -196,6 +200,7 @@ const APP_LABEL_OVERRIDE: Record<string, string> = {
   '/plugins/documents': 'Documentos',
   '/plugins/files': 'Archivos',
   '/plugins/sites': 'Sitios',
+  '/plugins/sales-ops/studio': 'Prompt Studio',
   '/plugins/finance': 'Financiero',
   '/plugins/purchases': 'Compras',
   '/plugins/hr': 'RRHH',

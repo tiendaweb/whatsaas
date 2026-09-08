@@ -31,13 +31,28 @@ const manifest: AppPluginManifest<typeof salesOpsSettingsSchema> = {
   displayName: 'Command Center',
   activationMode: 'global',
   scopes: ['dashboard.nav', 'dashboard.page'],
-  routes: [{ path: '/plugins/sales-ops', title: 'Command Center', scope: 'dashboard.page' }],
+  // El Studio va primero: `resolvePluginRouteForTeam` se queda con la primera
+  // ruta que matchea por prefijo, y `/plugins/sales-ops` matchearía también
+  // `/plugins/sales-ops/studio` dejándole el título del Command Center.
+  routes: [
+    { path: '/plugins/sales-ops/studio', title: 'Prompt Studio', scope: 'dashboard.page' },
+    { path: '/plugins/sales-ops', title: 'Command Center', scope: 'dashboard.page' },
+  ],
   navItems: [
     {
       label: 'Command Center',
       href: '/plugins/sales-ops',
       icon: 'Radar',
       order: 54,
+      requiredPermission: 'sales-ops.read',
+    },
+    // El Prompt Studio se abre solo, no como una vista del Command Center: es
+    // donde se escriben las skills, no donde se opera con clientes.
+    {
+      label: 'Prompt Studio',
+      href: '/plugins/sales-ops/studio',
+      icon: 'Wand2',
+      order: 55,
       requiredPermission: 'sales-ops.read',
     },
   ],

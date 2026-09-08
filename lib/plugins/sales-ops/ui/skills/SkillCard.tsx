@@ -1,6 +1,6 @@
 'use client';
 
-import { Copy, MessageSquare, MoreVertical, Pin, PinOff, Play, Repeat, SlidersHorizontal, Trash2, Cpu, Inbox } from 'lucide-react';
+import { Copy, MessageSquare, MoreVertical, PenLine, Pin, PinOff, Play, Repeat, SlidersHorizontal, Trash2, Cpu, Inbox } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
@@ -11,6 +11,8 @@ import { CATEGORY_TONE, SKILL_ICON_COMPONENTS } from './skill-meta';
 type Props = {
   skill: Skill;
   onLaunch: () => void;
+  /** Abre la skill en Componer (Prompt Studio). Sin esto el ítem no se dibuja. */
+  onCompose?: () => void;
   onEdit: () => void;
   onDuplicate: () => void;
   onPin: () => void;
@@ -25,7 +27,7 @@ type Props = {
  * datos pide) van abajo como marcas chicas. Un botón grande "Lanzar", porque en
  * el teléfono es lo único que se toca.
  */
-export function SkillCard({ skill, onLaunch, onEdit, onDuplicate, onPin, onRetire }: Props) {
+export function SkillCard({ skill, onLaunch, onCompose, onEdit, onDuplicate, onPin, onRetire }: Props) {
   const Icon = SKILL_ICON_COMPONENTS[skill.icon];
   const routine = skill.recurrence !== 'on_demand';
 
@@ -50,7 +52,13 @@ export function SkillCard({ skill, onLaunch, onEdit, onDuplicate, onPin, onRetir
               <MoreVertical className="size-4" aria-hidden />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuContent align="end" className="w-52">
+            {onCompose && (
+              <DropdownMenuItem onClick={onCompose}>
+                <PenLine className="size-4" aria-hidden />
+                Componer con datos
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={onEdit}>
               <SlidersHorizontal className="size-4" aria-hidden />
               Editar

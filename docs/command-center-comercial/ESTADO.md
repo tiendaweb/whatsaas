@@ -287,3 +287,19 @@ Se ejecutó `docs/produccion/02-PLAN-AAPP-BUSINESS.md` entero salvo la reparaci�
 |---|---|
 | 36 Terminal del admin: móvil, barra de teclas, pantalla completa | ✅ 2026-09-07 |
 | 37 App Centro de Desarrollo: misiones, prompts, conector, terminales | ✅ 2026-09-07 |
+
+## Tanda 8 del 2026-09-08: el Prompt Studio se fue del Command Center
+
+**El Prompt Studio dejó de ser una vista del rail y pasó a ser una aplicación aparte** en `/plugins/sales-ops/studio`, con la piel de la maqueta AURA (cabina oscura `#0d090f`, acento rosa `#f43f8e`) y navegación propia. No es un plugin nuevo: comparte las rutas HTTP y los permisos de `sales-ops` —las skills son del Command Center— y entra como una ruta más del plugin, declarada **antes** que `/plugins/sales-ops` en `manifest.routes` y en `page-registry.tsx`, porque `resolvePluginRouteForTeam` se queda con la primera que matchea por prefijo.
+
+Por qué: el Studio no es un lugar al que se entra a operar clientes, es donde se escriben y se prueban las skills. En el rail competía por un renglón fijo con Dinero, Cola y Producción, que se miran todos los días.
+
+- **Cuatro secciones** (`?s=`): Biblioteca (la galería de siempre), **Componer** (nueva), Actividad (las corridas, que antes iban al pie de la galería) y Experimentos, que también se mudó: se usa mientras se escriben los textos, no mientras se opera.
+- **Componer** pone el formulario a la izquierda y el **prompt final fijo a la derecha**, rearmándose con cada tecla. Con seis variables, el modal de Lanzar obligaba a completar a ciegas. El panel se remonta con `key` al cambiar de skill: con un efecto que reseteaba los valores, cualquier revalidación de SWR borraba lo que se estaba escribiendo. Una skill de `scope: chat` se arma y se copia pero no se lanza contra el equipo —el servidor lo rechaza— y el panel lo dice en vez de dejar el botón puesto.
+- **Entradas y salidas:** azulejo rosa propio en el lanzador `/apps`, botón «Studio» en el pie del rail del Command Center, y adentro el pie vuelve a WhatsPro, al Command Center y a Tareas OS. `?vista=prompts` y `?vista=experimentos` redirigen solas, así que la Ayuda y los enlaces viejos siguen andando.
+- **La piel** (`.prompt-studio` en `globals.css`) **redefine los tokens de shadcn** en vez de inventar un juego propio: los Button/Input/Select reutilizados del Command Center se visten solos. La clase se aplica también al `<html>` mientras la app está montada, porque los modales y desplegables se montan en `<body>` y sin eso salen con la paleta del tema normal encima de la cabina.
+- **De la maqueta no se llevó** lo que el sistema resuelve de otra forma: claves de API por proveedor (la IA sale del banco de keys del equipo y de los conectores), sesiones de chat con historial (el equivalente es la cola de corridas) y los tipos de campo `checklist`/`repeater`, que tocarían el esquema compartido, el servidor y las tools MCP.
+
+| Fase | Estado |
+|---|---|
+| 38 Prompt Studio como aplicación aparte (shell, Componer, Actividad, Experimentos) | ✅ 2026-09-08 |

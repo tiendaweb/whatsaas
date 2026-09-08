@@ -36,6 +36,9 @@ export const APPS_LAUNCHER_PREFIXES = [
   '/plugins/purchases', '/plugins/hr', '/plugins/support', '/plugins/contracts', '/plugins/intelligence',
   '/plugins/gemini',
   '/plugins/chatgpt-connector', '/plugins/grok-connector', '/plugins/claude-code-connector',
+  // El Prompt Studio es app aparte del Command Center: vive en el lanzador, no
+  // en el menú principal, donde compitiría con la bandeja y el Command Center.
+  '/plugins/sales-ops/studio',
 ];
 
 /**

@@ -4,10 +4,7 @@ import { useMemo, useState } from 'react';
 import { Check, ChevronRight, Copy, Cpu, Inbox, Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import {
@@ -18,13 +15,13 @@ import {
   renderSkillText,
   type RunMode,
   type Skill,
-  type SkillVariable,
 } from '../../shared/skills';
 import { classifyRunError } from '../../shared/run-errors';
 import { ApiError, launchSkill, type SkillRun } from './api';
 import { FallaCorrida } from './FallaCorrida';
 import { avisarEncolado } from '../components/eventos';
 import { ResponsiveModal } from './ResponsiveModal';
+import { VariableField } from './VariableField';
 import { SKILL_ICON_COMPONENTS, CATEGORY_TONE, MOSTRAR_MODO_API } from './skill-meta';
 
 type Target = { kind: 'team' | 'chat'; id?: number | null; name?: string | null };
@@ -268,75 +265,5 @@ export function SkillLauncher({ skill, target, open, onOpenChange, onLaunched, i
         )}
       </div>
     </ResponsiveModal>
-  );
-}
-
-/** Un campo del formulario, según el tipo declarado en la skill. */
-function VariableField({ variable, value, onChange }: { variable: SkillVariable; value: string; onChange: (value: string) => void }) {
-  const id = `var-${variable.name}`;
-  const label = (
-    <Label htmlFor={id} className="text-xs">
-      {variable.label}
-      {variable.required && <span className="ml-0.5 text-destructive">*</span>}
-    </Label>
-  );
-  const help = variable.help ? <p className="text-[11px] text-muted-foreground">{variable.help}</p> : null;
-
-  if (variable.type === 'boolean') {
-    return (
-      <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 sm:col-span-2">
-        <div className="min-w-0">
-          {label}
-          {help}
-        </div>
-        <Switch id={id} checked={value === 'sí'} onCheckedChange={(checked) => onChange(checked ? 'sí' : 'no')} />
-      </div>
-    );
-  }
-
-  if (variable.type === 'select') {
-    return (
-      <div className="space-y-1.5">
-        {label}
-        <Select value={value || undefined} onValueChange={onChange}>
-          <SelectTrigger id={id} className="h-9 text-sm">
-            <SelectValue placeholder={variable.placeholder ?? 'Elegí una opción'} />
-          </SelectTrigger>
-          <SelectContent>
-            {(variable.options ?? []).map((option) => (
-              <SelectItem key={option} value={option}>
-                {option}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {help}
-      </div>
-    );
-  }
-
-  if (variable.type === 'textarea') {
-    return (
-      <div className="space-y-1.5 sm:col-span-2">
-        {label}
-        <Textarea id={id} value={value} onChange={(e) => onChange(e.target.value)} rows={3} placeholder={variable.placeholder ?? ''} className="resize-none text-sm" />
-        {help}
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-1.5">
-      {label}
-      <Input
-        id={id}
-        type={variable.type === 'number' ? 'number' : variable.type === 'date' ? 'date' : 'text'}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={variable.placeholder ?? ''}
-        className="h-9 text-sm"
-      />
-      {help}
-    </div>
   );
 }

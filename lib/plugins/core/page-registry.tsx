@@ -133,6 +133,17 @@ const pluginRouteRegistry: Record<string, PluginRouteRenderer[]> = {
     },
   ],
   'sales-ops': [
+    // El Prompt Studio es una aplicación aparte con shell propio, pero comparte
+    // las rutas y los permisos de `sales-ops`: las skills son del Command
+    // Center. Por eso entra como una ruta más del plugin y no como plugin
+    // nuevo, que obligaría a permisos propios y a activarlo por equipo.
+    {
+      routeMatcher: (slug) => slug?.[0] === 'studio',
+      loadRenderer: async () => {
+        const { StudioApp } = await import('@/lib/plugins/sales-ops/ui/studio/StudioApp');
+        return ({ slug }) => <StudioApp slug={slug ?? []} />;
+      },
+    },
     {
       routeMatcher: () => true,
       loadRenderer: async () => {

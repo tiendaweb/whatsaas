@@ -6,9 +6,9 @@ export type Vista = (typeof VISTAS)[number];
  *
  * Experimentos es una herramienta de medición que se usa una vez cada tanto,
  * no un lugar al que se entra todos los días: ocupaba un renglón fijo del menú
- * compitiendo con las listas de trabajo. Sigue existiendo como vista y se llega
- * desde el Prompt Studio, que es donde uno está cuando piensa en probar dos
- * textos distintos.
+ * compitiendo con las listas de trabajo. Vive dentro del Prompt Studio —que es
+ * donde uno está cuando piensa en probar dos textos distintos— y acá queda sólo
+ * como puerta: el shell manda los enlaces viejos a la app.
  */
 /**
  * `focus` tampoco: no es un lugar del menú sino un modo de trabajo que se toma
@@ -18,8 +18,12 @@ export type Vista = (typeof VISTAS)[number];
  * `ayuda` tampoco: vive en el pie del menú, junto a Plegar y Volver a WhatsPro.
  * `clientes` (Contactos) se llega desde un botón dentro de Todos: es un corte de
  * la misma lista, no otro lugar.
+ *
+ * `prompts` se fue del Command Center: el Prompt Studio es una aplicación
+ * aparte (`/plugins/sales-ops/studio`). La vista sigue existiendo como puerta
+ * —los enlaces viejos y la Ayuda apuntan a ella— y el shell la redirige.
  */
-export const VISTAS_OCULTAS: readonly Vista[] = ['experimentos', 'ayuda', 'clientes', 'focus', 'noelia'];
+export const VISTAS_OCULTAS: readonly Vista[] = ['experimentos', 'ayuda', 'clientes', 'focus', 'noelia', 'prompts'];
 
 /** Las que se dibujan en el rail y en la barra inferior. */
 export const VISTAS_VISIBLES = VISTAS.filter((v) => !VISTAS_OCULTAS.includes(v));

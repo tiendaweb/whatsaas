@@ -104,9 +104,10 @@ export function Sidebar({ vista, counts, owner, user, collapsed, onNav, onOwner,
       </nav>
 
       <div className="mt-auto space-y-1 border-t border-border p-2">
-        {/* Tres atajos verticales, como el pie de Tareas OS: plegar, volver al
-            lanzador de apps y la ayuda. Plegado, quedan uno debajo del otro. */}
-        <div className={cn('grid gap-1', collapsed ? 'grid-cols-1' : 'grid-cols-4')}>
+        {/* Atajos verticales, como el pie de Tareas OS: plegar, el lanzador de
+            apps, las dos aplicaciones que se usan a la par y la ayuda. Plegado,
+            quedan uno debajo del otro. */}
+        <div className={cn('grid gap-1', collapsed ? 'grid-cols-1' : 'grid-cols-5')}>
           {onToggleCollapse ? (
             <button
               type="button"
@@ -138,6 +139,17 @@ export function Sidebar({ vista, counts, owner, user, collapsed, onNav, onOwner,
           >
             <ListChecks className="size-[18px]" aria-hidden />
             {!collapsed && 'Tareas'}
+          </a>
+          {/* El Prompt Studio salió del rail: es una aplicación aparte. Este es
+              el camino corto para el que estaba operando y quiere tocar una
+              skill sin pasar por el lanzador. */}
+          <a
+            href="/plugins/sales-ops/studio"
+            className="flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-[10px] font-semibold text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+            title="Abrir el Prompt Studio"
+          >
+            <Wand2 className="size-[18px]" aria-hidden />
+            {!collapsed && 'Studio'}
           </a>
           <button
             type="button"

@@ -7,7 +7,7 @@ import {
   CreditCard, Crown, FileSignature, FileStack, FileText, Files, Globe, Inbox, LayoutGrid, Radar,
   LayoutTemplate, LayoutDashboard as DesktopIcon, LifeBuoy, Megaphone, MessageCircle,
   NotebookText, Package, PanelsTopLeft, PieChart, Plug, Receipt, Server, ShoppingCart,
-  Sparkles, Store, UserCheck, UserCog, Users, Zap, type LucideIcon, Target,
+  Sparkles, Store, UserCheck, UserCog, Users, Wand2, Zap, type LucideIcon, Target,
 } from 'lucide-react';
 import type { MemberPermissions } from '@/lib/permissions';
 import {
@@ -53,7 +53,7 @@ export const PLUGIN_NAV_ICON_MAP: Record<string, LucideIcon> = {
   LifeBuoy, FileSignature, PieChart,
   // Sin estas dos entradas el manifest pide "Radar" / "Blocks", el mapa no las
   // encuentra y el ítem sale con el enchufe genérico.
-  Radar, Blocks, Handshake, Sparkles,
+  Radar, Blocks, Handshake, Sparkles, Wand2,
 };
 
 export const NAV_PERMISSION_MAP: Record<string, keyof Omit<MemberPermissions, 'chatVisibility'>> = {
@@ -89,6 +89,7 @@ export const APP_VISUAL: Record<string, { gradient: string; iconColor: string }>
   '/plugins/radar':               { gradient: 'from-indigo-500 to-violet-600',  iconColor: 'text-white' },
   '/plugins/deals':               { gradient: 'from-green-600 to-emerald-500',  iconColor: 'text-white' },
   '/plugins/sales-ops':           { gradient: 'from-slate-800 to-emerald-600',  iconColor: 'text-white' },
+  '/plugins/sales-ops/studio':    { gradient: 'from-[#f43f8e] to-[#ff2e4d]',    iconColor: 'text-white' },
   '/plugins/dev-center':          { gradient: 'from-zinc-900 to-emerald-700',   iconColor: 'text-white' },
   '/plugins/form-builder':        { gradient: 'from-teal-500 to-cyan-600',      iconColor: 'text-white' },
   '/plugins/hostinger':           { gradient: 'from-purple-600 to-indigo-700',  iconColor: 'text-white' },
@@ -128,6 +129,7 @@ export const APP_LABEL_OVERRIDE: Record<string, string> = {
   '/plugins/radar':              'Radar',
   '/plugins/deals':              'Oportunidades',
   '/plugins/sales-ops':          'Command Center',
+  '/plugins/sales-ops/studio':   'Prompt Studio',
   '/plugins/dev-center':         'Centro de Desarrollo',
   '/plugins/form-builder':       'Formularios',
   '/plugins/hostinger':          'Hostinger',
