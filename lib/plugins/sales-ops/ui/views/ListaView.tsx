@@ -306,10 +306,12 @@ export function ListaView({ vista, owner, selectedChatId, onOpen, extraFilters, 
    * lista está paginada por cursor y recargar tira el scroll justo cuando la
    * persona está barriendo.
    */
-  const { ignorar } = useIgnorarContacto(quitar);
+  // `ignorarUno` y no `ignorar`: abajo ya existe la de la barra de selección,
+  // que trabaja sobre el lote entero.
+  const { ignorar: ignorarUno } = useIgnorarContacto(quitar);
   const ignorarFila = useCallback(
-    (row: AnalysisRow, kind: ExclusionKind) => void ignorar(row.chatId, row.name, kind),
-    [ignorar],
+    (row: AnalysisRow, kind: ExclusionKind) => void ignorarUno(row.chatId, row.name, kind),
+    [ignorarUno],
   );
 
   // Sacar o devolver desde otra pantalla (la ficha, otra lista): la fila que
