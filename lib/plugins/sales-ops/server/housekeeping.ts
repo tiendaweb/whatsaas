@@ -1,10 +1,11 @@
 import { and, eq, inArray, lt, sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { activityLogs, teamCommercialActions, teamCommercialAnalysis, teamPromptRuns } from '@/lib/db/schema';
-import { SALES_OPS_ACTIVITY_PREFIX, type CollectionSpeed, type Gate, type Objection } from '../shared/taxonomy';
+import { MAX_DECISIONES_VIVAS, SALES_OPS_ACTIVITY_PREFIX, type CollectionSpeed, type Gate, type Objection } from '../shared/taxonomy';
 import { computePriority } from './priority';
 import { expireStale, proposeBatch } from './queue';
 import { encolarAudiosDeFrentes } from './audios';
+import { getSalesOpsSettings } from './settings';
 
 /**
  * Housekeeping diario del Command Center (doc 05 §E, reglas 4 y 5; doc 04 §9).
@@ -184,13 +185,36 @@ async function recalcPriority(teamId: number, now: Date): Promise<HousekeepingRe
   return { scanned: rows.length, updated };
 }
 
+/**
+ * ¿Le queda lugar al cron para proponer?
+ *
+ * El housekeeping propone solo todas las noches (pre-descartes y vencidos: 13
+ * filas el 10/09). Con un techo de 25 decisiones vivas, un cron que se despacha
+ * de a trece se come la mitad del cupo del día antes de que una persona
+ * proponga nada, y lo que se decide a mano es lo que mueve plata. Así que el
+ * automático sólo entra cuando la cola está a menos de la mitad: si el equipo
+ * tiene trabajo sin decidir, esperar un día no cuesta nada —los pre-descartes
+ * llevan semanas quietos— y la cola no se convierte en un archivo.
+ */
+async function hayLugarParaElCron(teamId: number): Promise<boolean> {
+  const settings = await getSalesOpsSettings(teamId);
+  const tope = Math.max(0, settings.maxDecisionesVivas ?? MAX_DECISIONES_VIVAS);
+  const [{ vivas = 0 } = { vivas: 0 }] = await db
+    .select({ vivas: sql<number>`count(*)::int` })
+    .from(teamCommercialActions)
+    .where(and(eq(teamCommercialActions.teamId, teamId), inArray(teamCommercialActions.status, ['proposed', 'pending_approval'])));
+  return vivas * 2 < tope;
+}
+
 export async function runHousekeeping(teamId: number): Promise<HousekeepingReport> {
   const started = Date.now();
   const now = new Date();
   const { expired } = await expireStale(teamId);
   const runsVencidas = await expirarCorridasSinConector(teamId, now);
-  const preDescarte = await proposePreDescarte(teamId, now);
-  const overdue = await proposeOverdue(teamId, now);
+  // Expirar va SIEMPRE (libera cupo); proponer, sólo si quedó lugar.
+  const conLugar = await hayLugarParaElCron(teamId);
+  const preDescarte = conLugar ? await proposePreDescarte(teamId, now) : { batchId: null, proposed: 0, excluded: 0 };
+  const overdue = conLugar ? await proposeOverdue(teamId, now) : { batchId: null, proposed: 0 };
   const priority = await recalcPriority(teamId, now);
   // Los audios entran acá porque el frente de un chat cambia con cada
   // clasificación: lo que ayer era Barrido hoy puede ser Dinero y sus notas de

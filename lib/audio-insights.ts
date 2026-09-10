@@ -842,6 +842,18 @@ export async function runAudioInsightsBatch(options: { limit?: number; teamId?: 
     } else limit = Math.min(limit, disponibles);
   }
 
+  /**
+   * Sin cuota no se prepara trabajo que no se va a hacer.
+   *
+   * El worker corre cada diez minutos —144 veces por día— y con el banco en la
+   * reserva igual depuraba la cola y salía a buscar 200 audios nuevos para
+   * encolar: trece segundos de trabajo por corrida para no transcribir nada.
+   * La cola no se pierde: apenas el banco tenga cuota, la primera corrida
+   * encola y drena. Un `limit` explícito (backfill a mano) sigue pasando por
+   * acá porque no toca `sinCuota`.
+   */
+  if (reporte.sinCuota) return reporte;
+
   // Paso 0: sacar lo que no corresponde transcribir. Va antes de encolar para
   // que el conteo de pendientes sea el trabajo real.
   try {
@@ -860,7 +872,6 @@ export async function runAudioInsightsBatch(options: { limit?: number; teamId?: 
   }
 
   // Paso 2: drenar lo que el banco de keys permita.
-  if (reporte.sinCuota) return reporte;
   const pendientes = await proximosDeLaCola(limit, options.teamId);
   for (const item of pendientes) {
     const resultado = await transcribirAudio(item.messageId, { automatico: true });
