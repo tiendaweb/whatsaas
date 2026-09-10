@@ -244,9 +244,12 @@ export function ComentariosView() {
                       )}
                     </p>
                   )}
+                  {/* La respuesta ya publicada. Se distingue por el fondo y por
+                      quién habla, no por una barra de color al costado. */}
                   {row.respuesta && (
-                    <p className="mt-2 rounded-lg border-l-2 border-primary/40 bg-primary/5 px-2.5 py-1.5 text-xs">
-                      <span className="font-medium">Respondimos</span> {hace(row.respondidoEn)}: {row.respuesta}
+                    <p className="mt-2 rounded-lg bg-muted/60 px-2.5 py-1.5 text-xs">
+                      <span className="font-medium text-foreground">Respondimos</span>{' '}
+                      <span className="text-muted-foreground">{hace(row.respondidoEn)}:</span> {row.respuesta}
                     </p>
                   )}
                 </div>
