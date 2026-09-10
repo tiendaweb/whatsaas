@@ -37,7 +37,12 @@ export const VISTA_LABELS: Record<Vista, string> = {
   barrido: 'Barrido',
   limpieza: 'Limpieza',
   respuestas: 'Respuestas',
-  cola: 'Cola',
+  /**
+   * "Decidir", no "Cola": es el único lugar donde se toman decisiones —lotes,
+   * pedidos, programados, correcciones de CRM y, desde ahora, los clientes que
+   * respondieron—. "Cola" describía el depósito; esto describe el trabajo.
+   */
+  cola: 'Decidir',
   audios: 'Audios',
   programados: 'Programados',
   produccion: 'Producción',

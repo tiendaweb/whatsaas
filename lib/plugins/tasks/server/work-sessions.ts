@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { teamTaskWorkSessions } from '@/lib/db/schema';
 
@@ -24,6 +24,20 @@ import { teamTaskWorkSessions } from '@/lib/db/schema';
 
 export type KindSesion = 'foco' | 'descanso';
 export type SourceSesion = 'bloque' | 'manual' | 'connector';
+/**
+ * En qué se fue el bloque.
+ *
+ * Los cuatro relojes de 25 minutos del sistema —producción, Focus comercial,
+ * Focus de supervisión y Modo Noelia— vivían cada uno en el localStorage de
+ * quien lo abría y no dejaban rastro: una sola sesión en toda la base. Sin
+ * horas no hay US$/h, y sin US$/h la línea roja del catálogo (más de 6 h por
+ * menos de US$250) es decorativa. Ahora los cuatro escriben acá y `context`
+ * dice cuál fue.
+ */
+export const CONTEXTOS_SESION = ['produccion', 'comercial', 'supervision', 'noelia'] as const;
+export type ContextoSesion = (typeof CONTEXTOS_SESION)[number];
+export const esContextoSesion = (v: unknown): v is ContextoSesion =>
+  typeof v === 'string' && (CONTEXTOS_SESION as readonly string[]).includes(v);
 
 /** Tope de una sesión sin cerrar: un bloque de foco. */
 const MAX_MINUTOS_SESION_ABIERTA = 25;
@@ -69,9 +83,82 @@ export async function abrirSesion(
   await cerrarSesion(teamId, userId);
   const [sesion] = await db
     .insert(teamTaskWorkSessions)
-    .values({ teamId, taskId, userId, startedAt: new Date(), kind, source })
+    .values({ teamId, taskId, userId, startedAt: new Date(), kind, source, context: 'produccion' })
     .returning({ id: teamTaskWorkSessions.id, startedAt: teamTaskWorkSessions.startedAt });
   return { id: sesion.id, startedAt: sesion.startedAt.toISOString() };
+}
+
+/**
+ * Bloque que no cuelga de un pedido: el Focus comercial, el de supervisión y el
+ * Modo Noelia. Misma regla de siempre —una sola sesión abierta por persona—,
+ * así que arrancar un bloque comercial cierra el de producción que hubiera
+ * quedado corriendo, que es exactamente lo que pasa en la realidad.
+ */
+export async function abrirSesionDeBloque(
+  teamId: number,
+  userId: number,
+  context: ContextoSesion,
+  opts: { kind?: KindSesion; chatId?: number | null } = {},
+): Promise<{ id: number; startedAt: string }> {
+  await cerrarSesion(teamId, userId);
+  const [sesion] = await db
+    .insert(teamTaskWorkSessions)
+    .values({
+      teamId,
+      taskId: null,
+      userId,
+      startedAt: new Date(),
+      kind: opts.kind ?? 'foco',
+      source: 'bloque',
+      context,
+      chatId: opts.chatId ?? null,
+    })
+    .returning({ id: teamTaskWorkSessions.id, startedAt: teamTaskWorkSessions.startedAt });
+  return { id: sesion.id, startedAt: sesion.startedAt.toISOString() };
+}
+
+/** La sesión que el usuario tiene abierta ahora mismo, sea del bloque que sea. */
+export async function sesionAbierta(
+  teamId: number,
+  userId: number,
+): Promise<{ id: number; startedAt: string; context: string; taskId: number | null; chatId: number | null; kind: string } | null> {
+  const [fila] = await db
+    .select({
+      id: teamTaskWorkSessions.id,
+      startedAt: teamTaskWorkSessions.startedAt,
+      context: teamTaskWorkSessions.context,
+      taskId: teamTaskWorkSessions.taskId,
+      chatId: teamTaskWorkSessions.chatId,
+      kind: teamTaskWorkSessions.kind,
+    })
+    .from(teamTaskWorkSessions)
+    .where(and(eq(teamTaskWorkSessions.teamId, teamId), eq(teamTaskWorkSessions.userId, userId), isNull(teamTaskWorkSessions.endedAt)))
+    .orderBy(desc(teamTaskWorkSessions.startedAt))
+    .limit(1);
+  return fila ? { ...fila, startedAt: fila.startedAt.toISOString() } : null;
+}
+
+/** Minutos de foco por contexto en una ventana. Es el insumo del tablero de cierre. */
+export async function horasPorContexto(teamId: number, desde: Date): Promise<Record<string, number>> {
+  const filas = await db
+    .select({
+      context: teamTaskWorkSessions.context,
+      minutos: sql<number>`coalesce(sum(${teamTaskWorkSessions.minutes}), 0)::int`,
+    })
+    .from(teamTaskWorkSessions)
+    .where(
+      and(
+        eq(teamTaskWorkSessions.teamId, teamId),
+        eq(teamTaskWorkSessions.kind, 'foco'),
+        gte(teamTaskWorkSessions.startedAt, desde),
+      ),
+    )
+    // `group by 1` por posición: el CASE/parámetros del where hacen que drizzle
+    // renumere la expresión y Postgres deje de reconocerla como la misma.
+    .groupBy(sql`1`);
+  const out: Record<string, number> = {};
+  for (const fila of filas) out[fila.context] = fila.minutos;
+  return out;
 }
 
 /**
@@ -126,7 +213,11 @@ export async function resumenHorasPorTarea(teamId: number, taskIds: number[]): P
     .where(and(eq(teamTaskWorkSessions.teamId, teamId), inArray(teamTaskWorkSessions.taskId, taskIds)));
   const ahora = new Date();
   for (const fila of filas) {
-    const resumen = out.get(fila.taskId) ?? { minutosFoco: 0, sesiones: 0, sesionAbierta: null };
+    // `task_id` es opcional desde que existen los bloques que no son de
+    // producción; acá se piden por tarea, así que las libres no aparecen.
+    if (fila.taskId == null) continue;
+    const taskId = fila.taskId;
+    const resumen = out.get(taskId) ?? { minutosFoco: 0, sesiones: 0, sesionAbierta: null };
     resumen.sesiones += 1;
     if (fila.kind === 'foco') {
       resumen.minutosFoco += fila.endedAt ? fila.minutes ?? minutosEntre(fila.startedAt, fila.endedAt) : minutosAcotados(fila.startedAt, ahora);
@@ -135,7 +226,7 @@ export async function resumenHorasPorTarea(teamId: number, taskIds: number[]): P
     if (!fila.endedAt && (!resumen.sesionAbierta || fila.startedAt.toISOString() > resumen.sesionAbierta.startedAt)) {
       resumen.sesionAbierta = { id: fila.id, startedAt: fila.startedAt.toISOString() };
     }
-    out.set(fila.taskId, resumen);
+    out.set(taskId, resumen);
   }
   return out;
 }

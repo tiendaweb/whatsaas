@@ -12,7 +12,7 @@ import {
 import { GoogleGenAI } from '@google/genai';
 import { getAIProviderForConfig } from '@/lib/plugins/ai-chat/service';
 import { aiConfigs } from '@/lib/db/schema';
-import { analizarTextoConBanco } from '@/lib/gemini/key-bank';
+import { alcanceDelLimite, analizarTextoConBanco, diaDeGoogle, esErrorDeCuota } from '@/lib/gemini/key-bank';
 import { encolarAudios } from '@/lib/audio-insights';
 import { classificationSchema, type Classification, type Dossier, type RuleFacts } from '../shared/contract';
 import { normalizeCrmFix } from '../shared/crm-fix';
@@ -162,10 +162,31 @@ async function callGeminiJson(apiKey: string, model: string, systemPrompt: strin
   return text;
 }
 
+/**
+ * Equipos cuyo proveedor propio ya dijo "se acabó el día", con el día de Google
+ * en el que lo dijo.
+ *
+ * La key del equipo es UNA y su cuota gratuita se agota temprano: el 2026-09-10
+ * 886 corridas murieron con el mismo 429, y cada una gastó dos intentos y casi
+ * dos minutos de espera del SDK antes de caer al banco, que era el que tenía
+ * cuota. Mientras el día no rote, se va derecho al banco. Es memoria de
+ * proceso a propósito: si el server reinicia, se vuelve a probar una vez, que
+ * es exactamente lo que se quiere.
+ */
+const proveedorSinCuota = new Map<number, string>();
+/** 429 seguidos del proveedor propio, por equipo y día de Google. */
+const proveedorFallosSeguidos = new Map<number, { dia: string; n: number }>();
+/** Tres 429 seguidos es cuota agotada aunque Google no diga "per day". */
+const FALLOS_PARA_APAGAR = 3;
+
 async function runServerAi(teamId: number, systemPrompt: string, userPrompt: string, opts: { automatico?: boolean } = {}): Promise<AiOutcome> {
   const errors: string[] = [];
   const jsonOnly = 'Respondé EXCLUSIVAMENTE con un objeto JSON válido, sin markdown ni texto alrededor.';
+  const hoy = diaDeGoogle();
+  const saltearProveedor = proveedorSinCuota.get(teamId) === hoy;
+  if (saltearProveedor) errors.push('proveedor del equipo: sin cuota hoy (se probó antes), va directo al banco');
   try {
+    if (saltearProveedor) throw new Error('cuota diaria del proveedor del equipo agotada');
     const config = await db.query.aiConfigs.findFirst({ where: eq(aiConfigs.teamId, teamId) });
     if (!config) throw new Error('El equipo no tiene proveedor IA configurado.');
     let raw: string;
@@ -177,10 +198,26 @@ async function runServerAi(teamId: number, systemPrompt: string, userPrompt: str
       raw = response.content ?? '';
     }
     const parsed = classificationSchema.safeParse(extractJson(raw));
-    if (parsed.success) return { classification: parsed.data, provider: config.provider, model: config.model, error: null, raw };
+    if (parsed.success) {
+      proveedorFallosSeguidos.delete(teamId);
+      return { classification: parsed.data, provider: config.provider, model: config.model, error: null, raw };
+    }
     errors.push(`proveedor del equipo: la salida no cumple el contrato (${parsed.error.issues[0]?.path.join('.')}: ${parsed.error.issues[0]?.message})`);
   } catch (error) {
-    errors.push(`proveedor del equipo: ${error instanceof Error ? error.message : String(error)}`);
+    if (!saltearProveedor) {
+      // Sólo el 429 "por día" apaga el proveedor hasta mañana. El de minuto
+      // (RPM) se supera solo y apagar por él costaría todo el día de cuota,
+      // que es el error que ya se pagó una vez con el banco de keys.
+      if (esErrorDeCuota(error)) {
+        const previo = proveedorFallosSeguidos.get(teamId);
+        const n = previo && previo.dia === hoy ? previo.n + 1 : 1;
+        proveedorFallosSeguidos.set(teamId, { dia: hoy, n });
+        // "per day" lo apaga en el acto; si Google no lo aclara —que es lo
+        // habitual— alcanza con que sea el tercero seguido del día.
+        if (alcanceDelLimite(error) === 'dia' || n >= FALLOS_PARA_APAGAR) proveedorSinCuota.set(teamId, hoy);
+      }
+      errors.push(`proveedor del equipo: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
   try {
     // Sin usuario = lo corre el cron: respeta la reserva del banco para lo manual.
@@ -772,6 +809,7 @@ type PendingRow = {
   pending_audios: number;
   last_id: string | null;
   last_ts: Date | string | null;
+  last_in_ts: Date | string | null;
   audios_done: number;
   a_version: number | null;
   a_stale: boolean | null;
@@ -838,6 +876,7 @@ export async function listPendingChats(teamId: number, opts: { source?: PendingS
       (c.id in (select chat_id from active_sessions)) as automation_active,
       coalesce(pa.n, 0) as pending_audios,
       lm.id as last_id, lm.timestamp as last_ts,
+      lc.timestamp as last_in_ts,
       coalesce(ad.n, 0) as audios_done,
       a.version as a_version, a.stale as a_stale, a.current_gate as a_gate, a.fingerprint as a_fingerprint, a.analyzed_at as a_analyzed_at
     from team_chats c
@@ -846,6 +885,14 @@ export async function listPendingChats(teamId: number, opts: { source?: PendingS
     left join audios_done ad on ad.chat_id = c.id
     left join team_commercial_analysis a on a.team_id = ${teamId} and a.chat_id = c.id
     left join lateral (select m.id, m.timestamp from messages m where m.chat_id = c.id order by m.timestamp desc, m.id desc limit 1) lm on true
+    -- Último mensaje ENTRANTE del cliente: es el único que justifica gastar una
+    -- clasificación. Nuestros propios envíos y los de la automatización mueven
+    -- el fingerprint sin cambiar nada de lo que hay que decidir.
+    left join lateral (
+      select m.timestamp from messages m
+      where m.chat_id = c.id and m.from_me = false and coalesce(m.is_internal, false) = false
+      order by m.timestamp desc, m.id desc limit 1
+    ) lc on true
     ${source === 'prefiltro'
       ? sql`where c.id in (select chat_id from pago_nuestro union select chat_id from radar_p1 union select chat_id from deal union select chat_id from cliente_custom union select chat_id from tag_producto)`
       : source === 'stale'
@@ -867,11 +914,25 @@ export async function listPendingChats(teamId: number, opts: { source?: PendingS
     });
     const hasAnalysis = r.a_version != null;
     const matches = hasAnalysis && r.a_fingerprint === fingerprint;
+    /**
+     * ¿Habló el cliente desde la última clasificación?
+     *
+     * El fingerprint se mueve con CUALQUIER mensaje nuevo, también los
+     * nuestros y los de la automatización: por eso se clasificaron 2.198 veces
+     * 1.068 chats —dos vueltas por chat— y el 38 % de esas corridas murió sin
+     * cuota. Un mensaje que escribimos nosotros no cambia el gate ni la
+     * objeción ni el precio: lo único que amerita gastar una clasificación es
+     * que el cliente haya dicho algo nuevo.
+     */
+    const clienteHabloDespues =
+      r.last_in_ts != null && r.a_analyzed_at != null
+        ? new Date(r.last_in_ts).getTime() > new Date(r.a_analyzed_at).getTime()
+        : r.last_in_ts != null;
     let pendingReason: PendingChat['pendingReason'] | null = null;
     if (!hasAnalysis) pendingReason = 'sin_analisis';
     else if ((r.a_version ?? 0) === 0) pendingReason = 'import';
     else if (r.a_stale) pendingReason = 'stale';
-    else if (!matches) pendingReason = 'chat_changed';
+    else if (!matches && clienteHabloDespues) pendingReason = 'chat_changed';
     if (!pendingReason) continue;
 
     const signals = SIGNAL_ORDER.filter((s) => (s === 'pago_nuestro' && r.pago_nuestro) || (s === 'radar_P1' && r.radar_p1) || (s === 'deal' && r.deal) || (s === 'cliente_custom' && r.cliente_custom) || (s === 'tag_producto' && r.tag_producto));

@@ -1,16 +1,26 @@
 'use client';
 
-import { ChevronRight, Loader2, Trash2, X } from 'lucide-react';
+import { CalendarClock, ChevronRight, Loader2, RefreshCw, Trash2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { surfaceCardHover } from '@/components/escritorio/tokens';
 import type { BatchSummary } from '../../shared/api-types';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { MotivoRechazo } from './MotivoRechazo';
+import type { RejectReason } from '@/lib/plugins/sales-ops/shared/taxonomy';
 import { KIND_LABELS, PHASE_LABELS, QUEUE_ENDPOINT, ROLE_LABELS, batchPhase, formatDate, postJson, type ApiError } from './api';
 
 /** Fila de lote (doc 05 §5): nombre · N contactos · tipo · rol — estado — [Revisar]. */
-export function BatchCard({ batch, onOpen, onDiscarded, onDeleted }: { batch: BatchSummary; onOpen: (batchId: string) => void; onDiscarded?: () => void; onDeleted?: () => void }) {
+export function BatchCard({ batch, reprocesando, onOpen, onDiscarded, onDeleted }: {
+  batch: BatchSummary;
+  /** Hay una corrección pedida a la IA esperando: el lote se va a reescribir. */
+  reprocesando?: boolean;
+  onOpen: (batchId: string) => void;
+  onDiscarded?: () => void;
+  onDeleted?: () => void;
+}) {
   const [descartando, setDescartando] = useState(false);
+  const [preguntando, setPreguntando] = useState(false);
   const [eliminando, setEliminando] = useState(false);
   const phase = batchPhase(batch.byStatus);
   const pending = (batch.byStatus.proposed ?? 0) + (batch.byStatus.pending_approval ?? 0);
@@ -18,14 +28,15 @@ export function BatchCard({ batch, onOpen, onDiscarded, onDeleted }: { batch: Ba
   const sent = (batch.byStatus.executed ?? 0) + (batch.byStatus.resulted ?? 0);
   const kindLabel = batch.kind === 'send_message' && batch.experimentId ? 'mensaje A/B' : KIND_LABELS[batch.kind]?.toLowerCase() ?? batch.kind;
 
-  /** Descartar = rechazar todo lo pendiente y lo aprobado sin ejecutar. No borra: queda el rastro del lote. */
-  const descartar = async (event: React.MouseEvent) => {
-    event.stopPropagation();
-    const vivas = pending + approved;
-    if (!window.confirm(`¿Descartar "${batch.batchLabel}"? Se rechazan ${vivas} fila${vivas === 1 ? '' : 's'}${approved ? ` (${approved} ya aprobadas, todavía sin salir)` : ''}.`)) return;
+  /**
+   * Descartar = rechazar todo lo pendiente y lo aprobado sin ejecutar. No
+   * borra: queda el rastro del lote y, desde ahora, el motivo — que es lo que
+   * le enseña algo a la próxima redacción.
+   */
+  const descartar = async (motivo: { code: RejectReason; reason?: string }) => {
     setDescartando(true);
     try {
-      await postJson(`${QUEUE_ENDPOINT}/${encodeURIComponent(batch.batchId)}/reject`, { reason: 'descartado desde la cola' });
+      await postJson(`${QUEUE_ENDPOINT}/${encodeURIComponent(batch.batchId)}/reject`, { reason: motivo.reason, code: motivo.code });
       toast.success('Lote descartado.');
       onDiscarded?.();
     } catch (err) {
@@ -70,6 +81,22 @@ export function BatchCard({ batch, onOpen, onDiscarded, onDeleted }: { batch: Ba
           {batch.total} contacto{batch.total === 1 ? '' : 's'} · {kindLabel}
           {batch.requiresRole !== 'any' ? ` · ${ROLE_LABELS[batch.requiresRole]}` : ''}
         </div>
+        {/* Un lote con corrección pedida está en cola por trabajo, no por
+            decisión: decirlo evita que alguien lo abra buscando qué aprobar. */}
+        {reprocesando && (
+          <div className="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-primary">
+            <RefreshCw className="size-3.5 shrink-0" aria-hidden />
+            Con una corrección pedida: lo reescribe un conector
+          </div>
+        )}
+        {/* Para cuándo. Aprobar un lote programado es fijar esta hora: tiene
+            que leerse antes de apretar, no después en otra app. */}
+        {batch.scheduledFor && (
+          <div className="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-foreground/80">
+            <CalendarClock className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+            {phase === 'done' ? 'Programado para' : 'Sale'} {formatDate(batch.scheduledFor, true)}
+          </div>
+        )}
         <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
           <span
             className={cn(
@@ -110,7 +137,10 @@ export function BatchCard({ batch, onOpen, onDiscarded, onDeleted }: { batch: Ba
       {onDiscarded && (phase === 'proposed' || phase === 'approved') && (
         <button
           type="button"
-          onClick={descartar}
+          onClick={(event) => {
+            event.stopPropagation();
+            setPreguntando(true);
+          }}
           disabled={descartando}
           aria-label={`Descartar ${batch.batchLabel}`}
           title="Descartar el lote"
@@ -120,6 +150,16 @@ export function BatchCard({ batch, onOpen, onDiscarded, onDeleted }: { batch: Ba
         </button>
       )}
       <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+      <div onClick={(event) => event.stopPropagation()} role="presentation">
+        <MotivoRechazo
+          open={preguntando}
+          onOpenChange={setPreguntando}
+          titulo={`Descartar «${batch.batchLabel}»`}
+          detalle={`Se rechazan ${pending + approved} fila${pending + approved === 1 ? '' : 's'}${approved ? ` (${approved} ya aprobadas, todavía sin salir)` : ''}.`}
+          confirmLabel="Descartar lote"
+          onConfirm={descartar}
+        />
+      </div>
     </div>
   );
 }

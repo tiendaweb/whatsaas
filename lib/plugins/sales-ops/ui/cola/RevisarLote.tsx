@@ -2,8 +2,10 @@
 
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
-import { AlertTriangle, ArrowLeft, Check, Loader2, MessageSquarePlus, PanelRightOpen, Pencil, Save, Send, Sparkles, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CalendarClock, Check, Loader2, MessageSquarePlus, PanelRightOpen, Pencil, RefreshCw, Save, Send, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { MotivoRechazo } from './MotivoRechazo';
+import type { RejectReason } from '@/lib/plugins/sales-ops/shared/taxonomy';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,6 +15,7 @@ import { surfaceCard } from '@/components/escritorio/tokens';
 import type { ActionRow, QueueBatchPayload } from '../../shared/api-types';
 import { esEjecutableEnServidor, type ActionKind } from '../../shared/taxonomy';
 import { KIND_LABELS, PHASE_LABELS, QUEUE_ENDPOINT, ROLE_LABELS, STATUS_LABELS, batchPhase, fetcher, formatDate, postJson, type ApiError } from './api';
+import { AbrirChat, AbrirIa } from './AbrirChat';
 
 const PENDING = new Set(['proposed', 'pending_approval']);
 
@@ -65,7 +68,10 @@ export function RevisarLote({
   onBack,
   onChanged,
   onDecidido,
+  reprocesando,
   onOpen,
+  onOpenChat,
+  onOpenIa,
   selectedChatId,
   embebido,
 }: {
@@ -81,7 +87,13 @@ export function RevisarLote({
    */
   onDecidido?: (decision: 'aprobado' | 'rechazado') => void;
   /** Abre la ficha del contacto en el panel derecho (misma que en las listas). */
+  /** Hay una corrección pedida a la IA sin cerrar: el lote espera que la reescriban. */
+  reprocesando?: boolean;
   onOpen?: (chatId: number) => void;
+  /** Abre la misma ficha en la pestaña Chat. */
+  onOpenChat?: (chatId: number) => void;
+  /** Abre la misma ficha en la pestaña IA, para dejarle un pedido al conector. */
+  onOpenIa?: (chatId: number) => void;
   /** Chat abierto ahora mismo en el panel derecho, para marcar su fila. */
   selectedChatId?: number | null;
   /**
@@ -94,6 +106,7 @@ export function RevisarLote({
   const { data, isLoading, error, mutate } = useSWR<QueueBatchPayload>(`${QUEUE_ENDPOINT}/${encodeURIComponent(batchId)}`, fetcher);
   const [excluded, setExcluded] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState<'approve' | 'reject' | 'execute' | 'instruccion' | number | null>(null);
+  const [rechazando, setRechazando] = useState(false);
   const [approvedNotice, setApprovedNotice] = useState<string | null>(null);
   /** Acción cuyo texto se está corrigiendo, y el borrador. */
   const [editando, setEditando] = useState<{ id: number; texto: string } | null>(null);
@@ -199,11 +212,20 @@ export function RevisarLote({
     }
   }
 
-  async function reject() {
+  /**
+   * Rechazar pide el motivo antes de cerrar el lote.
+   *
+   * El motivo no es burocracia: es el único dato que vuelve al prompt de quien
+   * redacta. Sin él, el mismo texto se propone otra vez mañana.
+   */
+  async function reject(motivo: { code: RejectReason; reason?: string }) {
     setBusy('reject');
     try {
-      const result = await postJson<{ rejected: number }>(`${QUEUE_ENDPOINT}/${encodeURIComponent(batchId)}/reject`, { reason: 'rechazado desde la cola' });
-      toast.success(`Lote rechazado (${result.rejected} filas).`);
+      const result = await postJson<{ rejected: number }>(`${QUEUE_ENDPOINT}/${encodeURIComponent(batchId)}/reject`, {
+        reason: motivo.reason,
+        code: motivo.code,
+      });
+      toast.success(`Lote rechazado (${result.rejected} filas). El motivo queda para la próxima redacción.`);
       await mutate();
       onChanged?.();
       onDecidido?.('rechazado');
@@ -252,11 +274,20 @@ export function RevisarLote({
       const res = await fetch(`${QUEUE_ENDPOINT.replace('/queue', '/prompts/launch')}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: texto, title: `Indicación · ${data?.batch.batchLabel ?? batchId}`, targetKind: 'batch', targetRef: batchId, mode: 'queue' }),
+        body: JSON.stringify({
+          text: texto,
+          title: `Corregir lote · ${data?.batch.batchLabel ?? batchId}`,
+          targetKind: 'batch',
+          targetRef: batchId,
+          mode: 'queue',
+          // Aprobada de entrada: la escribió una persona mirando el lote, así
+          // que no vuelve a pedir una decisión — va derecho al conector.
+          approved: true,
+        }),
       });
       const cuerpo = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(String(cuerpo?.error ?? `Error ${res.status}`));
-      toast.success('Indicación anotada. La ve el conector antes de trabajar el lote.');
+      toast.success('En cola: el conector vuelve a trabajar el lote con esta corrección.');
       setInstruccion('');
       setInstruccionAbierta(false);
       onChanged?.();
@@ -326,6 +357,21 @@ export function RevisarLote({
         </div>
       </div>
 
+      {/*
+        * El lote ya salió de revisión: lo que falta no es decidir, es que un
+        * conector lo reescriba. Se dice acá adentro también porque desde la
+        * pantalla del lote no hay forma de ver en qué sección de la Cola quedó.
+        */}
+      {reprocesando && (
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-primary/30 bg-primary/10 p-3 text-sm text-foreground">
+          <RefreshCw className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
+          <span>
+            En cola con una corrección pedida: lo reescribe el próximo conector. Salió de «En revisión» y no se envía
+            nada hasta que lo apruebes.
+          </span>
+        </div>
+      )}
+
       {approvedNotice && (
         <div className="mb-3 flex items-start gap-2 rounded-lg border border-primary/30 bg-primary/10 p-3 text-sm text-foreground">
           <Check className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
@@ -333,36 +379,51 @@ export function RevisarLote({
         </div>
       )}
 
-      {/* Indicación para todo el lote: lo que hay que tener en cuenta antes de
-          que salga, en un solo lugar en vez de repetido en cada fila. */}
+      {/*
+        * Pedirle una corrección a la IA.
+        *
+        * Un lote no siempre se aprueba o se rechaza: la mayoría de las veces
+        * está casi bien y lo que falta es decir qué cambiar —"son muy largos",
+        * "no menciones el descuento", "saltéate a los que pagaron"—. Eso se
+        * anota como una indicación apuntada al LOTE y el lote **sale de
+        * revisión y vuelve a la cola**: ya está decidido qué hacer con él, lo
+        * que falta es que un conector lo vuelva a escribir.
+        *
+        * Aprobar sigue siendo lo otro, y sigue ejecutando: son dos caminos
+        * distintos y por eso son dos botones distintos.
+        */}
       <div className="mb-3">
         {instruccionAbierta ? (
           <div className="space-y-2 rounded-xl border border-primary/40 bg-primary/5 p-3">
             <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               <Sparkles className="size-3" aria-hidden />
-              Indicación para todo el lote
+              Corrección para la IA
             </p>
             <Textarea
               value={instruccion}
               onChange={(e) => setInstruccion(e.target.value)}
               rows={3}
-              placeholder="Ej.: antes de mandar, revisá que ninguno haya pagado esta semana; si pagó, saltealo y avisá."
+              placeholder="Ej.: los mensajes quedaron largos, acortalos a dos renglones y sacá el «espero tu respuesta»."
               className="resize-none text-xs"
+              autoFocus
             />
+            <p className="text-[11px] text-muted-foreground">
+              El lote sale de revisión y queda en cola: no se envía nada hasta que lo vuelvas a aprobar.
+            </p>
             <div className="flex items-center justify-end gap-2">
               <Button type="button" variant="ghost" size="sm" className="h-8 text-xs" onClick={() => setInstruccionAbierta(false)}>
                 Cancelar
               </Button>
               <Button type="button" size="sm" className="h-8 gap-1.5 text-xs" disabled={busy !== null || instruccion.trim().length < 5} onClick={dejarInstruccion}>
-                {busy === 'instruccion' ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Check className="size-3.5" aria-hidden />}
-                Anotar
+                {busy === 'instruccion' ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <RefreshCw className="size-3.5" aria-hidden />}
+                Dejar en cola para reprocesar
               </Button>
             </div>
           </div>
         ) : (
           <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setInstruccionAbierta(true)}>
             <MessageSquarePlus className="size-3.5" aria-hidden />
-            Dejar una indicación para este lote
+            Pedirle una corrección a la IA
           </Button>
         )}
       </div>
@@ -450,6 +511,11 @@ export function RevisarLote({
                           <PanelRightOpen className="size-3.5" aria-hidden />
                         </button>
                       )}
+                      {/* Y la conversación: decidir si este texto sale se hace
+                          leyendo lo último que dijo la persona, no sólo su ficha.
+                          IA, al lado, para dejarle el pedido siguiente. */}
+                      <AbrirChat onOpen={onOpenChat && (() => onOpenChat(action.chatId))} nombre={action.name} className="size-6" />
+                      <AbrirIa onOpen={onOpenIa && (() => onOpenIa(action.chatId))} nombre={action.name} className="size-6" />
                     </div>
                     {editando?.id === action.id ? (
                       <div className="mt-1.5 space-y-1.5">
@@ -491,6 +557,22 @@ export function RevisarLote({
                           )}
                         </div>
                       )
+                    )}
+                    {/*
+                      * Cuándo sale.
+                      *
+                      * Un lote programado guarda la hora en `scheduledFor` y no
+                      * se mostraba en ningún lado: se aprobaba "programar 40"
+                      * sin ver para cuándo, y para saberlo había que ir a
+                      * Programados después de haberlo aprobado.
+                      */}
+                    {action.scheduledFor && (
+                      <p className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-foreground/80">
+                        <CalendarClock className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                        {action.status === 'executed' || action.status === 'resulted'
+                          ? `Programado para ${formatDate(action.scheduledFor, true)}`
+                          : `Sale ${formatDate(action.scheduledFor, true)}`}
+                      </p>
                     )}
                     {!text && action.kind !== 'send_message' && (
                       <p className="mt-1 text-xs text-muted-foreground">
@@ -555,7 +637,7 @@ export function RevisarLote({
           <div className="flex items-center gap-2">
             {pending.length > 0 && (
               <>
-                <Button type="button" variant="outline" size="sm" disabled={busy !== null} onClick={reject} className="gap-1.5">
+                <Button type="button" variant="outline" size="sm" disabled={busy !== null} onClick={() => setRechazando(true)} className="gap-1.5">
                   {busy === 'reject' ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <X className="size-3.5" aria-hidden />}
                   Rechazar lote
                 </Button>
@@ -574,6 +656,15 @@ export function RevisarLote({
           </div>
         </div>
       )}
+
+      <MotivoRechazo
+        open={rechazando}
+        onOpenChange={setRechazando}
+        titulo={`Rechazar «${data?.batch.batchLabel ?? 'el lote'}»`}
+        detalle={`Se rechazan ${pending.length} fila${pending.length === 1 ? '' : 's'} sin decidir. Elegí por qué: el motivo vuelve al prompt de quien redacta.`}
+        confirmLabel="Rechazar lote"
+        onConfirm={reject}
+      />
     </div>
   );
 }

@@ -48,7 +48,7 @@ function extensionDe(ruta: string) {
  * y acá seguíamos sin keys 17 horas más. Con el día de Los Ángeles, el 429 de
  * las 00:05 UTC cae en el día que de verdad está agotado.
  */
-function diaDeGoogle(fecha: Date = new Date()) {
+export function diaDeGoogle(fecha: Date = new Date()) {
   const partes = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit',
   }).formatToParts(fecha);
@@ -474,7 +474,7 @@ export function esErrorDeCuota(error: unknown) {
  * Ante la duda se elige "minuto". Una key enfriada de más un minuto no cuesta
  * nada; una key apagada de más un día cuesta la cola entera.
  */
-function alcanceDelLimite(error: unknown): 'dia' | 'minuto' {
+export function alcanceDelLimite(error: unknown): 'dia' | 'minuto' {
   const texto = (error instanceof Error ? error.message : String(error)).toLowerCase();
   const porDia = /perday|per day|per-day|\bdaily\b|requests per day|por d[ií]a/.test(texto);
   const porMinuto = /perminute|per minute|per-minute|requests per minute|\brpm\b/.test(texto);

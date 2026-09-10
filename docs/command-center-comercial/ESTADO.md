@@ -303,3 +303,85 @@ Por qué: el Studio no es un lugar al que se entra a operar clientes, es donde s
 | Fase | Estado |
 |---|---|
 | 38 Prompt Studio como aplicación aparte (shell, Componer, Actividad, Experimentos) | ✅ 2026-09-08 |
+
+## Tanda 9 del 2026-09-10: el sistema deja de producir trabajo que nadie cierra
+
+Auditoría de los tres módulos (Radar, Command Center y Tareas OS/Producción) medida contra la base
+del equipo 2, y la tanda de correcciones que salió de ella. El diagnóstico completo está en el
+informe publicado; lo que importa acá es lo que cambió y por qué.
+
+**Lo que mostraron los números.** De 205 mensajes propuestos en diez días, 5 salieron (2,4 %): 84
+rechazados sin motivo y 113 sin decidir —las 15 tandas del 07/09, intactas tres días—. 649 señales
+de respuesta sin atender, la última cerrada el 04/09. 925 corridas fallidas (38 %), 886 de ellas por
+cuota, con 2.198 clasificaciones para 1.068 chats. Radar con 14 llamadas MCP en 21 días y su último
+widget tocado el 31/08. Producción con 207 «en curso» contra un WIP de 3, una sola sesión de reloj
+registrada en toda la base y 123 entregados sin enlace. Las tres colas y los cuatro relojes
+repartían la atención; ningún tablero contaba trabajo terminado.
+
+**1. Techo de decisiones y motivo de rechazo.** `proposeBatch` corta el lote dos veces: al tamaño que
+se revisa de una sentada (`maxFilasPorLote`, 12) y al espacio libre bajo el tope de filas vivas del
+equipo (`maxDecisionesVivas`, 25); lo que no entra se explica en `excluded` y vuelve cuando se libere
+lugar. El TTL de una propuesta pasó de 7 días a 48 horas (`proposalTtlHours`) y `expireStale` ahora
+vence también por antigüedad contra el TTL vigente, no sólo por `expires_at` — con eso se cerraron
+las 113 filas del 07/09 y la cola quedó en 18. Rechazar exige un motivo de seis opciones cerradas
+(`REJECT_REASONS`, `ui/cola/MotivoRechazo.tsx`), que se guarda en `result.code` de la fila y vuelve,
+resumido por `rejectionLessons`, al expediente y al system prompt del motor del Focus. Las tools
+`whatspro_sales_queue_reject` y `_remove` toman el mismo `code`.
+
+**2. Las respuestas entran donde se decide.** La vista Cola se llama **Decidir** y suma un tipo de
+ítem más: los contactos que respondieron, agrupados como en la bandeja y con «Atendido» que cierra
+todas sus señales de un request (`ui/cola/RespuestaItem.tsx`, también en el Focus violeta).
+Respuestas sigue existiendo para el barrido largo. Y ejecutar cualquier fila aprobada de un chat
+cierra sus señales abiertas: si le acabamos de escribir, la respuesta está atendida por definición.
+
+**3. Los bloques de 25 minutos registran horas.** Migración `0111`: `team_task_work_sessions.task_id`
+pasa a opcional y suma `context` (`produccion` | `comercial` | `supervision` | `noelia`) y `chat_id`.
+`abrirSesionDeBloque` + `POST /api/plugins/sales-ops/focus/sesion`, que `useBloque` llama al arrancar,
+pausar, reanudar y terminar —sin await y tragándose el error: registrar el tiempo no puede impedir
+trabajar—. Las claves de localStorage siguen separadas (son tareas distintas), pero las horas caen
+todas en la misma tabla y una sola sesión abierta por persona.
+
+**4. Producción, el patio limpio.** `scripts/repair-produccion-desarrollo.mts` suma el grupo (d):
+tareas `desarrollo` de un proyecto con cuatro o más hermanas abiertas son backlog del proyecto, no
+pedidos. Aplicado: **228 dejaron de contar como pedidos** (96 eran de «Looppy · Plataforma», 43 de
+«Almamia»), quedaron 7 trabajos reales y el WIP pasó de 207 a 9. Destipar no toca la tarea: sigue en
+su tablero con su estado y su responsable.
+
+**5. Cuota: no reclasificar lo que no cambió.** `listPendingChats` sólo marca `chat_changed` si el
+cliente habló DESPUÉS de la última clasificación (lateral nuevo sobre el último mensaje entrante):
+el fingerprint se movía con nuestros propios envíos y los de la automatización, y por eso cada chat
+se clasificó dos veces. Medido después del cambio: **1 chat pendiente**. Y `runServerAi` deja de
+gastar dos intentos y dos minutos en un proveedor sin cuota: tres 429 seguidos en el mismo día de
+Google (o uno que diga «per day») lo apagan hasta mañana y las corridas van derecho al banco.
+
+**6. Radar es el motor, no la app de análisis.** Prioridades, Clientes y Seguimiento nacen ocultas
+(`OCULTAS_POR_DEFECTO` en `server/appearance.ts`): sostenían un segundo ranking de contactos,
+congelado desde agosto, sobre los mismos clientes que rankea el Command Center. Un equipo que las
+quiera las prende con `whatspro_radar_manage_section action="show"`; los widgets y la personalización
+no se tocan. Lo que Radar hace mejor que nadie —componer pantallas con bloques— queda intacto.
+
+**7. El trabajo viaja con el expediente.** `whatspro_sales_dossier` —1.691 llamadas en 21 días contra
+9 de la cola federada— devuelve ahora `pendiente`: todo el trabajo abierto de ese contacto (filas de
+la cola, respuestas sin atender, pedidos en la cola de prompts, audios sin ficha, CRM sin aplicar y
+producción en curso), cada uno con sus `tools` y con `aprobado` (true = ya lo decidió una persona);
+y `lecciones`, los rechazos del equipo para no repetirlos. `server/pendiente.ts`.
+
+**8. Los seis números de cierre.** `server/cierre.ts` + `GET /cierre` + tarjeta en Hoy › Panel +
+tools `whatspro_sales_cierre` y `whatspro_sales_lecciones` (290 tools, verify en verde). Sólo cuenta
+trabajo TERMINADO: decisiones tomadas y hace cuánto espera la más vieja, lo que le llegó al cliente,
+respuestas cerradas, entregas con enlace, horas por contexto y cobrado por moneda (nunca sumadas).
+
+Smoke contra la base: `scripts/smoke-optimizacion.mts` (14 chequeos en verde). Trampa que agarró:
+un `Date` como parámetro dentro de un `sql` template revienta en runtime con el typecheck en verde
+—las comparaciones de fecha van con `gte()`—.
+
+| Fase | Estado |
+|---|---|
+| 39 Techo de decisiones + motivo de rechazo que vuelve al prompt | ✅ 2026-09-10 |
+| 40 Respuestas dentro de Decidir + cierre automático al ejecutar | ✅ 2026-09-10 |
+| 41 Bloques con horas reales (migración 0111) | ✅ 2026-09-10 |
+| 42 Reparación de producción: 228 destipadas, WIP 207 → 9 | ✅ 2026-09-10 |
+| 43 Cuota: sin reclasificar lo que no cambió + proveedor agotado al banco | ✅ 2026-09-10 |
+| 44 Radar como motor: secciones con ranking propio ocultas | ✅ 2026-09-10 |
+| 45 `pendiente` y `lecciones` dentro del expediente | ✅ 2026-09-10 |
+| 46 Cierre semanal (6 números) en Hoy y por MCP | ✅ 2026-09-10 |

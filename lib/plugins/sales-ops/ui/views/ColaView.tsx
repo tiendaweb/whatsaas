@@ -22,6 +22,7 @@ import type { CrmFixPendiente } from '../../server/crm';
 import { FocusCola, type ItemSupervision } from '../cola/FocusCola';
 import { ReintentarFallidas } from '../cola/ReintentarFallidas';
 import { QUEUE_ENDPOINT, batchPhase, fetcher } from '../cola/api';
+import { AbrirChat, AbrirIa } from '../cola/AbrirChat';
 import { FichaDock, type DockItem } from '../components/FichaDock';
 import { SALES_OPS_API, fetcher as jsonFetcher, fmtInt, tiempoRelativo } from '../components/format';
 import { runEsEditable } from '../../shared/skills';
@@ -29,19 +30,24 @@ import { approveRun, cancelRun, deleteRun, editRun, type SkillRun } from '../ski
 import { FallaCorrida } from '../skills/FallaCorrida';
 import { HumanDecisionCard } from '../cola/HumanDecisionCard';
 import { HechoAMano } from '../cola/HechoAMano';
+import { RespuestaItem } from '../cola/RespuestaItem';
+import { agruparSenales, type SignalGroup } from '../radar/ContactSignalCard';
+import type { SignalsPayload } from '../../shared/api-types';
 
 type Seccion = 'decision' | 'revision' | 'cola' | 'hechos' | 'descartados';
-type Tipo = 'lote' | 'indicacion' | 'prompt' | 'programado' | 'crm';
+type Tipo = 'lote' | 'indicacion' | 'prompt' | 'programado' | 'crm' | 'respuesta';
 
 type Item =
   | { key: string; tipo: 'lote'; seccion: Seccion; fecha: string; batch: BatchSummary }
   | { key: string; tipo: 'indicacion' | 'prompt'; seccion: Seccion; fecha: string; run: SkillRun }
   | { key: string; tipo: 'programado'; seccion: Seccion; fecha: string; programado: Programado }
-  | { key: string; tipo: 'crm'; seccion: Seccion; fecha: string; crm: CrmFixPendiente };
+  | { key: string; tipo: 'crm'; seccion: Seccion; fecha: string; crm: CrmFixPendiente }
+  | { key: string; tipo: 'respuesta'; seccion: Seccion; fecha: string; grupo: SignalGroup };
 
-const TIPO_LABELS: Record<Tipo, string> = { lote: 'Lotes', indicacion: 'Indicaciones', prompt: 'Prompts', programado: 'Programados', crm: 'CRM' };
-const TIPO_ICONS: Record<Tipo, LucideIcon> = { lote: Layers, indicacion: MessageSquareText, prompt: Wand2, programado: Clock, crm: Wrench };
-const TIPOS: Tipo[] = ['lote', 'indicacion', 'prompt', 'programado', 'crm'];
+const TIPO_LABELS: Record<Tipo, string> = { respuesta: 'Respuestas', lote: 'Lotes', indicacion: 'Indicaciones', prompt: 'Prompts', programado: 'Programados', crm: 'CRM' };
+const TIPO_ICONS: Record<Tipo, LucideIcon> = { respuesta: Inbox, lote: Layers, indicacion: MessageSquareText, prompt: Wand2, programado: Clock, crm: Wrench };
+// Respuestas primero: un cliente que escribió es la decisión más urgente que hay.
+const TIPOS: Tipo[] = ['respuesta', 'lote', 'indicacion', 'prompt', 'programado', 'crm'];
 /** Lo hecho hace más de esto se archiva: sigue estando, pero no tapa lo reciente. */
 const ARCHIVO_MS = 2 * 24 * 60 * 60 * 1000;
 
@@ -81,13 +87,32 @@ const VACIO: Record<Seccion, string> = {
  * del Studio. Las corridas del motor (clasificación, radar) no entran: las
  * muestra la Actividad del Studio.
  */
-export function ColaView({ presetChatIds, onOpen, selectedChatId, focusRequest = 0 }: { presetChatIds?: number[]; onOpen?: (chatId: number) => void; selectedChatId?: number | null; focusRequest?: number } = {}) {
+export function ColaView({ presetChatIds, onOpen, onOpenChat, onOpenIa, selectedChatId, focusRequest = 0 }: {
+  presetChatIds?: number[];
+  /** Abre la ficha del contacto en su Resumen. */
+  onOpen?: (chatId: number) => void;
+  /** Abre la MISMA ficha, en la pestaña Chat. */
+  onOpenChat?: (chatId: number) => void;
+  /** Abre la MISMA ficha, en la pestaña IA: ahí se le deja un pedido nuevo. */
+  onOpenIa?: (chatId: number) => void;
+  selectedChatId?: number | null;
+  focusRequest?: number;
+} = {}) {
   const tQueue = useTranslations('SalesOpsQueue');
   const { data, isLoading, error, mutate } = useSWR<QueueListPayload>(QUEUE_ENDPOINT, fetcher, { refreshInterval: 60_000 });
   const runs = useSWR<{ runs: SkillRun[] }>(`${SALES_OPS_API}/prompts/queue?status=all&engine=exclude&limit=200`, jsonFetcher, { refreshInterval: 60_000 });
   const programados = useSWR(PROGRAMADOS_API, programadosFetcher<Programado>, { revalidateOnFocus: false, refreshInterval: 120_000 });
   /** Correcciones de CRM que dejó la clasificación: una decisión pendiente más, como un lote. */
   const crmFixes = useSWR<{ rows: CrmFixPendiente[] }>(CRM_FIXES_ENDPOINT, jsonFetcher, { refreshInterval: 120_000 });
+  /**
+   * Respuestas de clientes sin atender.
+   *
+   * Vivían en una bandeja propia y se dejaron de mirar el 04/09: 649
+   * acumuladas. Acá entran como una fila más de "En revisión", que es donde se
+   * mira lo que hay que decidir. Se piden las mismas 500 que la bandeja: con
+   * el tope de 200 un contacto charlatán tapa a los demás.
+   */
+  const senales = useSWR<SignalsPayload>(`${SALES_OPS_API}/signals?status=new&limit=500`, jsonFetcher, { refreshInterval: 60_000 });
   const [openBatch, setOpenBatch] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [seccion, setSeccion] = useState<Seccion>('revision');
@@ -109,11 +134,32 @@ export function ColaView({ presetChatIds, onOpen, selectedChatId, focusRequest =
     return null;
   };
 
+  /**
+   * Lotes que están esperando que un conector los vuelva a escribir.
+   *
+   * Cuando alguien le pide una corrección a la IA sobre un lote, esa corrección
+   * se guarda como una indicación apuntada al lote. El lote sigue `proposed`
+   * —no se aprobó nada— pero YA está decidido: lo que falta no es una decisión
+   * humana sino trabajo de un conector. Dejarlo en "En revisión" lo hacía
+   * aparecer todos los días como pendiente de decidir algo que ya se decidió.
+   */
+  const lotesEnReproceso = useMemo(() => {
+    const abiertos = new Set<string>();
+    for (const run of runs.data?.runs ?? []) {
+      if (run.targetKind !== 'batch') continue;
+      if (run.status !== 'queued' && run.status !== 'in_progress') continue;
+      if (run.relaunchedAs) continue;
+      abiertos.add(String(run.targetId));
+    }
+    return abiertos;
+  }, [runs.data?.runs]);
+
   const items = useMemo<Item[]>(() => {
     const out: Item[] = [];
     for (const batch of data?.batches ?? []) {
       const phase = batchPhase(batch.byStatus);
-      const sec: Seccion = phase === 'proposed' ? 'revision' : phase === 'approved' ? 'cola' : phase === 'done' ? 'hechos' : 'descartados';
+      let sec: Seccion = phase === 'proposed' ? 'revision' : phase === 'approved' ? 'cola' : phase === 'done' ? 'hechos' : 'descartados';
+      if (sec === 'revision' && lotesEnReproceso.has(batch.batchId)) sec = 'cola';
       out.push({ key: `lote-${batch.batchId}`, tipo: 'lote', seccion: sec, fecha: sec === 'revision' ? batch.createdAt : batch.lastActivityAt ?? batch.createdAt, batch });
     }
     for (const run of runs.data?.runs ?? []) {
@@ -139,8 +185,12 @@ export function ColaView({ presetChatIds, onOpen, selectedChatId, focusRequest =
     for (const c of crmFixes.data?.rows ?? []) {
       out.push({ key: `crm-${c.chatId}`, tipo: 'crm', seccion: 'revision', fecha: c.analyzedAt ?? '', crm: c });
     }
+    // Lo automático e irrelevante no es una decisión: no entra a la lista.
+    for (const grupo of agruparSenales(senales.data?.rows ?? []).filter((g) => !g.folded)) {
+      out.push({ key: `senal-${grupo.chatId}`, tipo: 'respuesta', seccion: 'revision', fecha: grupo.lastAt, grupo });
+    }
     return out;
-  }, [data?.batches, runs.data?.runs, programados.data?.rows, crmFixes.data?.rows]);
+  }, [data?.batches, runs.data?.runs, programados.data?.rows, crmFixes.data?.rows, senales.data?.rows, lotesEnReproceso]);
 
   const porSeccion = useMemo(() => {
     const map: Record<Seccion, Item[]> = { decision: [], revision: [], cola: [], hechos: [], descartados: [] };
@@ -155,7 +205,7 @@ export function ColaView({ presetChatIds, onOpen, selectedChatId, focusRequest =
   const archivados = seccion === 'hechos' ? porSeccion.hechos.filter((i) => i.fecha < corte) : [];
   const enSeccion = seccion === 'hechos' && !verArchivados ? porSeccion.hechos.filter((i) => i.fecha >= corte) : porSeccion[seccion];
   const conteoTipos = useMemo(() => {
-    const c: Record<Tipo, number> = { lote: 0, indicacion: 0, prompt: 0, programado: 0, crm: 0 };
+    const c: Record<Tipo, number> = { respuesta: 0, lote: 0, indicacion: 0, prompt: 0, programado: 0, crm: 0 };
     for (const item of enSeccion) c[item.tipo] += 1;
     return c;
   }, [enSeccion]);
@@ -166,6 +216,7 @@ export function ColaView({ presetChatIds, onOpen, selectedChatId, focusRequest =
     void mutate();
     void runs.mutate();
     void programados.mutate();
+    void senales.mutate();
     void crmFixes.mutate();
   };
 
@@ -192,7 +243,9 @@ export function ColaView({ presetChatIds, onOpen, selectedChatId, focusRequest =
               ? chatDeProgramado(item.programado)
               : item.tipo === 'crm'
                 ? item.crm.chatId
-                : item.run.targetKind === 'chat'
+                : item.tipo === 'respuesta'
+                  ? item.grupo.chatId
+                  : item.run.targetKind === 'chat'
                   ? Number(item.run.targetId) || null
                   : null;
         const { seccion: _seccion, ...resto } = item;
@@ -214,7 +267,18 @@ export function ColaView({ presetChatIds, onOpen, selectedChatId, focusRequest =
   }, [cargando, focusRequest, paraSupervisar.length]);
 
   if (openBatch) {
-    return <RevisarLote batchId={openBatch} onBack={() => setOpenBatch(null)} onChanged={refrescar} onOpen={onOpen} selectedChatId={selectedChatId} />;
+    return (
+      <RevisarLote
+        batchId={openBatch}
+        reprocesando={lotesEnReproceso.has(openBatch)}
+        onBack={() => setOpenBatch(null)}
+        onChanged={refrescar}
+        onOpen={onOpen}
+        onOpenChat={onOpenChat}
+        onOpenIa={onOpenIa}
+        selectedChatId={selectedChatId}
+      />
+    );
   }
 
   if (supervisando) {
@@ -318,6 +382,7 @@ export function ColaView({ presetChatIds, onOpen, selectedChatId, focusRequest =
                       {item.tipo === 'lote' ? (
                         <BatchCard
                           batch={item.batch}
+                          reprocesando={lotesEnReproceso.has(item.batch.batchId)}
                           onOpen={setOpenBatch}
                           onDiscarded={seccion === 'revision' || seccion === 'cola' ? refrescar : undefined}
                           onDeleted={seccion === 'descartados' ? refrescar : undefined}
@@ -325,12 +390,14 @@ export function ColaView({ presetChatIds, onOpen, selectedChatId, focusRequest =
                       ) : item.tipo === 'programado' ? (
                         <div className="flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2">
                           <Clock className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-                          <ProgramadoRow item={item.programado} chatId={chatDeProgramado(item.programado)} onOpen={onOpen} onChanged={() => void programados.mutate()} />
+                          <ProgramadoRow item={item.programado} chatId={chatDeProgramado(item.programado)} onOpen={onOpen} onOpenChat={onOpenChat} onOpenIa={onOpenIa} onChanged={() => void programados.mutate()} />
                         </div>
                       ) : item.tipo === 'crm' ? (
-                        <CrmFixItem item={item.crm} onOpen={onOpen} onResuelto={() => void crmFixes.mutate()} />
+                        <CrmFixItem item={item.crm} onOpen={onOpen} onOpenChat={onOpenChat} onOpenIa={onOpenIa} onResuelto={() => void crmFixes.mutate()} />
+                      ) : item.tipo === 'respuesta' ? (
+                        <RespuestaItem group={item.grupo} onOpen={onOpen} onOpenChat={onOpenChat} onAtendido={() => void senales.mutate()} />
                       ) : (
-                        <RunItem run={item.run} tipo={item.tipo} seccion={seccion} onOpen={onOpen} onChanged={() => void runs.mutate()} />
+                        <RunItem run={item.run} tipo={item.tipo} seccion={seccion} onOpen={onOpen} onOpenChat={onOpenChat} onOpenIa={onOpenIa} onChanged={() => void runs.mutate()} />
                       )}
                     </li>
                   ))}
@@ -354,6 +421,13 @@ export function ColaView({ presetChatIds, onOpen, selectedChatId, focusRequest =
       />
     </div>
   );
+}
+
+/** El chat al que apunta una corrida, cuando apunta a uno. */
+function chatDeRun(run: SkillRun): number | null {
+  if (run.targetKind !== 'chat') return null;
+  const id = Number(run.targetId);
+  return Number.isInteger(id) && id > 0 ? id : null;
 }
 
 function Chip({ activo, onClick, label, n, Icon, atenuado }: { activo: boolean; onClick: () => void; label: string; n: number; Icon?: LucideIcon; atenuado?: boolean }) {
@@ -387,7 +461,7 @@ function Chip({ activo, onClick, label, n, Icon, atenuado }: { activo: boolean; 
  * regla que aplica el servidor (`runEsEditable`), así que la pantalla nunca
  * ofrece un botón que la API va a rechazar.
  */
-function RunItem({ run, tipo, seccion, onOpen, onChanged }: { run: SkillRun; tipo: 'indicacion' | 'prompt'; seccion: Seccion; onOpen?: (chatId: number) => void; onChanged: () => void }) {
+function RunItem({ run, tipo, seccion, onOpen, onOpenChat, onOpenIa, onChanged }: { run: SkillRun; tipo: 'indicacion' | 'prompt'; seccion: Seccion; onOpen?: (chatId: number) => void; onOpenChat?: (chatId: number) => void; onOpenIa?: (chatId: number) => void; onChanged: () => void }) {
   const tQueue = useTranslations('SalesOpsQueue');
   const [abierta, setAbierta] = useState(false);
   const [editando, setEditando] = useState(false);
@@ -455,6 +529,15 @@ function RunItem({ run, tipo, seccion, onOpen, onChanged }: { run: SkillRun; tip
             <FilaRun run={run} onOpen={onOpen} compact={seccion === 'revision' || seccion === 'cola' || seccion === 'decision'} />
           )}
         </div>
+        {/* Leer la conversación es parte de decidir: la ficha da el
+            expediente, el chat da lo último que dijo la persona, y IA es donde
+            se deja el pedido siguiente. Los tres abren la misma ficha. */}
+        {run.targetKind === 'chat' && !editando && chatDeRun(run) != null && (
+          <>
+            <AbrirChat onOpen={onOpenChat && (() => onOpenChat(chatDeRun(run)!))} nombre={run.targetName} />
+            <AbrirIa onOpen={onOpenIa && (() => onOpenIa(chatDeRun(run)!))} nombre={run.targetName} />
+          </>
+        )}
         {(seccion === 'cola' || seccion === 'revision' || seccion === 'decision') && !editando && (
           <button type="button" className="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label="Descartar" title="Descartar" disabled={ocupado !== null} onClick={descartar}>
             {ocupado === 'descartar' ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <X className="size-3.5" aria-hidden />}

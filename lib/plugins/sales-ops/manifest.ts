@@ -10,6 +10,16 @@ const salesOpsSettingsSchema = z.object({
   fx: z.object({ ARS: z.number().default(1000), PYG: z.number().default(7500) }).default({ ARS: 1000, PYG: 7500 }),
   /** Horas sin proponer un segundo envío al mismo chat. */
   sendCooldownHours: z.number().default(72),
+  /**
+   * Techo de decisiones. `maxDecisionesVivas` es cuántas filas sin decidir
+   * tolera el equipo antes de que el motor deje de proponer; `maxFilasPorLote`
+   * corta los lotes al tamaño que se revisa de una sentada; `proposalTtlHours`
+   * es lo que vive una propuesta sin que nadie la mire. Ver
+   * MAX_DECISIONES_VIVAS en shared/taxonomy.ts.
+   */
+  maxDecisionesVivas: z.number().int().min(0).default(25),
+  maxFilasPorLote: z.number().int().min(1).default(12),
+  proposalTtlHours: z.number().int().min(1).default(48),
   /** Visibilidad por membresía (id de team_membership_subscriptions): 'private' se ve sólo en la pestaña Privadas; 'hidden' no se ve. */
   subscriptionVisibility: z.record(z.string(), z.enum(['private', 'hidden'])).default({}),
   /** Visibilidad por cliente/empresa (`customer:{id}` | `company:{id}`). */

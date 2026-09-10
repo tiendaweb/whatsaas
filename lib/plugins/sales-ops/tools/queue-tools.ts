@@ -4,7 +4,7 @@ import { assertPermission, parse, type GrokActionContext, type GrokActionTool } 
 import { approveBatch, editAction, getBatch, listBatches, markResult, proposeBatch, QueueError, rejectBatch, removeFromBatch } from '@/lib/plugins/sales-ops/server/queue';
 import { executeApprovedBatch } from '@/lib/plugins/sales-ops/server/execute';
 import { asegurarParrafos } from '@/lib/messaging/parrafos';
-import { ACTION_KINDS, ACTION_ROLES, ACTION_STATUSES, ANALYSIS_STATUSES, GATES, OWNERS, SALES_OPS_PLUGIN_ID, SERVER_EXECUTABLE_KINDS, esEjecutableEnServidor } from '@/lib/plugins/sales-ops/shared/taxonomy';
+import { ACTION_KINDS, ACTION_ROLES, ACTION_STATUSES, ANALYSIS_STATUSES, GATES, OWNERS, REJECT_REASONS, REJECT_REASON_LABELS, SALES_OPS_PLUGIN_ID, SERVER_EXECUTABLE_KINDS, esEjecutableEnServidor } from '@/lib/plugins/sales-ops/shared/taxonomy';
 
 /**
  * Cola del Command Center Comercial por MCP (`whatspro_sales_queue_*`).
@@ -168,6 +168,12 @@ export const queueActionTools: GrokActionTool[] = [
       required: ['action_ids', 'confirm'],
       properties: {
         action_ids: { type: 'array', items: { type: 'integer', minimum: 1 }, minItems: 1, maxItems: 500, description: 'Ids de fila (action.id en whatspro_sales_queue_get).' },
+        code: {
+          type: 'string',
+          enum: [...REJECT_REASONS],
+          description: 'Por qué se lo quita. Default no_corresponde. ' + Object.entries(REJECT_REASON_LABELS).map(([k, v]) => `${k} = ${v}`).join('; '),
+        },
+        reason: { type: 'string', maxLength: 300 },
         confirm: { type: 'boolean', description: 'Debe ser true.' },
         dry_run: { type: 'boolean' },
       },
@@ -179,13 +185,19 @@ export const queueActionTools: GrokActionTool[] = [
     description:
       'Rechaza un lote entero: todas sus filas proposed, pending_approval y approved pasan a rejected con el motivo. Lo ya ' +
       'executed/resulted no cambia. Usalo cuando el lote no debe salir (texto equivocado, segmento mal elegido); para sacar a ' +
-      'algunos contactos nomás usá whatspro_sales_queue_remove. Exige confirm=true. No envía nada ni toca el CRM.',
+      'algunos contactos nomás usá whatspro_sales_queue_remove. Pasá `code` con el motivo: es lo que se cuenta y lo que vuelve al ' +
+      'expediente para que la próxima redacción no repita el error (' + REJECT_REASONS.join(' | ') + '). Exige confirm=true. No envía nada ni toca el CRM.',
     inputSchema: {
       type: 'object',
       required: ['batch_id', 'confirm'],
       properties: {
         batch_id: { type: 'string', minLength: 3, maxLength: 64 },
         reason: { type: 'string', maxLength: 300 },
+        code: {
+          type: 'string',
+          enum: [...REJECT_REASONS],
+          description: Object.entries(REJECT_REASON_LABELS).map(([k, v]) => `${k} = ${v}`).join('; '),
+        },
         confirm: { type: 'boolean', description: 'Debe ser true.' },
         dry_run: { type: 'boolean' },
       },
@@ -270,6 +282,8 @@ const editSchema = z.object({
 
 const removeSchema = z.object({
   action_ids: z.array(z.number().int().positive()).min(1).max(500),
+  code: z.enum(REJECT_REASONS).optional(),
+  reason: z.string().max(300).optional(),
   confirm: z.boolean(),
   dry_run: z.boolean().optional(),
 });
@@ -277,6 +291,7 @@ const removeSchema = z.object({
 const rejectSchema = z.object({
   batch_id: z.string().min(3).max(64),
   reason: z.string().max(300).optional(),
+  code: z.enum(REJECT_REASONS).optional(),
   confirm: z.boolean(),
   dry_run: z.boolean().optional(),
 });
@@ -407,7 +422,7 @@ export async function executeQueueTool(name: string, input: Record<string, unkno
     const errors: Array<{ actionId: number; error: string }> = [];
     for (const actionId of data.action_ids) {
       try {
-        removed.push(await removeFromBatch(context.teamId, context.userId, actionId));
+        removed.push(await removeFromBatch(context.teamId, context.userId, actionId, { code: data.code, reason: data.reason }));
       } catch (error) {
         errors.push({ actionId, error: error instanceof Error ? error.message : String(error) });
       }
@@ -421,7 +436,7 @@ export async function executeQueueTool(name: string, input: Record<string, unkno
     if (!data.confirm) throw new Error('confirm debe ser true: rechazar el lote saca a todos sus contactos.');
     if (data.dry_run) return { dryRun: true, batchId: data.batch_id };
     try {
-      return await rejectBatch(context.teamId, context.userId, data.batch_id, data.reason ?? 'rechazado por conector');
+      return await rejectBatch(context.teamId, context.userId, data.batch_id, data.reason ?? 'rechazado por conector', data.code);
     } catch (error) {
       friendly(error);
     }

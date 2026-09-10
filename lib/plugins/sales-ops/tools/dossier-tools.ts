@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { assertPermission, parse, type GrokActionContext, type GrokActionTool } from '@/lib/plugins/grok-connector/server/actions';
 import { ClassificationInputError, classifyChat, listPendingChats } from '@/lib/plugins/sales-ops/server/classifier';
 import { DossierError, buildChatDossier } from '@/lib/plugins/sales-ops/server/dossier';
+import { pendienteDelContacto } from '@/lib/plugins/sales-ops/server/pendiente';
+import { rejectionLessons } from '@/lib/plugins/sales-ops/server/queue';
 import { composeClassifySystem, getActivePrompt, SALES_OPS_PROMPT_KEYS } from '@/lib/plugins/sales-ops/server/prompts';
 import { SALES_OPS_PLUGIN_ID } from '@/lib/plugins/sales-ops/shared/taxonomy';
 
@@ -62,7 +64,12 @@ export const dossierReadTools: GrokActionTool[] = [
       'Trae además `crmCatalog` (stages/tags/fields que EXISTEN en el equipo, por nombre) y `prompt`: la key, la versión y el ' +
       'systemPrompt + userTemplate del P2 activo del equipo. Para clasificar aplicá ESE systemPrompt (ya trae el contrato de ' +
       'crm_fix) y rellená el userTemplate con facts y dossier: así el conector clasifica igual que el servidor y con las ' +
-      'reglas que el equipo editó en el Prompt Studio, no con el P2 que recuerde. Los grupos no tienen expediente. Sólo lectura.',
+      'reglas que el equipo editó en el Prompt Studio, no con el P2 que recuerde. Los grupos no tienen expediente. ' +
+      'Trae también `pendiente`: TODO el trabajo abierto de ese contacto (filas de la cola propuestas o aprobadas sin ejecutar, ' +
+      'respuestas del cliente sin atender, pedidos en la cola de prompts, audios sin ficha, corrección de CRM sin aplicar y ' +
+      'producción en curso), cada uno con `tools` para resolverlo y `aprobado` (true = una persona ya dijo que sí y podés ' +
+      'ejecutarlo; false = espera decisión humana, no lo hagas por tu cuenta). Y `lecciones`: por qué este equipo rechazó ' +
+      'mensajes en los últimos 30 días — leelas ANTES de redactar, son los errores que no hay que repetir. Sólo lectura.',
     inputSchema: {
       type: 'object',
       required: ['chat_id'],
@@ -169,11 +176,18 @@ export async function executeDossierTool(name: string, input: Record<string, unk
     const data = parse(dossierSchemaInput, input);
     try {
       const [dossier, prompt] = await Promise.all([buildChatDossier(context.teamId, data.chat_id), getActivePrompt(context.teamId, SALES_OPS_PROMPT_KEYS.classify)]);
-      // El conector clasifica con el MISMO system prompt que usa el servidor
-      // (el activo del equipo más el contrato de crm_fix si le falta): si sólo
-      // viajara la versión, cada conector aplicaría el P2 que recuerde.
+      // El trabajo abierto y las lecciones viajan CON el expediente: es lo que
+      // el conector pide de verdad (1.691 veces en 21 días contra 9 de la cola
+      // federada), así que es donde tiene que estar lo que hay que hacer y lo
+      // que este equipo ya rechazó.
+      const [pendiente, lecciones] = await Promise.all([
+        pendienteDelContacto(context.teamId, data.chat_id, { contactId: dossier.chat.contactId }),
+        rejectionLessons(context.teamId, { kind: 'send_message', days: 30 }),
+      ]);
       return {
         dossier,
+        pendiente,
+        lecciones: lecciones.total ? lecciones : undefined,
         prompt: {
           key: prompt.key,
           version: prompt.version,

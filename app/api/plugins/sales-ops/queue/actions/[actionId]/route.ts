@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getSalesOpsContext } from '@/lib/plugins/sales-ops/server/access';
 import { editAction, removeFromBatch } from '@/lib/plugins/sales-ops/server/queue';
+import { REJECT_REASONS } from '@/lib/plugins/sales-ops/shared/taxonomy';
 import { queueErrorResponse } from '../../errors';
 
 export const dynamic = 'force-dynamic';
@@ -38,20 +39,26 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 }
 
+const motivoSchema = z.object({
+  reason: z.string().trim().max(300).optional(),
+  code: z.enum(REJECT_REASONS).optional(),
+});
+
 /**
- * DELETE → quita el contacto del lote (la fila pasa a `rejected`).
+ * DELETE → quita el contacto del lote (la fila pasa a `rejected`) con su motivo.
  *
  * Vale para filas propuestas, pendientes o aprobadas sin ejecutar; lo que ya
- * salió no se toca. No borra la fila: queda el rastro de que estuvo en el lote
- * y de quién la sacó.
+ * salió no se toca. No borra la fila: queda el rastro de que estuvo en el lote,
+ * de quién la sacó y por qué.
  */
-export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ actionId: string }> }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ actionId: string }> }) {
   const ctx = await getSalesOpsContext('salesOpsWrite');
   if (!ctx.ok) return NextResponse.json({ error: ctx.message }, { status: ctx.status });
   const actionId = Number((await params).actionId);
   if (!Number.isInteger(actionId) || actionId <= 0) return NextResponse.json({ error: 'id inválido' }, { status: 400 });
+  const motivo = motivoSchema.safeParse(await request.json().catch(() => ({})));
   try {
-    return NextResponse.json(await removeFromBatch(ctx.team.id, ctx.user.id, actionId));
+    return NextResponse.json(await removeFromBatch(ctx.team.id, ctx.user.id, actionId, motivo.success ? motivo.data : undefined));
   } catch (error) {
     return queueErrorResponse(error);
   }

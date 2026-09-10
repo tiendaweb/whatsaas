@@ -3,6 +3,7 @@ import { ZONA_NEGOCIO, aLocal, fechaEnZona, formatoLocal, parsearLocal, proximoH
 import { crmFixSchema, describeCrmFix, normalizeCrmFix, type CrmFix } from '../shared/crm-fix';
 import { parsearImporte } from './cobros';
 import { getCrm } from './crm';
+import { rejectionLessonsText } from './queue';
 import { buildChatContext, extractJson, runJsonWithApi } from './skill-runner';
 
 /**
@@ -194,14 +195,20 @@ export async function ejecutarPedidoFocus(teamId: number, pedido: PedidoFocus): 
   const prompt = pedido.prompt.trim();
   if (prompt.length < 3) return { ok: false, error: 'Escribí qué querés que haga.' };
 
-  const contexto = pedido.chatId ? await buildChatContext(teamId, pedido.chatId) : null;
+  const [contexto, lecciones] = await Promise.all([
+    pedido.chatId ? buildChatContext(teamId, pedido.chatId) : Promise.resolve(null),
+    // Lo que el equipo rechazó es la única corrección que recibe este motor:
+    // sin esto vuelve a escribir el texto que ayer descartaron 84 veces.
+    rejectionLessonsText(teamId, 'send_message'),
+  ]);
   const instruccion = [
     `Vas a trabajar sobre el chat de WhatsApp${pedido.name ? ` con ${pedido.name}` : ''}. Ahora es ${ahoraLocal()} (hora de Argentina).`,
     pedido.message?.trim() ? `TEXTO ACTUAL DEL MENSAJE PROGRAMADO:\n${pedido.message.trim()}` : 'TODAVÍA NO HAY TEXTO: si corresponde escribirlo, escribilo de cero.',
     `PEDIDO DE LA PERSONA:\n${prompt}`,
   ].join('\n\n');
 
-  const outcome = await runJsonWithApi(teamId, SYSTEM, contexto ? `${contexto}\n\n${instruccion}` : instruccion);
+  const system = lecciones ? `${SYSTEM}\n\n${lecciones}` : SYSTEM;
+  const outcome = await runJsonWithApi(teamId, system, contexto ? `${contexto}\n\n${instruccion}` : instruccion);
   if (!outcome.ok) return { ok: false, error: outcome.error };
 
   const parsed = extractJson(outcome.raw) as { modo?: unknown; texto?: unknown; motivo?: unknown; cuando?: unknown; cambios?: unknown; cobro?: unknown } | null;

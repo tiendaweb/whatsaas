@@ -70,6 +70,21 @@ export type RadarSectionResolved = {
  * orden final del menú. Incluye las ocultas (con `hidden: true`): quien dibuja
  * el menú las filtra, pero quien administra necesita verlas para des-ocultarlas.
  */
+/**
+ * Secciones que nacen ocultas.
+ *
+ * Prioridades, Clientes y Seguimiento dibujaban un ranking de contactos que el
+ * Command Center calcula mejor y con más datos: quedaban dos verdades sobre el
+ * mismo cliente y la de Radar estaba congelada desde agosto (85 contactos con
+ * `radar_prioridad`, 14 llamadas MCP en 21 días). Radar no deja de ser capaz de
+ * mostrarlas —un equipo que las quiera las prende con
+ * `whatspro_radar_manage_section action="show"`, y sus widgets y su
+ * personalización siguen intactos— pero por defecto el ranking de contactos
+ * vive en un solo lugar. Lo que queda acá es lo que Radar hace mejor que
+ * nadie: componer pantallas con bloques.
+ */
+const OCULTAS_POR_DEFECTO: readonly string[] = ['prioridades', 'clientes', 'seguimiento'];
+
 export function resolveRadarSections(appearance: RadarAppearance): RadarSectionResolved[] {
   const builtin: RadarSectionResolved[] = RADAR_SECTIONS.map((section) => {
     const override = appearance.sections[section];
@@ -79,7 +94,8 @@ export function resolveRadarSections(appearance: RadarAppearance): RadarSectionR
       icon: override?.icon ?? RADAR_SECTION_ICON[section],
       tone: override?.tone ?? null,
       hint: override?.hint ?? null,
-      hidden: override?.hidden ?? false,
+      // El equipo manda: si alguien la mostró o la ocultó a mano, se respeta.
+      hidden: override?.hidden ?? OCULTAS_POR_DEFECTO.includes(section),
       custom: false,
       overridden: Boolean(override && Object.keys(override).length),
     };

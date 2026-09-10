@@ -33,6 +33,7 @@ const filas = await db
     workStatus: teamTaskItems.workStatus,
     deliveryUrl: teamTaskItems.deliveryUrl,
     updatedAt: teamTaskItems.updatedAt,
+    projectId: teamTaskItems.projectId,
     sesiones: sql<number>`(select count(*) from ${teamTaskWorkSessions} s where s.task_id = ${teamTaskItems.id})::int`,
   })
   .from(teamTaskItems)
@@ -47,7 +48,29 @@ const filas = await db
 const limite = new Date(Date.now() - DIAS_QUIETO * 86_400_000);
 const conEntrega = filas.filter((f) => f.deliveryUrl?.trim());
 const quietos = filas.filter((f) => !f.deliveryUrl?.trim() && f.updatedAt < limite && f.sesiones === 0);
-const resto = filas.filter((f) => !conEntrega.includes(f) && !quietos.includes(f));
+
+/**
+ * (d) Tareas de un proyecto de cliente, no pedidos.
+ *
+ * Lo que muestra la base: 96 de las 235 son del proyecto «Looppy · Plataforma»
+ * y 43 de «Almamia», con títulos como "Definir lógica del sistema de puntos" o
+ * "Mejorar interfaz general". Eso no es un entregable que se le prometió a
+ * nadie: es el backlog de un desarrollo cuyo pedido es el PROYECTO. La
+ * migración 0108 tipó todo lo que vivía en el workspace de clientes y por eso
+ * el WIP da 235 contra un máximo de 3.
+ *
+ * El corte es cuántos hermanos abiertos tiene en su proyecto: con cuatro o más,
+ * es backlog. Con uno a tres, puede ser un trabajo puntual del cliente y se
+ * respeta. Destipar no borra nada —la tarea sigue igual en su tablero, con su
+ * estado y su responsable—: sólo deja de contar como pedido de producción.
+ */
+const MIN_HERMANOS_BACKLOG = 4;
+const porProyecto = new Map<number, number>();
+for (const f of filas) if (f.projectId != null) porProyecto.set(f.projectId, (porProyecto.get(f.projectId) ?? 0) + 1);
+const backlog = filas.filter(
+  (f) => !conEntrega.includes(f) && !quietos.includes(f) && f.projectId != null && (porProyecto.get(f.projectId) ?? 0) >= MIN_HERMANOS_BACKLOG,
+);
+const resto = filas.filter((f) => !conEntrega.includes(f) && !quietos.includes(f) && !backlog.includes(f));
 
 const fecha = (d: Date) => d.toISOString().slice(0, 10);
 const listar = (titulo: string, grupo: typeof filas) => {
@@ -59,10 +82,11 @@ const listar = (titulo: string, grupo: typeof filas) => {
 console.log(`Equipo ${TEAM} · ${filas.length} pedidos «desarrollo» en en_curso/aceptado · modo ${APLICAR ? 'APPLY' : 'dry-run'}`);
 listar(`(a) Sin movimiento en ${DIAS_QUIETO} días y sin sesiones → dejan de ser pedidos`, quietos);
 listar('(b) Con enlace de entrega → entregado', conEntrega);
+listar(`(d) Backlog de un proyecto con ${MIN_HERMANOS_BACKLOG}+ tareas abiertas → dejan de ser pedidos`, backlog);
 listar('(c) Quedan como están (decidir a mano)', resto);
 
 if (!APLICAR) {
-  console.log('\nDry-run: no se escribió nada. Corré con --apply para aplicar (a) y (b).');
+  console.log('\nDry-run: no se escribió nada. Corré con --apply para aplicar (a), (b) y (d).');
   process.exit(0);
 }
 
@@ -72,11 +96,16 @@ await db.transaction(async (tx) => {
       .set({ workKind: null, workStatus: null, updatedAt: new Date() })
       .where(and(eq(teamTaskItems.teamId, TEAM), inArray(teamTaskItems.id, quietos.map((f) => f.id))));
   }
+  if (backlog.length) {
+    await tx.update(teamTaskItems)
+      .set({ workKind: null, workStatus: null, updatedAt: new Date() })
+      .where(and(eq(teamTaskItems.teamId, TEAM), inArray(teamTaskItems.id, backlog.map((f) => f.id))));
+  }
   if (conEntrega.length) {
     await tx.update(teamTaskItems)
       .set({ workStatus: 'entregado', status: 'done', completedAt: new Date(), updatedAt: new Date() })
       .where(and(eq(teamTaskItems.teamId, TEAM), inArray(teamTaskItems.id, conEntrega.map((f) => f.id)), isNotNull(teamTaskItems.deliveryUrl), lt(teamTaskItems.updatedAt, new Date(Date.now() + 1))));
   }
 });
-console.log(`\nAplicado: ${quietos.length} vuelven a ser tareas comunes, ${conEntrega.length} pasan a entregado, ${resto.length} quedan para decidir.`);
+console.log(`\nAplicado: ${quietos.length + backlog.length} vuelven a ser tareas comunes (${backlog.length} de backlog de proyecto), ${conEntrega.length} pasan a entregado, ${resto.length} quedan para decidir.`);
 process.exit(0);

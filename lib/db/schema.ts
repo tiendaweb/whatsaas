@@ -4539,19 +4539,25 @@ export const teamTaskWorkSessions = pgTable(
   {
     id: serial("id").primaryKey(),
     teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
-    taskId: integer("task_id").notNull().references(() => teamTaskItems.id, { onDelete: "cascade" }),
+    /** Null = bloque que no es de producción (comercial, supervisión, Modo Noelia). */
+    taskId: integer("task_id").references(() => teamTaskItems.id, { onDelete: "cascade" }),
     userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
     startedAt: timestamp("started_at").notNull(),
     endedAt: timestamp("ended_at"),
     minutes: integer("minutes"),
     kind: varchar("kind", { length: 16 }).notNull().default("foco"),
     source: varchar("source", { length: 16 }).notNull().default("bloque"),
+    /** En qué se fue el bloque: `produccion` | `comercial` | `supervision` | `noelia`. */
+    context: varchar("context", { length: 16 }).notNull().default("produccion"),
+    /** El contacto que se estaba trabajando, cuando el bloque es contra un chat. */
+    chatId: integer("chat_id"),
     note: text("note"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => ({
     teamTaskWorkSessionsTaskIdx: index("team_task_work_sessions_task_idx").on(table.teamId, table.taskId),
     teamTaskWorkSessionsOpenIdx: index("team_task_work_sessions_open_idx").on(table.teamId, table.userId, table.endedAt),
+    teamTaskWorkSessionsContextIdx: index("team_task_work_sessions_context_idx").on(table.teamId, table.context, table.startedAt),
   }),
 );
 

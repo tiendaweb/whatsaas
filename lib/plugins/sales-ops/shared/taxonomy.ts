@@ -159,6 +159,26 @@ export type SignalKind = (typeof SIGNAL_KINDS)[number];
 /** Señales que suben el contacto a la cola al instante y emiten Pusher. */
 export const URGENT_SIGNALS: SignalKind[] = ['pago', 'intencion_compra', 'quiere_llamada'];
 
+/**
+ * El nombre de cada señal en castellano.
+ *
+ * Vivía sólo en `ui/radar/kind-meta.ts`, del lado del cliente, así que el
+ * servidor escribía "pide_informacion" en textos que después lee una persona o
+ * un conector. El emoji y el orden siguen siendo cosa de la interfaz.
+ */
+export const SIGNAL_LABELS: Record<SignalKind, string> = {
+  pago: 'Pago',
+  intencion_compra: 'Intención de compra',
+  quiere_llamada: 'Quiere llamada',
+  precio: 'Precio',
+  objecion: 'Objeción',
+  interesado: 'Interesado',
+  pide_informacion: 'Pide info',
+  rechazo: 'Rechazo',
+  respuesta_automatica: 'Respuesta automática',
+  irrelevante: 'Irrelevante',
+};
+
 export const SIGNAL_STATUSES = ['new', 'seen', 'handled', 'dismissed'] as const;
 export type SignalStatus = (typeof SIGNAL_STATUSES)[number];
 
@@ -330,3 +350,52 @@ export const SALES_OPS_ACTIVITY_PREFIX = 'SALES_OPS_';
 export const SEND_COOLDOWN_HOURS = 72;
 /** Una propuesta sin aprobar expira a los 7 días. */
 export const PROPOSAL_TTL_DAYS = 7;
+
+/**
+ * Por qué se rechazó una propuesta.
+ *
+ * De 205 mensajes propuestos en diez días, 84 se rechazaron y 5 salieron. Ese
+ * 41 % de rechazo es la única medida de calidad que produce el sistema y hasta
+ * acá se tiraba: rechazar dejaba la fila en `rejected` con el texto libre
+ * "descartado desde la cola" y quien redacta —conector o motor— volvía a
+ * cometer el mismo error al día siguiente. Los códigos son pocos y cerrados a
+ * propósito: se eligen de un toque mientras se revisa, y agrupan lo suficiente
+ * como para que "tono" o "dato" digan algo cuando se acumulan diez casos.
+ */
+export const REJECT_REASONS = ['tono', 'dato', 'momento', 'no_corresponde', 'ya_resuelto', 'otro'] as const;
+export type RejectReason = (typeof REJECT_REASONS)[number];
+
+export const REJECT_REASON_LABELS: Record<RejectReason, string> = {
+  tono: 'No suena a nosotros',
+  dato: 'Dice algo que no es cierto',
+  momento: 'No es el momento de escribirle',
+  no_corresponde: 'Este contacto no va acá',
+  ya_resuelto: 'Ya se resolvió por otro lado',
+  otro: 'Otro motivo',
+};
+
+/** Lo que se le dice a quien redacta para que no lo repita. */
+export const REJECT_REASON_LECCION: Record<RejectReason, string> = {
+  tono: 'El texto no sonaba a este equipo: demasiado formal, demasiado vendedor o con vocabulario que no usamos.',
+  dato: 'El texto afirmaba algo que no era cierto para ese contacto (precio, plan, estado o promesa).',
+  momento: 'No era el momento de escribirle a ese contacto, más allá de qué decía el texto.',
+  no_corresponde: 'Ese contacto no correspondía al criterio del lote.',
+  ya_resuelto: 'El asunto ya estaba resuelto por otro canal cuando se propuso.',
+  otro: 'Rechazado con motivo escrito a mano.',
+};
+
+export const esRejectReason = (v: unknown): v is RejectReason => typeof v === 'string' && (REJECT_REASONS as readonly string[]).includes(v);
+
+/**
+ * Techo de decisiones vivas por equipo.
+ *
+ * Una cola sin techo deja de ser una cola: el 07/09 entraron 15 tandas con 113
+ * filas de una vez y tres días después seguían enteras, tapando lo que sí
+ * había que mirar. El motor puede detectar todo lo que quiera; lo que no puede
+ * es publicar más de lo que una persona decide en un día.
+ */
+export const MAX_DECISIONES_VIVAS = 25;
+/** Filas por lote: revisar de a 12 se termina; de a 40, no. */
+export const MAX_FILAS_POR_LOTE = 12;
+/** Horas que vive una propuesta sin decidir antes de cerrarse sola. */
+export const PROPOSAL_TTL_HOURS = 48;

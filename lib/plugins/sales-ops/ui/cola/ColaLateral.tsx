@@ -1,6 +1,6 @@
 'use client';
 
-import { Ban, Check, Clock, Layers, MessageSquareText, SkipForward, Wand2, Wrench, type LucideIcon } from 'lucide-react';
+import { Ban, Check, Clock, Inbox, Layers, MessageSquareText, SkipForward, Wand2, Wrench, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { tiempoRelativo } from '../components/format';
 import type { ItemSupervision } from './FocusCola';
@@ -11,6 +11,7 @@ const ICONO: Record<ItemSupervision['tipo'], LucideIcon> = {
   prompt: Wand2,
   programado: Clock,
   crm: Wrench,
+  respuesta: Inbox,
 };
 
 /**
@@ -94,6 +95,7 @@ function titulo(item: ItemSupervision): string {
   if (item.tipo === 'lote') return item.batch.batchLabel;
   if (item.tipo === 'programado') return item.programado.name;
   if (item.tipo === 'crm') return item.crm.name;
+  if (item.tipo === 'respuesta') return item.grupo.name;
   return item.run.title;
 }
 
@@ -105,6 +107,10 @@ function subtitulo(item: ItemSupervision): string {
   }
   if (item.tipo === 'programado') return item.programado.status === 'failed' ? 'falló' : 'pausado';
   if (item.tipo === 'crm') return 'corregir CRM';
+  if (item.tipo === 'respuesta') {
+    const n = item.grupo.signals.length;
+    return n === 1 ? 'respondió' : `respondió ${n} veces`;
+  }
   if (item.run.status === 'blocked') return 'necesita tu criterio';
   if (item.run.status === 'failed') return 'falló';
   return item.run.targetName ?? 'sin aprobar';

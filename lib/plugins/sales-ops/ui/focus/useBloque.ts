@@ -1,7 +1,42 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { LS_BLOQUE, MINUTOS_BLOQUE, MINUTOS_DESCANSO } from './tipos';
+import { LS_BLOQUE, LS_BLOQUE_SUPERVISION, MINUTOS_BLOQUE, MINUTOS_DESCANSO } from './tipos';
+import { LS_BLOQUE_NOELIA } from '../noelia/tipos';
+
+/**
+ * Qué contexto de sesión le corresponde a cada reloj.
+ *
+ * Las claves de localStorage siguen separadas —el bloque de trabajo y el de
+ * supervisión son dos tareas distintas y cada una arranca la suya— pero las
+ * horas van todas a la misma tabla, con el contexto puesto. Sin esto, en toda
+ * la base había UNA sesión registrada y el US$/h no tenía insumo.
+ */
+function contextoDe(clave: string): 'comercial' | 'supervision' | 'noelia' {
+  if (clave === LS_BLOQUE_SUPERVISION) return 'supervision';
+  if (clave === LS_BLOQUE_NOELIA) return 'noelia';
+  return 'comercial';
+}
+
+/**
+ * Avisa al servidor que empezó o terminó un bloque.
+ *
+ * Deliberadamente sin await y tragándose el error: el reloj de la pantalla no
+ * depende de esto. Registrar el tiempo no puede ser el motivo por el que
+ * alguien no pueda arrancar a trabajar.
+ */
+function avisarSesion(clave: string, action: 'start' | 'stop', kind: TipoBloque = 'foco') {
+  try {
+    void fetch('/api/plugins/sales-ops/focus/sesion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, context: contextoDe(clave), kind }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* sin red: el bloque igual corre */
+  }
+}
 
 export type TipoBloque = 'foco' | 'descanso';
 
@@ -105,6 +140,7 @@ export function useBloque(clave: string = LS_BLOQUE) {
       const nuevo: BloqueGuardado = { tipo, terminaEn: ahora + MINUTOS[tipo] * 60_000, pausadoCon: null, desde: ahora };
       setBloque(nuevo);
       escribir(clave, nuevo);
+      avisarSesion(clave, 'start', tipo);
       setAvisoCerrado(false);
     },
     [clave],
@@ -115,6 +151,9 @@ export function useBloque(clave: string = LS_BLOQUE) {
       if (!actual || actual.pausadoCon != null) return actual;
       const nuevo = { ...actual, pausadoCon: Math.max(0, actual.terminaEn - Date.now()) };
       escribir(clave, nuevo);
+      // Pausar cierra la sesión: el rato en pausa no es tiempo trabajado y si
+      // se contara, las horas del bloque medirían el reloj de pared.
+      avisarSesion(clave, 'stop');
       return nuevo;
     });
   }, [clave]);
@@ -124,6 +163,7 @@ export function useBloque(clave: string = LS_BLOQUE) {
       if (!actual || actual.pausadoCon == null) return actual;
       const nuevo = { ...actual, terminaEn: Date.now() + actual.pausadoCon, pausadoCon: null };
       escribir(clave, nuevo);
+      avisarSesion(clave, 'start', actual.tipo);
       return nuevo;
     });
   }, [clave]);
@@ -131,6 +171,7 @@ export function useBloque(clave: string = LS_BLOQUE) {
   const terminar = useCallback(() => {
     setBloque(null);
     escribir(clave, null);
+    avisarSesion(clave, 'stop');
     setAvisoCerrado(false);
   }, [clave]);
 

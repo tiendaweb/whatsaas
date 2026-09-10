@@ -1,7 +1,7 @@
 import 'server-only';
 import { and, desc, eq, gt, inArray } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
-import { activityLogs, chats, messages, teamCommercialActions, teamCommercialAnalysis } from '@/lib/db/schema';
+import { activityLogs, chats, messages, teamCommercialActions, teamCommercialAnalysis, teamCommercialSignals } from '@/lib/db/schema';
 import { maskJid } from '@/lib/desktop/command-center/types';
 import { sendTeamTextMessage } from '@/lib/messaging/send';
 import { createContactTask } from '@/lib/plugins/tasks/server/contact-tasks';
@@ -385,6 +385,33 @@ export async function executeApprovedBatch(
   const executed = results.filter((r) => r.status === 'executed').length;
   const skipped = results.filter((r) => r.status === 'skipped').length;
   const failed = results.filter((r) => r.status === 'failed').length;
-  await audit(teamId, userId, 'SALES_OPS_BATCH_EXECUTED', { batchId, executed, skipped, failed });
+
+  /**
+   * Atender al contacto cierra sus respuestas pendientes.
+   *
+   * El radar abre una señal por cada mensaje entrante y esperaba que alguien
+   * fuera a otra pantalla a marcarlas: 649 quedaron abiertas mientras a esos
+   * mismos contactos se les contestaba desde acá. Si le acabamos de escribir,
+   * programar o resolver algo, la respuesta está atendida por definición.
+   */
+  const atendidos = [...new Set(results.filter((r) => r.status === 'executed').map((r) => r.chatId))];
+  if (atendidos.length) {
+    try {
+      await db
+        .update(teamCommercialSignals)
+        .set({ status: 'handled', handledBy: userId, handledAt: new Date() })
+        .where(
+          and(
+            eq(teamCommercialSignals.teamId, teamId),
+            inArray(teamCommercialSignals.chatId, atendidos),
+            inArray(teamCommercialSignals.status, ['new', 'seen']),
+          ),
+        );
+    } catch {
+      // Cerrar señales es higiene: que falle no invalida lo que ya salió.
+    }
+  }
+
+  await audit(teamId, userId, 'SALES_OPS_BATCH_EXECUTED', { batchId, executed, skipped, failed, senalesCerradas: atendidos.length });
   return { batchId, executed, skipped, failed, results };
 }

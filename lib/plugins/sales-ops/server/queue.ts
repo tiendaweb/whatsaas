@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import {
   activityLogs,
@@ -18,9 +18,15 @@ import {
   ACTION_ROLES,
   ACTION_STATUSES,
   GATES,
-  PROPOSAL_TTL_DAYS,
+  MAX_DECISIONES_VIVAS,
+  MAX_FILAS_POR_LOTE,
+  PROPOSAL_TTL_HOURS,
+  REJECT_REASON_LABELS,
+  REJECT_REASON_LECCION,
+  esRejectReason,
   SALES_OPS_ACTIVITY_PREFIX,
   type ActionKind,
+  type RejectReason,
   type ActionRole,
   type ActionStatus,
   type AnalysisStatus,
@@ -99,6 +105,18 @@ export type ProposeInput = {
 };
 
 export type ExcludedChat = { chatId: number; name: string; reason: string };
+
+/** Estado del techo de decisiones en el momento de proponer. */
+export type CapInfo = {
+  /** Filas sin decidir que ya tenía el equipo. */
+  vivas: number;
+  /** Tope configurado (`maxDecisionesVivas`). */
+  tope: number;
+  /** Cuántas entraron de verdad después de aplicar el techo. */
+  admitidas: number;
+  /** Cuántas se dejaron afuera por el techo. */
+  postergadas: number;
+};
 export type ProposedCandidate = {
   chatId: number;
   contactId: number | null;
@@ -117,6 +135,8 @@ export type ProposeResult = {
   included: ProposedCandidate[];
   excluded: ExcludedChat[];
   dryRun: boolean;
+  /** Qué hizo el techo de decisiones con este lote. */
+  cap?: CapInfo;
 };
 
 export type ApproveResult = {
@@ -453,7 +473,7 @@ export async function proposeBatch(teamId: number, input: ProposeInput): Promise
   }
 
   const isBatch = rows.length > 1;
-  const included: ProposedCandidate[] = [];
+  let included: ProposedCandidate[] = [];
   for (const row of rows) {
     const name = displayName(row);
     const gate = (row.currentGate as Gate | null) ?? null;
@@ -502,11 +522,41 @@ export async function proposeBatch(teamId: number, input: ProposeInput): Promise
     if (raw && /\{\{\s*plan\s*\}\}/i.test(raw) && (!row.need || row.need === 'indefinida')) candidate.warnings.push('El texto usa {{plan}} y la necesidad es indefinida.');
   });
 
+  /**
+   * Techo de decisiones.
+   *
+   * El motor detecta mucho más de lo que una persona decide en un día: el
+   * 07/09 se propusieron 113 filas de una vez y tres días después seguían
+   * intactas, tapando lo que sí había que mirar. Acá el lote se corta dos
+   * veces: al tamaño que se revisa de una sentada y al espacio que quede
+   * debajo del tope de filas vivas del equipo. Lo que no entra no se pierde:
+   * el mismo criterio lo vuelve a traer cuando se libere lugar, y el resultado
+   * dice cuántos quedaron esperando para que quien propone no lo intente de
+   * nuevo a ciegas.
+   */
+  const tope = Math.max(0, settings.maxDecisionesVivas ?? MAX_DECISIONES_VIVAS);
+  const porLote = Math.max(1, settings.maxFilasPorLote ?? MAX_FILAS_POR_LOTE);
+  const [{ vivas = 0 } = { vivas: 0 }] = await db
+    .select({ vivas: sql<number>`count(*)::int` })
+    .from(teamCommercialActions)
+    .where(and(eq(teamCommercialActions.teamId, teamId), inArray(teamCommercialActions.status, ['proposed', 'pending_approval'])));
+  const espacio = Math.max(0, tope - vivas);
+  const cupo = Math.min(porLote, espacio);
+  const postergados = included.slice(cupo);
+  if (postergados.length) {
+    included = included.slice(0, cupo);
+    const motivo = espacio === 0
+      ? `El equipo ya tiene ${vivas} decisiones sin tomar (tope ${tope}): decidí esas antes de proponer más.`
+      : `Entra de a ${porLote} por lote y quedaban ${espacio} lugares bajo el tope de ${tope}.`;
+    for (const c of postergados) excluded.push({ chatId: c.chatId, name: c.name, reason: motivo });
+  }
+  const cap: CapInfo = { vivas, tope, admitidas: included.length, postergadas: postergados.length };
+
   if (input.dryRun) {
-    return { batchId: null, label: input.label.trim(), kind: input.kind, experimentId: input.experimentId ?? null, included, excluded, dryRun: true };
+    return { batchId: null, label: input.label.trim(), kind: input.kind, experimentId: input.experimentId ?? null, included, excluded, dryRun: true, cap };
   }
   if (!included.length) {
-    return { batchId: null, label: input.label.trim(), kind: input.kind, experimentId: input.experimentId ?? null, included, excluded, dryRun: false };
+    return { batchId: null, label: input.label.trim(), kind: input.kind, experimentId: input.experimentId ?? null, included, excluded, dryRun: false, cap };
   }
 
   // Experimento: si se pidió A/B sin uno existente, se crea con los dos textos.
@@ -536,7 +586,9 @@ export async function proposeBatch(teamId: number, input: ProposeInput): Promise
   }
 
   const batchId = newBatchId(now);
-  const expiresAt = new Date(now.getTime() + PROPOSAL_TTL_DAYS * DAY);
+  // 48 h, no 7 días: de 467 filas sólo 8 llegaron a vencer con el TTL viejo, y
+  // una propuesta de la semana pasada ya no describe el chat que la originó.
+  const expiresAt = new Date(now.getTime() + Math.max(1, settings.proposalTtlHours ?? PROPOSAL_TTL_HOURS) * HOUR);
   const proposedBy = String(input.proposedBy).slice(0, 24);
   const dueAt = template.dueInDays != null ? new Date(now.getTime() + template.dueInDays * DAY).toISOString().slice(0, 10) : null;
 
@@ -603,11 +655,21 @@ function summarize(actions: ActionRecord[], responded: number, recovered: number
   let createdAt = first.createdAt;
   let lastActivityAt = first.createdAt;
   let approvedBy: number | null = null;
+  /**
+   * La primera salida programada del lote.
+   *
+   * Un lote de programados guarda la hora fila por fila y la tarjeta no la
+   * mostraba: se aprobaba "programar 40" sin ver para cuándo, y había que
+   * entrar a Programados —después de aprobar— para enterarse. Se toma la más
+   * temprana porque es la que dice cuándo empieza a pasar algo.
+   */
+  let scheduledFor: Date | null = null;
   for (const a of actions) {
     byStatus[a.status as ActionStatus] = (byStatus[a.status as ActionStatus] ?? 0) + 1;
     if (a.createdAt < createdAt) createdAt = a.createdAt;
     for (const t of [a.updatedAt, a.executedAt, a.approvedAt]) if (t && t > lastActivityAt) lastActivityAt = t;
     if (a.approvedBy != null) approvedBy = a.approvedBy;
+    if (a.scheduledFor && (scheduledFor == null || a.scheduledFor < scheduledFor)) scheduledFor = a.scheduledFor;
   }
   return {
     batchId: first.batchId,
@@ -619,6 +681,7 @@ function summarize(actions: ActionRecord[], responded: number, recovered: number
     byStatus,
     createdAt: createdAt.toISOString(),
     lastActivityAt: lastActivityAt.toISOString(),
+    scheduledFor: scheduledFor ? scheduledFor.toISOString() : null,
     approvedBy,
     responded,
     recovered,
@@ -903,18 +966,105 @@ export async function approveAction(
   return { batchId: action.batchId, kind: action.kind as ActionKind, approved: 1, rejected: 0, approvedBy: userId, approvedIds: [action.id] };
 }
 
-export async function rejectBatch(teamId: number, userId: number, batchId: string, reason?: string): Promise<{ batchId: string; rejected: number }> {
+/**
+ * Rechaza un lote entero, con motivo.
+ *
+ * `code` es lo que importa: el texto libre queda para el detalle, pero lo que
+ * se puede contar —y devolverle a quien redacta— es el código. Sin él, "84
+ * mensajes rechazados" no le enseña nada a nadie.
+ */
+export async function rejectBatch(
+  teamId: number,
+  userId: number,
+  batchId: string,
+  reason?: string,
+  code?: RejectReason,
+): Promise<{ batchId: string; rejected: number }> {
   const actions = await batchActions(teamId, batchId);
   if (!actions.length) throw new QueueError('not_found', `El lote ${batchId} no existe en este equipo.`);
   const targets = actions.filter((a) => a.status === 'proposed' || a.status === 'pending_approval' || a.status === 'approved');
   if (!targets.length) return { batchId, rejected: 0 };
+  const motivo = esRejectReason(code) ? code : 'otro';
   const now = new Date();
   await db
     .update(teamCommercialActions)
-    .set({ status: 'rejected', result: { reason: reason?.slice(0, 300) || 'rejected', by: userId }, updatedAt: now })
+    .set({
+      status: 'rejected',
+      result: { reason: reason?.slice(0, 300) || REJECT_REASON_LABELS[motivo], code: motivo, by: userId },
+      updatedAt: now,
+    })
     .where(and(eq(teamCommercialActions.teamId, teamId), inArray(teamCommercialActions.id, targets.map((a) => a.id))));
-  await audit(teamId, 'REJECTED', { batchId, count: targets.length, userId, reason: reason ?? null }, userId);
+  await audit(teamId, 'REJECTED', { batchId, count: targets.length, userId, reason: reason ?? null, code: motivo, kind: actions[0].kind }, userId);
   return { batchId, rejected: targets.length };
+}
+
+/**
+ * Lo que el equipo rechazó y por qué, resumido para quien redacta.
+ *
+ * Se lee de `result.code` de las filas `rejected` y se cuenta por motivo y por
+ * gate. Va al expediente (`buildChatDossier`) y al prompt del motor: es la
+ * única forma de que el próximo texto no repita el error del anterior.
+ */
+export type LeccionDeRechazo = {
+  code: RejectReason;
+  label: string;
+  leccion: string;
+  count: number;
+  /** Hasta tres textos que se rechazaron por este motivo, recortados. */
+  ejemplos: string[];
+};
+
+export async function rejectionLessons(
+  teamId: number,
+  opts: { kind?: ActionKind; days?: number; limit?: number } = {},
+): Promise<{ total: number; lessons: LeccionDeRechazo[] }> {
+  const desde = new Date(Date.now() - Math.max(1, opts.days ?? 30) * DAY);
+  const conditions = [
+    eq(teamCommercialActions.teamId, teamId),
+    eq(teamCommercialActions.status, 'rejected'),
+    gte(teamCommercialActions.updatedAt, desde),
+  ];
+  if (opts.kind) conditions.push(eq(teamCommercialActions.kind, opts.kind));
+  const rows = await db
+    .select({ kind: teamCommercialActions.kind, payload: teamCommercialActions.payload, result: teamCommercialActions.result })
+    .from(teamCommercialActions)
+    .where(and(...conditions))
+    .orderBy(desc(teamCommercialActions.updatedAt))
+    .limit(Math.min(Math.max(opts.limit ?? 300, 1), 1000));
+
+  const porCode = new Map<RejectReason, LeccionDeRechazo>();
+  let total = 0;
+  for (const row of rows) {
+    const result = (row.result ?? {}) as Record<string, unknown>;
+    // Las filas anteriores al motivo tipado no enseñan nada: se cuentan aparte
+    // y no se muestran como lección (dirían "otro" sin serlo).
+    if (!esRejectReason(result.code)) continue;
+    total += 1;
+    const code = result.code;
+    const entry = porCode.get(code) ?? { code, label: REJECT_REASON_LABELS[code], leccion: REJECT_REASON_LECCION[code], count: 0, ejemplos: [] };
+    entry.count += 1;
+    const texto = typeof (row.payload as Record<string, unknown> | null)?.text === 'string' ? String((row.payload as Record<string, unknown>).text) : null;
+    if (texto && entry.ejemplos.length < 3) entry.ejemplos.push(texto.slice(0, 220));
+    if (code === 'otro' && typeof result.reason === 'string' && entry.ejemplos.length < 3) {
+      entry.ejemplos.push(`(motivo escrito) ${result.reason.slice(0, 160)}`);
+    }
+    porCode.set(code, entry);
+  }
+  return { total, lessons: [...porCode.values()].sort((a, b) => b.count - a.count) };
+}
+
+/** Las lecciones en texto plano, para meter en un prompt. Vacío si no hay nada que enseñar. */
+export async function rejectionLessonsText(teamId: number, kind?: ActionKind): Promise<string> {
+  const { total, lessons } = await rejectionLessons(teamId, { kind, days: 30 });
+  if (!total || !lessons.length) return '';
+  const lineas = lessons.map((l) => {
+    const ejemplo = l.ejemplos[0] ? ` Ejemplo rechazado: «${l.ejemplos[0]}»` : '';
+    return `- ${l.label} (${l.count}): ${l.leccion}${ejemplo}`;
+  });
+  return [
+    `Lo que este equipo rechazó en los últimos 30 días (${total} propuestas). No repitas estos errores:`,
+    ...lineas,
+  ].join('\n');
 }
 
 /** Sólo se edita antes de aprobar: aprobar es firmar un texto concreto. */
@@ -972,7 +1122,12 @@ export async function editAction(
  * no haya salido nada (`proposed`, `pending_approval` o `approved`); lo
  * ejecutado no se toca porque ya le llegó al cliente.
  */
-export async function removeFromBatch(teamId: number, userId: number, actionId: number): Promise<{ actionId: number; batchId: string; chatId: number }> {
+export async function removeFromBatch(
+  teamId: number,
+  userId: number,
+  actionId: number,
+  motivo?: { code?: RejectReason; reason?: string },
+): Promise<{ actionId: number; batchId: string; chatId: number }> {
   const [action] = await db
     .select()
     .from(teamCommercialActions)
@@ -984,11 +1139,14 @@ export async function removeFromBatch(teamId: number, userId: number, actionId: 
   }
   if (action.status === 'approved') await assertRole(teamId, userId, action.requiresRole as ActionRole);
   const now = new Date();
+  // Quitar a alguien de un lote es un rechazo de una fila: lleva el mismo
+  // motivo tipado, y por defecto el que casi siempre es ("no va acá").
+  const code = esRejectReason(motivo?.code) ? motivo!.code! : 'no_corresponde';
   await db
     .update(teamCommercialActions)
-    .set({ status: 'rejected', result: { reason: 'removed_from_batch', by: userId }, updatedAt: now })
+    .set({ status: 'rejected', result: { reason: motivo?.reason?.slice(0, 300) || 'removed_from_batch', code, by: userId }, updatedAt: now })
     .where(and(eq(teamCommercialActions.teamId, teamId), eq(teamCommercialActions.id, actionId)));
-  await audit(teamId, 'REMOVED', { batchId: action.batchId, actionId, chatId: action.chatId, previousStatus: action.status, userId }, userId);
+  await audit(teamId, 'REMOVED', { batchId: action.batchId, actionId, chatId: action.chatId, previousStatus: action.status, userId, code }, userId);
   return { actionId, batchId: action.batchId, chatId: action.chatId };
 }
 
@@ -1015,8 +1173,23 @@ export async function deleteBatch(teamId: number, userId: number, batchId: strin
 
 // ── Expirar / cancelar ───────────────────────────────────────────────────────
 
-/** Propuestas vencidas (expires_at pasado) → expired. La comparación la hace Postgres con now(). */
+/**
+ * Propuestas que nadie decidió → expired.
+ *
+ * Dos formas de vencer, y la segunda es la que importa: por `expires_at` (lo
+ * que se pactó al proponer) y por antigüedad, contra el TTL vigente del equipo.
+ * Sin la segunda, las 113 filas propuestas con el TTL viejo de 7 días seguirían
+ * tapando la cola tres días después de que el equipo dejara de mirarlas, aunque
+ * el plazo nuevo sea de 48 horas. Una propuesta de anteayer ya no describe el
+ * chat que la originó: si el chat sigue igual, el mismo criterio la vuelve a
+ * traer; si cambió, mejor que no salga.
+ *
+ * Las comparaciones las hace Postgres con `now()` y un intervalo calculado en
+ * SQL: nada de mandar un Date como parámetro.
+ */
 export async function expireStale(teamId: number): Promise<{ expired: number; batches: string[] }> {
+  const { proposalTtlHours } = await getSalesOpsSettings(teamId);
+  const horas = Math.max(1, proposalTtlHours ?? PROPOSAL_TTL_HOURS);
   const rows = await db
     .update(teamCommercialActions)
     .set({ status: 'expired', result: { reason: 'ttl' }, updatedAt: new Date() })
@@ -1024,7 +1197,10 @@ export async function expireStale(teamId: number): Promise<{ expired: number; ba
       and(
         eq(teamCommercialActions.teamId, teamId),
         inArray(teamCommercialActions.status, ['proposed', 'pending_approval']),
-        sql`${teamCommercialActions.expiresAt} IS NOT NULL AND ${teamCommercialActions.expiresAt} < now()`,
+        or(
+          sql`${teamCommercialActions.expiresAt} IS NOT NULL AND ${teamCommercialActions.expiresAt} < now()`,
+          sql`${teamCommercialActions.createdAt} < now() - make_interval(hours => ${horas})`,
+        ),
       ),
     )
     .returning({ batchId: teamCommercialActions.batchId });

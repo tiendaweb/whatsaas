@@ -10,12 +10,13 @@ import { executeApprovedBatch } from '@/lib/plugins/sales-ops/server/execute';
 import { snoozeLead, transferLead, unsnoozeLead } from '@/lib/plugins/sales-ops/server/lead';
 import { getMetrics } from '@/lib/plugins/sales-ops/server/metrics';
 import { getOverview } from '@/lib/plugins/sales-ops/server/overview';
-import { deleteBatch, QueueError } from '@/lib/plugins/sales-ops/server/queue';
+import { cierreSemanal } from '@/lib/plugins/sales-ops/server/cierre';
+import { deleteBatch, QueueError, rejectionLessons } from '@/lib/plugins/sales-ops/server/queue';
 import { markSignal, markSignals, setRadarMuted } from '@/lib/plugins/sales-ops/server/radar';
 import { getSalesOpsSettings, patchSalesOpsSettings } from '@/lib/plugins/sales-ops/server/settings';
 import { skipWorkItem, unskipWorkItem, WORK_KINDS } from '@/lib/plugins/sales-ops/server/work-queue';
 import { VISIBILITIES, VISIBILITY_TARGETS } from '@/lib/plugins/sales-ops/shared/accounts-types';
-import { ANALYSIS_STATUSES, EXPERIMENT_STATUSES, GATES, OWNERS, SALES_OPS_PLUGIN_ID } from '@/lib/plugins/sales-ops/shared/taxonomy';
+import { ACTION_KINDS, ANALYSIS_STATUSES, EXPERIMENT_STATUSES, GATES, OWNERS, SALES_OPS_PLUGIN_ID } from '@/lib/plugins/sales-ops/shared/taxonomy';
 
 /**
  * Gestión del Command Center Comercial por MCP (`whatspro_sales_*`): panorama,
@@ -36,6 +37,8 @@ import { ANALYSIS_STATUSES, EXPERIMENT_STATUSES, GATES, OWNERS, SALES_OPS_PLUGIN
 // ── Schemas (zod, sólo para el handler) ───────────────────────────────────────
 
 const emptySchema = z.object({});
+const cierreSchema = z.object({ dias: z.number().int().min(1).max(90).optional() });
+const leccionesSchema = z.object({ kind: z.enum(ACTION_KINDS).optional(), dias: z.number().int().min(1).max(180).optional() });
 
 const settingsPatchSchema = z
   .object({
@@ -167,6 +170,38 @@ export const manageReadTools: GrokActionTool[] = [
       'calidad del análisis (confianza media, % a revisar, % con falta de evidencia, versiones por chat). Usala para ' +
       'reportes y para decidir dónde empujar. No escribe nada. Para el estado de hoy alcanza con whatspro_sales_overview.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'whatspro_sales_cierre',
+    description:
+      'Los seis números de CIERRE del equipo en una ventana de días (default 7): decisiones tomadas (aprobadas/rechazadas, ' +
+      'cuántas siguen esperando y hace cuántas horas espera la más vieja), lo que de verdad le llegó al cliente (enviados y ' +
+      'programados que salieron), respuestas de clientes cerradas contra las que entraron, pedidos de producción entregados ' +
+      '—y cuántos con enlace, los únicos que cuentan—, horas de bloque registradas por contexto y plata cobrada por moneda ' +
+      '(nunca sumadas entre sí). A diferencia de whatspro_sales_metrics y whatspro_sales_overview, que miden ACTIVIDAD, acá ' +
+      'sólo se cuenta trabajo TERMINADO: si un número da cero, esa semana esa parte no produjo nada por más movimiento que ' +
+      'haya habido. Usala para el reporte semanal y para saber si el equipo está cerrando o sólo acumulando. No escribe nada.',
+    inputSchema: {
+      type: 'object',
+      properties: { dias: { type: 'integer', minimum: 1, maximum: 90, description: 'Ventana en días. Default 7.' } },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'whatspro_sales_lecciones',
+    description:
+      'Por qué este equipo RECHAZÓ propuestas en los últimos 30 días, agrupado por motivo y con ejemplos del texto que se ' +
+      'descartó. Leelas antes de redactar cualquier mensaje para un cliente: son los errores concretos que no hay que ' +
+      'repetir (tono que no suena al equipo, datos que no son ciertos, momento equivocado, contacto que no correspondía). ' +
+      'Con `kind` se filtra por tipo de acción (send_message, schedule_message…). No escribe nada.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: [...ACTION_KINDS], description: 'Tipo de acción. Default: todas.' },
+        dias: { type: 'integer', minimum: 1, maximum: 180, description: 'Ventana en días. Default 30.' },
+      },
+      additionalProperties: false,
+    },
   },
 ];
 
@@ -468,6 +503,18 @@ export async function executeManageTool(name: string, input: Record<string, unkn
       await assertPermission(context, 'salesOpsRead', SALES_OPS_PLUGIN_ID);
       parse(emptySchema, input);
       return getMetrics(context.teamId);
+    }
+
+    case 'whatspro_sales_cierre': {
+      await assertPermission(context, 'salesOpsRead', SALES_OPS_PLUGIN_ID);
+      const args = parse(cierreSchema, input);
+      return cierreSemanal(context.teamId, args.dias ?? 7);
+    }
+
+    case 'whatspro_sales_lecciones': {
+      await assertPermission(context, 'salesOpsRead', SALES_OPS_PLUGIN_ID);
+      const args = parse(leccionesSchema, input);
+      return rejectionLessons(context.teamId, { kind: args.kind, days: args.dias ?? 30 });
     }
 
     case 'whatspro_sales_settings': {
