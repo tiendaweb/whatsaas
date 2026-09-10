@@ -174,6 +174,14 @@ export type ActionRow = {
   createdAt: string;
   /** Advertencias calculadas al listar: automatización viva, auto-reply, envío reciente, cliente. */
   warnings: string[];
+  /**
+   * Último mensaje de cada lado EN EL CHAT (no en la cola): es lo que contesta
+   * "¿a este ya le hablamos?" sin abrir la conversación. Un mensaje escrito a
+   * mano desde WhatsApp no deja fila en la cola, así que mirando sólo las
+   * acciones un contacto recién contactado parecía frío.
+   */
+  lastTeamMessageAt?: string | null;
+  lastCustomerMessageAt?: string | null;
 };
 
 export type BatchSummary = {
@@ -187,6 +195,8 @@ export type BatchSummary = {
   createdAt: string;
   /** Último movimiento de cualquier fila (aprobación, ejecución, rechazo): sirve para archivar lo viejo. */
   lastActivityAt: string;
+  /** La salida programada más temprana del lote; `null` si no es un lote programado. */
+  scheduledFor: string | null;
   approvedBy: number | null;
   responded: number;
   recovered: number;

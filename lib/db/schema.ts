@@ -5039,6 +5039,46 @@ export const socialAccounts = pgTable("social_accounts", {
   socialAccountsUnique: unique("social_accounts_team_platform_ext").on(table.teamId, table.platform, table.externalId),
 }));
 
+/**
+ * Comentarios de Facebook e Instagram que el equipo contesta desde WhatsPro.
+ *
+ * La identidad es la de Meta (`external_id`): sincronizar dos veces no
+ * duplica. Lo que agregamos nosotros es el estado para el equipo (nuevo,
+ * respondido, ignorado, oculto) y con qué se respondió, para que quede el
+ * rastro de quién contestó qué sin tener que entrar a la red.
+ */
+export const socialComments = pgTable("social_comments", {
+  id: serial("id").primaryKey(),
+  teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+  accountId: integer("account_id").references(() => socialAccounts.id, { onDelete: "set null" }),
+  platform: varchar("platform", { length: 20 }).notNull(), // facebook_page | instagram
+  externalId: text("external_id").notNull(),
+  /** Si es respuesta a otro comentario, el id del padre en Meta. */
+  parentExternalId: text("parent_external_id"),
+  postExternalId: text("post_external_id").notNull(),
+  postPermalink: text("post_permalink"),
+  postExcerpt: text("post_excerpt"),
+  authorName: text("author_name"),
+  authorExternalId: text("author_external_id"),
+  message: text("message").notNull().default(""),
+  commentCreatedAt: timestamp("comment_created_at"),
+  /** nuevo | respondido | ignorado | oculto */
+  status: varchar("status", { length: 16 }).notNull().default("nuevo"),
+  isHidden: boolean("is_hidden").notNull().default(false),
+  likeCount: integer("like_count").notNull().default(0),
+  replyText: text("reply_text"),
+  replyExternalId: text("reply_external_id"),
+  repliedAt: timestamp("replied_at"),
+  repliedBy: integer("replied_by").references(() => users.id, { onDelete: "set null" }),
+  syncedAt: timestamp("synced_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  socialCommentsUnique: unique("social_comments_external_uidx").on(table.teamId, table.platform, table.externalId),
+  socialCommentsBandejaIdx: index("social_comments_bandeja_idx").on(table.teamId, table.status, table.commentCreatedAt),
+  socialCommentsPostIdx: index("social_comments_post_idx").on(table.teamId, table.postExternalId),
+}));
+
 export type SocialMediaItem = { url: string; type: "image" | "video"; order: number };
 
 export const socialPosts = pgTable("social_posts", {

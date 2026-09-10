@@ -16,6 +16,7 @@ import type { ActionRow, QueueBatchPayload } from '../../shared/api-types';
 import { esEjecutableEnServidor, type ActionKind } from '../../shared/taxonomy';
 import { KIND_LABELS, PHASE_LABELS, QUEUE_ENDPOINT, ROLE_LABELS, STATUS_LABELS, batchPhase, fetcher, formatDate, postJson, type ApiError } from './api';
 import { AbrirChat, AbrirIa } from './AbrirChat';
+import { tiempoRelativo } from '../components/format';
 
 const PENDING = new Set(['proposed', 'pending_approval']);
 
@@ -579,6 +580,16 @@ export function RevisarLote({
                         {KIND_LABELS[action.kind]}
                         {typeof action.payload.owner === 'string' ? ` → ${action.payload.owner}` : ''}
                         {typeof action.payload.taskTitle === 'string' ? ` · ${action.payload.taskTitle}` : ''}
+                      </p>
+                    )}
+                    {/* La pregunta que uno se hace antes de aprobar: ¿a este
+                        ya le hablamos? Sale del chat, no de la cola, así que
+                        cuenta también lo que se escribió a mano. */}
+                    {(action.lastTeamMessageAt || action.lastCustomerMessageAt) && (
+                      <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                        {action.lastTeamMessageAt && <span>Le escribimos {tiempoRelativo(action.lastTeamMessageAt)}</span>}
+                        {action.lastCustomerMessageAt && <span>Contestó {tiempoRelativo(action.lastCustomerMessageAt)}</span>}
+                        {!action.lastTeamMessageAt && <span>Nunca le escribimos</span>}
                       </p>
                     )}
                     {action.warnings.length > 0 && (

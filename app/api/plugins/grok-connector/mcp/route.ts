@@ -67,6 +67,11 @@ import {
   devCenterReadTools,
   executeDevCenterAction,
 } from '@/lib/plugins/grok-connector/server/dev-center-actions';
+import {
+  marketingActionTools,
+  marketingReadTools,
+  executeMarketingAction,
+} from '@/lib/plugins/grok-connector/server/marketing-actions';
 import { getMcpPrompt, listMcpPrompts } from '@/lib/plugins/dev-center/server/mcp-prompts';
 import {
   executeGrokExtendedAction,
@@ -259,6 +264,7 @@ const readOnlyTools = [
   ...salesOpsReadTools,
   ...productionReadTools,
   ...devCenterReadTools,
+  ...marketingReadTools,
   ...notifyReadTools,
   ...detailReadTools,
   ...desktopReadTools,
@@ -296,6 +302,7 @@ const actionTools = [
   ...salesOpsActionTools,
   ...productionActionTools,
   ...devCenterActionTools,
+  ...marketingActionTools,
   ...notifyActionTools,
   ...desktopActionTools,
   ...commandCenterActionTools,
@@ -583,6 +590,9 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
   if (devCenterReadTools.some((tool) => tool.name === name)) {
     return executeDevCenterAction(name, args, { teamId, userId: context.userId });
   }
+  if (marketingReadTools.some((tool) => tool.name === name)) {
+    return executeMarketingAction(name, args, { teamId, userId: context.userId });
+  }
   if (notifyReadTools.some((tool) => tool.name === name) || notifyActionTools.some((tool) => tool.name === name)) {
     return executeNotifyTool(name, args, { teamId, userId: context.userId });
   }
@@ -627,6 +637,7 @@ async function callTool(name: string, args: Record<string, unknown>, context: Mc
     if (salesOpsActionTools.some((tool) => tool.name === name)) return executeSalesOpsTool(name, args, actionContext);
     if (productionActionTools.some((tool) => tool.name === name)) return executeProductionAction(name, args, actionContext);
     if (devCenterActionTools.some((tool) => tool.name === name)) return executeDevCenterAction(name, args, actionContext);
+    if (marketingActionTools.some((tool) => tool.name === name)) return executeMarketingAction(name, args, actionContext);
     if (desktopActionTools.some((tool) => tool.name === name)) return executeDesktopTool(name, args, actionContext);
     if (commandCenterActionTools.some((tool) => tool.name === name)) return executeDesktopTool(name, args, actionContext);
     if (chatActionTools.some((tool) => tool.name === name)) return executeChatTool(name, args, actionContext);

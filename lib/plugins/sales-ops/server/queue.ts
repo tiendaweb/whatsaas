@@ -4,6 +4,7 @@ import {
   activityLogs,
   chats,
   contacts,
+  messages,
   teamCommercialActions,
   teamCommercialAnalysis,
   teamCommercialExperimentMembers,
@@ -257,7 +258,12 @@ async function namesForChats(teamId: number, chatIds: number[]): Promise<Map<num
   return map;
 }
 
-function toActionRow(action: ActionRecord, name: string, warnings: string[]): ActionRow {
+function toActionRow(
+  action: ActionRecord,
+  name: string,
+  warnings: string[],
+  contacto?: { nuestro: Date | null; cliente: Date | null },
+): ActionRow {
   return {
     id: action.id,
     chatId: action.chatId,
@@ -283,6 +289,8 @@ function toActionRow(action: ActionRecord, name: string, warnings: string[]): Ac
     expiresAt: action.expiresAt?.toISOString() ?? null,
     createdAt: action.createdAt.toISOString(),
     warnings,
+    lastTeamMessageAt: contacto?.nuestro ? contacto.nuestro.toISOString() : null,
+    lastCustomerMessageAt: contacto?.cliente ? contacto.cliente.toISOString() : null,
   };
 }
 
@@ -290,10 +298,56 @@ function toActionRow(action: ActionRecord, name: string, warnings: string[]): Ac
  * Advertencias por fila para la pantalla "Revisar lote": se calculan al leer,
  * contra el estado vivo del chat, no contra el que había al proponer.
  */
-async function warningsFor(teamId: number, actions: ActionRecord[], cooldownHours: number): Promise<Map<number, string[]>> {
+/**
+ * Cuándo hablamos por última vez con cada chat, del lado de cada uno.
+ *
+ * Se lee de `messages` y no de las acciones del Command Center a propósito: el
+ * aviso de "ya recibió un envío nuestro" sólo miraba las filas de la cola, así
+ * que un mensaje escrito a mano desde WhatsApp —que es como sale la mayoría—
+ * no contaba, y la fila seguía pareciendo un contacto frío. Es la pregunta que
+ * uno se hace antes de aprobar: ¿a este ya le hablamos?
+ */
+async function ultimosMensajes(teamId: number, chatIds: number[]): Promise<Map<number, { nuestro: Date | null; cliente: Date | null }>> {
+  const out = new Map<number, { nuestro: Date | null; cliente: Date | null }>();
+  if (!chatIds.length) return out;
+  const filas = await db
+    .select({
+      chatId: messages.chatId,
+      nuestro: sql<Date | null>`max(${messages.timestamp}) filter (where ${messages.fromMe} = true and coalesce(${messages.isInternal}, false) = false)`,
+      cliente: sql<Date | null>`max(${messages.timestamp}) filter (where ${messages.fromMe} = false)`,
+    })
+    .from(messages)
+    .where(inArray(messages.chatId, chatIds))
+    // `group by 1` por posición: con los parámetros del filter, drizzle
+    // renumera la expresión y Postgres deja de reconocerla.
+    .groupBy(sql`1`);
+  for (const fila of filas) {
+    out.set(fila.chatId, {
+      nuestro: fila.nuestro ? new Date(fila.nuestro) : null,
+      cliente: fila.cliente ? new Date(fila.cliente) : null,
+    });
+  }
+  return out;
+}
+
+/** Hace cuánto, en palabras. Para un aviso que se lee de un vistazo. */
+function haceCuanto(fecha: Date, ahora: number): string {
+  const horas = Math.max(0, Math.round((ahora - fecha.getTime()) / HOUR));
+  if (horas < 1) return 'hace menos de una hora';
+  if (horas < 48) return `hace ${horas} h`;
+  const dias = Math.round(horas / 24);
+  return dias < 60 ? `hace ${dias} días` : `hace ${Math.round(dias / 30)} meses`;
+}
+
+async function warningsFor(
+  teamId: number,
+  actions: ActionRecord[],
+  cooldownHours: number,
+): Promise<{ warnings: Map<number, string[]>; contacto: Map<number, { nuestro: Date | null; cliente: Date | null }> }> {
   const out = new Map<number, string[]>();
-  if (!actions.length) return out;
+  if (!actions.length) return { warnings: out, contacto: new Map() };
   const chatIds = [...new Set(actions.map((a) => a.chatId))];
+  const contacto = await ultimosMensajes(teamId, chatIds);
   const [analyses, liveChats, sends] = await Promise.all([
     db
       .select({
@@ -360,9 +414,26 @@ async function warningsFor(teamId: number, actions: ActionRecord[], cooldownHour
         warnings.push(`Ya tiene un envío aprobado en el lote ${send.batchId}.`);
       }
     }
+
+    /**
+     * Lo que el chat dice, no lo que dice la cola.
+     *
+     * Un mensaje escrito a mano desde WhatsApp no deja fila en la cola: sin
+     * esto, alguien a quien le acabamos de escribir aparecía como contacto
+     * frío y se le aprobaba encima otro mensaje.
+     */
+    const ultimo = contacto.get(action.chatId);
+    if (ultimo?.nuestro) {
+      if (ultimo.nuestro.getTime() > action.createdAt.getTime()) {
+        warnings.push(`Ya le escribimos DESPUÉS de proponer esto (${haceCuanto(ultimo.nuestro, now)}): revisá el chat antes de aprobar.`);
+      } else if (now - ultimo.nuestro.getTime() < cooldownMs) {
+        warnings.push(`Le escribimos ${haceCuanto(ultimo.nuestro, now)} (menos de ${cooldownHours} h).`);
+      }
+    }
+
     out.set(action.id, [...new Set(warnings)]);
   }
-  return out;
+  return { warnings: out, contacto };
 }
 
 // ── Proponer ─────────────────────────────────────────────────────────────────
@@ -772,7 +843,9 @@ export async function getBatch(teamId: number, batchId: string): Promise<QueueBa
   ]);
   return {
     batch: summarize(actions, outcomes.responded.get(batchId) ?? 0, outcomes.recovered.get(batchId) ?? 0),
-    actions: actions.map((a) => toActionRow(a, names.get(a.chatId) ?? `chat ${a.chatId}`, warnings.get(a.id) ?? [])),
+    actions: actions.map((a) =>
+      toActionRow(a, names.get(a.chatId) ?? `chat ${a.chatId}`, warnings.warnings.get(a.id) ?? [], warnings.contacto.get(a.chatId)),
+    ),
   };
 }
 
@@ -786,7 +859,7 @@ export async function actionsForChat(teamId: number, chatId: number): Promise<Ac
   const settings = await getSalesOpsSettings(teamId);
   const [names, warnings] = await Promise.all([namesForChats(teamId, [chatId]), warningsFor(teamId, actions, settings.sendCooldownHours)]);
   const name = names.get(chatId) ?? `chat ${chatId}`;
-  return actions.map((a) => toActionRow(a, name, warnings.get(a.id) ?? []));
+  return actions.map((a) => toActionRow(a, name, warnings.warnings.get(a.id) ?? [], warnings.contacto.get(chatId)));
 }
 
 // ── Aprobar / rechazar ───────────────────────────────────────────────────────
