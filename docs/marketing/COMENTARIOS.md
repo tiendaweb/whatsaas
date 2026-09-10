@@ -48,7 +48,7 @@ forma.
 
 ## Lo que falta
 
-- Registrar el cron en PM2 (`*/10`) para que la bandeja se llene sola; mientras tanto está el botón
-  «Buscar nuevos».
+- ~~Registrar el cron en PM2~~: hecho (`social-comments`, `*/10`, `scripts/social-comments.js`).
+  El botón «Buscar nuevos» queda para cuando no se quiere esperar.
 - Avisar por notificación cuando entra un comentario con pregunta de precio (hoy hay que mirar).
 - Vincular el comentario con el contacto de WhatsApp cuando la persona ya escribió por ahí.
