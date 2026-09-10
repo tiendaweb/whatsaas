@@ -240,27 +240,55 @@ const AGE_INTERVALS: Record<NonNullable<ListQuery['ageBucket']>, SQL> = {
 };
 
 /**
- * "Le salió algo después del análisis": un envío ejecutado o una corrida de
- * prompt cerrada, siempre POSTERIOR al análisis vigente (lo de antes es de
- * otra auditoría). Comparación de columna contra columna dentro del SQL: nada
- * de `Date` en el filtro, que revienta en runtime y el build lo deja pasar.
+ * "¿Alguna vez salió algo de nuestro lado?": un mensaje nuestro en el chat,
+ * seguimientos contados, una acción del Command Center ejecutada o una corrida
+ * de prompt cerrada. **En toda la historia del chat, no desde el último
+ * análisis.**
+ *
+ * Antes se miraba sólo lo POSTERIOR al análisis vigente, y como el análisis se
+ * rehace cada vez que el cliente escribe, el historial se borraba solo: de 394
+ * contactos marcados "auditado, sin tocar", 387 tenían mensajes nuestros y
+ * seguimientos, y 69 tenían acciones del Command Center ya ejecutadas. Con eso
+ * se armaron lotes de "nunca tocados" para gente a la que ya le habíamos
+ * escrito —y a algunos hasta mandado una demo—. "Sin tocar" tiene que querer
+ * decir sin tocar.
+ *
+ * Comparaciones de columna contra columna dentro del SQL: nada de `Date` en el
+ * filtro, que revienta en runtime y el build lo deja pasar.
  */
 function sqlTuvoSeguimiento(teamId: number): SQL {
   const a = teamCommercialAnalysis;
   return sql`(
-    exists (
+    ${a.lastTeamMessageAt} is not null
+    or coalesce(${a.followupsTotal}, 0) > 0
+    or exists (
       select 1 from team_commercial_actions ac
        where ac.team_id = ${teamId} and ac.chat_id = ${a.chatId}
          and ac.status in ('executed', 'resulted')
-         and ac.executed_at is not null and ac.executed_at > ${a.analyzedAt}
     )
     or exists (
       select 1 from team_prompt_runs pr
        where pr.team_id = ${teamId} and pr.target_kind = 'chat' and pr.target_id = ${a.chatId}::text
          and pr.status = 'completed'
-         and pr.completed_at is not null and pr.completed_at > ${a.analyzedAt}
     )
   )`;
+}
+
+/**
+ * "Le mandamos trabajo hecho": tiene un pedido de producción vinculado — una
+ * demo, un sitio, una tienda, un cambio — en cualquier estado.
+ *
+ * Es más fuerte que haberle escrito y por eso va antes en la precedencia: a
+ * alguien que recibió una demo no se le manda un primer contacto.
+ */
+function sqlTieneProduccion(teamId: number): SQL {
+  const a = teamCommercialAnalysis;
+  return sql`(${a.contactId} is not null and exists (
+    select 1 from team_task_relations r
+      join team_task_items t on t.id = r.source_id and t.team_id = ${teamId}
+     where r.team_id = ${teamId} and r.source_type = 'task' and r.target_type = 'contact'
+       and r.target_id = ${a.contactId} and t.work_kind is not null
+  ))`;
 }
 
 /**
@@ -330,6 +358,7 @@ export function situacionExpr(teamId: number, snoozeIds: number[] = []): SQL<Sit
     when ${sqlAlgoEnCola(teamId)} then 'en_cola'
     when ${a.analyzedAt} is null or ${a.status} = 'sin_analizar' then 'sin_analizar'
     when ${a.paymentPending} then 'cobro'
+    when ${sqlTieneProduccion(teamId)} then 'con_demo'
     when ${sqlTuvoSeguimiento(teamId)} then 'escrito'
     when ${a.isExistingCustomer} then 'cliente'
     else 'sin_tocar'

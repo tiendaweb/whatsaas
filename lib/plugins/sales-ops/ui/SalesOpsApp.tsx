@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import type { OverviewPayload } from '../shared/api-types';
-import { OwnerFilter, isOwnerFilterValue, type OwnerFilterValue } from './components/OwnerFilter';
+import { OwnerFilter, OWNER_FILTER_VALUES, isOwnerFilterValue, type OwnerFilterValue } from './components/OwnerFilter';
 import { MobileBar, Sidebar, type SidebarUser } from './components/Sidebar';
 import { VISTA_LABELS, isVista, type Vista } from './components/vistas';
 import { LS_OWNER, SALES_OPS_API, fetcher, fmtInt } from './components/format';
@@ -129,6 +129,13 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
   const onOpen = useCallback((id: number) => setParams({ chat: String(id), sec: null }), [setParams]);
   /** Abre la ficha directamente en el chat del contacto. */
   const onOpenChat = useCallback((id: number) => setParams({ chat: String(id), sec: 'chat' }), [setParams]);
+  /**
+   * La misma ficha, abierta en IA: el hilo de pedidos al conector.
+   *
+   * Va a la URL como cualquier otra sección (`?chat=&sec=ia`), así que el
+   * enlace se puede pegar y abre exactamente eso.
+   */
+  const onOpenIa = useCallback((id: number) => setParams({ chat: String(id), sec: 'ia' }), [setParams]);
   const onClose = useCallback(() => setParams({ chat: null, sec: null }), [setParams]);
 
   /**
@@ -193,7 +200,7 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
     if (vista === 'hoy') return <HoyView owner={owner} onChangeVista={onNav} onOpen={onOpen} />;
     if (isListaVista(vista)) return <ListaView vista={vista} owner={owner} selectedChatId={chatId} onOpen={onOpen} onOpenChat={onOpenChat} onNav={onNav} />;
     if (vista === 'respuestas') return <RespuestasView />;
-    if (vista === 'cola') return <ColaView onOpen={onOpen} selectedChatId={chatId} focusRequest={contextFocusRequest} />;
+    if (vista === 'cola') return <ColaView onOpen={onOpen} onOpenChat={onOpenChat} onOpenIa={onOpenIa} selectedChatId={chatId} focusRequest={contextFocusRequest} />;
     if (vista === 'programados') return <ProgramadosView onOpen={onOpen} />;
     if (vista === 'audios') return <AudiosView onOpen={onOpen} />;
     if (vista === 'produccion') return <ProduccionView onOpen={onOpen} focusRequest={contextFocusRequest} />;
@@ -248,7 +255,19 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
     );
   }
   if (vista === 'noelia') {
-    const ownerNoelia = user?.email?.toLowerCase() === 'noelia@whatspro.uno' && owner === 'todos' ? 'noelia' : owner;
+    /**
+     * Quien entra a su propia cabina la ve filtrada por lo suyo.
+     *
+     * Antes esto era una comparación contra un correo escrito a mano
+     * (`noelia@whatspro.uno`): en cualquier otra cuenta —y en cuanto esa
+     * persona cambie de correo— no filtraba nada. Ahora se resuelve por el
+     * nombre o la parte local del correo de quien está usando la aplicación
+     * contra los dueños que existen, así que funciona para cualquier equipo.
+     */
+    const nombrePropio = (user?.name ?? '').trim().toLowerCase().split(/\s+/)[0] ?? '';
+    const localPropio = (user?.email ?? '').split('@')[0]?.toLowerCase() ?? '';
+    const propio = OWNER_FILTER_VALUES.find((o) => o !== 'todos' && (o === nombrePropio || o === localPropio));
+    const ownerNoelia = propio && owner === 'todos' ? propio : owner;
     return (
       <LimiteDeError nombre="Modo Noelia">
         <NoeliaView owner={ownerNoelia} onSalir={salirNoelia} />
@@ -292,7 +311,10 @@ function SalesOpsShell({ slug }: { slug: string[] }) {
 
         <div className="flex min-h-0 flex-1">
           <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-3 py-3 pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:px-6 lg:py-5 lg:pb-8">
-            <div className="mx-auto w-full max-w-[1100px]">{content}</div>
+            {/* Respuestas es una mesa de trabajo, no un documento: necesita el
+                alto completo (las columnas de chat scrollean por dentro) y todo
+                el ancho (cuatro conversaciones no entran en 1100 px). */}
+            <div className={cn('mx-auto w-full', vista === 'respuestas' ? 'h-full max-w-none' : 'max-w-[1100px]')}>{content}</div>
           </main>
 
           {isDesktop && chatId != null && (

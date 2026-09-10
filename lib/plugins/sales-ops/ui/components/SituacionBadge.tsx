@@ -1,13 +1,13 @@
 'use client';
 
-import { Bot, Building2, Circle, CircleDot, DollarSign, Flame, Hourglass, Moon, Send, XCircle } from 'lucide-react';
+import { Bot, Building2, Circle, CircleDot, DollarSign, Flame, Hourglass, Monitor, Moon, Send, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SITUACION_META, type Situacion } from '../../shared/situacion';
 
 /**
  * El icono de la situación, a la izquierda del nombre.
  *
- * Es un icono y no una etiqueta porque va en cada fila: diez palabras
+ * Es un icono y no una etiqueta porque va en cada fila: once palabras
  * repetidas hacia abajo serían más ruido que dato. El `title` dice cuál es y
  * qué significa, y el mismo par icono+color se repite en el filtro, así que la
  * relación entre "lo que tildé" y "lo que veo" se aprende sola.
@@ -20,6 +20,7 @@ export const SITUACION_ICONO: Record<Situacion, typeof Circle> = {
   en_cola: Hourglass,
   sin_analizar: Circle,
   cobro: DollarSign,
+  con_demo: Monitor,
   escrito: Send,
   cliente: Building2,
   sin_tocar: CircleDot,
@@ -40,6 +41,7 @@ export const SITUACION_COLOR: Record<Situacion, string> = {
   en_cola: 'text-blue-600 dark:text-blue-400',
   sin_analizar: 'text-muted-foreground/50',
   cobro: 'text-green-600 dark:text-green-400',
+  con_demo: 'text-violet-600 dark:text-violet-400',
   escrito: 'text-sky-600 dark:text-sky-400',
   cliente: 'text-emerald-600 dark:text-emerald-400',
   sin_tocar: 'text-amber-600 dark:text-amber-400',

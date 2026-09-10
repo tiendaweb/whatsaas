@@ -385,3 +385,38 @@ un `Date` como parámetro dentro de un `sql` template revienta en runtime con el
 | 44 Radar como motor: secciones con ranking propio ocultas | ✅ 2026-09-10 |
 | 45 `pendiente` y `lecciones` dentro del expediente | ✅ 2026-09-10 |
 | 46 Cierre semanal (6 números) en Hoy y por MCP | ✅ 2026-09-10 |
+
+## Tanda 10 del 2026-09-10: la mesa de Respuestas y el «sin tocar» que no era
+
+Dos correcciones pedidas al ver la tanda anterior en pantalla.
+
+**1. Respuestas vuelve a ser su propio lugar, y ahora es una mesa.** Las respuestas se sacaron de
+Decidir —se contestan en Respuestas, no se «deciden»— y la vista se rehízo entera: el rail de la
+izquierda es la fila de espera (quién escribió, qué tipo, qué dijo, hace cuánto) y la derecha es la
+**mesa**, con hasta cuatro conversaciones abiertas al mismo tiempo (`ui/radar/MesaChats.tsx`), cada
+una con el chat completo del Command Center: historial, envío real por WhatsApp, nota interna y los
+programados del contacto. Contestar a alguien era abrir su chat en un modal, escribir, cerrarlo,
+volver a la lista y buscar el siguiente; con sesenta esperando, la mitad del trabajo eran esos
+viajes. **Al marcar a uno como atendido, su lugar lo toma solo el siguiente de la fila**, así la mesa
+nunca queda con un hueco; «Llenar la mesa» abre los primeros de una. La mesa sobrevive a recargar
+(localStorage) y en el teléfono son pestañas, no columnas: tres columnas de 120 px no son tres
+conversaciones. La vista pide alto y ancho completos en el shell (`vista === 'respuestas'`).
+
+**2. «Auditado, sin tocar» mentía: 387 de 394 ya tenían mensajes nuestros.** `sqlTuvoSeguimiento`
+miraba sólo lo POSTERIOR al análisis vigente, y como el análisis se rehace cada vez que el cliente
+escribe, el historial se borraba solo: contactos con diez seguimientos —y algunos con una demo
+entregada— volvían a la lista como vírgenes, y con eso se armaron lotes de «nunca tocados». Ahora la
+pregunta es «¿alguna vez salió algo de nuestro lado?»: mensaje nuestro en el chat
+(`last_team_message_at`), `followups_total`, acción del Command Center ejecutada o corrida de prompt
+cerrada, **en toda la historia del chat**. Medido después: `sin_tocar` pasó de 394 a **0**, y esos
+contactos aparecen como «Le escribimos» (349) o «Le mandamos trabajo» (7).
+
+Situación nueva **`con_demo` · «Le mandamos trabajo»** (`sqlTieneProduccion`): tiene una demo o un
+pedido de producción vinculado, en cualquier estado. Va antes que «Le escribimos» en la precedencia
+porque es más fuerte: a alguien que recibió una demo no se le manda un primer contacto. Once
+situaciones, un icono y un color propios (`Monitor`, violeta).
+
+| Fase | Estado |
+|---|---|
+| 47 Respuestas como mesa de varios chats a la vez | ✅ 2026-09-10 |
+| 48 «Sin tocar» mira toda la historia + situación `con_demo` | ✅ 2026-09-10 |

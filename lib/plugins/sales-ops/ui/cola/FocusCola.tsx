@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import useSWR from 'swr';
 import {
-  ArrowLeft, Ban, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock, Inbox, Layers, Loader2, MessageSquareText,
+  ArrowLeft, Ban, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock, Layers, Loader2, MessageSquareText,
   Pause, Pencil, Play, Save, SkipForward, Timer, Wand2, Wrench, X, type LucideIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -14,8 +14,6 @@ import { cn } from '@/lib/utils';
 import type { BatchSummary, DetailPayload } from '../../shared/api-types';
 import type { CrmFixPendiente } from '../../server/crm';
 import { CrmFixItem } from './CrmFixItem';
-import { RespuestaItem } from './RespuestaItem';
-import type { SignalGroup } from '../radar/ContactSignalCard';
 import { HumanDecisionCard } from './HumanDecisionCard';
 import { HechoAMano } from './HechoAMano';
 import { ColaLateral, type EstadoRevision } from './ColaLateral';
@@ -62,8 +60,7 @@ export type ItemSupervision =
   | { key: string; tipo: 'lote'; fecha: string; chatId: number | null; batch: BatchSummary }
   | { key: string; tipo: 'indicacion' | 'prompt'; fecha: string; chatId: number | null; run: SkillRun }
   | { key: string; tipo: 'programado'; fecha: string; chatId: number | null; programado: Programado }
-  | { key: string; tipo: 'crm'; fecha: string; chatId: number | null; crm: CrmFixPendiente }
-  | { key: string; tipo: 'respuesta'; fecha: string; chatId: number | null; grupo: SignalGroup };
+  | { key: string; tipo: 'crm'; fecha: string; chatId: number | null; crm: CrmFixPendiente };
 
 const TIPO_META: Record<ItemSupervision['tipo'], { label: string; icon: LucideIcon }> = {
   lote: { label: 'Lote', icon: Layers },
@@ -71,7 +68,6 @@ const TIPO_META: Record<ItemSupervision['tipo'], { label: string; icon: LucideIc
   prompt: { label: 'Prompt', icon: Wand2 },
   programado: { label: 'Programado', icon: Clock },
   crm: { label: 'Corrección de CRM', icon: Wrench },
-  respuesta: { label: 'Respondió', icon: Inbox },
 };
 
 type Props = {
@@ -376,7 +372,6 @@ function nombreDelItem(item: ItemSupervision): string {
   if (item.tipo === 'programado') return item.programado.name;
   if (item.tipo === 'lote') return item.batch.batchLabel;
   if (item.tipo === 'crm') return item.crm.name;
-  if (item.tipo === 'respuesta') return item.grupo.name;
   return item.run.targetName ?? 'el contacto';
 }
 
@@ -385,7 +380,6 @@ function estadoDelItem(item: ItemSupervision): string | undefined {
   if (item.tipo === 'lote') return undefined;
   if (item.tipo === 'programado') return item.programado.status;
   if (item.tipo === 'crm') return 'pendiente';
-  if (item.tipo === 'respuesta') return 'sin_atender';
   return item.run.status;
 }
 
@@ -442,8 +436,6 @@ function TarjetaSupervision({
           <CuerpoProgramado programado={item.programado} onSupervisado={onSupervisado} />
         ) : item.tipo === 'crm' ? (
           <CrmFixItem item={item.crm} variante="focus" onResuelto={onResuelto} />
-        ) : item.tipo === 'respuesta' ? (
-          <RespuestaItem group={item.grupo} onAtendido={() => onResuelto('aprobado')} />
         ) : (
           <CuerpoCorrida run={item.run} onResuelto={onResuelto} onCambio={onCambio} />
         )}
