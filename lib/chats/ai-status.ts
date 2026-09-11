@@ -3,7 +3,7 @@ import { db } from '@/lib/db/drizzle';
 import { aiConfigs, aiSessions, chats, users } from '@/lib/db/schema';
 import { createSystemMessage } from '@/lib/db/system-messages';
 import { pusherServer } from '@/lib/pusher-server';
-import { getEffectiveAIState, shouldPersistAISession } from '@/lib/ai/session-state';
+import { getEffectiveAIState, overrideDeSesion } from '@/lib/ai/session-state';
 
 export type ChatAiStatus = 'active' | 'paused';
 
@@ -41,9 +41,9 @@ export async function getChatAiStatus(teamId: number, chatId: number): Promise<C
   await ownedChat(teamId, chatId);
   const [config, session] = await Promise.all([
     db.query.aiConfigs.findFirst({ where: eq(aiConfigs.teamId, teamId), columns: { isActive: true } }),
-    db.query.aiSessions.findFirst({ where: eq(aiSessions.chatId, chatId), columns: { status: true } }),
+    db.query.aiSessions.findFirst({ where: eq(aiSessions.chatId, chatId), columns: { status: true, isOverride: true } }),
   ]);
-  return serializeAIState(getEffectiveAIState(!!config?.isActive, session?.status));
+  return serializeAIState(getEffectiveAIState(!!config?.isActive, overrideDeSesion(session)));
 }
 
 /**
@@ -64,18 +64,26 @@ export async function setChatAiStatus(teamId: number, userId: number, chatId: nu
     db.query.users.findFirst({ where: eq(users.id, userId), columns: { name: true, email: true } }),
   ]);
 
-  const previousState = getEffectiveAIState(!!teamConfig?.isActive, existingSession?.status);
-  let nextConversationStatus = existingSession?.status ?? null;
+  const previousState = getEffectiveAIState(!!teamConfig?.isActive, overrideDeSesion(existingSession));
+  const ahora = new Date();
 
+  /**
+   * Tocar el interruptor de un chat SIEMPRE deja override.
+   *
+   * Antes, activar un chat sin sesión no escribía nada —"ya hereda del
+   * equipo"—, así que con el bot del equipo apagado prender la IA en un chat
+   * no hacía absolutamente nada. Lo que una persona toca, manda y queda
+   * escrito, con su nombre y su fecha.
+   */
   if (existingSession) {
-    if (existingSession.status !== status) {
-      await db.update(aiSessions).set({ status, updatedAt: new Date() }).where(eq(aiSessions.id, existingSession.id));
-    }
-    nextConversationStatus = status;
-  } else if (shouldPersistAISession(status, false)) {
-    await db.insert(aiSessions).values({ chatId, status, history: [] });
-    nextConversationStatus = status;
+    await db
+      .update(aiSessions)
+      .set({ status, isOverride: true, overrideBy: userId, overrideAt: ahora, updatedAt: ahora })
+      .where(eq(aiSessions.id, existingSession.id));
+  } else {
+    await db.insert(aiSessions).values({ chatId, status, history: [], isOverride: true, overrideBy: userId, overrideAt: ahora });
   }
+  const nextConversationStatus = status;
 
   const nextState = getEffectiveAIState(!!teamConfig?.isActive, nextConversationStatus);
   const hasStateChanged =

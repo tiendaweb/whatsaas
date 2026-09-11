@@ -1180,7 +1180,24 @@ export const aiSessions = pgTable("ai_sessions", {
   chatId: integer("chat_id")
     .notNull()
     .references(() => chats.id, { onDelete: "cascade" }),
+  /**
+   * Estado de ESTE chat. Sólo decide si el agente contesta cuando
+   * `isOverride` es true: el motor crea la sesión con "active" para guardar la
+   * conversación, y eso no puede valer como "alguien prendió la IA acá".
+   */
   status: varchar("status", { length: 20 }).default("active"),
+  /**
+   * Una persona (o un nodo de automatización) tocó el interruptor de este chat.
+   *
+   * Sin esto, apagar el bot del equipo no apagaba ningún chat donde la IA ya
+   * hubiera contestado alguna vez: la sesión que el propio motor había creado
+   * se leía como un override explícito y ganaba. Así, el 2026-09-10 el agente
+   * de Contratá Ya le escribió solo a un contacto personal con el guion de
+   * ventas, doce horas después de que apagaran el bot.
+   */
+  isOverride: boolean("is_override").notNull().default(false),
+  overrideBy: integer("override_by").references(() => users.id, { onDelete: "set null" }),
+  overrideAt: timestamp("override_at"),
   history: jsonb("history").default([]),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

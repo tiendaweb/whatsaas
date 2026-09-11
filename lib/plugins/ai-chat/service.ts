@@ -3,11 +3,11 @@ import { aiConfigs, aiSessions, chats, messages, evolutionInstances } from '@/li
 import { eq, and, gt, desc } from 'drizzle-orm';
 import { OpenAIProvider } from './providers/openai';
 import { GeminiProvider } from './providers/gemini';
-import { getDynamicTools } from './tools';
+import { getDynamicTools, SILENT_INSTRUCTION } from './tools';
 import { AIMessage, AIProvider } from './types';
 import { pusherServer } from '@/lib/pusher-server';
 import { createSystemMessage } from '@/lib/db/system-messages';
-import { shouldBlockAIProcessing } from '@/lib/ai/session-state';
+import { overrideDeSesion, shouldBlockAIProcessing } from '@/lib/ai/session-state';
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "http://localhost:8080";
 const DEFAULT_AI_DEBOUNCE_MS = 5000;
@@ -303,7 +303,11 @@ export async function processAIMessage(
 
   let session = existingSession;
 
-  if (shouldBlockAIProcessing(!!config.isActive, session?.status)) {
+  // El interruptor del chat sólo cuenta si alguien lo tocó (`is_override`). La
+  // sesión que crea este mismo motor para guardar el historial NO es una
+  // decisión de nadie: si se leyera como tal, apagar el bot del equipo no
+  // apagaría ningún chat donde ya hubiera contestado.
+  if (shouldBlockAIProcessing(!!config.isActive, overrideDeSesion(session))) {
       return false;
   }
 
@@ -311,7 +315,9 @@ export async function processAIMessage(
     const [newSession] = await db.insert(aiSessions).values({
         chatId,
         history: [],
-        status: 'active'
+        status: 'active',
+        // Sesión de trabajo, no interruptor: este chat sigue heredando del equipo.
+        isOverride: false,
     }).returning();
     session = newSession;
   }
@@ -379,7 +385,9 @@ export async function processAIMessage(
 
                     history.push({
                         role: 'tool',
-                        content: JSON.stringify(result),
+                        content: JSON.stringify(
+                            tool.silent ? { ...result, instruction: SILENT_INSTRUCTION } : result,
+                        ),
                         toolCallId: toolCall.id || toolCall.function.name,
                         toolName: toolCall.function.name,
                     });

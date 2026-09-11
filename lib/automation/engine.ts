@@ -19,7 +19,7 @@ import { eq, and } from 'drizzle-orm';
 import fs from 'fs/promises';
 import path from 'path';
 import { pusherServer } from '@/lib/pusher-server';
-import { getEffectiveAIState, shouldPersistAISession } from '@/lib/ai/session-state';
+import { getEffectiveAIState, overrideDeSesion } from '@/lib/ai/session-state';
 import type {
   AutomationCanvasEdge,
   AutomationCanvasNode,
@@ -987,26 +987,26 @@ async function executeStep(
             }),
         ]);
 
-        const previousState = getEffectiveAIState(!!teamAiConfig?.isActive, existingAiSession?.status);
-        let nextConversationStatus = existingAiSession?.status ?? null;
+        const previousState = getEffectiveAIState(!!teamAiConfig?.isActive, overrideDeSesion(existingAiSession));
+        const ahoraIa = new Date();
 
+        // Un nodo del flujo que prende o apaga la IA es una decisión explícita
+        // sobre ESE chat: deja override, igual que si lo tocara una persona.
         if (existingAiSession) {
-            if (existingAiSession.status !== action) {
-                await db.update(aiSessions)
-                    .set({ status: action, updatedAt: new Date() })
-                    .where(eq(aiSessions.id, existingAiSession.id));
-            }
-
-            nextConversationStatus = action;
-        } else if (shouldPersistAISession(action, false)) {
+            await db.update(aiSessions)
+                .set({ status: action, isOverride: true, overrideAt: ahoraIa, updatedAt: ahoraIa })
+                .where(eq(aiSessions.id, existingAiSession.id));
+        } else {
             await db.insert(aiSessions).values({
                 chatId,
                 status: action,
-                history: []
+                history: [],
+                isOverride: true,
+                overrideAt: ahoraIa,
             });
-
-            nextConversationStatus = action;
         }
+
+        const nextConversationStatus = action;
 
         const nextState = getEffectiveAIState(!!teamAiConfig?.isActive, nextConversationStatus);
 
