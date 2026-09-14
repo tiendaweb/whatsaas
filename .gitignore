@@ -61,3 +61,7 @@ postgres_data/
 # Secreto de las terminales del admin: nunca al repo
 .env.terminal
 scripts/terminal-gateway/node_modules
+
+# Configuración local de agentes/herramientas, no del producto
+.codex/
+.impeccable/

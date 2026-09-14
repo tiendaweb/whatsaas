@@ -4,6 +4,7 @@ import { createHash } from 'crypto';
 import { and, eq, gte, ilike, inArray, lte, max, ne, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { taskPatchFieldsSchema } from '@/lib/plugins/grok-connector/shared/task-patch-schema';
+import { syncPlanPrices } from '@/lib/plugins/memberships/server/prices';
 import { ensureCustomFieldsTable } from '@/lib/contacts/custom-fields';
 import { db } from '@/lib/db/drizzle';
 import {
@@ -268,7 +269,7 @@ export const grokExtendedActionTools: GrokActionTool[] = [
   },
   {
     name: 'whatspro_manage_membership_plan',
-    description: 'Crea o edita un plan de membresía con precio, frecuencia, características, visibilidad y estado.',
+    description: 'Crea o edita un plan de membresía con precio, frecuencia, características, visibilidad y estado. Un plan puede venderse en varias monedas a la vez con el campo prices (ARS, PYG y USD, por ejemplo), cada una con su importe cargado a mano.',
     inputSchema: {
       type: 'object',
       required: ['action'],
@@ -284,7 +285,23 @@ export const grokExtendedActionTools: GrokActionTool[] = [
         maintenance_amount: { type: 'integer', minimum: 0 },
         maintenance_interval_months: { type: ['integer', 'null'], minimum: 1, maximum: 240 },
         billing_label: { type: ['string', 'null'], maxLength: 100 },
-        currency: { type: 'string', minLength: 3, maxLength: 3 },
+        currency: { type: 'string', minLength: 3, maxLength: 3, description: 'Moneda principal del plan (la que se muestra por defecto).' },
+        prices: {
+          type: 'array',
+          maxItems: 20,
+          description: 'El MISMO plan en varias monedas, ej. [{"currency":"ARS","price":6000000},{"currency":"PYG","price":450000000},{"currency":"USD","price":6000}]. Importes en centavos, uno por moneda; no son conversiones automáticas. La moneda principal se agrega sola si falta. El catálogo muestra un selector con las monedas que declara la empresa (whatspro_manage_membership_company, campo currencies).',
+          items: {
+            type: 'object',
+            required: ['currency', 'price'],
+            properties: {
+              currency: { type: 'string', minLength: 3, maxLength: 3 },
+              price: { type: 'integer', minimum: 0, description: 'Importe en centavos.' },
+              setupFee: { type: 'integer', minimum: 0 },
+              maintenanceAmount: { type: 'integer', minimum: 0 },
+            },
+            additionalProperties: false,
+          },
+        },
         features: {
           type: 'array',
           maxItems: 100,
@@ -794,6 +811,12 @@ const planManageSchema = z.object({
   maintenance_interval_months: z.number().int().min(1).max(240).nullable().optional(),
   billing_label: z.string().max(100).nullable().optional(),
   currency: z.string().trim().length(3).optional(),
+  prices: z.array(z.object({
+    currency: z.string().trim().length(3),
+    price: z.number().int().min(0),
+    setupFee: z.number().int().min(0).optional(),
+    maintenanceAmount: z.number().int().min(0).optional(),
+  })).max(20).optional(),
   features: z.array(featureSchema).max(100).optional(),
   visibility: z.enum(PLAN_VISIBILITIES).optional(),
   status: z.enum(['active', 'archived']).optional(),
@@ -1346,6 +1369,7 @@ async function manageMembershipPlan(input: Record<string, unknown>, context: Gro
       maintenanceIntervalMonths: data.maintenance_interval_months ?? null,
       billingLabel: data.billing_type === 'custom' ? data.billing_label ?? null : null,
       currency: (data.currency ?? 'USD').toUpperCase(),
+      prices: syncPlanPrices({ prices: data.prices, currency: (data.currency ?? 'USD').toUpperCase(), price: data.price ?? 0 }),
       features: (data.features ?? []) as MembershipFeature[],
       visibility: data.visibility ?? 'public',
       status: data.status ?? 'active',
@@ -1374,6 +1398,16 @@ async function manageMembershipPlan(input: Record<string, unknown>, context: Gro
         ? { billingLabel: nextBillingType === 'custom' ? data.billing_label ?? current.billingLabel : null }
         : {}),
       ...(data.currency !== undefined ? { currency: data.currency.toUpperCase() } : {}),
+      ...(data.prices !== undefined || data.price !== undefined || data.currency !== undefined
+        ? {
+            prices: syncPlanPrices({
+              prices: data.prices,
+              previous: current.prices,
+              currency: (data.currency ?? current.currency).toUpperCase(),
+              price: data.price ?? current.price,
+            }),
+          }
+        : {}),
       ...(data.features !== undefined ? { features: data.features as MembershipFeature[] } : {}),
       ...(data.visibility !== undefined ? { visibility: data.visibility } : {}),
       ...(data.status !== undefined ? { status: data.status } : {}),

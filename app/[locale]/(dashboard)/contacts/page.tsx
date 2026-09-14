@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import useSWR, { mutate } from 'swr';
 import * as XLSX from 'xlsx';
 import {
-    Search, User as UserIcon, Filter, MoreVertical,
+    Search, User as UserIcon, Users, Filter, MoreVertical,
     Edit, Trash2, Phone, Save, X, Loader2, Plus, Settings2, FileSpreadsheet, Upload, Download, ArrowRightLeft, GripVertical, Pencil, Check
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -32,6 +32,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
+import '@/components/maqueta/maqueta.css';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -585,294 +586,286 @@ export default function ContactsPage() {
     };
 
     return (
-        <div className="flex flex-col h-full bg-muted p-6 overflow-hidden">
-            <header className="flex justify-between items-center mb-6 shrink-0">
-                <div>
-                    <h1 className="text-2xl font-bold text-foreground">{t('header_title')}</h1>
-                    <p className="text-sm text-muted-foreground">{t('header_subtitle')}</p>
-                </div>
-                <div className="flex gap-2">
-                     <Button variant="outline" onClick={() => setIsFieldsManagerOpen(true)}>
-                        <Settings2 className="h-4 w-4 mr-2"/>
-                        {t('custom_fields.button')}
-                     </Button>
-                     <Button onClick={() => setIsImportOpen(true)}>
-                        <Upload className="h-4 w-4 mr-2"/>
-                        {t('import_btn')}
-                     </Button>
-                </div>
-            </header>
+        <div className="maqueta pane h-full">
+            {/*
+              * La barra única de la maqueta: título, cuántos se están viendo y
+              * las acciones. Reemplaza al encabezado con margen que había antes;
+              * con 900 contactos, cada renglón que no es tabla es un renglón
+              * menos de lista.
+              */}
+            <div className="topbar">
+                <Users className="h-4 w-4 shrink-0" aria-hidden />
+                <h1>{t('header_title')}</h1>
+                <span className="sub">
+                    {filteredContacts.length === contacts.length
+                        ? `${filteredContacts.length}`
+                        : `${filteredContacts.length} de ${contacts.length}`}
+                </span>
+                <div className="sp" />
 
-            <div className="flex flex-col gap-4 mb-4 shrink-0">
-                <div className="flex items-center gap-4">
-                    <div className="relative flex-1">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input 
-                            placeholder={t('search_placeholder')} 
-                            className="pl-10 bg-background"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
-                    </div>
-                    
-                    <div className="flex gap-2">
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button variant="outline" className="bg-background">
-                                    <Filter className="h-4 w-4 mr-2" /> {t('columns_btn')}
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-56">
-                                <DropdownMenuLabel>{t('toggle_columns')}</DropdownMenuLabel>
-                                <DropdownMenuSeparator />
-                                {columns.map(col => (
-                                    <DropdownMenuCheckboxItem
-                                        key={col.id}
-                                        checked={col.visible}
-                                        onCheckedChange={(checked) => {
-                                            setColumns(prev => prev.map(c => c.id === col.id ? { ...c, visible: checked } : c));
-                                        }}
-                                    >
-                                        {col.label}
-                                    </DropdownMenuCheckboxItem>
-                                ))}
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-
-                        <Button variant="outline" className="bg-background" onClick={handleExport}>
-                            <FileSpreadsheet className="h-4 w-4 mr-2" /> {t('export_btn')}
-                        </Button>
-                    </div>
+                <div className="search">
+                    <Search />
+                    <input
+                        placeholder={t('search_placeholder')}
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        aria-label={t('search_placeholder')}
+                    />
                 </div>
 
-                <div className="flex gap-4 items-center overflow-x-auto pb-1">
-                    <Select value={filterAgent} onValueChange={setFilterAgent}>
-                        <SelectTrigger className="w-[180px] bg-background">
-                            <SelectValue placeholder={t('filter_agent')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">{t('all_agents')}</SelectItem>
-                            <SelectItem value="unassigned">{t('unassigned')}</SelectItem>
-                            {agents.map((a: any) => (
-                                <SelectItem key={a.id} value={a.id.toString()}>{a.name || a.email}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <button type="button" className="btn"><Filter className="h-3.5 w-3.5" /> {t('columns_btn')}</button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56">
+                        <DropdownMenuLabel>{t('toggle_columns')}</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {columns.map(col => (
+                            <DropdownMenuCheckboxItem
+                                key={col.id}
+                                checked={col.visible}
+                                onCheckedChange={(checked) => {
+                                    setColumns(prev => prev.map(c => c.id === col.id ? { ...c, visible: checked } : c));
+                                }}
+                            >
+                                {col.label}
+                            </DropdownMenuCheckboxItem>
+                        ))}
+                    </DropdownMenuContent>
+                </DropdownMenu>
 
-                    <Select value={filterStage} onValueChange={setFilterStage}>
-                        <SelectTrigger className="w-[180px] bg-background">
-                            <SelectValue placeholder={t('filter_stage')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">{t('all_stages')}</SelectItem>
-                            <SelectItem value="no_stage">{t('no_stage')}</SelectItem>
-                            {funnelStages?.map((s: any) => (
-                                <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-
-                    <Select value={filterTag} onValueChange={setFilterTag}>
-                        <SelectTrigger className="w-[180px] bg-background">
-                            <SelectValue placeholder={t('filter_tag')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">{t('all_tags')}</SelectItem>
-                            {allTags?.map((tag: any) => (
-                                <SelectItem key={tag.id} value={tag.id.toString()}>{tag.name}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-
-                    <Select value={filterInstance} onValueChange={setFilterInstance}>
-                        <SelectTrigger className="w-[180px] bg-background">
-                            <SelectValue placeholder={t('filter_instance')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">{t('all_instances')}</SelectItem>
-                            <SelectItem value="no_instance">{t('no_instance')}</SelectItem>
-                            {instances.map((inst) => (
-                                <SelectItem key={inst.id} value={inst.id.toString()}>{inst.instanceName}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-
-                    <Select value={filterDepartment} onValueChange={setFilterDepartment}>
-                        <SelectTrigger className="w-[180px] bg-background">
-                            <SelectValue placeholder={t('filter_department')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">{t('all_departments')}</SelectItem>
-                            <SelectItem value="no_department">{t('no_department')}</SelectItem>
-                            {departmentsList.map((dept) => (
-                                <SelectItem key={dept.id} value={dept.id.toString()}>{dept.name}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-
-                    {selectedIds.size > 0 && (
-                        <div className="ml-auto text-sm text-muted-foreground flex items-center gap-2">
-                            <span className="bg-primary/10 text-primary px-2 py-1 rounded-md font-medium">
-                                {selectedIds.size} {t('selected_count')}
-                            </span>
-                            <Button variant="outline" size="sm" onClick={() => setIsBulkMoveOpen(true)} className="h-7 px-2">
-                                <ArrowRightLeft className="h-3 w-3 mr-1" /> {t('move_btn')}
-                            </Button>
-                            <Button variant="destructive" size="sm" onClick={() => setIsBulkDeleteOpen(true)} className="h-7 px-2">
-                                <Trash2 className="h-3 w-3 mr-1" /> {t('delete_btn')}
-                            </Button>
-                            <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())} className="h-7 px-2">
-                                <X className="h-3 w-3 mr-1" /> {t('clear_selection')}
-                            </Button>
-                        </div>
-                    )}
-                </div>
+                <button type="button" className="btn" onClick={handleExport}>
+                    <FileSpreadsheet className="h-3.5 w-3.5" /> {t('export_btn')}
+                </button>
+                <button type="button" className="btn" onClick={() => setIsFieldsManagerOpen(true)}>
+                    <Settings2 className="h-3.5 w-3.5" /> {t('custom_fields.button')}
+                </button>
+                <button type="button" className="btn g" onClick={() => setIsImportOpen(true)}>
+                    <Upload className="h-3.5 w-3.5" /> {t('import_btn')}
+                </button>
             </div>
 
-            <div className="flex-1 bg-background rounded-xl border border-border shadow-sm overflow-hidden flex flex-col relative">
-                <div className="flex-1 overflow-auto">
-                    <div className="min-w-max"> 
-                        <div className="flex border-b bg-muted/50 sticky top-0 z-20">
-                            <div className="w-[50px] shrink-0 border-r flex items-center justify-center px-4 py-3 bg-muted/50">
-                                <Checkbox 
-                                    checked={filteredContacts.length > 0 && filteredContacts.every(c => selectedIds.has(c.id))}
-                                    onCheckedChange={handleSelectAll}
-                                />
-                            </div>
-                            {columns.filter(c => c.visible).map(col => (
-                                <div 
-                                    key={col.id} 
-                                    style={{ width: col.width, minWidth: col.width }}
-                                    className="relative px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center shrink-0 border-r last:border-r-0 bg-muted/50"
-                                >
-                                    <span className="truncate">{col.label}</span>
-                                    <div 
-                                        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 transition-colors"
-                                        onMouseDown={(e) => handleMouseDown(e, col.id)}
-                                    />
-                                </div>
-                            ))}
-                            <div className="w-[60px] shrink-0 border-l bg-muted/95 backdrop-blur-sm px-4 py-3 flex justify-center sticky right-0 z-30 ml-auto shadow-[-5px_0px_10px_rgba(0,0,0,0.02)]"></div>
-                        </div>
+            {/* El renglón de filtros: los mismos cinco de siempre, ahora
+                rotulados, y las acciones de la selección al final. */}
+            <div className="filtros">
+                <label className="selcampo">
+                    <span className="rot">{t('filter_agent')}</span>
+                    <select value={filterAgent} onChange={(e) => setFilterAgent(e.target.value)}>
+                        <option value="all">{t('all_agents')}</option>
+                        <option value="unassigned">{t('unassigned')}</option>
+                        {agents.map((a: any) => (
+                            <option key={a.id} value={a.id.toString()}>{a.name || a.email}</option>
+                        ))}
+                    </select>
+                </label>
 
-                        <div className="">
-                            {loadingContacts || loadingFields ? (
-                                <div className="flex justify-center items-center h-40 w-full">
-                                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                                </div>
-                            ) : filteredContacts.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center h-64 text-muted-foreground w-full">
-                                    <UserIcon className="h-12 w-12 mb-2 opacity-20" />
-                                    <p>{t('no_contacts_found')}</p>
-                                </div>
-                            ) : (
-                                filteredContacts.map(contact => (
-                                    <div key={contact.id} className="flex border-b last:border-0 hover:bg-muted/50 transition-colors items-center h-[72px]">
-                                        <div className="w-[50px] shrink-0 border-r flex items-center justify-center h-full">
-                                            <Checkbox 
-                                                checked={selectedIds.has(contact.id)}
-                                                onCheckedChange={() => toggleSelection(contact.id)}
-                                            />
-                                        </div>
-                                        {columns.filter(c => c.visible).map(col => (
-                                            <div 
-                                                key={col.id} 
-                                                style={{ width: col.width, minWidth: col.width }}
-                                                className="px-4 shrink-0 overflow-hidden flex items-center border-r last:border-r-0 h-full"
-                                            >
-                                                {col.id === 'contact' && (
-                                                    <div className="flex items-center gap-3 overflow-hidden w-full">
-                                                        <Avatar className="h-10 w-10 border border-border shrink-0">
-                                                            <AvatarImage src={contact.profilePicUrl} />
-                                                            <AvatarFallback className="bg-primary/10 text-primary">{contact.name.substring(0, 2).toUpperCase()}</AvatarFallback>
-                                                        </Avatar>
-                                                        <div className="overflow-hidden">
-                                                            <p className="font-medium text-foreground truncate">{contact.name}</p>
-                                                            <div className="flex items-center text-xs text-muted-foreground truncate">
-                                                                <Phone className="h-3 w-3 mr-1" />
-                                                                {contact.phone || 'N/A'}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                {col.id === 'instance' && (
-                                                    contact.instanceName ? (
-                                                        <Badge variant="outline" className="bg-muted font-normal border-border truncate">
-                                                            {contact.instanceName}
-                                                        </Badge>
-                                                    ) : <span className="text-xs text-muted-foreground italic">{t('no_instance')}</span>
-                                                )}
-                                                {col.id === 'stage' && (
-                                                    contact.funnelStage ? (
-                                                        <Badge variant="outline" className="bg-muted font-normal border-border truncate">
-                                                            {contact.funnelStage.emoji} {contact.funnelStage.name}
-                                                        </Badge>
-                                                    ) : <span className="text-xs text-muted-foreground italic">{t('no_stage')}</span>
-                                                )}
-                                                {col.id === 'agent' && (
-                                                    contact.assignedUser ? (
-                                                        <div className="flex items-center gap-2 overflow-hidden">
-                                                            <Avatar className="h-6 w-6 shrink-0">
-                                                                <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-                                                                    {(contact.assignedUser.name || contact.assignedUser.email || '??').substring(0, 2).toUpperCase()}
-                                                                </AvatarFallback>
-                                                            </Avatar>
-                                                            <span className="text-sm text-foreground truncate">{contact.assignedUser.name || contact.assignedUser.email || "Unknown"}</span>
-                                                        </div>
-                                                    ) : <span className="text-xs text-muted-foreground italic">{t('unassigned')}</span>
-                                                )}
-                                                {col.id === 'department' && (
-                                                    contact.assignedDepartment ? (
-                                                        <Badge variant="outline" className="bg-muted font-normal border-border truncate">
-                                                            {contact.assignedDepartment.name}
-                                                        </Badge>
-                                                    ) : <span className="text-xs text-muted-foreground italic">{t('no_department')}</span>
-                                                )}
-                                                {col.id === 'tags' && (
-                                                    <div className="flex gap-1 overflow-hidden flex-nowrap">
-                                                        {contact.tags.slice(0, 2).map(tag => (
-                                                            <Badge key={tag.id} variant="secondary" className="text-[10px] px-1.5 h-5 shrink-0">
-                                                                {tag.name}
-                                                            </Badge>
-                                                        ))}
-                                                        {contact.tags.length > 2 && (
-                                                            <Badge variant="secondary" className="text-[10px] px-1.5 h-5 shrink-0">+{contact.tags.length - 2}</Badge>
-                                                        )}
-                                                    </div>
-                                                )}
-                                                {col.isCustom && contact.customData && (
-                                                    <span className="text-sm text-foreground truncate">
-                                                        {col.type === 'boolean' 
-                                                            ? (contact.customData[col.fieldKey!] ? t('yes') : t('no'))
-                                                            : contact.customData[col.fieldKey!]
-                                                        }
-                                                    </span>
-                                                )}
-                                            </div>
-                                        ))}
-                                        <div className="w-[60px] shrink-0 px-4 flex justify-center sticky right-0 h-full items-center bg-background/95 backdrop-blur-sm border-l ml-auto z-10 shadow-[-5px_0px_10px_rgba(0,0,0,0.02)]">
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-                                                        <MoreVertical className="h-4 w-4" />
-                                                    </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end">
-                                                    <DropdownMenuItem onClick={() => handleEditClick(contact)}>
-                                                        <Edit className="h-4 w-4 mr-2" /> {t('edit_menu')}
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem className="text-destructive" onClick={() => handleDeleteClick(contact)}>
-                                                        <Trash2 className="h-4 w-4 mr-2" /> {t('delete_menu')}
-                                                    </DropdownMenuItem>
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
+                <label className="selcampo">
+                    <span className="rot">{t('filter_stage')}</span>
+                    <select value={filterStage} onChange={(e) => setFilterStage(e.target.value)}>
+                        <option value="all">{t('all_stages')}</option>
+                        <option value="no_stage">{t('no_stage')}</option>
+                        {funnelStages?.map((s: any) => (
+                            <option key={s.id} value={s.id.toString()}>{s.name}</option>
+                        ))}
+                    </select>
+                </label>
+
+                <label className="selcampo">
+                    <span className="rot">{t('filter_tag')}</span>
+                    <select value={filterTag} onChange={(e) => setFilterTag(e.target.value)}>
+                        <option value="all">{t('all_tags')}</option>
+                        {allTags?.map((tag: any) => (
+                            <option key={tag.id} value={tag.id.toString()}>{tag.name}</option>
+                        ))}
+                    </select>
+                </label>
+
+                <label className="selcampo">
+                    <span className="rot">{t('filter_instance')}</span>
+                    <select value={filterInstance} onChange={(e) => setFilterInstance(e.target.value)}>
+                        <option value="all">{t('all_instances')}</option>
+                        <option value="no_instance">{t('no_instance')}</option>
+                        {instances.map((inst) => (
+                            <option key={inst.id} value={inst.id.toString()}>{inst.instanceName}</option>
+                        ))}
+                    </select>
+                </label>
+
+                <label className="selcampo">
+                    <span className="rot">{t('filter_department')}</span>
+                    <select value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)}>
+                        <option value="all">{t('all_departments')}</option>
+                        <option value="no_department">{t('no_department')}</option>
+                        {departmentsList.map((dept) => (
+                            <option key={dept.id} value={dept.id.toString()}>{dept.name}</option>
+                        ))}
+                    </select>
+                </label>
+
+                {selectedIds.size > 0 && (
+                    <div className="ml-auto flex items-center gap-2">
+                        <span className="chip" style={{ background: 'color-mix(in srgb, var(--mq-green) 14%, transparent)', color: 'var(--mq-green)' }}>
+                            {selectedIds.size} {t('selected_count')}
+                        </span>
+                        <button type="button" className="btn sm" onClick={() => setIsBulkMoveOpen(true)}>
+                            <ArrowRightLeft className="h-3 w-3" /> {t('move_btn')}
+                        </button>
+                        <button type="button" className="btn sm peligro" onClick={() => setIsBulkDeleteOpen(true)}>
+                            <Trash2 className="h-3 w-3" /> {t('delete_btn')}
+                        </button>
+                        <button type="button" className="btn sm ghost" onClick={() => setSelectedIds(new Set())}>
+                            <X className="h-3 w-3" /> {t('clear_selection')}
+                        </button>
                     </div>
-                </div>
+                )}
+            </div>
+
+            <div className="tbl-wrap">
+                {loadingContacts || loadingFields ? (
+                    <div className="flex h-40 w-full items-center justify-center">
+                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    </div>
+                ) : filteredContacts.length === 0 ? (
+                    <div className="vacio">
+                        <UserIcon className="mx-auto mb-2 h-10 w-10 opacity-20" />
+                        <p>{t('no_contacts_found')}</p>
+                    </div>
+                ) : (
+                    <table className="tbl">
+                        <thead>
+                            <tr>
+                                <th style={{ width: 44 }}>
+                                    <Checkbox
+                                        checked={filteredContacts.length > 0 && filteredContacts.every(c => selectedIds.has(c.id))}
+                                        onCheckedChange={handleSelectAll}
+                                        aria-label={t('toggle_columns')}
+                                    />
+                                </th>
+                                {columns.filter(c => c.visible).map(col => (
+                                    <th key={col.id} style={{ width: col.width, minWidth: col.width, position: 'relative' }}>
+                                        {col.label}
+                                        {/* El agarre para cambiar el ancho: sigue siendo el mismo
+                                            arrastre de antes, ahora sobre el borde de la celda. */}
+                                        <span
+                                            role="presentation"
+                                            className="absolute inset-y-0 right-0 w-1 cursor-col-resize hover:bg-primary/50"
+                                            onMouseDown={(e) => handleMouseDown(e, col.id)}
+                                        />
+                                    </th>
+                                ))}
+                                <th style={{ width: 52 }} />
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filteredContacts.map(contact => (
+                                <tr
+                                    key={contact.id}
+                                    className={selectedIds.has(contact.id) ? 'sel' : ''}
+                                    onClick={() => toggleSelection(contact.id)}
+                                >
+                                    <td onClick={(e) => e.stopPropagation()}>
+                                        <Checkbox
+                                            checked={selectedIds.has(contact.id)}
+                                            onCheckedChange={() => toggleSelection(contact.id)}
+                                            aria-label={contact.name}
+                                        />
+                                    </td>
+                                    {columns.filter(c => c.visible).map(col => (
+                                        <td key={col.id} style={{ width: col.width, minWidth: col.width, maxWidth: col.width }}>
+                                            {col.id === 'contact' && (
+                                                <div className="cell-name">
+                                                    <Avatar className="h-8 w-8 shrink-0 border border-border">
+                                                        <AvatarImage src={contact.profilePicUrl} />
+                                                        <AvatarFallback className="bg-primary/10 text-[11px] text-primary">
+                                                            {contact.name.substring(0, 2).toUpperCase()}
+                                                        </AvatarFallback>
+                                                    </Avatar>
+                                                    <div className="min-w-0">
+                                                        <div className="nm">{contact.name}</div>
+                                                        <div className="mono" style={{ fontSize: 11, color: 'var(--mq-muted)' }}>
+                                                            {contact.phone || '—'}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {col.id === 'instance' && (
+                                                contact.instanceName
+                                                    ? <span className="chip" style={{ background: 'var(--mq-card3)', color: 'var(--mq-muted)' }}>{contact.instanceName}</span>
+                                                    : <span style={{ color: 'var(--mq-muted2)' }}>—</span>
+                                            )}
+                                            {col.id === 'stage' && (
+                                                contact.funnelStage
+                                                    ? <span className="chip" style={{ background: 'var(--mq-card3)', color: 'var(--mq-text)' }}>
+                                                        {contact.funnelStage.emoji} {contact.funnelStage.name}
+                                                      </span>
+                                                    : <span style={{ color: 'var(--mq-muted2)' }}>—</span>
+                                            )}
+                                            {col.id === 'agent' && (
+                                                contact.assignedUser ? (
+                                                    <div className="flex items-center gap-2 overflow-hidden">
+                                                        <Avatar className="h-5 w-5 shrink-0">
+                                                            <AvatarFallback className="bg-primary/10 text-[9px] text-primary">
+                                                                {(contact.assignedUser.name || contact.assignedUser.email || '??').substring(0, 2).toUpperCase()}
+                                                            </AvatarFallback>
+                                                        </Avatar>
+                                                        <span className="truncate">{contact.assignedUser.name || contact.assignedUser.email}</span>
+                                                    </div>
+                                                ) : <span style={{ color: 'var(--mq-muted2)' }}>{t('unassigned')}</span>
+                                            )}
+                                            {col.id === 'department' && (
+                                                contact.assignedDepartment
+                                                    ? <span className="chip" style={{ background: 'var(--mq-card3)', color: 'var(--mq-muted)' }}>{contact.assignedDepartment.name}</span>
+                                                    : <span style={{ color: 'var(--mq-muted2)' }}>—</span>
+                                            )}
+                                            {col.id === 'tags' && (
+                                                <div className="flex flex-nowrap gap-1 overflow-hidden">
+                                                    {contact.tags.slice(0, 2).map(tag => (
+                                                        <span
+                                                            key={tag.id}
+                                                            className="chip"
+                                                            style={{ color: tag.color, background: `${tag.color}22`, border: `1px solid ${tag.color}33` }}
+                                                        >
+                                                            {tag.name}
+                                                        </span>
+                                                    ))}
+                                                    {contact.tags.length > 2 && (
+                                                        <span className="chip" style={{ background: 'var(--mq-card3)', color: 'var(--mq-muted)' }}>
+                                                            +{contact.tags.length - 2}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {col.isCustom && (
+                                                <span className="truncate">
+                                                    {col.type === 'boolean'
+                                                        ? (contact.customData?.[col.fieldKey!] ? t('yes') : t('no'))
+                                                        : (contact.customData?.[col.fieldKey!] ?? '')}
+                                                </span>
+                                            )}
+                                        </td>
+                                    ))}
+                                    <td onClick={(e) => e.stopPropagation()}>
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <button type="button" className="btn sm ghost" aria-label={t('edit_menu')}>
+                                                    <MoreVertical className="h-4 w-4" />
+                                                </button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end">
+                                                <DropdownMenuItem onClick={() => handleEditClick(contact)}>
+                                                    <Edit className="mr-2 h-4 w-4" /> {t('edit_menu')}
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem className="text-destructive" onClick={() => handleDeleteClick(contact)}>
+                                                    <Trash2 className="mr-2 h-4 w-4" /> {t('delete_menu')}
+                                                </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
             </div>
 
             <Dialog open={isFieldsManagerOpen} onOpenChange={(open) => { setIsFieldsManagerOpen(open); if (!open) setEditingFieldId(null); }}>

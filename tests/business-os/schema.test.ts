@@ -54,7 +54,7 @@ test('team_financial_entries suma las relaciones opcionales de Fase 1 (sale, pro
 test('team_events gana kind/subtype/outcome/nextAction/customerId/relatedEventId', () => {
   const start = schemaSource.indexOf('export const teamEvents = pgTable(');
   assert.ok(start >= 0);
-  const slice = schemaSource.slice(start, start + 2200);
+  const slice = schemaSource.slice(start, start + 3400);
   assert.match(slice, /kind: varchar\("kind", \{ length: 20 \}\)\.\$type<"meeting" \| "call">\(\)\.notNull\(\)\.default\("meeting"\)/);
   assert.match(slice, /subtype: varchar\("subtype", \{ length: 40 \}\)/);
   assert.match(slice, /outcome: text\("outcome"\)\.notNull\(\)\.default\(""\)/);

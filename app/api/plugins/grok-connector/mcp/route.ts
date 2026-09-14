@@ -353,6 +353,15 @@ const PRIORITY_TOOLS = [
   'whatspro_pending_audios',
   'whatspro_files_list',
   'whatspro_files_get',
+  // Automatizaciones: ChatGPT corta catálogos grandes; lectura y escritura
+  // tienen que quedar juntas para que no concluya que el conector es read-only.
+  'whatspro_automation_guide',
+  'whatspro_inspect_automation',
+  'whatspro_replace_automation_flow',
+  'whatspro_manage_automation_node',
+  'whatspro_manage_automation_edge',
+  'whatspro_manage_automation',
+  'whatspro_manage_automation_folder',
   // Contexto de un cliente antes de contestarle.
   'whatspro_contact_graph',
   'whatspro_customer_360',
