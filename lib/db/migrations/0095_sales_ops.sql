@@ -221,5 +221,10 @@ CREATE INDEX IF NOT EXISTS "team_prompt_runs_key_idx" ON "team_prompt_runs" ("te
 
 -- Plugin: apagado por defecto, activado sólo para el equipo 2.
 INSERT INTO plugin_system_states (plugin_id, enabled_by_default) VALUES ('sales-ops', false) ON CONFLICT DO NOTHING;
+-- Sólo si ese equipo y ese usuario existen: en una instalación nueva no hay
+-- ninguno de los dos y la migración fallaba por la clave foránea, cortando la
+-- instalación a mitad de camino. Ahí el plugin se habilita desde Admin.
 INSERT INTO team_plugins (team_id, plugin_id, installed, enabled, settings, installed_by, installed_at, updated_at)
-  VALUES (2, 'sales-ops', true, true, '{}'::jsonb, 3, now(), now()) ON CONFLICT DO NOTHING;
+  SELECT 2, 'sales-ops', true, true, '{}'::jsonb, 3, now(), now()
+  WHERE EXISTS (SELECT 1 FROM teams WHERE id = 2) AND EXISTS (SELECT 1 FROM users WHERE id = 3)
+  ON CONFLICT DO NOTHING;

@@ -1,0 +1,71 @@
+# WhatsPro — instalación nueva en su propio dominio.
+#
+# Copiá esta carpeta al servidor nuevo junto con el repo y levantá desde acá:
+#
+#   cd /root/whatsaas/deploy
+#   cp .env.deploy.example .env        # completá APP_DOMAIN y los puertos
+#   docker compose up -d
+#
+# Todo lo que cambia entre una instalación y otra sale del .env de esta carpeta:
+# no hay dominios ni rutas escritos a mano acá adentro. El .env de la aplicación
+# (claves, base, Evolution) sigue siendo el de la raíz del repo.
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    container_name: ${POSTGRES_CONTAINER:-whatspro-postgres}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      # Cambiala SIEMPRE: con el puerto publicado, "postgres" es una invitación.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?definí POSTGRES_PASSWORD en deploy/.env}
+    ports:
+      # Sólo local: la app entra por la red de docker, no por el puerto.
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-54322}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    image: node:20-alpine
+    container_name: ${APP_CONTAINER:-whatspro-app}
+    working_dir: /app
+    env_file:
+      - ${REPO_PATH:-..}/.env
+    # ffmpeg (audios de WhatsApp) se instala al arrancar, pero el arranque NO
+    # depende de él: si el mirror de Alpine se cuelga, la app tiene que subir
+    # igual. Por eso el `;` y no un `&&`.
+    command:
+      - sh
+      - -c
+      - (timeout 90 apk add --no-cache ffmpeg || echo "[arranque] ffmpeg no se pudo instalar; la app sube igual") ; npm run start
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      POSTGRES_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-postgres}
+    ports:
+      - "127.0.0.1:${APP_HOST_PORT:-3000}:3000"
+    volumes:
+      - ${REPO_PATH:-..}:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-deploy_default}
+      # El nombre del router tiene que ser único dentro del mismo Traefik: si
+      # dos instalaciones lo comparten, la segunda pisa a la primera.
+      - traefik.http.routers.${TRAEFIK_ROUTER:-whatspro}.rule=Host(`${APP_DOMAIN}`) || Host(`www.${APP_DOMAIN}`)
+      - traefik.http.routers.${TRAEFIK_ROUTER:-whatspro}.entrypoints=websecure
+      - traefik.http.routers.${TRAEFIK_ROUTER:-whatspro}.tls=true
+      - traefik.http.routers.${TRAEFIK_ROUTER:-whatspro}.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}
+      - traefik.http.services.${TRAEFIK_ROUTER:-whatspro}.loadbalancer.server.port=3000
+
+volumes:
+  postgres_data:

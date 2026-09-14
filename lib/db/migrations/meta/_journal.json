@@ -750,6 +750,13 @@
       "when": 1789510400000,
       "tag": "0116_membership_company_currencies",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1789596800000,
+      "tag": "0117_columnas_faltantes",
+      "breakpoints": true
     }
   ]
 }
