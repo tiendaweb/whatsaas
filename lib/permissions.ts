@@ -24,6 +24,12 @@ export type MemberPermissions = {
   dealsWrite: boolean;
   salesOpsRead: boolean;
   salesOpsWrite: boolean;
+  empresaRead: boolean;
+  empresaWrite: boolean;
+  marketingRead: boolean;
+  marketingWrite: boolean;
+  iaRead: boolean;
+  iaWrite: boolean;
   customersRead: boolean;
   customersWrite: boolean;
   aappSpaceRead: boolean;
@@ -93,6 +99,12 @@ export const ROLE_PRESETS: Record<TeamRole, MemberPermissions> = {
     dealsWrite: true,
     salesOpsRead: true,
     salesOpsWrite: true,
+    empresaRead: true,
+    empresaWrite: true,
+    marketingRead: true,
+    marketingWrite: true,
+    iaRead: true,
+    iaWrite: true,
     customersRead: true,
     customersWrite: true,
     aappSpaceRead: true,
@@ -156,6 +168,12 @@ export const ROLE_PRESETS: Record<TeamRole, MemberPermissions> = {
     dealsWrite: true,
     salesOpsRead: true,
     salesOpsWrite: true,
+    empresaRead: true,
+    empresaWrite: true,
+    marketingRead: true,
+    marketingWrite: true,
+    iaRead: true,
+    iaWrite: true,
     customersRead: true,
     customersWrite: true,
     aappSpaceRead: true,
@@ -219,6 +237,12 @@ export const ROLE_PRESETS: Record<TeamRole, MemberPermissions> = {
     dealsWrite: false,
     salesOpsRead: false,
     salesOpsWrite: false,
+    empresaRead: false,
+    empresaWrite: false,
+    marketingRead: false,
+    marketingWrite: false,
+    iaRead: false,
+    iaWrite: false,
     customersRead: false,
     customersWrite: false,
     aappSpaceRead: false,

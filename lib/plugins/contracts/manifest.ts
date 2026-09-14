@@ -11,7 +11,10 @@ const manifest: AppPluginManifest<typeof contractsSettingsSchema> = {
   activationMode: 'user',
   scopes: ['dashboard.nav', 'dashboard.page'],
   routes: [{ path: '/plugins/contracts', title: 'Contratos', scope: 'dashboard.page' }],
-  navItems: [{ label: 'Contratos', href: '/plugins/contracts', icon: 'FileSignature', order: 65, requiredPermission: 'contracts.read' }],
+  // Sin entrada propia en el menú: se entra por la app Empresa, que es la que
+  // agrupa la gestión del negocio. La ruta y los permisos siguen igual, así que
+  // los enlaces guardados y los favoritos siguen abriendo esta app.
+  navItems: [],
   settingsSchema: contractsSettingsSchema,
   featureFlags: [],
 };

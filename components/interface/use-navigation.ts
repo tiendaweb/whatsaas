@@ -7,7 +7,7 @@ import {
   CreditCard, Crown, FileSignature, FileStack, FileText, Files, Globe, Inbox, LayoutGrid, Radar,
   LayoutTemplate, LayoutDashboard as DesktopIcon, LifeBuoy, Megaphone, MessageCircle,
   NotebookText, Package, PanelsTopLeft, PieChart, Plug, Receipt, Server, ShoppingCart,
-  Sparkles, Store, UserCheck, UserCog, Users, Wand2, Zap, type LucideIcon, Target,
+  Sparkles, Store, Target, UserCheck, UserCog, Users, Wand2, Zap, type LucideIcon,
 } from 'lucide-react';
 import type { MemberPermissions } from '@/lib/permissions';
 import {
@@ -16,6 +16,7 @@ import {
   isAppsOnlyItem,
   isMainNavOnlyItem,
 } from '@/lib/menu/core-nav-items';
+import { estaAgrupada } from '@/lib/menu/agrupadas';
 
 /**
  * Fuente única de la navegación del producto.
@@ -68,7 +69,6 @@ export const NAV_PERMISSION_MAP: Record<string, keyof Omit<MemberPermissions, 'c
 };
 
 export const APP_VISUAL: Record<string, { gradient: string; iconColor: string }> = {
-  '/dashboard?view=tasks':        { gradient: 'from-slate-600 to-slate-800',    iconColor: 'text-white' },
   '/plugins/notes':               { gradient: 'from-violet-500 to-purple-600',  iconColor: 'text-white' },
   '/plugins/calendar':            { gradient: 'from-blue-500 to-cyan-500',      iconColor: 'text-white' },
   '/plugins/domains':             { gradient: 'from-emerald-500 to-teal-600',   iconColor: 'text-white' },
@@ -89,6 +89,9 @@ export const APP_VISUAL: Record<string, { gradient: string; iconColor: string }>
   '/plugins/radar':               { gradient: 'from-indigo-500 to-violet-600',  iconColor: 'text-white' },
   '/plugins/deals':               { gradient: 'from-green-600 to-emerald-500',  iconColor: 'text-white' },
   '/plugins/sales-ops':           { gradient: 'from-slate-800 to-emerald-600',  iconColor: 'text-white' },
+  '/plugins/empresa':             { gradient: 'from-slate-800 to-sky-600',      iconColor: 'text-white' },
+  '/plugins/marketing':           { gradient: 'from-fuchsia-600 to-violet-700',  iconColor: 'text-white' },
+  '/plugins/ia':                  { gradient: 'from-cyan-500 to-blue-700',       iconColor: 'text-white' },
   '/plugins/sales-ops/studio':    { gradient: 'from-[#f43f8e] to-[#ff2e4d]',    iconColor: 'text-white' },
   '/plugins/dev-center':          { gradient: 'from-zinc-900 to-emerald-700',   iconColor: 'text-white' },
   '/plugins/form-builder':        { gradient: 'from-teal-500 to-cyan-600',      iconColor: 'text-white' },
@@ -110,7 +113,6 @@ export const APP_VISUAL: Record<string, { gradient: string; iconColor: string }>
 };
 
 export const APP_LABEL_OVERRIDE: Record<string, string> = {
-  '/dashboard?view=tasks':       'Tareas',
   '/plugins/notes':              'Tareas',
   '/plugins/calendar':           'Calendario',
   '/plugins/domains':            'Dominios',
@@ -129,6 +131,9 @@ export const APP_LABEL_OVERRIDE: Record<string, string> = {
   '/plugins/radar':              'Radar',
   '/plugins/deals':              'Oportunidades',
   '/plugins/sales-ops':          'Command Center',
+  '/plugins/empresa':            'Empresa',
+  '/plugins/marketing':          'Marketing',
+  '/plugins/ia':                 'IA',
   '/plugins/sales-ops/studio':   'Prompt Studio',
   '/plugins/dev-center':         'Centro de Desarrollo',
   '/plugins/form-builder':       'Formularios',
@@ -179,7 +184,6 @@ export function useNavegacion() {
 
   const coreDefs: Array<{ href: string; icon: LucideIcon; label: string; feature: string | null }> = [
     { href: '/dashboard', icon: MessageCircle, label: t('chats'), feature: null },
-    { href: '/dashboard?view=tasks', icon: CheckSquare, label: t('tasks'), feature: null },
     { href: '/automation', icon: Zap, label: t('automation'), feature: 'isFlowBuilderEnabled' },
     { href: '/settings/ai', icon: Bot, label: t('ai_agent'), feature: 'isAiEnabled' },
     { href: '/contacts', icon: Users, label: t('contacts'), feature: null },
@@ -191,6 +195,9 @@ export function useNavegacion() {
   ];
 
   const coreCandidates = coreDefs
+    // Analytics, Plantillas y Campañas se mudaron adentro de Marketing: lo
+    // agrupado no se repite suelto, sea del núcleo o de un plugin.
+    .filter((item) => !estaAgrupada(item.href))
     .filter((item) => {
       if (item.feature && features?.[item.feature] !== true) return false;
       const permKey = NAV_PERMISSION_MAP[item.href];
@@ -213,6 +220,9 @@ export function useNavegacion() {
 
   const pluginCandidates = pluginNavList
     .filter((item) => !item.href.startsWith('/plugins/marketplace'))
+    // Lo que vive adentro de Empresa o Marketing no se repite suelto: ni
+    // fijado en el menú ni como icono en el lanzador. Se entra por su hub.
+    .filter((item) => !estaAgrupada(item.href))
     .map((item, idx) => {
       const override = overrides.get(item.href);
       const defaultPinned = !APPS_LAUNCHER_PREFIXES.some((prefix) => item.href.startsWith(prefix));

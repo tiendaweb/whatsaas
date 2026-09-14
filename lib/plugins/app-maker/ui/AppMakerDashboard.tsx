@@ -2,11 +2,12 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
-import { Archive, Blocks, Eye, LayoutTemplate, Loader2, Plus, Rocket, Search, Settings2 } from 'lucide-react';
+import { Archive, Blocks, ExternalLink, Eye, LayoutGrid, LayoutTemplate, Loader2, PanelsTopLeft, Plus, Rocket, Search, Settings2, type LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { APPS_AGRUPADAS } from '../shared/agrupadas';
 
 const fetcher = async (url: string) => {
   const response = await fetch(url, { cache: 'no-store' });
@@ -41,6 +42,9 @@ type Catalog = {
 const ACCENT_DOT: Record<string, string> = {
   emerald: 'bg-emerald-500', blue: 'bg-blue-500', violet: 'bg-violet-500', rose: 'bg-rose-500', amber: 'bg-amber-500', slate: 'bg-slate-500',
 };
+
+/** Los iconos de lo agrupado. El nombre viaja como texto en la lista. */
+const ICONOS_AGRUPADAS: Record<string, LucideIcon> = { PanelsTopLeft, LayoutGrid };
 
 export function AppMakerDashboard() {
   const { data, error, isLoading, mutate } = useSWR<{ apps: AppSummary[] }>('/api/plugins/app-maker/apps', fetcher);
@@ -89,6 +93,30 @@ export function AppMakerDashboard() {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-8 p-4 sm:p-6">
+        {/* Lo que el equipo ya construye por otros medios. Vive acá adentro
+            porque es el mismo trabajo —armar algo y publicarlo— y tenerlo en
+            tres iconos sueltos del lanzador escondía que son lo mismo. */}
+        <section className="space-y-3" aria-labelledby="am-agrupadas">
+          <div>
+            <h2 id="am-agrupadas" className="text-base font-semibold">Lo que ya construiste</h2>
+            <p className="text-xs text-muted-foreground">Sitios publicados y mini apps instaladas, junto con lo que armes acá.</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {APPS_AGRUPADAS.map((app) => {
+              const Icono = ICONOS_AGRUPADAS[app.icono] ?? Blocks;
+              return (
+                <a key={app.href} href={app.href} className="group flex items-start gap-3 rounded-xl border bg-card p-4 transition-colors hover:bg-muted/40">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Icono className="size-5" /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5"><span className="font-semibold">{app.label}</span><ExternalLink className="size-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" aria-hidden /></span>
+                    <span className="mt-1 block text-sm text-muted-foreground">{app.descripcion}</span>
+                  </span>
+                </a>
+              );
+            })}
+          </div>
+        </section>
+
         <section className="space-y-3">
           <div><h2 className="text-base font-semibold">Comenzar desde una estructura</h2><p className="text-xs text-muted-foreground">Dos apps distintas, sin frontend específico: el mismo runtime resuelve ambas definiciones.</p></div>
           <div className="grid gap-3 md:grid-cols-2">

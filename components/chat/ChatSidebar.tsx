@@ -88,7 +88,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from '@/lib/utils';
-import { daysUntil, serviceUrgency, type ServiceUrgency } from '@/lib/aapp/subscription';
 import { ChatAgendaPicker } from '@/components/dashboard/ChatAgendaPicker';
 import { CommercialPanel } from '@/components/chat/CommercialPanel';
 import { ContactTaskPanel } from '@/components/chat/ContactTaskPanel';
@@ -97,6 +96,13 @@ import { CustomerProfileDialog } from '@/components/chat/CustomerProfileDialog';
 import { RadarPanel } from '@/lib/plugins/radar/ui/RadarPanel';
 import { isRadarEnabledInNav } from '@/lib/plugins/radar/shared/constants';
 import { Radar as RadarIcon } from 'lucide-react';
+import { Handshake, Wand2 } from 'lucide-react';
+import { CommandCenterChip, trabajoEnCola, usePanelCommandCenter } from '@/components/chat/panel/CommandCenter';
+import { ComercialTab } from '@/components/chat/panel/ComercialTab';
+import { ClienteTab } from '@/components/chat/panel/ClienteTab';
+import { IaTab } from '@/components/chat/panel/IaTab';
+import type { ClienteVinculado } from '@/components/chat/panel/tipos';
+import '@/components/maqueta/maqueta.css';
 
 type Agent = Pick<import('@/lib/db/schema').User, 'id' | 'name' | 'email'>;
 
@@ -145,6 +151,9 @@ type DepartmentRef = {
   name: string;
 };
 
+/** Las seis pestañas del panel, en el orden de la grilla de 3×2. */
+type PanelTab = 'datos' | 'comercial' | 'cliente' | 'ia' | 'radar' | 'archivos';
+
 type ContactData = {
   id: number;
   name: string;
@@ -158,36 +167,8 @@ type ContactData = {
   updatedAt?: string | null;
 };
 
-type AappSpaceContactSummary = {
-  customer: { id: number; name: string; email: string | null; phone: string | null };
-  subscription: {
-    id: number;
-    status: string;
-    paymentStatus: string;
-    startDate: string;
-    endDate: string | null;
-    planName: string | null;
-    billingType: string;
-  } | null;
-  websites: Array<{ id: number; title: string; url: string | null; status: string | null }>;
-};
-
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 const BUSINESS_WOMAN_SLUG = 'business-woman-planner';
-
-const AAPP_SERVICE_BADGE: Record<ServiceUrgency, string> = {
-  expired: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
-  critical: 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-300',
-  warning: 'bg-yellow-100 text-yellow-900 dark:bg-yellow-900/30 dark:text-yellow-300',
-  ok: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
-};
-
-const AAPP_SERVICE_BORDER: Record<ServiceUrgency, string> = {
-  expired: 'border-red-500',
-  critical: 'border-amber-500',
-  warning: 'border-yellow-500',
-  ok: 'border-primary',
-};
 
 type InstalledMiniApp = {
   slug: string;
@@ -602,6 +583,8 @@ export function ChatSidebar({ chatDetails, chatId, isCollapsed = false, onToggle
   const [localNotes, setLocalNotes] = useState("");
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [activeMediaTab, setActiveMediaTab] = useState('images');
+  /** Qué pestaña del panel se está mirando. */
+  const [panelTab, setPanelTab] = useState<PanelTab>('datos');
   const [isCreatingBusinessWomanClient, setIsCreatingBusinessWomanClient] = useState(false);
   
   const [localCustomData, setLocalCustomData] = useState<Record<string, any>>({});
@@ -623,10 +606,42 @@ export function ChatSidebar({ chatDetails, chatId, isCollapsed = false, onToggle
   // a alguien "atascado" mirando el Radar de un contacto que ya no es este.
   useEffect(() => {
     setSidebarView('contact');
+    // Y a la pestaña de Datos: quedarse en "Archivos" al abrir otra
+    // conversación esconde justo lo que se va a mirar primero.
+    setPanelTab('datos');
   }, [remoteJid]);
 
-  const { data: aappSpaceSummary } = useSWR<AappSpaceContactSummary | null>(
-    contact?.id ? `/api/plugins/aapp-space/contact?contactId=${contact.id}` : null,
+  /**
+   * Cómo ve el Command Center a este contacto y qué tiene encolado.
+   *
+   * Se pide siempre (es una consulta chica con índice) porque alimenta el
+   * símbolo del encabezado y el puntito de la pestaña IA; si el equipo no tiene
+   * el Command Center vuelve `null` y esas dos cosas no se dibujan.
+   */
+  const { snapshot: ccSnapshot, refrescar: refrescarCc } = usePanelCommandCenter(chatId ?? null);
+  const pendientesEnCola = trabajoEnCola(ccSnapshot);
+
+  /**
+   * El cliente vinculado, pedido UNA vez para las dos pestañas que lo usan.
+   *
+   * Comercial y Cliente miraban dos fuentes distintas del mismo cliente —una la
+   * ruta de AAPP SPACE, que devolvía una sola membresía, y la otra el snapshot
+   * comercial— y por eso se contradecían. Ahora las dos leen la ficha del
+   * cliente, que es la que tiene TODAS sus membresías y dice de dónde salió.
+   */
+  /**
+   * El id del cliente sale del snapshot comercial, que es quien resuelve el
+   * vínculo contacto→cliente. Es la MISMA clave SWR que pide la pestaña
+   * Comercial, así que no agrega un request: se comparte la respuesta.
+   */
+  const { data: comercial } = useSWR<{ scope?: { customerId: number | null } } | null>(
+    contact?.id ? `/api/contacts/commercial-snapshot?contactId=${contact.id}` : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+  const clienteId = comercial?.scope?.customerId ?? null;
+  const { data: cliente, isLoading: cargandoCliente } = useSWR<ClienteVinculado | null>(
+    clienteId ? `/api/plugins/customers/${clienteId}` : null,
     fetcher,
   );
 
@@ -844,368 +859,366 @@ export function ChatSidebar({ chatDetails, chatId, isCollapsed = false, onToggle
     }
   };
 
-  const renderLoading = () => (<div className="flex-1 overflow-y-auto p-4 space-y-6 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>);
-  const renderError = (message: string) => (<div className="flex-1 overflow-y-auto p-4 space-y-6"><p className="text-center text-destructive">{message}</p></div>);
+  const renderLoading = () => (<div className="flex flex-1 items-center justify-center py-10"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>);
+  const renderError = (message: string) => (<p className="py-10 text-center text-sm text-destructive">{message}</p>);
   
-  const renderGroupSidebar = () => {
-    if (!remoteJid) return <div className="p-4 text-center text-sm text-muted-foreground">{t('main.select_chat_hint')}</div>;
+  /**
+   * Los archivos del chat: la misma grilla de siempre, con el selector de tipo
+   * como píldoras en vez de siete iconos apretados.
+   *
+   * Está acá adentro y no como componente suelto porque necesita `remoteJid`,
+   * `instanceId` y la pestaña elegida, que son estado de este panel.
+   */
+  /**
+   * Los archivos del chat: la misma grilla de siempre, con el selector de tipo
+   * como píldoras en vez de siete iconos apretados.
+   *
+   * Está acá adentro y no como componente suelto porque necesita `remoteJid`,
+   * `instanceId` y la pestaña elegida, que son estado de este panel.
+   */
+  const renderArchivos = () => {
+    if (!remoteJid) return null;
+    const TIPOS: Array<[string, string]> = [
+      ['images', t('media.tab_images')],
+      ['videos', t('media.tab_videos')],
+      ['audio', t('media.tab_audio')],
+      ['docs', t('media.tab_docs')],
+      ['location', t('media.tab_location')],
+      ['contacts', t('media.tab_contacts')],
+      ['links', t('media.tab_links')],
+    ];
     return (
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        <div className="p-3 border rounded-lg bg-muted/30 flex items-center gap-3">
-          <Avatar className="h-12 w-12 border">
-            <AvatarImage src={chatDetails.profilePicUrl || undefined} alt={name} />
-            <AvatarFallback>{name.substring(0, 2).toUpperCase()}</AvatarFallback>
-          </Avatar>
-          <div className="overflow-hidden min-w-0 flex-1">
-            <h3 className="font-medium text-base truncate" title={name}>{name}</h3>
-            <div className="flex items-center text-xs text-muted-foreground mt-0.5">
-              <Users className="h-3 w-3 mr-1" />
-              <span>{t('main.group_label') || 'Grupo'}</span>
-            </div>
-          </div>
-          {onSyncMessages && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground">
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={onSyncMessages} disabled={isSyncingMessages}>
-                  {isSyncingMessages ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-                  {t('sync_messages_menu_btn')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+      <div className="ctx-sec">
+        <div className="ctx-t"><HardDrive className="h-3 w-3" /> {t('media.assets_title')}</div>
+        <div className="mb-3 flex flex-wrap gap-1">
+          {TIPOS.map(([k, l]) => (
+            <button
+              key={k}
+              type="button"
+              className={`fchip${activeMediaTab === k ? ' active' : ''}`}
+              onClick={() => setActiveMediaTab(k)}
+            >
+              {l}
+            </button>
+          ))}
         </div>
-
-        <ContactTaskPanel chatId={chatId} />
-
-        <div className="space-y-2">
-          <h3 className="font-medium flex items-center mb-2"><HardDrive className="h-4 w-4 mr-2 text-muted-foreground" /> {t('media.assets_title')}</h3>
-          <Tabs value={activeMediaTab} onValueChange={setActiveMediaTab}>
-            <TabsList className="grid w-full grid-cols-7 h-12">
-              <TabsTrigger value="images" className="h-10"><ImageIcon className="h-5 w-5" /></TabsTrigger>
-              <TabsTrigger value="videos" className="h-10"><VideoIcon className="h-5 w-5" /></TabsTrigger>
-              <TabsTrigger value="audio" className="h-10"><Mic className="h-5 w-5" /></TabsTrigger>
-              <TabsTrigger value="docs" className="h-10"><FileText className="h-5 w-5" /></TabsTrigger>
-              <TabsTrigger value="location" className="h-10"><MapPin className="h-5 w-5" /></TabsTrigger>
-              <TabsTrigger value="contacts" className="h-10"><Contact className="h-5 w-5" /></TabsTrigger>
-              <TabsTrigger value="links" className="h-10"><Link2 className="h-5 w-5" /></TabsTrigger>
-            </TabsList>
-            <div className="mt-2 border rounded-md min-h-[100px] max-h-[300px] overflow-y-auto">
-              {['images', 'videos'].includes(activeMediaTab)
-                ? <MediaGrid type={activeMediaTab} remoteJid={remoteJid} instanceId={instanceId} />
-                : activeMediaTab === 'links'
-                  ? <LinksList remoteJid={remoteJid} instanceId={instanceId} />
-                  : <MediaList type={activeMediaTab} remoteJid={remoteJid} instanceId={instanceId} />
-              }
-            </div>
-          </Tabs>
+        <div className="max-h-[320px] overflow-y-auto">
+          {['images', 'videos'].includes(activeMediaTab)
+            ? <MediaGrid type={activeMediaTab} remoteJid={remoteJid} instanceId={instanceId} />
+            : activeMediaTab === 'links'
+              ? <LinksList remoteJid={remoteJid} instanceId={instanceId} />
+              : <MediaList type={activeMediaTab} remoteJid={remoteJid} instanceId={instanceId} />}
         </div>
       </div>
     );
   };
 
-  const renderSidebarContent = () => {
-    if (isGroup) return renderGroupSidebar();
-    if (!remoteJid) return <div className="p-4 text-center text-sm text-muted-foreground">{t('main.select_chat_hint')}</div>;
-    if (isLoading) return renderLoading();
-    if (contactError) return renderError(t('main.error_loading'));
-
-    if (!contact) {
-      return (
-        <div className="flex-1 flex flex-col p-4">
-          <div className="p-4 border rounded-lg bg-muted/50 mb-4">
-            <div className="flex items-center justify-between">
-              <div className="flex-1 min-w-0 text-center">
-                <h3 className="font-medium text-lg">{name}</h3>
-                <p className="text-sm text-muted-foreground">+{number}</p>
-              </div>
-              {onSyncMessages && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground">
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={onSyncMessages} disabled={isSyncingMessages}>
-                      {isSyncingMessages ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-                      {t('sync_messages_menu_btn')}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-            </div>
-            <p className="text-sm text-muted-foreground mt-2 text-center">{t('main.not_in_crm')}</p>
-          </div>
-          <SaveContactDialog chatDetails={chatDetails} onContactSaved={() => mutateContact()} agents={agents} />
-          {isBusinessWomanActive && <div className="mt-2">{renderBusinessWomanAction()}</div>}
-          <div className="mt-4">
-            <ContactTaskPanel chatId={chatId} />
-          </div>
-          
-          <div className="space-y-2 mt-auto pt-6">
-              <h3 className="font-medium flex items-center mb-2"><HardDrive className="h-4 w-4 mr-2 text-muted-foreground" /> {t('media.assets_title')}</h3>
-              <Tabs value={activeMediaTab} onValueChange={setActiveMediaTab}>
-                <TabsList className="grid w-full grid-cols-7 h-12">
-                  <TabsTrigger value="images" className="h-10"><ImageIcon className="h-5 w-5" /></TabsTrigger>
-                  <TabsTrigger value="videos" className="h-10"><VideoIcon className="h-5 w-5" /></TabsTrigger>
-                  <TabsTrigger value="audio" className="h-10"><Mic className="h-5 w-5" /></TabsTrigger>
-                  <TabsTrigger value="docs" className="h-10"><FileText className="h-5 w-5" /></TabsTrigger>
-                  <TabsTrigger value="location" className="h-10"><MapPin className="h-5 w-5" /></TabsTrigger>
-                  <TabsTrigger value="contacts" className="h-10"><Contact className="h-5 w-5" /></TabsTrigger>
-                  <TabsTrigger value="links" className="h-10"><Link2 className="h-5 w-5" /></TabsTrigger>
-                </TabsList>
-                <div className="mt-2 border rounded-md min-h-[100px] max-h-[300px] overflow-y-auto">
-                    {['images', 'videos'].includes(activeMediaTab)
-                        ? <MediaGrid type={activeMediaTab} remoteJid={remoteJid} instanceId={instanceId} />
-                        : activeMediaTab === 'links'
-                          ? <LinksList remoteJid={remoteJid} instanceId={instanceId} />
-                          : <MediaList type={activeMediaTab} remoteJid={remoteJid} instanceId={instanceId} />
-                    }
-                </div>
-              </Tabs>
-          </div>
+  /** El encabezado del panel: quién es, su número y el menú de los tres puntos. */
+  const renderCabecera = (titulo: string, subtitulo: string, onAbrirFicha?: () => void) => (
+    <div className="mb-3.5 flex items-center gap-2.5">
+      <Avatar className="h-10 w-10 shrink-0 border">
+        <AvatarImage src={chatDetails.profilePicUrl || undefined} alt={titulo} />
+        <AvatarFallback className="bg-primary/10 text-primary">{titulo.substring(0, 2).toUpperCase()}</AvatarFallback>
+      </Avatar>
+      {onAbrirFicha ? (
+        <button
+          type="button"
+          className="min-w-0 flex-1 text-left"
+          onClick={onAbrirFicha}
+          aria-label={t('main.open_customer_profile', { name: titulo })}
+        >
+          <div className="truncate text-[13.5px] font-bold" title={titulo}>{titulo}</div>
+          <div className="mono truncate text-[11px]" style={{ color: 'var(--mq-muted)' }}>{subtitulo}</div>
+        </button>
+      ) : (
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13.5px] font-bold" title={titulo}>{titulo}</div>
+          <div className="mono truncate text-[11px]" style={{ color: 'var(--mq-muted)' }}>{subtitulo}</div>
         </div>
-      );
-    }
+      )}
+      {onSyncMessages && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" className="btn sm ghost" aria-label={t('sync_messages_menu_btn')}>
+              <MoreVertical className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onSyncMessages} disabled={isSyncingMessages}>
+              {isSyncingMessages ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+              {t('sync_messages_menu_btn')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </div>
+  );
 
-    const displayName = contact.name || name;
-
+  const renderGroupSidebar = () => {
+    if (!remoteJid) return <div className="ctx-sec text-center text-sm" style={{ color: 'var(--mq-muted)' }}>{t('main.select_chat_hint')}</div>;
     return (
       <>
-      <div className="flex-1 overflow-y-auto p-4 space-y-6">
-        <div className="flex items-center gap-2 rounded-xl border bg-card p-2 shadow-sm transition-colors hover:border-primary/30 hover:bg-primary/[0.03]">
-          <button
-            type="button"
-            className="flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-lg p-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            onClick={() => setIsCustomerProfileOpen(true)}
-            aria-label={t('main.open_customer_profile', { name: displayName })}
-          >
-            <Avatar className="h-12 w-12 shrink-0 border">
-              <AvatarImage src={chatDetails.profilePicUrl || undefined} alt={displayName} />
-              <AvatarFallback className="bg-primary/10 text-primary">{displayName.substring(0, 2).toUpperCase()}</AvatarFallback>
-            </Avatar>
-            <div className="min-w-0 flex-1 overflow-hidden">
-              <h3 className="truncate text-base font-semibold" title={displayName}>{displayName}</h3>
-              <div className="mt-0.5 flex items-center text-xs text-muted-foreground">
-                <Phone className="mr-1 h-3 w-3" />
-                <span className="truncate">+{number}</span>
-              </div>
-              <p className="mt-1 text-[11px] font-medium text-primary">{t('main.view_customer_profile')}</p>
-            </div>
-          </button>
-            {onSyncMessages && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground">
-                    <MoreVertical className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={onSyncMessages} disabled={isSyncingMessages}>
-                    {isSyncingMessages ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-                    {t('sync_messages_menu_btn')}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+        {renderCabecera(name, t('main.group_label'))}
+        <div className="ctx-sec">
+          <ContactTaskPanel chatId={chatId} />
         </div>
+        {renderArchivos()}
+      </>
+    );
+  };
 
-        <ChatAgendaPicker remoteJid={remoteJid} />
-
-        {renderBusinessWomanAction()}
-
-        <CommercialPanel contactId={contact?.id} />
-
-        {aappSpaceSummary?.customer && (
-          <section className="space-y-3 border-y py-4">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="flex items-center text-sm font-semibold">
-                <Globe2 className="mr-2 h-4 w-4 text-primary" />
-                {t('main.aapp_space_title')}
-              </h3>
-              <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => router.push(`/plugins/customers/${aappSpaceSummary.customer.id}`)}>
-                {t('main.aapp_space_open_customer')}
-              </Button>
-            </div>
-            <div>
-              <p className="truncate text-sm font-medium">{aappSpaceSummary.customer.name}</p>
-              {aappSpaceSummary.customer.email && <p className="truncate text-xs text-muted-foreground">{aappSpaceSummary.customer.email}</p>}
-            </div>
-            {aappSpaceSummary.subscription && (() => {
-              const days = daysUntil(aappSpaceSummary.subscription.endDate);
-              const urgency = serviceUrgency(days);
-              const daysLabel = days === null
-                ? null
-                : days < 0
-                  ? (Math.abs(days) === 1
-                      ? t('main.aapp_space_expired_ago_one')
-                      : t('main.aapp_space_expired_ago', { days: Math.abs(days) }))
-                  : days === 0
-                    ? t('main.aapp_space_expires_today')
-                    : days === 1
-                      ? t('main.aapp_space_days_left_one')
-                      : t('main.aapp_space_days_left', { days });
-
-              return (
-                <div className={`space-y-1 border-l-2 pl-3 ${AAPP_SERVICE_BORDER[urgency]}`}>
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="truncate text-sm font-medium">{aappSpaceSummary.subscription.planName || t('main.aapp_space_plan')}</p>
-                    <Badge variant="outline" className="shrink-0 text-[10px]">{aappSpaceSummary.subscription.status}</Badge>
-                  </div>
-                  {daysLabel && (
-                    <Badge className={`text-[10px] ${AAPP_SERVICE_BADGE[urgency]}`}>{daysLabel}</Badge>
-                  )}
-                  <p className="flex items-center text-xs text-muted-foreground">
-                    <CalendarClock className="mr-1.5 h-3.5 w-3.5" />
-                    {aappSpaceSummary.subscription.endDate
-                      ? t('main.aapp_space_expires', { date: new Date(`${aappSpaceSummary.subscription.endDate}T00:00:00`).toLocaleDateString() })
-                      : t('main.aapp_space_no_expiration')}
-                  </p>
-                </div>
-              );
-            })()}
-            {aappSpaceSummary.websites.length > 0 && (
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-muted-foreground">{t('main.aapp_space_websites')}</p>
-                {aappSpaceSummary.websites.map((website) => website.url && (
-                  <a key={website.id} href={website.url} target="_blank" rel="noreferrer" className="flex min-h-8 items-center justify-between gap-2 text-sm text-primary hover:underline">
-                    <span className="truncate">{website.title || t('main.aapp_space_website')}</span>
-                    <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-                  </a>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-
+  /** El bloque de datos del contacto: lo que se toca todos los días. */
+  const renderDatos = (contact: ContactData) => (
+    <>
+      <div className="ctx-sec">
         <ContactTagsEditor
           contactId={contact.id}
           tags={contact.tags}
           onChange={(tags) => mutateContact((current) => current ? { ...current, tags } : current, false)}
         />
+      </div>
 
-        <div className="space-y-2">
-          <h3 className="font-medium flex items-center mb-2"><Users className="h-4 w-4 mr-2 text-muted-foreground" /> {t('main.assign_agent_title')}</h3>
-          <Select onValueChange={handleAssignAgent} value={contact.assignedUser?.id?.toString() || 'null'} disabled={isAssigningAgent}>
-            <SelectTrigger><SelectValue placeholder={t('main.agents_placeholder')} /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="null">{t('contact_dialog.nobody_option')}</SelectItem>
-              {agents.map((agent) => (<SelectItem key={agent.id} value={agent.id.toString()}>{agent.name || agent.email}</SelectItem>))}
-            </SelectContent>
-          </Select>
+      <div className="ctx-sec">
+        <div className="ctx-t"><Users className="h-3 w-3" /> {t('main.assign_agent_title')}</div>
+        <select
+          className="input"
+          value={contact.assignedUser?.id?.toString() || 'null'}
+          onChange={(e) => handleAssignAgent(e.target.value)}
+          disabled={isAssigningAgent}
+          aria-label={t('main.assign_agent_title')}
+        >
+          <option value="null">{t('contact_dialog.nobody_option')}</option>
+          {agents.map((agent) => (
+            <option key={agent.id} value={agent.id.toString()}>{agent.name || agent.email}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="ctx-sec">
+        <div className="ctx-t"><Building2 className="h-3 w-3" /> {t('main.assign_department_title')}</div>
+        <select
+          className="input"
+          value={contact.assignedDepartment?.id?.toString() || 'null'}
+          onChange={(e) => handleAssignDepartment(e.target.value)}
+          disabled={isAssigningDepartment}
+          aria-label={t('main.assign_department_title')}
+        >
+          <option value="null">{t('main.no_department')}</option>
+          {departments?.map((dept) => (
+            <option key={dept.id} value={dept.id.toString()}>{dept.name}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="ctx-sec">
+        <div className="ctx-t"><ChevronDown className="h-3 w-3" /> {t('main.funnel_stage_title')}</div>
+        <select
+          className="input"
+          value={contact.funnelStage?.id?.toString() || 'null'}
+          onChange={(e) => handleSetFunnelStage(e.target.value)}
+          disabled={isSettingFunnel || !funnelStages}
+          aria-label={t('main.funnel_stage_title')}
+        >
+          <option value="null">{t('contact_dialog.no_stage_option')}</option>
+          {funnelStages?.map((stage) => (
+            <option key={stage.id} value={stage.id.toString()}>{stage.emoji} {stage.name}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="ctx-sec">
+        <div className="ctx-t">
+          <FileText className="h-3 w-3" /> {t('main.notes_title')}
+          <span className="sp" />
+          {localNotes !== (contact.notes || '') && (
+            <button
+              type="button"
+              className="btn sm ghost"
+              style={{ color: 'var(--mq-green)' }}
+              onClick={handleSaveNotes}
+              disabled={isSavingNotes}
+            >
+              {isSavingNotes ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />} {t('main.save_notes_btn')}
+            </button>
+          )}
+        </div>
+        <textarea
+          className="input"
+          rows={4}
+          style={{ resize: 'vertical' }}
+          value={localNotes}
+          onChange={(e) => setLocalNotes(e.target.value)}
+          placeholder={t('main.notes_placeholder')}
+        />
+      </div>
+
+      <div className="ctx-sec"><ChatAgendaPicker remoteJid={remoteJid!} /></div>
+
+      {renderBusinessWomanAction() && <div className="ctx-sec">{renderBusinessWomanAction()}</div>}
+
+      <div className="ctx-sec"><ContactTaskPanel chatId={chatId} /></div>
+
+      {/* Los campos personalizados dejaron de ser una pestaña: son datos del
+          contacto, se editan poco y arrancan plegados para no empujar hacia
+          abajo lo que sí se toca todos los días. */}
+      {customFields && customFields.length > 0 && (
+        <details className="ctx-sec">
+          <summary className="ctx-t cursor-pointer select-none">
+            <Settings2 className="h-3 w-3" /> {t('main.custom_fields_title')} ({customFields.length})
+          </summary>
+          <div className="mt-2">
+            {customFields.map(cf => (
+              <div key={cf.id} className="mb-2.5">
+                <label className="fl" htmlFor={`cf-panel-${cf.id}`}>{cf.name}</label>
+                {cf.type === 'boolean' ? (
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id={`cf-panel-${cf.id}`}
+                      checked={!!localCustomData[cf.key]}
+                      onCheckedChange={(checked) => handleUpdateCustomData(cf.key, checked)}
+                    />
+                    <span className="text-[11.5px]" style={{ color: 'var(--mq-muted)' }}>
+                      {localCustomData[cf.key] ? t('yes') : t('no')}
+                    </span>
+                  </div>
+                ) : (
+                  <input
+                    id={`cf-panel-${cf.id}`}
+                    className="input"
+                    value={localCustomData[cf.key] || ''}
+                    onChange={(e) => setLocalCustomData(prev => ({ ...prev, [cf.key]: e.target.value }))}
+                    onBlur={(e) => handleUpdateCustomData(cf.key, e.target.value)}
+                    placeholder="—"
+                  />
+                )}
+              </div>
+            ))}
+            <p className="mt-1.5 text-[10.5px] leading-relaxed" style={{ color: 'var(--mq-muted2)' }}>
+              {t('main.custom_fields_hint')}
+            </p>
+          </div>
+        </details>
+      )}
+    </>
+  );
+
+  const renderSidebarContent = () => {
+    if (isGroup) return renderGroupSidebar();
+    if (!remoteJid) return <div className="ctx-sec text-center text-sm" style={{ color: 'var(--mq-muted)' }}>{t('main.select_chat_hint')}</div>;
+    if (isLoading) return renderLoading();
+    if (contactError) return renderError(t('main.error_loading'));
+
+    if (!contact) {
+      return (
+        <>
+          {renderCabecera(name, `+${number}`)}
+          <div className="ctx-sec">
+            <p className="mb-2.5 text-[11.5px]" style={{ color: 'var(--mq-muted)' }}>{t('main.not_in_crm')}</p>
+            <SaveContactDialog chatDetails={chatDetails} onContactSaved={() => mutateContact()} agents={agents} />
+            {isBusinessWomanActive && <div className="mt-2">{renderBusinessWomanAction()}</div>}
+          </div>
+          <div className="ctx-sec">
+            <ContactTaskPanel chatId={chatId} />
+          </div>
+          {renderArchivos()}
+        </>
+      );
+    }
+
+    const displayName = contact.name || name;
+
+    /**
+     * Seis pestañas en dos filas de tres.
+     *
+     * Antes esto era una sola columna de dos metros de alto donde lo comercial,
+     * lo de AAPP SPACE y lo del contacto se mezclaban sin separación. Cada
+     * pestaña contesta una pregunta distinta: quién es (Datos), qué le vendemos
+     * (Comercial), quién es del otro lado (Cliente), qué le preparamos (IA),
+     * qué detectó el radar y qué archivos hay.
+     */
+    const solapas: Array<{ id: PanelTab; label: string; Icon: typeof User; marca?: boolean }> = [
+      { id: 'datos', label: t('main.tab_data'), Icon: User },
+      { id: 'comercial', label: t('main.tab_commercial'), Icon: Handshake, marca: Boolean(ccSnapshot?.crmFixPendiente) },
+      { id: 'cliente', label: t('main.tab_customer'), Icon: Building2 },
+      { id: 'ia', label: 'IA', Icon: Wand2, marca: pendientesEnCola > 0 },
+      { id: 'radar', label: 'Radar', Icon: RadarIcon },
+      { id: 'archivos', label: t('main.tab_files'), Icon: HardDrive },
+    ];
+    const visibles = solapas.filter((s) => s.id !== 'radar' || isRadarUser);
+
+    return (
+      <>
+        {renderCabecera(displayName, `+${number}`, () => setIsCustomerProfileOpen(true))}
+        <CommandCenterChip snapshot={ccSnapshot} />
+
+        <div className="ctx-tabs" role="tablist">
+          {visibles.map(({ id, label, Icon, marca }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={panelTab === id}
+              className={`ctx-tab${panelTab === id ? ' active' : ''}`}
+              onClick={() => setPanelTab(id)}
+              title={label}
+            >
+              <Icon className="size-3.5 shrink-0" aria-hidden />
+              <span>{label}</span>
+              {marca && <span className="marca" aria-hidden />}
+            </button>
+          ))}
         </div>
 
-        <div className="space-y-2">
-          <h3 className="font-medium flex items-center mb-2"><Building2 className="h-4 w-4 mr-2 text-muted-foreground" /> {t('main.assign_department_title')}</h3>
-          <Select onValueChange={handleAssignDepartment} value={contact.assignedDepartment?.id?.toString() || 'null'} disabled={isAssigningDepartment}>
-            <SelectTrigger><SelectValue placeholder={t('main.departments_placeholder')} /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="null">{t('main.no_department')}</SelectItem>
-              {departments?.map((dept) => (<SelectItem key={dept.id} value={dept.id.toString()}>{dept.name}</SelectItem>))}
-            </SelectContent>
-          </Select>
-        </div>
+        {panelTab === 'datos' && renderDatos(contact)}
 
-        <div className="space-y-2">
-          <h3 className="font-medium flex items-center mb-2"><ChevronDown className="h-4 w-4 mr-2 text-muted-foreground" /> {t('main.funnel_stage_title')}</h3>
-          <Select onValueChange={handleSetFunnelStage} value={contact.funnelStage?.id?.toString() || 'null'} disabled={isSettingFunnel || !funnelStages}>
-            <SelectTrigger><SelectValue placeholder={t('main.define_stage_placeholder')} /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="null">{t('contact_dialog.no_stage_option')}</SelectItem>
-              {funnelStages?.map((stage) => (
-                <SelectItem key={stage.id} value={stage.id.toString()}>
-                   {stage.emoji} {stage.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-2">
-           <div className="flex justify-between items-center mb-2">
-             <h3 className="font-medium flex items-center"><FileText className="h-4 w-4 mr-2 text-muted-foreground" /> {t('main.notes_title')}</h3>
-             {localNotes !== (contact.notes || "") && (
-               <Button size="sm" variant="ghost" onClick={handleSaveNotes} disabled={isSavingNotes} className="h-7 text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-500 dark:hover:bg-green-900/20">
-                 {isSavingNotes ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3 mr-1" />} {t('main.save_notes_btn')}
-               </Button>
-             )}
-           </div>
-          <Textarea value={localNotes} onChange={(e) => setLocalNotes(e.target.value)} className="min-h-[80px] resize-none bg-muted/50 focus:bg-background text-sm" placeholder={t('main.notes_placeholder')} />
-        </div>
-
-        <ContactTaskPanel chatId={chatId} />
-
-        {customFields && customFields.length > 0 && (
-             <div className="space-y-3 border-t pt-4">
-                <h3 className="font-medium flex items-center text-sm uppercase text-muted-foreground"><Settings2 className="h-4 w-4 mr-2" /> {t('main.custom_fields_title')}</h3>
-                <div className="space-y-3">
-                    {customFields.map(cf => (
-                        <div key={cf.id} className="grid gap-1.5">
-                            <Label className="text-xs font-normal text-muted-foreground">{cf.name}</Label>
-                            {cf.type === 'boolean' ? (
-                                <div className="flex items-center space-x-2">
-                                    <Switch 
-                                        checked={!!localCustomData[cf.key]} 
-                                        onCheckedChange={(checked) => handleUpdateCustomData(cf.key, checked)} 
-                                    />
-                                    <span className="text-sm">{localCustomData[cf.key] ? t('yes') : t('no')}</span>
-                                </div>
-                            ) : (
-                                <Input 
-                                    value={localCustomData[cf.key] || ''} 
-                                    onChange={(e) => setLocalCustomData(prev => ({...prev, [cf.key]: e.target.value}))}
-                                    onBlur={(e) => handleUpdateCustomData(cf.key, e.target.value)}
-                                    className="h-8 text-sm"
-                                />
-                            )}
-                        </div>
-                    ))}
-                </div>
-             </div>
+        {panelTab === 'comercial' && (
+          <ComercialTab contactId={contact.id} cliente={cliente ?? null} cargandoCliente={cargandoCliente} snapshot={ccSnapshot} />
         )}
 
-        <div className="space-y-2 border-t pt-4">
-           <h3 className="font-medium flex items-center mb-2"><HardDrive className="h-4 w-4 mr-2 text-muted-foreground" /> {t('media.assets_title')}</h3>
-           <Tabs value={activeMediaTab} onValueChange={setActiveMediaTab}>
-            <TabsList className="grid w-full grid-cols-7 h-12">
-              <TabsTrigger value="images" className="h-10"><ImageIcon className="h-5 w-5" /></TabsTrigger>
-              <TabsTrigger value="videos" className="h-10"><VideoIcon className="h-5 w-5" /></TabsTrigger>
-              <TabsTrigger value="audio" className="h-10"><Mic className="h-5 w-5" /></TabsTrigger>
-              <TabsTrigger value="docs" className="h-10"><FileText className="h-5 w-5" /></TabsTrigger>
-              <TabsTrigger value="location" className="h-10"><MapPin className="h-5 w-5" /></TabsTrigger>
-              <TabsTrigger value="contacts" className="h-10"><Contact className="h-5 w-5" /></TabsTrigger>
-              <TabsTrigger value="links" className="h-10"><Link2 className="h-5 w-5" /></TabsTrigger>
-            </TabsList>
+        {panelTab === 'cliente' && (
+          <ClienteTab
+            cliente={cliente ?? null}
+            cargando={cargandoCliente}
+            contactoActual={contact.id}
+            onVincular={() => setIsCustomerProfileOpen(true)}
+          />
+        )}
 
-            <div className="mt-2 border rounded-md min-h-[100px] max-h-[300px] overflow-y-auto">
-                {['images', 'videos'].includes(activeMediaTab)
-                    ? <MediaGrid type={activeMediaTab} remoteJid={remoteJid} instanceId={instanceId} />
-                    : activeMediaTab === 'links'
-                      ? <LinksList remoteJid={remoteJid} instanceId={instanceId} />
-                      : <MediaList type={activeMediaTab} remoteJid={remoteJid} instanceId={instanceId} />
-                }
-            </div>
-          </Tabs>
-        </div>
-      </div>
-      {remoteJid && (
-        <CustomerProfileDialog
-          open={isCustomerProfileOpen}
-          onOpenChange={setIsCustomerProfileOpen}
-          contact={contact}
-          chatId={chatId}
-          remoteJid={remoteJid}
-          instanceId={instanceId}
-          profilePicUrl={chatDetails.profilePicUrl}
-          customFields={customFields || []}
-          onContactChange={(patch) => mutateContact((current) => current ? { ...current, ...patch } : current, false)}
-        />
-      )}
+        {panelTab === 'ia' && <IaTab chatId={chatId ?? 0} snapshot={ccSnapshot} onEncolado={() => void refrescarCc()} />}
+
+        {/* Radar dejó de reemplazar el panel entero: es una pestaña más, así que
+            volver de Radar no exige acordarse de apretar "atrás". */}
+        {panelTab === 'radar' && isRadarUser && (
+          <div className="-mx-4 -mb-4 flex min-h-[50vh] flex-col">
+            <RadarPanel
+              contactId={contact.id}
+              chatId={chatId}
+              contactName={contact.name}
+              remoteJid={remoteJid}
+              // Radar ya no reemplaza el panel, así que su "volver" devuelve a
+              // Datos en vez de desmontar la pestaña.
+              onBack={() => setPanelTab('datos')}
+              onUseSuggestion={(text) => onInsertComposerText?.(text)}
+              onSuggestionsLoaded={onRadarSuggestionsLoaded}
+            />
+          </div>
+        )}
+
+        {panelTab === 'archivos' && renderArchivos()}
+
+        {remoteJid && (
+          <CustomerProfileDialog
+            open={isCustomerProfileOpen}
+            onOpenChange={setIsCustomerProfileOpen}
+            contact={contact}
+            chatId={chatId}
+            remoteJid={remoteJid}
+            instanceId={instanceId}
+            profilePicUrl={chatDetails.profilePicUrl}
+            customFields={customFields || []}
+            onContactChange={(patch) => mutateContact((current) => current ? { ...current, ...patch } : current, false)}
+          />
+        )}
       </>
     );
   };
@@ -1220,43 +1233,21 @@ export function ChatSidebar({ chatDetails, chatId, isCollapsed = false, onToggle
         />
       )}
       <aside className={cn(
-        "flex h-screen flex-col overflow-hidden border-l bg-card transition-all duration-300 ease-in-out",
+        "flex h-screen flex-col overflow-hidden border-l transition-all duration-300 ease-in-out",
         // Mobile: fixed overlay sliding from the right
         "fixed right-0 top-0 z-50 w-72",
         // Desktop: inline, collapses by width
         "md:relative md:z-auto md:shrink-0",
         isCollapsed
           ? "translate-x-full md:translate-x-0 md:w-0 md:min-w-0 md:max-w-0 md:border-l-0"
-          : "translate-x-0 md:w-72 md:min-w-[18rem] md:max-w-[18rem]"
+          : "translate-x-0 md:w-72 md:min-w-[18rem] md:max-w-[18rem]",
+        // El panel lleva las variables `--mq-*` de la maqueta, que no se
+        // filtran al resto del chat porque cuelgan de `.maqueta`.
+        "maqueta bg-[var(--mq-bg2)]"
       )}>
         {!isCollapsed && (
-          sidebarView === 'radar' && contact ? (
-            <RadarPanel
-              contactId={contact.id}
-              chatId={chatId}
-              contactName={contact.name}
-              remoteJid={remoteJid}
-              onBack={() => setSidebarView('contact')}
-              onUseSuggestion={(text) => onInsertComposerText?.(text)}
-              onSuggestionsLoaded={onRadarSuggestionsLoaded}
-            />
-          ) : (
-            <>
-              {isRadarUser && contact && !isGroup && (
-                <div className="flex items-center justify-end border-b px-2 py-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setSidebarView('radar')}
-                    className="flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-100 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-950/70"
-                  >
-                    <RadarIcon className="h-3.5 w-3.5" />
-                    Radar
-                  </button>
-                </div>
-              )}
-              {renderSidebarContent()}
-            </>
-          )
+          /* `ctx` es el cuerpo que scrollea. */
+          <div className="ctx">{renderSidebarContent()}</div>
         )}
       </aside>
     </>

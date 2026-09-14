@@ -11,7 +11,10 @@ const manifest: AppPluginManifest<typeof purchasesSettingsSchema> = {
   activationMode: 'user',
   scopes: ['dashboard.nav', 'dashboard.page'],
   routes: [{ path: '/plugins/purchases', title: 'Compras', scope: 'dashboard.page' }],
-  navItems: [{ label: 'Compras', href: '/plugins/purchases', icon: 'ShoppingCart', order: 62, requiredPermission: 'purchases.read' }],
+  // Sin entrada propia en el menú: se entra por la app Empresa, que es la que
+  // agrupa la gestión del negocio. La ruta y los permisos siguen igual, así que
+  // los enlaces guardados y los favoritos siguen abriendo esta app.
+  navItems: [],
   settingsSchema: purchasesSettingsSchema,
   featureFlags: [],
 };

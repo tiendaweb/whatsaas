@@ -132,6 +132,38 @@ const pluginRouteRegistry: Record<string, PluginRouteRenderer[]> = {
       },
     },
   ],
+  empresa: [
+    {
+      // Empresa es una sola aplicación con shell propio: el slug entero le
+      // llega a ella y ella decide la vista, igual que el Command Center.
+      routeMatcher: () => true,
+      loadRenderer: async () => {
+        const { EmpresaApp } = await import('@/lib/plugins/empresa/ui/EmpresaApp');
+        return ({ slug }) => <EmpresaApp slug={slug ?? []} />;
+      },
+    },
+  ],
+  marketing: [
+    {
+      // Igual que Empresa: una sola aplicación con shell propio que recibe el
+      // slug entero y decide la vista.
+      routeMatcher: () => true,
+      loadRenderer: async () => {
+        const { MarketingApp } = await import('@/lib/plugins/marketing/ui/MarketingApp');
+        return ({ slug }) => <MarketingApp slug={slug ?? []} />;
+      },
+    },
+  ],
+  ia: [
+    {
+      // El tercer hub, mismo patrón: shell propio, el slug entero es suyo.
+      routeMatcher: () => true,
+      loadRenderer: async () => {
+        const { IaApp } = await import('@/lib/plugins/ia/ui/IaApp');
+        return ({ slug }) => <IaApp slug={slug ?? []} />;
+      },
+    },
+  ],
   'sales-ops': [
     // El Prompt Studio es una aplicación aparte con shell propio, pero comparte
     // las rutas y los permisos de `sales-ops`: las skills son del Command

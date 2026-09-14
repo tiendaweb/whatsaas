@@ -4,6 +4,7 @@ import { teamMenuItems, teamMembers } from '@/lib/db/schema';
 import { checkFeature, type FeatureFlag } from '@/lib/limits';
 import type { MemberPermissions } from '@/lib/permissions';
 import { resolveDashboardNavForTeam } from '@/lib/plugins/core/registry';
+import { estaAgrupada } from './agrupadas';
 import {
   APPS_LAUNCHER_PREFIXES,
   compareMainNavigation,
@@ -58,6 +59,8 @@ export async function resolveMenuForTeam(teamId: number, userId?: number): Promi
   const featureMap = new Map(featureFlags.map((flag, idx) => [flag, featureResults[idx]]));
 
   const coreCandidates: ResolvedMenuItem[] = CORE_NAV_ITEMS
+    // Lo agrupado no se repite suelto, sea del núcleo o de un plugin.
+    .filter((item) => !estaAgrupada(item.href))
     .filter((item) => {
       if (item.feature && featureMap.get(item.feature as FeatureFlag) !== true) return false;
       if (item.permissionKey && permissions) {
@@ -82,6 +85,9 @@ export async function resolveMenuForTeam(teamId: number, userId?: number): Promi
 
   const pluginCandidates: ResolvedMenuItem[] = pluginNavItems
     .filter((item) => !item.href.startsWith('/plugins/marketplace'))
+    // Lo agrupado adentro de Empresa o Marketing no se repite suelto. Va acá
+    // además de en el cliente porque el editor de menú y el móvil leen esto.
+    .filter((item) => !estaAgrupada(item.href))
     .map((item, idx) => {
       const override = overrideMap.get(item.href);
       const defaultPinned = !APPS_LAUNCHER_PREFIXES.some((prefix) => item.href.startsWith(prefix));

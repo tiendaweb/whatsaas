@@ -47,6 +47,7 @@ import {
   isMainNavOnlyItem,
   type MenuOverride,
 } from '@/lib/menu/core-nav-items';
+import { estaAgrupada } from '@/lib/menu/agrupadas';
 
 export type PluginNavItem = { href: string; label: string; icon?: string; order?: number };
 export type InstalledMiniApp = { slug: string; installedAt: string };
@@ -113,7 +114,6 @@ const PLUGIN_NAV_ICON_MAP: Record<string, LucideIcon> = {
 };
 
 const APP_VISUAL: Record<string, LauncherApp['visual']> = {
-  '/dashboard?view=tasks': { gradient: 'from-slate-600 to-slate-800', iconColor: 'text-white' },
   '/plugins/notes': { gradient: 'from-violet-500 to-purple-600', iconColor: 'text-white' },
   '/plugins/calendar': { gradient: 'from-blue-500 to-cyan-500', iconColor: 'text-white' },
   '/plugins/domains': { gradient: 'from-emerald-500 to-teal-600', iconColor: 'text-white' },
@@ -150,6 +150,9 @@ const APP_VISUAL: Record<string, LauncherApp['visual']> = {
   '/plugins/radar': { gradient: 'from-indigo-500 to-violet-600', iconColor: 'text-white' },
   '/plugins/deals': { gradient: 'from-green-600 to-emerald-500', iconColor: 'text-white' },
   '/plugins/sales-ops': { gradient: 'from-slate-800 to-emerald-600', iconColor: 'text-white' },
+  '/plugins/empresa': { gradient: 'from-slate-800 to-sky-600', iconColor: 'text-white' },
+  '/plugins/marketing': { gradient: 'from-fuchsia-600 to-violet-700', iconColor: 'text-white' },
+  '/plugins/ia': { gradient: 'from-cyan-500 to-blue-700', iconColor: 'text-white' },
   // El rosa de la cabina del Studio, igual adentro que en el lanzador.
   '/plugins/sales-ops/studio': { gradient: 'from-[#f43f8e] to-[#ff2e4d]', iconColor: 'text-white' },
   '/plugins/grok-connector': {
@@ -178,7 +181,6 @@ const APP_VISUAL: Record<string, LauncherApp['visual']> = {
 };
 
 const APP_LABEL_OVERRIDE: Record<string, string> = {
-  '/dashboard?view=tasks': 'Tareas',
   '/plugins/notes': 'Tareas',
   '/plugins/calendar': 'Calendario',
   '/plugins/domains': 'Dominios',
@@ -201,6 +203,9 @@ const APP_LABEL_OVERRIDE: Record<string, string> = {
   '/plugins/files': 'Archivos',
   '/plugins/sites': 'Sitios',
   '/plugins/sales-ops/studio': 'Prompt Studio',
+  '/plugins/empresa': 'Empresa',
+  '/plugins/marketing': 'Marketing',
+  '/plugins/ia': 'IA',
   '/plugins/finance': 'Financiero',
   '/plugins/purchases': 'Compras',
   '/plugins/hr': 'RRHH',
@@ -217,7 +222,8 @@ const APP_LABEL_OVERRIDE: Record<string, string> = {
 };
 
 const APP_DESCRIPTION: Record<string, string> = {
-  '/dashboard?view=tasks': 'Vista clásica de tareas vinculadas a la bandeja.',
+  '/plugins/marketing': 'Meta Ads, difusion, publicaciones y formularios en un solo lugar.',
+  '/plugins/ia': 'Agente, automatizaciones, funciones, conectores y banco de claves.',
   '/plugins/notes': 'Notas, tareas rapidas y seguimiento diario.',
   '/plugins/calendar': 'Vista de calendario para organizar trabajo y entregas.',
   '/plugins/domains': 'Gestion de dominios y activos web.',
@@ -356,6 +362,10 @@ export function buildLauncherApps(
     }));
 
   const byHref = new Map<string, LauncherApp>();
-  [...staticApps, ...miniApps, ...appMakerApps, ...pluginApps, ...coreApps].forEach((app) => byHref.set(app.href, app));
+  [...staticApps, ...miniApps, ...appMakerApps, ...pluginApps, ...coreApps]
+    // Lo que ya vive adentro de Empresa o Marketing no se repite acá: se entra
+    // por su hub. La lista sale de los propios hubs (lib/menu/agrupadas.ts).
+    .filter((app) => !estaAgrupada(app.href))
+    .forEach((app) => byHref.set(app.href, app));
   return Array.from(byHref.values());
 }

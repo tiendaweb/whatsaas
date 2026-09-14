@@ -1,0 +1,222 @@
+/**
+ * El lenguaje visual de la maqueta de ChatPro
+ * (chatpro-nuevo-diseno.aapp.pro), para las pantallas del dashboard que se
+ * pasaron a ese diseño: Contactos y el panel derecho de la Bandeja de entrada.
+ *
+ * Todo cuelga de `.maqueta` para que estas clases cortas —`.btn`, `.chip`,
+ * `.tbl`— no se crucen con el resto de la aplicación, que comparte hoja de
+ * estilos. Sin ese prefijo, un `.btn` de acá le cambiaría los botones a media
+ * app.
+ *
+ * Las variables se declaran en el contenedor y no en `:root` por lo mismo, y
+ * llevan prefijo `--mq-`: llamarlas `--card` o `--border` a secas pisaría los
+ * tokens del sistema para todo lo que cuelgue de acá.
+ *
+ * Los valores son los mismos que en `lib/plugins/empresa/ui/vistas/cabina.css`
+ * y se repiten en vez de importarse porque allá cuelgan de `.cabina`: una hoja
+ * no puede heredar variables de un selector que no es su ancestro. Si cambia
+ * el verde de una, hay que mirar la otra.
+ *
+ * La maqueta es oscura y sola; estas pantallas viven adentro del dashboard, que
+ * sigue el tema del usuario, así que hay paleta clara y oscura.
+ */
+.maqueta {
+  --mq-bg2: #f6f6f8;
+  --mq-card: #ffffff;
+  --mq-card2: #fbfbfc;
+  --mq-card3: rgba(0, 0, 0, 0.05);
+  --mq-border: rgba(0, 0, 0, 0.09);
+  --mq-border2: rgba(0, 0, 0, 0.16);
+  --mq-green: #16a34a;
+  --mq-purple: #7c5cfc;
+  --mq-text: #18181b;
+  --mq-muted: #6b7280;
+  --mq-muted2: #9ca3af;
+
+  color: var(--mq-text);
+  min-width: 0;
+}
+
+:is(.dark) .maqueta,
+.dark .maqueta {
+  --mq-bg2: #111113;
+  --mq-card: #16161a;
+  --mq-card2: #1c1c21;
+  --mq-card3: #232329;
+  --mq-border: rgba(255, 255, 255, 0.07);
+  --mq-border2: rgba(255, 255, 255, 0.13);
+  --mq-green: #25d366;
+  --mq-text: #f0f0f2;
+  --mq-muted: #7a7a8c;
+  --mq-muted2: #55555f;
+}
+
+/* ── Estructura ── */
+.maqueta.pane { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; background: var(--mq-card); }
+.maqueta .topbar {
+  min-height: 56px; border-bottom: 1px solid var(--mq-border);
+  display: flex; align-items: center; padding: 8px 16px; gap: 12px;
+  flex-shrink: 0; flex-wrap: wrap; background: var(--mq-bg2);
+}
+.maqueta .topbar h1 { font-size: 15.5px; font-weight: 700; letter-spacing: -0.01em; }
+.maqueta .topbar .sub { font-size: 12px; color: var(--mq-muted); }
+.maqueta .sp { flex: 1; }
+.maqueta .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+.maqueta .mono { font-variant-numeric: tabular-nums; }
+
+/* ── Botones ── */
+.maqueta .btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 13px; border-radius: 9px;
+  font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--mq-border); background: var(--mq-card); color: var(--mq-text);
+  text-decoration: none;
+}
+.maqueta .btn:hover { background: var(--mq-card3); border-color: var(--mq-border2); }
+.maqueta .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.maqueta .btn.g { background: var(--mq-green); color: #04140a; border-color: transparent; font-weight: 700; }
+.maqueta .btn.g:hover { background: color-mix(in srgb, var(--mq-green) 88%, #fff); }
+.maqueta .btn.sm { padding: 5px 10px; font-size: 11.5px; border-radius: 7px; }
+.maqueta .btn.ghost { background: transparent; border-color: transparent; color: var(--mq-muted); }
+.maqueta .btn.ghost:hover { background: var(--mq-card3); color: var(--mq-text); }
+.maqueta .btn.peligro { color: #f45b69; }
+.maqueta .btn.peligro:hover { background: rgba(244, 91, 105, 0.12); border-color: rgba(244, 91, 105, 0.35); }
+
+/* ── Buscador y campos ── */
+.maqueta .search {
+  display: flex; align-items: center; gap: 8px; flex: 1; max-width: 300px; min-width: 150px;
+  background: var(--mq-card); border: 1px solid var(--mq-border); border-radius: 9px; padding: 7px 11px;
+}
+.maqueta .search svg { width: 14px; height: 14px; color: var(--mq-muted); flex-shrink: 0; }
+.maqueta .search input { background: none; border: none; outline: none; color: var(--mq-text); font-size: 12.5px; width: 100%; }
+.maqueta .search input::placeholder { color: var(--mq-muted2); }
+
+.maqueta .input {
+  width: 100%; background: var(--mq-card2); border: 1px solid var(--mq-border);
+  border-radius: 8px; padding: 7px 10px; font-size: 12px; color: var(--mq-text); outline: none;
+}
+.maqueta .input:focus { border-color: color-mix(in srgb, var(--mq-green) 45%, transparent); }
+.maqueta select.input {
+  appearance: none; -webkit-appearance: none; padding-right: 26px; cursor: pointer;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 8px center; background-size: 12px;
+}
+.maqueta select.input option { background: var(--mq-card); color: var(--mq-text); }
+.maqueta label.fl {
+  display: block; font-size: 9.5px; font-weight: 700; color: var(--mq-muted2);
+  letter-spacing: 0.07em; text-transform: uppercase; margin-bottom: 5px;
+}
+
+/* Selector rotulado del renglón de filtros. */
+.maqueta .selcampo { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.maqueta .selcampo .rot {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--mq-muted2); white-space: nowrap;
+}
+.maqueta .selcampo select {
+  appearance: none; -webkit-appearance: none;
+  max-width: 190px; padding: 6px 26px 6px 11px; border-radius: 9px;
+  border: 1px solid var(--mq-border); background-color: var(--mq-card); color: var(--mq-text);
+  font-size: 12px; font-weight: 650; cursor: pointer; text-overflow: ellipsis;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 8px center; background-size: 12px;
+}
+.maqueta .selcampo select:hover { border-color: var(--mq-border2); }
+.maqueta .selcampo select option { background: var(--mq-card); color: var(--mq-text); }
+
+.maqueta .filtros {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  padding: 8px 16px; border-bottom: 1px solid var(--mq-border); background: var(--mq-bg2);
+}
+
+/* Filtro de píldoras. */
+.maqueta .fchip {
+  padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--mq-border); background: transparent; color: var(--mq-muted); white-space: nowrap;
+}
+.maqueta .fchip:hover { color: var(--mq-text); border-color: var(--mq-border2); }
+.maqueta .fchip.active { background: var(--mq-green); border-color: var(--mq-green); color: #04140a; }
+
+/* ── Etiquetas y avatares ── */
+.maqueta .chip {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 100%;
+  padding: 3px 9px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.maqueta .avatar { border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: #fff; flex-shrink: 0; overflow: hidden; }
+.maqueta .tag-x {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 8px; border-radius: 7px; font-size: 10.5px; font-weight: 650;
+}
+.maqueta .tag-x button { background: none; border: none; color: inherit; cursor: pointer; opacity: 0.6; display: flex; padding: 0; }
+.maqueta .tag-x button:hover { opacity: 1; }
+
+/* ── Tabla ── */
+.maqueta .tbl-wrap { flex: 1; overflow: auto; min-height: 0; }
+.maqueta table.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.maqueta .tbl thead th {
+  position: sticky; top: 0; z-index: 2; background: var(--mq-bg2); text-align: left;
+  padding: 10px 14px; font-size: 10px; font-weight: 800; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--mq-muted2);
+  border-bottom: 1px solid var(--mq-border); white-space: nowrap;
+}
+.maqueta .tbl td { padding: 11px 14px; border-bottom: 1px solid var(--mq-border); vertical-align: middle; }
+.maqueta .tbl tbody tr { cursor: pointer; }
+.maqueta .tbl tbody tr:hover { background: var(--mq-card3); }
+.maqueta .tbl tbody tr.sel { background: color-mix(in srgb, var(--mq-green) 8%, transparent); }
+.maqueta .cell-name { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.maqueta .cell-name .nm { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.maqueta .vacio { padding: 40px 16px; text-align: center; color: var(--mq-muted2); font-size: 12.5px; }
+
+/* ── El panel de contexto del chat (`ConvPanel` de la maqueta) ── */
+.maqueta .ctx { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; background: var(--mq-bg2); }
+/**
+ * Las pestañas del panel: una grilla de tres por fila.
+ *
+ * En una tira horizontal, seis pestañas en 288 px entran a 45 px cada una —o
+ * scrollean, y entonces la mitad no se ve—. En dos filas de tres cada una tiene
+ * ancho para su ícono y su palabra, y las seis se ven al mismo tiempo, que es
+ * el punto: el panel se usa saltando entre ellas.
+ */
+.maqueta .ctx-tabs {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; margin-bottom: 14px;
+  background: var(--mq-card); border: 1px solid var(--mq-border); border-radius: 9px; padding: 3px;
+}
+.maqueta .ctx-tab {
+  display: flex; align-items: center; justify-content: center; gap: 5px; min-width: 0;
+  padding: 7px 6px; border-radius: 7px; font-size: 11px; font-weight: 650;
+  border: none; background: transparent; color: var(--mq-muted); cursor: pointer;
+  position: relative;
+}
+.maqueta .ctx-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.maqueta .ctx-tab:hover { color: var(--mq-text); }
+.maqueta .ctx-tab.active { background: var(--mq-card3); color: var(--mq-text); }
+/* El puntito de "acá hay algo": trabajo en cola, señales sin ver, una corrección. */
+.maqueta .ctx-tab .marca {
+  position: absolute; top: 4px; right: 5px; width: 6px; height: 6px;
+  border-radius: 50%; background: var(--mq-green);
+}
+.maqueta .ctx-sec { margin-bottom: 20px; }
+.maqueta .ctx-t {
+  font-size: 9.5px; font-weight: 800; color: var(--mq-muted2);
+  letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 9px;
+  display: flex; align-items: center; gap: 6px;
+}
+.maqueta .ctx-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 5px 0; }
+.maqueta .ctx-row .k { color: var(--mq-muted); }
+.maqueta .ctx-row .v { font-weight: 600; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+.maqueta .list-row {
+  display: flex; align-items: center; gap: 10px; padding: 9px 0;
+  border-bottom: 1px solid var(--mq-border); font-size: 12px;
+}
+.maqueta .list-row:last-child { border-bottom: none; }
+.maqueta .list-row .nm { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.maqueta .list-row .sub2 { font-size: 10px; color: var(--mq-muted2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.maqueta .media-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.maqueta .media-cell {
+  aspect-ratio: 1; border-radius: 8px; border: 1px solid var(--mq-border);
+  display: grid; place-items: center; font-size: 9px; font-weight: 800; cursor: pointer; overflow: hidden;
+}
+.maqueta .media-cell:hover { border-color: var(--mq-border2); }
+.maqueta .media-cell img { width: 100%; height: 100%; object-fit: cover; }

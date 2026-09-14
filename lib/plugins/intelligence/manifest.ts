@@ -11,7 +11,10 @@ const manifest: AppPluginManifest<typeof intelligenceSettingsSchema> = {
   activationMode: 'user',
   scopes: ['dashboard.nav', 'dashboard.page'],
   routes: [{ path: '/plugins/intelligence', title: 'Inteligencia', scope: 'dashboard.page' }],
-  navItems: [{ label: 'Inteligencia', href: '/plugins/intelligence', icon: 'PieChart', order: 66, requiredPermission: 'intelligence.read' }],
+  // Sin entrada propia en el menú: se entra por la app Empresa, que es la que
+  // agrupa la gestión del negocio. La ruta y los permisos siguen igual, así que
+  // los enlaces guardados y los favoritos siguen abriendo esta app.
+  navItems: [],
   settingsSchema: intelligenceSettingsSchema,
   featureFlags: [],
 };

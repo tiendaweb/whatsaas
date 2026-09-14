@@ -29,7 +29,6 @@ import {
   Building2,
   CreditCard,
   UserCheck,
-  CheckSquare,
   Clock,
   Sparkles,
   Crown,
@@ -45,7 +44,7 @@ import {
   ShoppingCart,
   UserCog,
   LifeBuoy,
-  FileSignature, Target,
+  FileSignature,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -59,6 +58,7 @@ import useSWR, { mutate } from 'swr';
 import { signOut } from '@/app/[locale]/(login)/actions';
 import { User } from '@/lib/db/schema';
 import { cn } from '@/lib/utils';
+import { AppsLauncherModal } from '@/components/apps/AppsLauncherModal';
 import { ThemeSwitcher } from '../theme-switcher';
 import { NotificacionesCampana } from '../notifications/NotificacionesCampana';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
@@ -124,6 +124,9 @@ export function Sidebar() {
 
   const navigationSection = getNavigationSection(pathname);
   const [isExpanded, setIsExpanded] = useState(false);
+  // El lanzador es un modal sobre la pantalla, no un salto a /apps: quien lo
+  // abre no pierde de vista dónde estaba trabajando.
+  const [lanzadorAbierto, setLanzadorAbierto] = useState(false);
   const pluginNavList = Array.isArray(pluginNavItems) ? pluginNavItems : [];
   const installedMiniAppsList = Array.isArray(installedMiniApps) ? installedMiniApps : [];
   const menuOverrideMap = new Map((menuConfig?.overrides ?? []).map(o => [o.itemKey, o]));
@@ -132,6 +135,10 @@ export function Sidebar() {
     setIsExpanded(false);
     window.localStorage.setItem(SIDEBAR_EXPANDED_STORAGE_KEY, 'false');
   }, [navigationSection]);
+
+  useEffect(() => {
+    setLanzadorAbierto(false);
+  }, [pathname]);
 
   const toggleExpanded = () => {
     setIsExpanded((currentValue) => {
@@ -143,11 +150,9 @@ export function Sidebar() {
 
   const allNavItems = [
     { href: '/dashboard',  icon: MessageCircle,   label: t('chats'),      feature: null },
-    { href: '/dashboard?view=tasks', icon: CheckSquare, label: t('tasks'), feature: null },
     { href: '/automation', icon: Zap,             label: t('automation'), feature: 'isFlowBuilderEnabled' },
     { href: '/settings/ai',icon: Bot,             label: t('ai_agent'),   feature: 'isAiEnabled' },
     { href: '/contacts',   icon: Users,           label: t('contacts'),   feature: null },
-    { href: '/seguimiento', icon: Target,         label: t('seguimiento'), feature: null },
     { href: '/drafts',     icon: FileText,        label: t('drafts'),     feature: null },
     { href: '/analytics',  icon: PieChart,        label: t('dashboard'),  feature: null },
     { href: '/templates',  icon: LayoutTemplate,  label: t('templates'),  feature: 'isTemplatesEnabled' },
@@ -225,12 +230,6 @@ export function Sidebar() {
       label: 'Escritorio',
       visual: APP_VISUAL['/escritorio'] ?? { gradient: 'from-slate-600 to-slate-800', iconColor: 'text-white' },
     },
-    {
-      href: '/seguimiento',
-      icon: Target,
-      label: t('seguimiento'),
-      visual: APP_VISUAL['/seguimiento'] ?? { gradient: 'from-emerald-500 to-teal-600', iconColor: 'text-white' },
-    },
   ];
 
   // Installed mini-apps as individual launcher entries
@@ -261,6 +260,7 @@ export function Sidebar() {
   }
 
   return (
+    <>
     <aside
       className={cn(
         'flex flex-col h-screen bg-background border-r border-border transition-all duration-300 ease-in-out z-50',
@@ -322,8 +322,9 @@ export function Sidebar() {
 
         {/* APPS launcher button */}
         {allLauncherApps.length > 0 && (
-          <Link
-            href="/apps"
+          <button
+            type="button"
+            onClick={() => setLanzadorAbierto(true)}
             title={!isExpanded ? 'APPS' : undefined}
             className={cn(
               'group flex min-h-11 w-full items-center gap-2 rounded-md px-2 py-1.5 transition-colors md:min-h-8',
@@ -344,7 +345,7 @@ export function Sidebar() {
                 APPS
               </span>
             )}
-          </Link>
+          </button>
         )}
       </nav>
 
@@ -429,5 +430,12 @@ export function Sidebar() {
       </div>
 
     </aside>
+
+      <AppsLauncherModal
+        open={lanzadorAbierto}
+        onClose={() => setLanzadorAbierto(false)}
+        currentPath={pathname}
+      />
+    </>
   );
 }

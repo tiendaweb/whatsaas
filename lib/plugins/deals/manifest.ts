@@ -17,17 +17,10 @@ const manifest: AppPluginManifest<typeof dealsSettingsSchema> = {
   routes: [
     { path: '/plugins/deals', title: 'Oportunidades', scope: 'dashboard.page' },
   ],
-  navItems: [
-    {
-      label: 'Oportunidades',
-      href: '/plugins/deals',
-      icon: 'Handshake',
-      // Justo antes de Ventas (56): en el menú se lee el recorrido completo,
-      // oportunidad y después venta.
-      order: 55,
-      requiredPermission: 'deals.read',
-    },
-  ],
+  // Sin entrada propia en el menú: se entra por la app Empresa, que es la que
+  // agrupa la gestión del negocio. La ruta y los permisos siguen igual, así que
+  // los enlaces guardados y los favoritos siguen abriendo esta app.
+  navItems: [],
   settingsSchema: dealsSettingsSchema,
   featureFlags: [],
 };
