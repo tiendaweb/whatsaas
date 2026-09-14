@@ -181,12 +181,24 @@ export function VistaColumnasMiembros(props: {
   const conTareas = todasLasColumnas.filter((columna) => columna.tareas.length > 0);
   const columnas = dashboard && !arrastrando && conTareas.length > 0 ? conTareas : todasLasColumnas;
 
-  // Clases literales: Tailwind no genera `lg:grid-cols-${n}` armado en runtime.
-  const columnasGrid = columnas.length === 1
-    ? 'lg:grid-cols-1'
-    : columnas.length === 2
-      ? 'lg:grid-cols-2'
-      : 'lg:grid-cols-3';
+  /**
+   * Clases literales: Tailwind no genera `lg:grid-cols-${n}` armado en runtime.
+   *
+   * Las columnas son el equipo, así que pueden ser dos o quince. Hasta cuatro
+   * entran en la grilla; de ahí en más se deja la fila que scrollea, que es lo
+   * que ya hace en pantallas chicas: quince columnas apretadas en el ancho de
+   * la pantalla no se leen.
+   */
+  const enGrilla = columnas.length <= 4;
+  const columnasGrid = !enGrilla
+    ? ''
+    : columnas.length === 1
+      ? 'lg:grid lg:grid-cols-1'
+      : columnas.length === 2
+        ? 'lg:grid lg:grid-cols-2'
+        : columnas.length === 3
+          ? 'lg:grid lg:grid-cols-3'
+          : 'lg:grid lg:grid-cols-4';
 
   const tarjetaProps = {
     onDragStart: (tarea: Tarea) => {
@@ -213,7 +225,8 @@ export function VistaColumnasMiembros(props: {
     // colores de tema claro sobre el gradiente oscuro de la pantalla.
     <div className={cn('space-y-8', dashboard && 'tareas-sobre-oscuro')}>
       <div className={cn(
-        'flex gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:grid lg:overflow-visible lg:items-start',
+        'flex gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:items-start',
+        enGrilla && 'lg:overflow-visible',
         columnasGrid,
         dashboard ? 'pb-2' : 'pb-32 -mx-4 px-4 lg:mx-0 lg:px-0',
       )}>
@@ -230,7 +243,8 @@ export function VistaColumnasMiembros(props: {
                 // marco que se comía el alto y partía la lista en dos scrolls.
                 // Ahora el encabezado ordena la columna y las tareas bajan
                 // todas, con el scroll de la página.
-                'w-[80vw] max-w-sm shrink-0 flex flex-col gap-3 lg:w-auto lg:max-w-none',
+                'w-[80vw] max-w-sm shrink-0 flex flex-col gap-3',
+                enGrilla ? 'lg:w-auto lg:max-w-none' : 'lg:w-[19rem]',
                 'rounded-2xl transition-shadow',
                 activa && 'ring-2 ring-[var(--tareas-accent)]',
                 dragOverClave === columna.clave && columna.miembro && 'ring-2 ring-[var(--tareas-accent)] ring-dashed',

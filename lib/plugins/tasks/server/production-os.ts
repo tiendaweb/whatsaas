@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createHash } from 'crypto';
+import { getTeamSystemPrompt, renderTeamPrompt } from '@/lib/prompts/team-system';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, max, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import {
@@ -618,6 +619,23 @@ export async function updateProductionOrder(teamId: number, userId: number, task
  * como una corrida auditable. No cambia el estado del pedido: la UI sólo avanza
  * al siguiente cuando esta función devuelve `ok: true`.
  */
+export const TASKS_OS_PRODUCTION_SYSTEM_PROMPT = `Sos el motor de ejecución de Producción en Tareas OS.
+
+Trabajá únicamente con el pedido, el contexto, el checklist y la instrucción que recibís. Respondé con el resultado concreto. Si la tarea requiere herramientas o accesos externos que no tenés, indicá exactamente qué debe tomar un conector. Nunca afirmes que ejecutaste acciones que no realizaste.`;
+
+export const TASKS_OS_PRODUCTION_USER_TEMPLATE = `PEDIDO DE PRODUCCIÓN
+Tarea #{{task_id}}: {{task_title}}
+Estado: {{status}}
+
+Contexto:
+{{context}}
+
+Checklist:
+{{checklist}}
+
+Instrucción:
+{{instruction}}`;
+
 export async function executeProductionPromptWithBank(teamId: number, userId: number, taskId: number) {
   const current = await db.query.teamTaskItems.findFirst({
     where: and(eq(teamTaskItems.teamId, teamId), eq(teamTaskItems.id, taskId)),
@@ -629,15 +647,21 @@ export async function executeProductionPromptWithBank(teamId: number, userId: nu
   const checklist = Array.isArray(current.checklist)
     ? current.checklist.map((item) => `${item.completed ? '[x]' : '[ ]'} ${item.text}`).join('\n')
     : '';
-  const promptSnapshot = [
-    'PEDIDO DE PRODUCCIÓN',
-    `Tarea #${current.id}: ${current.title}`,
-    `Estado: ${WORK_STATUS_META[current.workStatus].label}`,
-    current.notes.trim() ? `Contexto:\n${current.notes.trim()}` : '',
-    checklist ? `Checklist:\n${checklist}` : '',
-    `Instrucción:\n${prompt}`,
-    'Respondé con el resultado concreto. Si esta tarea requiere herramientas o accesos externos que no tenés, indicá exactamente qué debe tomar un conector; no afirmes que ejecutaste acciones que no realizaste.',
-  ].filter(Boolean).join('\n\n');
+  const activePrompt = await getTeamSystemPrompt(teamId, {
+    key: 'tasks.production-execute',
+    title: 'Ejecutor de pedidos de Producción',
+    systemPrompt: TASKS_OS_PRODUCTION_SYSTEM_PROMPT,
+    userTemplate: TASKS_OS_PRODUCTION_USER_TEMPLATE,
+  });
+  const userPrompt = renderTeamPrompt(activePrompt.userTemplate, {
+    task_id: String(current.id),
+    task_title: current.title,
+    status: WORK_STATUS_META[current.workStatus].label,
+    context: current.notes.trim() || '(sin contexto adicional)',
+    checklist: checklist || '(sin checklist)',
+    instruction: prompt,
+  });
+  const promptSnapshot = `${activePrompt.systemPrompt}\n\n${userPrompt}`;
   const fingerprint = createHash('sha256').update(promptSnapshot).digest('hex');
   const outcome = await analizarTextoConBanco({ teamId, prompt: promptSnapshot });
   const completed = outcome.ok;

@@ -37,8 +37,10 @@ export function FiltrosSistema(props: {
             key={item.id}
             type="button"
             onClick={() => props.onNav(item.id)}
+            aria-current={active ? 'page' : undefined}
             className={cn(
-              'shrink-0 inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium transition-all duration-200',
+              'relative shrink-0 inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-medium transition-all duration-200',
+              active ? 'border-[color-mix(in_srgb,var(--tareas-accent)_28%,transparent)] shadow-sm' : 'border-transparent',
               active ? C.navActive : C.navIdle,
               item.danger && !active && 'text-rose-500',
             )}
@@ -46,6 +48,7 @@ export function FiltrosSistema(props: {
             <Icon className={cn('w-4 h-4', active && 'text-[var(--tareas-accent)]', item.danger && !active && 'text-rose-500')} />
             {item.label}
             {badge > 0 && <span className={C.badge}>{badge}</span>}
+            {active && <span className="absolute inset-x-3 -bottom-[5px] h-0.5 rounded-full bg-[var(--tareas-accent)]" aria-hidden />}
           </button>
         );
       })}

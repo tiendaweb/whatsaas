@@ -622,9 +622,11 @@ export function TareasApp() {
             title={disabled ? ES.cabecera.tableroSinProyecto : label}
             disabled={disabled}
             onClick={() => setPrefs({ layout: id as LayoutId })}
-            className={cn(C.iconBtn, 'p-2', prefs.layout === id && C.iconBtnActive, disabled && 'opacity-30')}
+            aria-pressed={prefs.layout === id}
+            className={cn(C.iconBtn, 'flex items-center gap-1.5 p-2', prefs.layout === id && C.iconBtnActive, disabled && 'opacity-30')}
           >
             <Icon className="w-4 h-4" />
+            <span className="hidden text-xs font-semibold xl:inline">{label}</span>
           </button>
         );
       })}
@@ -771,6 +773,19 @@ export function TareasApp() {
         </div>
       )}
       <MobileDrawer open={drawer} onClose={() => setDrawer(false)} {...sidebarProps} />
+
+      {prefs.sidebarCollapsed && (
+        <button
+          type="button"
+          onClick={() => setPrefs({ sidebarCollapsed: false })}
+          className="fixed left-4 top-4 z-30 hidden items-center gap-2 rounded-xl border border-[var(--t-border-2)] bg-[var(--t-surface)] px-3 py-2 text-xs font-bold text-[var(--t-text)] shadow-sm hover:bg-[var(--t-hover)] lg:flex"
+          aria-label="Mostrar navegación"
+          title="Mostrar navegación (⌘/Ctrl + B)"
+        >
+          <Menu className="h-4 w-4" />
+          Menú
+        </button>
+      )}
 
       <main ref={contenedorRef} className="flex-1 h-full overflow-y-auto relative w-full">
         {prefs.nav !== 'espacios' && prefs.nav !== 'enfoque' && prefs.nav !== 'produccion' && (

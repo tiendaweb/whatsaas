@@ -451,7 +451,7 @@ export const ES = {
     todos: 'Todos',
     sinTareas: 'Sin tareas',
     sinAsignar: 'Sin asignar',
-    sinAsignarBajada: 'Tareas de todos los espacios que no tienen dueño entre Noelia, Martín o Carlos. Arrastralas a una columna para asignarlas.',
+    sinAsignarBajada: 'Tareas de todos los espacios que no tienen dueño en el equipo. Arrastralas a la columna de una persona para asignárselas.',
   },
 
   dashboard: {

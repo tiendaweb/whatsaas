@@ -1,4 +1,3 @@
-import { nombreNormalizado } from './universo';
 import { claveDia } from './fechas';
 import type { Prioridad, Tarea } from './tipos';
 
@@ -8,76 +7,12 @@ export type MiembroFiltro = {
   email: string;
 };
 
-export const COLUMNAS_MIEMBROS = [
-  { clave: 'noelia', label: 'Noelia' },
-  { clave: 'martin', label: 'Martín' },
-  { clave: 'carlos', label: 'Carlos' },
-] as const;
-
-export type ClaveMiembro = (typeof COLUMNAS_MIEMBROS)[number]['clave'];
-
 const PRIO_RANK: Record<Prioridad, number> = { alta: 0, media: 1, baja: 2 };
 
 export function primerNombreDe(miembro: Pick<MiembroFiltro, 'name' | 'email'>): string {
   const raw = (miembro.name ?? '').trim();
   if (raw) return raw.split(/\s+/)[0] ?? raw;
   return miembro.email.split('@')[0] || '—';
-}
-
-export function claveDeMiembro(miembro: Pick<MiembroFiltro, 'name' | 'email'>): string {
-  return nombreNormalizado(primerNombreDe(miembro));
-}
-
-/**
- * Puntúa qué tan bien un miembro responde al nombre de una columna.
- * `null` = no es candidato. Cuanto más alto, mejor.
- *
- * Los tramos importan: una coincidencia EXACTA (por nombre o por la parte
- * local del correo) siempre le tiene que ganar a un prefijo. Ese era el bug:
- * conviven `martin@whatspro.uno` y `martinproduccion@aapp.space`, y el prefijo
- * del segundo ganaba por venir antes en el array.
- */
-function puntajeMiembro(miembro: Pick<MiembroFiltro, 'name' | 'email'>, wanted: string): number | null {
-  const nombre = nombreNormalizado(miembro.name ?? '');
-  const local = nombreNormalizado(miembro.email.split('@')[0] ?? '');
-  const primer = nombre ? (nombre.split(' ')[0] ?? nombre) : '';
-
-  if (primer && primer === wanted) return 100;
-  if (local === wanted) return 90;
-  if (nombre && nombre.startsWith(`${wanted} `)) return 80;
-
-  // Prefijos: último recurso. Se penaliza lo que sobra, para que `martin@` le
-  // gane a `martinproduccion@` sin depender del orden en que venga el equipo.
-  if (local.startsWith(wanted)) return 50 - Math.min(45, local.length - wanted.length);
-  if (nombre.startsWith(wanted)) return 45 - Math.min(40, nombre.length - wanted.length);
-  return null;
-}
-
-/**
- * Resuelve el nombre de una columna ('noelia' | 'martin' | 'carlos') al miembro
- * del equipo que le corresponde.
- *
- * Antes era un `find` con `mail.startsWith(clave)` y ganaba el primero que
- * pasara. Con dos cuentas que arrancan igual, la columna "Martín" apuntaba a
- * la equivocada: las tareas se asignaban a esa cuenta, y todo lo que se
- * asignara al Martín real caía fuera de las tres columnas, en "Sin asignar".
- * Ahora gana el mejor puntaje, con desempate estable por id.
- */
-export function miembroPorClave(miembros: MiembroFiltro[], clave: string): MiembroFiltro | null {
-  const wanted = nombreNormalizado(clave);
-  let mejor: MiembroFiltro | null = null;
-  let mejorPuntaje = -Infinity;
-
-  for (const miembro of miembros) {
-    const puntaje = puntajeMiembro(miembro, wanted);
-    if (puntaje === null) continue;
-    if (puntaje > mejorPuntaje || (puntaje === mejorPuntaje && mejor !== null && miembro.id < mejor.id)) {
-      mejor = miembro;
-      mejorPuntaje = puntaje;
-    }
-  }
-
-  return mejor;
 }
 
 /** Dueño efectivo de una tarea: a quién está asignada o, si no, quién la creó. */
@@ -98,33 +33,60 @@ export function ordenarPorPrioridad(a: Tarea, b: Tarea): number {
 }
 
 export type ColumnaMiembro = {
-  clave: ClaveMiembro;
+  /** Estable por usuario: sirve de `key` y de destino del arrastre. */
+  clave: string;
   label: string;
   miembro: MiembroFiltro | null;
   tareas: Tarea[];
 };
 
+/**
+ * Una columna por cada miembro del equipo.
+ *
+ * Antes eran tres columnas escritas a mano —Noelia, Martín y Carlos— que se
+ * resolvían por nombre contra la lista real. En cualquier otra cuenta el
+ * tablero mostraba tres columnas vacías con nombres de gente que no existe
+ * ahí, y el trabajo de todos caía en "Sin asignar". Ahora las columnas SON el
+ * equipo: quien entra hoy ve a los suyos, y quien suma a alguien lo ve
+ * aparecer sin tocar código.
+ *
+ * Orden: primero quien más trabajo tiene y, a igualdad, alfabético. Así la
+ * columna con carga queda a la vista sin depender de en qué orden devolvió la
+ * API los miembros.
+ */
 export function agruparPorColumnasMiembro(tareas: Tarea[], miembros: MiembroFiltro[]): ColumnaMiembro[] {
-  return COLUMNAS_MIEMBROS.map((col) => {
-    const miembro = miembroPorClave(miembros, col.clave);
-    const tareasCol = miembro
-      ? tareas.filter((tarea) => duenoDeTarea(tarea) === miembro.id).sort(ordenarPorPrioridad)
-      : [];
-    return { clave: col.clave, label: col.label, miembro, tareas: tareasCol };
-  });
+  // Dos personas pueden llamarse igual de nombre: ahí se muestra el nombre
+  // completo (o la parte del correo) para no tener dos columnas «Martín».
+  const conteo = new Map<string, number>();
+  for (const miembro of miembros) {
+    const nombre = primerNombreDe(miembro);
+    conteo.set(nombre, (conteo.get(nombre) ?? 0) + 1);
+  }
+
+  return miembros
+    .map((miembro) => {
+      const corto = primerNombreDe(miembro);
+      const label = (conteo.get(corto) ?? 0) > 1
+        ? (miembro.name?.trim() || miembro.email)
+        : corto;
+      return {
+        clave: `u${miembro.id}`,
+        label,
+        miembro,
+        tareas: tareas.filter((tarea) => duenoDeTarea(tarea) === miembro.id).sort(ordenarPorPrioridad),
+      };
+    })
+    .sort((a, b) => b.tareas.length - a.tareas.length || a.label.localeCompare(b.label, 'es'));
 }
 
-// Complemento de las 3 columnas fijas: tareas cuyo dueño resuelto (assigneeId, o su
-// creador si no tiene asignado) no es Noelia, Martín ni Carlos. Sin esto quedaban
-// invisibles en "Todos los proyectos" — ni aparecían en ninguna columna ni se podían
-// arrastrar para asignarlas.
+/**
+ * Lo que no le pertenece a nadie del equipo: sin dueño, o de alguien que ya no
+ * está en la lista de miembros. Sin esta columna quedaban invisibles —ni
+ * aparecían en ninguna columna ni se podían arrastrar para asignarlas—.
+ */
 export function tareasSinAsignar(tareas: Tarea[], miembros: MiembroFiltro[]): Tarea[] {
-  const idsConocidos = new Set(
-    COLUMNAS_MIEMBROS
-      .map((col) => miembroPorClave(miembros, col.clave)?.id)
-      .filter((id): id is number => id != null),
-  );
+  const delEquipo = new Set(miembros.map((miembro) => miembro.id));
   return tareas
-    .filter((tarea) => !idsConocidos.has(duenoDeTarea(tarea) ?? -1))
+    .filter((tarea) => !delEquipo.has(duenoDeTarea(tarea) ?? -1))
     .sort(ordenarPorPrioridad);
 }

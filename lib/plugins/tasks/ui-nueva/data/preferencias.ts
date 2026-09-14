@@ -12,7 +12,7 @@ export const PREFS_DEFAULT: Preferencias = {
   workspaceId: null,
   projectIds: null,
   sidebarCollapsed: false,
-  sidebarWidth: 300,
+  sidebarWidth: 332,
   etiquetasConfirmadas: [],
 };
 
