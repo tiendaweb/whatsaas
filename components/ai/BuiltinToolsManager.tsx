@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Loader2, Sparkles, Eye, PencilLine } from 'lucide-react';
+import { Loader2, Sparkles, Eye, PencilLine, VolumeX } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
@@ -86,6 +86,13 @@ export function BuiltinToolsManager() {
                           {tool.risk === 'read' ? <Eye className="h-3 w-3" /> : <PencilLine className="h-3 w-3" />}
                           {tool.risk === 'read' ? t('risk_read') : t('risk_write')}
                         </Badge>
+                        {/* Silenciosa: trabaja por detrás y el cliente no lee nada. */}
+                        {tool.silent && (
+                          <Badge variant="outline" className="gap-1 text-[10px]" title="El cliente no se entera: no genera ningún mensaje">
+                            <VolumeX className="h-3 w-3" />
+                            Silenciosa
+                          </Badge>
+                        )}
                       </div>
                       <p className="text-xs text-muted-foreground">{tool.summary}</p>
                     </div>

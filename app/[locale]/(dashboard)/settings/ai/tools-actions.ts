@@ -35,6 +35,8 @@ export async function createAiTool(formData: FormData) {
   if (actions.length === 0) {
     return { error: 'At least one action is required' };
   }
+  // Silenciosa: vive en el jsonb a propósito, para no migrar `ai_tools`.
+  const silent = formData.get('silent') === 'true';
 
   try {
     await db.insert(aiTools).values({
@@ -43,7 +45,7 @@ export async function createAiTool(formData: FormData) {
       description,
       type: 'actions',
       confirmationMessage,
-      actionData: { actions },
+      actionData: { actions, silent },
       isActive: true,
     });
 
@@ -76,6 +78,8 @@ export async function updateAiTool(id: number, formData: FormData) {
   if (actions.length === 0) {
     return { error: 'At least one action is required' };
   }
+  // Silenciosa: vive en el jsonb a propósito, para no migrar `ai_tools`.
+  const silent = formData.get('silent') === 'true';
 
   try {
     await db.update(aiTools)
@@ -83,7 +87,7 @@ export async function updateAiTool(id: number, formData: FormData) {
         name: cleanName,
         description,
         confirmationMessage,
-        actionData: { actions },
+        actionData: { actions, silent },
         type: 'actions',
         updatedAt: new Date(),
       })

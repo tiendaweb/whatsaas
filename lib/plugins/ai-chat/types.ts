@@ -32,5 +32,12 @@ export type ToolDefinition = {
   name: string;
   description: string;
   parameters: Record<string, any>;
+  /**
+   * Silenciosa: trabaja por detrás y el cliente no se entera. El motor no le
+   * pide al modelo que anuncie nada y le recuerda que siga la conversación
+   * como si no hubiera pasado nada. Silencioso es para el cliente: el equipo
+   * igual ve el rastro en el chat (`@@syslog_ai_*`).
+   */
+  silent?: boolean;
   execute: (args: any, context: any) => Promise<any>;
 };

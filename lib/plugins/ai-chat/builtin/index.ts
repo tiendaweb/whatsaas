@@ -17,6 +17,7 @@ import { salesTools } from './sales';
 import { supportTools } from './support';
 import { sitesTools } from './sites';
 import { crmTools } from './crm';
+import { silentTools } from './silent';
 
 /**
  * Catálogo completo de funciones integradas. El orden es el que ve el equipo
@@ -24,6 +25,7 @@ import { crmTools } from './crm';
  */
 export const BUILTIN_TOOLS: BuiltinToolDefinition[] = [
   ...crmTools,
+  ...silentTools,
   ...knowledgeTools,
   ...calendarTools,
   ...customersTools,
@@ -63,10 +65,11 @@ export async function getBuiltinToolsForTeam(teamId: number): Promise<ToolDefini
   return BUILTIN_TOOLS.filter((tool) => {
     if (disabled.has(tool.name)) return false;
     return tool.pluginId === null || activePlugins.has(tool.pluginId);
-  }).map(({ name, description, parameters, execute }) => ({
+  }).map(({ name, description, parameters, silent, execute }) => ({
     name,
     description,
     parameters,
+    silent,
     execute: (args, context) => execute(args, { chatId: context.chatId, teamId: context.teamId }),
   }));
 }
@@ -82,6 +85,7 @@ export async function listBuiltinToolCatalog(teamId: number): Promise<BuiltinToo
     label: tool.label,
     summary: tool.summary,
     risk: tool.risk,
+    silent: tool.silent === true,
     pluginActive: tool.pluginId === null || activePlugins.has(tool.pluginId),
     enabled: !disabled.has(tool.name),
   }));

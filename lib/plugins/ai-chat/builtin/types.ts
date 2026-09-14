@@ -10,6 +10,7 @@ export type BuiltinToolContext = { chatId: number; teamId: number };
  * - `pluginId`: app que la habilita. `null` = siempre disponible (núcleo).
  * - `risk`: `read` sólo consulta; `write` modifica datos del equipo. La UI lo
  *   muestra para que quien administra sepa qué le está dejando hacer al bot.
+ * - `silent`: el cliente no se entera de que se ejecutó. Ver `ToolDefinition`.
  */
 export type BuiltinToolDefinition = Omit<ToolDefinition, 'execute'> & {
   pluginId: string | null;
@@ -26,6 +27,7 @@ export type BuiltinToolCatalogEntry = {
   label: string;
   summary: string;
   risk: 'read' | 'write';
+  silent: boolean;
   pluginActive: boolean;
   enabled: boolean;
 };

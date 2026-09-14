@@ -10,8 +10,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Loader2, Plus, Trash2, Pencil, UploadCloud, FileText, Image as ImageIcon, Mic, GitBranch, UserPlus, FormInput, ChevronDown, StickyNote, Tag, Zap, ListTodo, TrendingUp, LifeBuoy, Clock, CalendarPlus, UserCheck, BadgeCheck, Banknote, ShoppingCart, ContactRound } from 'lucide-react';
+import { Loader2, Plus, Trash2, Pencil, UploadCloud, FileText, Image as ImageIcon, Mic, GitBranch, UserPlus, FormInput, ChevronDown, StickyNote, Tag, Zap, ListTodo, TrendingUp, LifeBuoy, Clock, CalendarPlus, UserCheck, BadgeCheck, Banknote, ShoppingCart, ContactRound, VolumeX } from 'lucide-react';
 import { toast } from 'sonner';
 import { createAiTool, updateAiTool, deleteAiTool, getAiTools } from '@/app/[locale]/(dashboard)/settings/ai/tools-actions';
 import { getBuiltinAiTools } from '@/app/[locale]/(dashboard)/settings/ai/builtin-tools-actions';
@@ -121,6 +122,8 @@ export function ToolsManager() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [confirmationMessage, setConfirmationMessage] = useState('');
+  // Silenciosa: se ejecuta por detrás y el cliente no lee ninguna confirmación.
+  const [silent, setSilent] = useState(false);
   const [actions, setActions] = useState<ToolAction[]>([]);
 
   const addAction = (type: ToolAction['type']) => {
@@ -206,6 +209,7 @@ export function ToolsManager() {
     setName(tool.name);
     setDescription(tool.description);
     setConfirmationMessage(tool.confirmationMessage || '');
+    setSilent((tool.actionData as any)?.silent === true);
 
     const toolActions = getToolActions(tool);
     setActions(toolActions as ToolAction[]);
@@ -255,6 +259,7 @@ export function ToolsManager() {
     formData.append('name', name);
     formData.append('description', description);
     formData.append('confirmationMessage', confirmationMessage);
+    formData.append('silent', silent ? 'true' : 'false');
 
     const cleanActions = actions.map(({ fileName, ...rest }) => rest);
     formData.append('actions', JSON.stringify(cleanActions));
@@ -283,7 +288,7 @@ export function ToolsManager() {
 
   const resetForm = () => {
     setEditingId(null);
-    setName(''); setDescription(''); setConfirmationMessage('');
+    setName(''); setDescription(''); setConfirmationMessage(''); setSilent(false);
     setActions([]);
   };
 
@@ -760,8 +765,25 @@ export function ToolsManager() {
                     placeholder={t('confirmation_placeholder_combo')}
                     value={confirmationMessage}
                     onChange={e => setConfirmationMessage(e.target.value)}
+                    disabled={silent}
                   />
                   <p className="text-[10px] text-muted-foreground">{t('confirmation_hint')}</p>
+                </div>
+
+                {/* Silenciosa: sin esto toda herramienta termina en un "listo, ya
+                    lo registré" por algo que era interno. */}
+                <div className="flex items-start justify-between gap-4 rounded-md border p-3">
+                  <div className="space-y-0.5">
+                    <Label className="flex items-center gap-1.5">
+                      <VolumeX className="h-3.5 w-3.5" />
+                      Silenciosa
+                    </Label>
+                    <p className="text-[10px] text-muted-foreground">
+                      El cliente no se entera: no se le confirma nada y la conversación sigue como si nada.
+                      El equipo igual ve lo que se hizo en el chat.
+                    </p>
+                  </div>
+                  <Switch checked={silent} onCheckedChange={setSilent} aria-label="Herramienta silenciosa" />
                 </div>
               </div>
 

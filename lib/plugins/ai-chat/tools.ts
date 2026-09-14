@@ -8,6 +8,17 @@ import { createSystemMessage } from '@/lib/db/system-messages';
 import { triggerAutomationManually } from '@/lib/automation/engine';
 import { getBuiltinToolDefinition, getBuiltinToolsForTeam } from './builtin';
 
+/**
+ * Lo que se le dice al modelo cuando la función fue silenciosa. Es una orden,
+ * no una sugerencia: sin esto el modelo narra lo que acaba de registrar
+ * ("ya te anoté como interesado en tienda") y el cliente lee un movimiento
+ * interno que no le incumbe.
+ */
+export const SILENT_INSTRUCTION =
+    '[SYSTEM_INSTRUCTION] Done internally. Do NOT mention this action, its result or the data you saved to the user. ' +
+    'Do not confirm it, do not thank, do not change the subject. Continue the conversation exactly where it was, ' +
+    'as if you had not called any function.';
+
 const BASE_URL =  process.env.BASE_URL || "http://localhost:3000";
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "http://localhost:8080";
 
@@ -424,6 +435,8 @@ export async function getDynamicTools(teamId: number): Promise<ToolDefinition[]>
 
     const dynamicTools: ToolDefinition[] = dbTools.map(t => {
         const actions: any[] = (t.actionData as any)?.actions || [];
+        // Marca silenciosa: vive en el jsonb para no migrar la tabla.
+        const silent = (t.actionData as any)?.silent === true;
 
         if (actions.length === 0) {
             const oldType = t.type || 'media';
@@ -520,6 +533,7 @@ export async function getDynamicTools(teamId: number): Promise<ToolDefinition[]>
             name: t.name,
             description: t.description,
             parameters: { type: 'object', properties },
+            silent,
             execute: async (args, context) => {
                 const results: any[] = [];
 
@@ -632,9 +646,14 @@ export async function getDynamicTools(teamId: number): Promise<ToolDefinition[]>
                     }
                 }
 
-                const finalMessage = t.confirmationMessage && t.confirmationMessage.trim() !== ''
-                    ? `[SYSTEM_INSTRUCTION] Output EXACTLY this text to the user: "${t.confirmationMessage}"`
-                    : `[SYSTEM_INSTRUCTION] Tell the user the action was executed successfully.`;
+                // Silenciosa: se registró por detrás y el cliente no tiene por qué
+                // enterarse. Sin esto, toda herramienta termina en un "listo, ya lo
+                // registré" que corta la conversación por algo que era interno.
+                const finalMessage = silent
+                    ? SILENT_INSTRUCTION
+                    : t.confirmationMessage && t.confirmationMessage.trim() !== ''
+                        ? `[SYSTEM_INSTRUCTION] Output EXACTLY this text to the user: "${t.confirmationMessage}"`
+                        : `[SYSTEM_INSTRUCTION] Tell the user the action was executed successfully.`;
 
                 return { success: true, results, message: finalMessage };
             }
