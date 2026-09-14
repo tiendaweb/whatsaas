@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { puertaDevCenter } from '@/lib/plugins/dev-center/server/puerta';
 import { deleteDevPrompt, getDevPrompt, upsertDevPrompt } from '@/lib/plugins/dev-center/server/prompts';
-import { promptSchema } from '../route';
+import { promptSchema } from '@/lib/plugins/dev-center/shared/prompt-schema';
 
 export const dynamic = 'force-dynamic';
 
