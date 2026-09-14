@@ -1,0 +1,689 @@
+/**
+ * La cabina de Empresa: la interfaz de la maqueta de ChatPro
+ * (chatpro-nuevo-diseno.aapp.pro), compartida por las vistas que se dibujan a
+ * pantalla completa — Proyectos, Marcas, Planes y Suscripciones.
+ *
+ * Todo cuelga de `.cabina` para que estas clases cortas —`.col`, `.tbl`,
+ * `.chip`— no se crucen con el resto de la aplicación, que comparte hoja de
+ * estilos.
+ *
+ * Las variables se repiten acá y no se importan de `crm-embudos.css` porque
+ * allá cuelgan de `.crmEmbudos`: una hoja no puede heredar variables de un
+ * selector que no es su ancestro. Los valores son los mismos a propósito —es
+ * la misma cabina— y por eso van juntos, para que cambiar el verde de una
+ * obligue a mirar la otra.
+ */
+.cabina {
+  --ce-bg2: #f6f6f8;
+  --ce-card: #ffffff;
+  --ce-card2: #fbfbfc;
+  --ce-card3: rgba(0, 0, 0, 0.05);
+  --ce-border: rgba(0, 0, 0, 0.09);
+  --ce-border2: rgba(0, 0, 0, 0.16);
+  --ce-green: #16a34a;
+  --ce-blue: #2563eb;
+  --ce-text: #18181b;
+  --ce-muted: #6b7280;
+  --ce-muted2: #9ca3af;
+
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  color: var(--ce-text);
+}
+
+:is(.dark) .cabina,
+.dark .cabina {
+  --ce-bg2: #111113;
+  --ce-card: #16161a;
+  --ce-card2: #1c1c21;
+  --ce-card3: #232329;
+  --ce-border: rgba(255, 255, 255, 0.07);
+  --ce-border2: rgba(255, 255, 255, 0.13);
+  --ce-green: #25d366;
+  --ce-blue: #60a5fa;
+  --ce-text: #f0f0f2;
+  --ce-muted: #7a7a8c;
+  --ce-muted2: #55555f;
+}
+
+/**
+ * La barra única de la vista.
+ *
+ * Lleva el proyecto abierto, sus números, las pestañas y la salida a Tareas
+ * OS. El shell de Empresa no dibuja el suyo en esta vista (`PANTALLA_COMPLETA`
+ * en `EmpresaApp.tsx`) ni la encierra en la caja de 1100 px: el tablero usa el
+ * ancho entero, como el de embudos.
+ */
+.cabina .topbar {
+  min-height: 54px;
+  border-bottom: 1px solid var(--ce-border);
+  display: flex;
+  align-items: center;
+  padding: 7px 12px;
+  gap: 12px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  background: var(--ce-bg2);
+}
+.cabina .titulo { min-width: 0; }
+.cabina .titulo .nm {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 14.5px; font-weight: 750; letter-spacing: -0.02em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cabina .titulo .nm .dot { width: 7px; height: 7px; }
+.cabina .sub { font-size: 11px; color: var(--ce-muted); }
+.cabina .avance { width: 108px; flex-shrink: 0; }
+.cabina .avance .pc { font-size: 10px; font-weight: 800; color: var(--ce-muted2); margin-bottom: 3px; }
+.cabina .sp { flex: 1; }
+.cabina .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+.cabina .btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 9px;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--ce-border); background: var(--ce-card); color: var(--ce-text);
+  text-decoration: none; white-space: nowrap;
+}
+.cabina .btn:hover { background: var(--ce-card3); border-color: var(--ce-border2); }
+
+.cabina .tabs { display: inline-flex; gap: 2px; padding: 2px; border-radius: 10px; background: var(--ce-card3); }
+.cabina .tab {
+  padding: 5px 12px; border-radius: 8px; border: 0; background: transparent;
+  font-size: 12px; font-weight: 650; color: var(--ce-muted); cursor: pointer;
+}
+.cabina .tab.active { background: var(--ce-card); color: var(--ce-text); }
+
+.cabina .cuerpo { display: flex; flex: 1; min-height: 0; position: relative; }
+
+/* El selector de proyecto de la barra: sólo cuando el rail no se dibuja. */
+.cabina .sel-angosto { display: none; min-width: 0; }
+.cabina .sel-angosto select {
+  appearance: none; -webkit-appearance: none;
+  max-width: 190px; padding: 6px 24px 6px 10px; border-radius: 9px;
+  border: 1px solid var(--ce-border); background-color: var(--ce-card); color: var(--ce-text);
+  font-size: 12px; font-weight: 650; cursor: pointer; text-overflow: ellipsis;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 7px center; background-size: 12px;
+}
+.cabina .sel-angosto select option { background: var(--ce-card); color: var(--ce-text); }
+@media (max-width: 860px) {
+  .cabina .sel-angosto { display: inline-flex; }
+}
+
+/* Rail de workspaces y proyectos. */
+.cabina .pj-side {
+  width: 206px; flex-shrink: 0; border-right: 1px solid var(--ce-border);
+  overflow-y: auto; background: var(--ce-bg2);
+}
+.cabina .ws-sel { padding: 10px 10px 9px; border-bottom: 1px solid var(--ce-border); }
+.cabina .ws-sel select {
+  appearance: none; -webkit-appearance: none;
+  width: 100%; padding: 6px 26px 6px 10px; border-radius: 9px;
+  border: 1px solid var(--ce-border); background-color: var(--ce-card); color: var(--ce-text);
+  font-size: 12px; font-weight: 650; cursor: pointer; text-overflow: ellipsis;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 8px center; background-size: 12px;
+}
+.cabina .ws-sel select:hover { border-color: var(--ce-border2); }
+.cabina .ws-sel select option { background: var(--ce-card); color: var(--ce-text); }
+
+.cabina .ws-h {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  padding: 9px 10px 4px; border: 0; background: transparent;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--ce-muted); text-align: left;
+}
+.cabina .pj-item {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  padding: 8px 10px 9px; border: 0; border-left: 2px solid transparent; background: transparent;
+}
+.cabina .pj-item:hover { background: var(--ce-card3); }
+.cabina .pj-item.active { background: var(--ce-card); border-left-color: var(--ce-green); }
+.cabina .pj-nm { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 650; color: var(--ce-text); }
+.cabina .pj-mt { display: flex; gap: 10px; margin-top: 4px; font-size: 10px; color: var(--ce-muted2); }
+
+.cabina .bar { height: 5px; border-radius: 999px; background: var(--ce-card3); overflow: hidden; }
+.cabina .bar i { display: block; height: 100%; border-radius: 999px; background: var(--ce-green); }
+.cabina .chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em;
+}
+
+/* Tablero. */
+.cabina .kan { flex: 1; display: flex; gap: 10px; padding: 10px 12px; overflow: auto; align-items: flex-start; }
+.cabina .col {
+  width: 254px; flex-shrink: 0; border: 1px solid var(--ce-border); border-radius: 14px;
+  background: var(--ce-bg2); display: flex; flex-direction: column; max-height: 100%;
+}
+.cabina .col-h {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  border-bottom: 1px solid var(--ce-border); font-size: 12px; font-weight: 700;
+}
+.cabina .col-h .ct { margin-left: auto; font-size: 10.5px; color: var(--ce-muted); }
+.cabina .col-b { padding: 10px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+.cabina .task {
+  width: 100%; text-align: left; cursor: pointer;
+  border: 1px solid var(--ce-border); border-radius: 12px; background: var(--ce-card); padding: 10px 11px;
+}
+.cabina .task:hover { border-color: var(--ce-border2); }
+.cabina .task.sel { border-color: var(--ce-green); box-shadow: 0 0 0 2px rgba(37, 211, 102, 0.15); }
+.cabina .task-t { font-size: 12.5px; font-weight: 650; line-height: 1.35; margin-bottom: 7px; }
+.cabina .task-m { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--ce-muted); }
+.cabina .vacio { font-size: 11px; color: var(--ce-muted2); text-align: center; padding: 14px 0; }
+
+/* Gantt. */
+.cabina .gantt { flex: 1; overflow: auto; }
+.cabina .g-head { display: flex; position: sticky; top: 0; z-index: 2; background: var(--ce-bg2); border-bottom: 1px solid var(--ce-border); }
+.cabina .g-lbl, .cabina .g-name {
+  width: 230px; flex-shrink: 0; padding: 9px 14px; font-size: 11.5px;
+  display: flex; align-items: center; gap: 7px; border-right: 1px solid var(--ce-border);
+}
+.cabina .g-lbl { font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ce-muted2); font-size: 10px; }
+.cabina .g-months { flex: 1; display: flex; min-width: 420px; }
+.cabina .g-mo {
+  flex: 1; text-align: center; font-size: 10.5px; font-weight: 700; color: var(--ce-muted);
+  padding: 9px 0; border-left: 1px solid var(--ce-border);
+}
+.cabina .g-row { display: flex; border-bottom: 1px solid var(--ce-border); cursor: pointer; }
+.cabina .g-row:hover { background: var(--ce-card3); }
+.cabina .g-row.sel { background: var(--ce-card3); }
+.cabina .g-track { flex: 1; position: relative; min-width: 420px; height: 38px; }
+.cabina .g-grid { position: absolute; inset: 0; display: flex; }
+.cabina .g-grid i { flex: 1; border-left: 1px solid var(--ce-border); }
+.cabina .g-bar {
+  position: absolute; top: 11px; height: 16px; border-radius: 5px;
+  font-size: 9.5px; font-weight: 800; display: flex; align-items: center; padding: 0 6px;
+  overflow: hidden; white-space: nowrap;
+}
+.cabina .g-today { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--ce-green); opacity: 0.75; }
+.cabina .g-sinfecha { padding: 10px 14px; font-size: 11px; color: var(--ce-muted2); }
+
+/* Lista. */
+.cabina .tbl-wrap { flex: 1; overflow: auto; }
+.cabina .tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.cabina .tbl th {
+  text-align: left; padding: 9px 14px; font-size: 10px; font-weight: 800;
+  letter-spacing: 0.07em; text-transform: uppercase; color: var(--ce-muted2);
+  border-bottom: 1px solid var(--ce-border); position: sticky; top: 0; background: var(--ce-bg2);
+}
+.cabina .tbl td { padding: 9px 14px; border-bottom: 1px solid var(--ce-border); }
+.cabina .tbl tr { cursor: pointer; }
+.cabina .tbl tr:hover td { background: var(--ce-card3); }
+.cabina .tbl tr.sel td { background: var(--ce-card3); }
+.cabina .mono { font-variant-numeric: tabular-nums; }
+
+/* Panel de la tarea. */
+.cabina .pj-detail {
+  width: 286px; flex-shrink: 0; border-left: 1px solid var(--ce-border);
+  padding: 12px 14px; overflow-y: auto; background: var(--ce-bg2);
+}
+.cabina .ctx-t {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--ce-muted2); margin-bottom: 8px;
+}
+.cabina .ctx-row {
+  display: flex; align-items: baseline; gap: 10px; padding: 6px 0;
+  border-bottom: 1px solid var(--ce-border); font-size: 12px;
+}
+.cabina .ctx-row .k { color: var(--ce-muted); flex-shrink: 0; }
+.cabina .ctx-row .v { margin-left: auto; text-align: right; font-weight: 600; }
+.cabina .ck-row { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; padding: 3px 0; }
+.cabina .ck-box {
+  width: 15px; height: 15px; border-radius: 5px; border: 1.5px solid var(--ce-border2);
+  display: grid; place-items: center; flex-shrink: 0; margin-top: 1px;
+}
+.cabina .ck-box.on { background: var(--ce-green); border-color: var(--ce-green); color: #04140a; }
+
+/**
+ * Abajo de 1100 px el panel deja de ser una columna y pasa a ser un cajón.
+ *
+ * Antes acá decía `display: none` a secas. Como la checklist y los campos de la
+ * tarea sólo viven en este panel, en una notebook chica —o con la ventana a
+ * media pantalla— no había forma de verlos ni de editarlos: la función existía
+ * y era inalcanzable. Ahora se corre por encima del tablero y se cierra con la
+ * X, que es el mismo trato que ya recibía el rail de proyectos en 860 px.
+ */
+@media (max-width: 1100px) {
+  .cabina .pj-detail {
+    position: absolute; inset: 0 0 0 auto; z-index: 6;
+    width: min(340px, 100%); height: 100%;
+    box-shadow: -18px 0 40px rgba(0, 0, 0, 0.22);
+    transform: translateX(100%); transition: transform 0.18s ease;
+  }
+  .cabina .pj-detail.abierto { transform: translateX(0); }
+}
+/* De 1100 px para arriba el panel es fijo y la X no tiene sentido. */
+@media (min-width: 1101px) {
+  .cabina .pd-x { display: none; }
+}
+@media (max-width: 860px) {
+  .cabina .pj-side { display: none; }
+  .cabina .pj-side.abierto { display: block; position: absolute; inset: 56px auto 0 0; z-index: 5; height: calc(100% - 56px); }
+}
+
+/* ── Estado activo del botón "Ocultar terminados" ── */
+.cabina .btn.on {
+  background: color-mix(in srgb, var(--ce-green) 16%, var(--ce-card));
+  border-color: var(--ce-green); color: var(--ce-text);
+}
+
+/* ── Arrastre de tarjetas entre columnas ── */
+.cabina .col.sobre { border-color: var(--ce-green); background: color-mix(in srgb, var(--ce-green) 6%, var(--ce-bg2)); }
+.cabina .task { cursor: grab; }
+.cabina .task:active { cursor: grabbing; }
+.cabina .task.arrastrando {
+  border-color: var(--ce-green);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+}
+
+/* ── Rail: avance de checklist y alta de proyecto ── */
+.cabina .pj-arch {
+  margin-left: 6px; padding: 1px 5px; border-radius: 5px;
+  background: var(--ce-card3); color: var(--ce-muted2);
+  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.cabina .pj-ck { display: block; margin-top: 6px; }
+.cabina .pj-ck-t {
+  display: flex; align-items: center; gap: 4px; margin-bottom: 3px;
+  font-size: 10px; color: var(--ce-muted2); font-variant-numeric: tabular-nums;
+}
+.cabina .pj-ck .bar { display: block; height: 3px; }
+.cabina .pj-nuevo {
+  display: flex; gap: 6px; padding: 10px; margin-top: 4px;
+  border-top: 1px solid var(--ce-border); position: sticky; bottom: 0; background: var(--ce-bg2);
+}
+.cabina .pj-nuevo input {
+  flex: 1; min-width: 0; padding: 6px 9px; border-radius: 8px;
+  border: 1px solid var(--ce-border); background: var(--ce-card); color: var(--ce-text);
+  font-size: 11.5px;
+}
+.cabina .pj-nuevo button {
+  display: grid; place-items: center; width: 30px; flex-shrink: 0;
+  border-radius: 8px; border: 1px solid var(--ce-border);
+  background: var(--ce-card); color: var(--ce-text); cursor: pointer;
+}
+.cabina .pj-nuevo button:hover:not(:disabled) { background: var(--ce-green); border-color: var(--ce-green); color: #04140a; }
+.cabina .pj-nuevo button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Panel de la tarea: cabecera, pestañas y campos ── */
+.cabina .pd-top { display: flex; align-items: center; margin-bottom: 8px; }
+.cabina .pd-x {
+  display: grid; place-items: center; width: 24px; height: 24px;
+  border-radius: 7px; border: 1px solid var(--ce-border);
+  background: var(--ce-card); color: var(--ce-muted); cursor: pointer;
+}
+.cabina .pd-x:hover { color: var(--ce-text); border-color: var(--ce-border2); }
+.cabina .pd-titulo {
+  width: 100%; margin-bottom: 12px; padding: 6px 8px;
+  border: 1px solid transparent; border-radius: 8px; background: transparent;
+  color: var(--ce-text); font-size: 15px; font-weight: 750;
+  letter-spacing: -0.02em; line-height: 1.35;
+}
+.cabina .pd-titulo:hover { border-color: var(--ce-border); }
+.cabina .pd-titulo:focus { outline: none; border-color: var(--ce-green); background: var(--ce-card); }
+.cabina .pd-tabs {
+  display: flex; gap: 2px; padding: 2px; margin-bottom: 14px;
+  border-radius: 9px; background: var(--ce-card3);
+}
+.cabina .pd-tab {
+  flex: 1; padding: 5px 6px; border: 0; border-radius: 7px; background: transparent;
+  font-size: 11px; font-weight: 650; color: var(--ce-muted); cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cabina .pd-tab.active { background: var(--ce-card); color: var(--ce-text); }
+.cabina .pd-campo { display: block; margin-bottom: 12px; }
+.cabina .pd-campo .ctx-t { display: block; margin-bottom: 5px; }
+.cabina .pd-campo select,
+.cabina .pd-campo input[type="date"] {
+  width: 100%; padding: 6px 9px; border-radius: 8px;
+  border: 1px solid var(--ce-border); background: var(--ce-card); color: var(--ce-text);
+  font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.cabina .pd-campo select:focus,
+.cabina .pd-campo input[type="date"]:focus { outline: none; border-color: var(--ce-green); }
+.cabina .pd-fechas { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cabina .pd-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.cabina .chip-btn {
+  border: 1px solid var(--ce-border); background: var(--ce-card3);
+  color: var(--ce-muted); cursor: pointer;
+}
+.cabina .chip-btn:hover { border-color: var(--ce-border2); color: var(--ce-text); }
+.cabina .pd-hecha {
+  display: flex; align-items: center; gap: 8px; margin-top: 4px;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.cabina .pd-hecha input { width: 15px; height: 15px; accent-color: var(--ce-green); cursor: pointer; }
+.cabina .pd-notas {
+  width: 100%; padding: 9px 10px; border-radius: 10px; resize: vertical;
+  border: 1px solid var(--ce-border); background: var(--ce-card); color: var(--ce-text);
+  font-size: 12px; line-height: 1.5; font-family: inherit;
+}
+.cabina .pd-notas:focus { outline: none; border-color: var(--ce-green); }
+
+/* ── Checklist editable ── */
+.cabina .ck-box { background: transparent; cursor: pointer; padding: 0; }
+.cabina .ck-box:hover { border-color: var(--ce-green); }
+.cabina .ck-del {
+  border: 0; background: transparent; color: var(--ce-muted2);
+  cursor: pointer; padding: 2px; border-radius: 5px; opacity: 0; flex-shrink: 0;
+}
+.cabina .ck-row:hover .ck-del { opacity: 1; }
+.cabina .ck-del:hover { color: #f45b69; }
+/* En táctil no hay hover: el botón de borrar tiene que estar siempre visible. */
+@media (hover: none) {
+  .cabina .ck-del { opacity: 1; }
+}
+.cabina .ck-nuevo { display: flex; gap: 6px; margin-top: 10px; }
+.cabina .ck-nuevo input {
+  flex: 1; min-width: 0; padding: 6px 9px; border-radius: 8px;
+  border: 1px solid var(--ce-border); background: var(--ce-card); color: var(--ce-text);
+  font-size: 12px;
+}
+.cabina .ck-nuevo input:focus { outline: none; border-color: var(--ce-green); }
+.cabina .ck-nuevo button {
+  display: grid; place-items: center; width: 30px; flex-shrink: 0;
+  border-radius: 8px; border: 1px solid var(--ce-border);
+  background: var(--ce-card); color: var(--ce-text); cursor: pointer;
+}
+.cabina .ck-nuevo button:hover:not(:disabled) { background: var(--ce-green); border-color: var(--ce-green); color: #04140a; }
+.cabina .ck-nuevo button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/**
+ * Membresías: Marcas, Planes y Suscripciones.
+ *
+ * Comparten la barra de la cabina y sus tablas; lo propio es la grilla de
+ * tarjetas de Marcas y los distintivos de estado.
+ */
+.cabina .conteo { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.cabina .conteo .n { font-size: 11.5px; color: var(--ce-muted); }
+.cabina .conteo .n b { color: var(--ce-text); font-weight: 750; }
+
+.cabina .cuadros {
+  flex: 1; overflow: auto; padding: 12px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(238px, 1fr));
+  gap: 10px; align-content: start;
+}
+.cabina .cuadro {
+  border: 1px solid var(--ce-border); border-radius: 14px; background: var(--ce-card);
+  padding: 13px 14px; display: flex; flex-direction: column; gap: 9px; min-width: 0;
+}
+.cabina .cuadro .tit { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 750; }
+.cabina .cuadro .tit .dot { width: 9px; height: 9px; }
+.cabina .cuadro .datos { display: flex; gap: 12px; flex-wrap: wrap; font-size: 10.5px; color: var(--ce-muted); }
+.cabina .cuadro .datos b { display: block; font-size: 14px; font-weight: 750; color: var(--ce-text); }
+.cabina .plata { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cabina .plata span { display: block; }
+.cabina .plata .cero { color: var(--ce-muted2); font-weight: 600; }
+
+.cabina .estado { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: 0.02em; }
+.cabina .estado.ok { background: color-mix(in srgb, var(--ce-green) 16%, transparent); color: var(--ce-green); }
+.cabina .estado.aviso { background: rgba(245, 165, 36, 0.16); color: #b45309; }
+.cabina .estado.baja { background: var(--ce-card3); color: var(--ce-muted); }
+:is(.dark) .cabina .estado.aviso, .dark .cabina .estado.aviso { color: #f5a524; }
+
+/* La barra de filtros de estas vistas: el mismo renglón de selectores del CRM. */
+.cabina .filtros {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  padding: 8px 12px; border-bottom: 1px solid var(--ce-border); background: var(--ce-bg2);
+}
+.cabina .filtros .buscar {
+  flex: 1; max-width: 300px; min-width: 140px;
+  padding: 6px 11px; border-radius: 9px; font-size: 12px;
+  border: 1px solid var(--ce-border); background: var(--ce-card); color: var(--ce-text); outline: none;
+}
+.cabina .filtros .buscar:focus { border-color: color-mix(in srgb, var(--ce-green) 45%, transparent); }
+
+/* Los selectores del renglón de filtros: las mismas medidas que en el CRM. */
+.cabina .rot {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--ce-muted2); white-space: nowrap;
+}
+.cabina .selcampo { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.cabina .selcampo select {
+  appearance: none; -webkit-appearance: none;
+  max-width: 230px; padding: 6px 26px 6px 11px; border-radius: 9px;
+  border: 1px solid var(--ce-border); background-color: var(--ce-card); color: var(--ce-text);
+  font-size: 12px; font-weight: 650; cursor: pointer; text-overflow: ellipsis;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 8px center; background-size: 12px;
+}
+.cabina .selcampo select:hover { border-color: var(--ce-border2); }
+.cabina .selcampo select:focus-visible { outline: 2px solid var(--ce-green); outline-offset: 1px; }
+.cabina .selcampo select option { background: var(--ce-card); color: var(--ce-text); }
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * El tablero: Inicio, Marcas como tarjetas de empresa, y el panel de detalle.
+ *
+ * Es el vocabulario de la maqueta de ChatPro (Inicio, Empresas y Clientes)
+ * traído acá para que las cinco vistas de pantalla completa de Empresa hablen
+ * el mismo idioma. Va en este archivo y no en uno nuevo por lo mismo que dice
+ * el encabezado: las variables cuelgan de `.cabina`, y una hoja aparte no
+ * podría heredarlas.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+/* El cuerpo que scrollea de las vistas de tablero. */
+.cabina .home { flex: 1; overflow-y: auto; padding: 22px 24px 40px; min-height: 0; }
+@media (max-width: 720px) {
+  .cabina .home { padding: 16px 12px 32px; }
+}
+
+/* El saludo de arriba: rótulo en versalitas y una frase grande. */
+.cabina .rotulo {
+  font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--ce-muted2); font-weight: 800; margin-bottom: 8px;
+}
+.cabina .saludo {
+  font-size: 30px; font-weight: 800; letter-spacing: -0.035em; line-height: 1.1;
+}
+.cabina .saludo .resto { color: var(--ce-muted); }
+@media (max-width: 720px) {
+  .cabina .saludo { font-size: 22px; }
+}
+
+/* Los cuatro números de arriba. */
+.cabina .hero-kpi {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px; margin-bottom: 22px;
+}
+.cabina .kpi {
+  position: relative; overflow: hidden;
+  background: var(--ce-card); border: 1px solid var(--ce-border);
+  border-radius: 16px; padding: 18px;
+}
+/**
+ * El resplandor de color de la esquina.
+ *
+ * En la maqueta es un degradado sobre fondo negro; acá el fondo puede ser
+ * blanco, así que la opacidad es más baja en claro: al 8 % sobre blanco el
+ * halo se ve como una mancha sucia.
+ */
+.cabina .kpi::after {
+  content: ''; position: absolute; right: -30px; top: -30px;
+  width: 110px; height: 110px; border-radius: 50%;
+  background: var(--acc, var(--ce-green)); opacity: 0.06; filter: blur(14px);
+}
+:is(.dark) .cabina .kpi, .dark .cabina .kpi {
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.012));
+}
+:is(.dark) .cabina .kpi::after, .dark .cabina .kpi::after { opacity: 0.09; }
+.cabina .kpi .l {
+  font-size: 9.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ce-muted2); margin-bottom: 8px;
+}
+.cabina .kpi .v {
+  font-size: 29px; font-weight: 800; letter-spacing: -0.035em; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+/* Con varias monedas, cada una en su renglón y más chicas: nunca se suman. */
+.cabina .kpi .v.multi { font-size: 20px; line-height: 1.25; }
+.cabina .kpi .v span { display: block; }
+.cabina .kpi .d {
+  font-size: 11px; color: var(--ce-muted); margin-top: 8px;
+  display: flex; align-items: center; gap: 5px;
+}
+
+/* Dos columnas que se apilan en pantallas angostas. */
+.cabina .grid2 {
+  display: grid; grid-template-columns: 1.35fr 1fr; gap: 12px; margin-bottom: 12px;
+}
+.cabina .grid2.iguales { grid-template-columns: 1fr 1fr; }
+@media (max-width: 1080px) {
+  .cabina .grid2, .cabina .grid2.iguales { grid-template-columns: 1fr; }
+}
+
+/* La caja de cada bloque del tablero. */
+.cabina .panel {
+  background: var(--ce-bg2); border: 1px solid var(--ce-border);
+  border-radius: 16px; padding: 18px; min-width: 0;
+}
+.cabina .panel-h { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.cabina .panel-h h3 { font-size: 13px; font-weight: 750; letter-spacing: -0.01em; }
+.cabina .leyenda { display: flex; gap: 12px; font-size: 10.5px; color: var(--ce-muted); }
+.cabina .leyenda span { display: flex; align-items: center; gap: 5px; }
+
+/* El gráfico de barras de ingresos contra egresos. */
+.cabina .chart { display: flex; align-items: flex-end; gap: 14px; height: 170px; padding-top: 10px; }
+.cabina .chart .c {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  gap: 7px; height: 100%; justify-content: flex-end;
+}
+.cabina .chart .bars {
+  display: flex; gap: 4px; align-items: flex-end; height: 100%; width: 100%; justify-content: center;
+}
+.cabina .chart .bars i {
+  width: 15px; border-radius: 5px 5px 0 0; display: block; min-height: 2px;
+  transition: height 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cabina .chart .bars i { transition: none; }
+}
+.cabina .chart .lb { font-size: 10px; color: var(--ce-muted2); font-weight: 700; }
+.cabina .pie {
+  display: flex; gap: 22px; margin-top: 16px; padding-top: 14px;
+  border-top: 1px solid var(--ce-border); flex-wrap: wrap;
+}
+.cabina .pie .l { font-size: 10px; color: var(--ce-muted2); font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; }
+.cabina .pie .v { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* El anillo de conversión. */
+.cabina .ring {
+  --p: 0;
+  width: 54px; height: 54px; border-radius: 50%; display: grid; place-items: center;
+  background: conic-gradient(var(--ce-green) calc(var(--p) * 1%), var(--ce-card3) 0);
+  position: relative; flex-shrink: 0;
+}
+.cabina .ring::before { content: ''; position: absolute; inset: 5px; border-radius: 50%; background: var(--ce-bg2); }
+.cabina .ring span { position: relative; font-size: 12.5px; font-weight: 800; }
+
+/* Un renglón de lista adentro de un panel. */
+.cabina .list-row {
+  display: flex; align-items: center; gap: 10px; padding: 9px 0;
+  border-bottom: 1px solid var(--ce-border); font-size: 12px;
+}
+.cabina .list-row:last-child { border-bottom: none; }
+.cabina .list-row .nm { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cabina .list-row .sub2 { font-size: 10px; color: var(--ce-muted2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cabina .list-row .der { text-align: right; flex-shrink: 0; }
+
+/* Botones chicos y fantasma, para dentro de los paneles. */
+.cabina .btn.sm { padding: 5px 10px; font-size: 11.5px; border-radius: 7px; }
+.cabina .btn.ghost { background: transparent; border-color: transparent; color: var(--ce-muted); }
+.cabina .btn.ghost:hover { background: var(--ce-card3); color: var(--ce-text); }
+.cabina .btn.g { background: var(--ce-green); color: #04140a; border-color: transparent; font-weight: 700; }
+.cabina .btn.g:hover { background: color-mix(in srgb, var(--ce-green) 88%, #fff); }
+.cabina .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* Avatares y celdas con nombre, iguales a los del CRM. */
+.cabina .avatar {
+  border-radius: 50%; display: grid; place-items: center;
+  font-weight: 800; color: #fff; flex-shrink: 0;
+}
+.cabina .cell-name { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.cabina .cell-name .nm { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── El panel de detalle de la derecha (Clientes, Planes, Suscripciones) ── */
+.cabina .detail {
+  width: 430px; flex-shrink: 0; border-left: 1px solid var(--ce-border);
+  background: var(--ce-bg2); overflow-y: auto;
+}
+.cabina .detail-hero { padding: 18px 20px; border-bottom: 1px solid var(--ce-border); }
+.cabina .stat-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  padding: 14px 20px; border-bottom: 1px solid var(--ce-border);
+}
+.cabina .stat {
+  background: var(--ce-card); border: 1px solid var(--ce-border); border-radius: 10px; padding: 11px; min-width: 0;
+}
+.cabina .stat .l {
+  font-size: 9.5px; font-weight: 700; color: var(--ce-muted2);
+  letter-spacing: 0.07em; text-transform: uppercase; margin-bottom: 5px;
+}
+.cabina .stat .v { font-size: 17px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.cabina .stat .v span { display: block; }
+.cabina .section-pad { padding: 16px 20px; border-bottom: 1px solid var(--ce-border); }
+.cabina .section-pad:last-child { border-bottom: none; }
+.cabina .sub-card {
+  background: var(--ce-card); border: 1px solid var(--ce-border);
+  border-radius: 11px; padding: 12px; margin-bottom: 9px;
+}
+.cabina .sub-r1 { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.cabina .sub-nm { font-size: 12.5px; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cabina .sub-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; font-size: 11px; }
+.cabina .sub-grid .k { color: var(--ce-muted2); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
+.cabina .sub-grid .v { font-weight: 600; margin-top: 2px; }
+
+/* Campos del panel: la maqueta usa un solo alto para todo lo editable. */
+.cabina .input {
+  width: 100%; background: var(--ce-card2); border: 1px solid var(--ce-border);
+  border-radius: 8px; padding: 7px 10px; font-size: 12px; color: var(--ce-text); outline: none;
+}
+.cabina .input:focus { border-color: color-mix(in srgb, var(--ce-green) 45%, transparent); }
+.cabina .input:disabled { opacity: 0.6; cursor: not-allowed; }
+.cabina select.input { appearance: none; -webkit-appearance: none; padding-right: 26px; cursor: pointer;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 8px center; background-size: 12px; }
+.cabina select.input option { background: var(--ce-card); color: var(--ce-text); }
+.cabina label.fl {
+  display: block; font-size: 9.5px; font-weight: 700; color: var(--ce-muted2);
+  letter-spacing: 0.07em; text-transform: uppercase; margin-bottom: 5px;
+}
+.cabina .campo { margin-bottom: 10px; }
+.cabina .campo-fila { display: flex; gap: 8px; }
+.cabina .campo-fila > * { flex: 1; min-width: 0; }
+
+/**
+ * El detalle se esconde antes que la tabla.
+ *
+ * Debajo de 1100 px la tabla ya está apretada y el panel de 430 px la dejaría
+ * en un canuto; la fila sigue abriéndose, pero el panel pasa a ocupar la
+ * pantalla entera por encima (`.detail.suelto`).
+ */
+@media (max-width: 1100px) {
+  .cabina .detail { position: absolute; inset: 0; width: 100%; z-index: 6; }
+}
+
+/* Tarjetas grandes de Marcas, con el formato de Empresas de la maqueta. */
+.cabina .tarjetas {
+  flex: 1; overflow: auto; padding: 14px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px; align-content: start;
+}
+.cabina .marca-h { display: flex; align-items: center; gap: 11px; margin-bottom: 14px; }
+.cabina .marca-ic {
+  width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center;
+  font-weight: 900; font-size: 15px; flex-shrink: 0; overflow: hidden;
+}
+.cabina .marca-ic img { width: 100%; height: 100%; object-fit: cover; }
+.cabina .marca-nm { font-size: 15px; font-weight: 800; letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cabina .tres { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+
+/* Una barra de proporción con su relleno, para los bloques del tablero. */
+.cabina .barra { height: 6px; border-radius: 999px; background: var(--ce-card3); overflow: hidden; margin-top: 6px; }
+.cabina .barra > i { display: block; height: 100%; border-radius: 999px; }

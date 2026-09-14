@@ -1,0 +1,374 @@
+/**
+ * El tablero de embudos, copiado de la maqueta de ChatPro
+ * (chatpro-nuevo-diseno.aapp.pro → menú Embudos).
+ *
+ * Las reglas son las mismas de la maqueta; lo único que cambia es el alcance:
+ * todo cuelga de `.crmEmbudos` para que estas clases cortas —`.col`, `.kan`,
+ * `.chip`— no se crucen con el resto de la aplicación, que comparte hoja de
+ * estilos. Sin ese prefijo, un `.btn` de acá le cambiaría los botones a media
+ * app.
+ *
+ * Las variables se declaran en el contenedor y no en `:root` por lo mismo, y
+ * tienen valor para tema claro y oscuro: la maqueta es oscura y sola, ésta vive
+ * adentro de Empresa, que sigue el tema del usuario.
+ */
+.crmEmbudos {
+  /**
+   * Valores explícitos, no derivados de los tokens del sistema.
+   *
+   * Los del proyecto son `oklch(...)`, así que envolverlos —`hsl(var(--card))`—
+   * produce un color inválido y el elemento queda TRANSPARENTE.
+   *
+   * Y van con prefijo `--ce-`: llamarlas `--card` o `--border` a secas pisaba
+   * los tokens del sistema para todo lo que cuelgue de acá, incluida la ficha
+   * del Command Center, que se pinta con las clases del proyecto.
+   */
+  --ce-bg2: #f6f6f8;
+  --ce-card: #ffffff;
+  --ce-card3: rgba(0, 0, 0, 0.05);
+  --ce-border: rgba(0, 0, 0, 0.09);
+  --ce-border2: rgba(0, 0, 0, 0.16);
+  --ce-green: #16a34a;
+  --ce-purple: #7c5cfc;
+  --ce-text: #18181b;
+  --ce-muted: #6b7280;
+  --ce-muted2: #9ca3af;
+
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  color: var(--ce-text);
+}
+
+:is(.dark) .crmEmbudos,
+.dark .crmEmbudos {
+  --ce-bg2: #111113;
+  --ce-card: #16161a;
+  --ce-card3: #232329;
+  --ce-border: rgba(255, 255, 255, 0.07);
+  --ce-border2: rgba(255, 255, 255, 0.13);
+  --ce-green: #25d366;
+  --ce-text: #f0f0f2;
+  --ce-muted: #7a7a8c;
+  --ce-muted2: #55555f;
+}
+
+.crmEmbudos .topbar {
+  height: 56px;
+  border-bottom: 1px solid var(--ce-border);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 14px;
+  flex-shrink: 0;
+  background: var(--ce-bg2);
+}
+.crmEmbudos .topbar h1 { font-size: 15.5px; font-weight: 700; letter-spacing: -0.01em; }
+.crmEmbudos .topbar .sub { font-size: 12px; color: var(--ce-muted); }
+.crmEmbudos .sp { flex: 1; }
+
+.crmEmbudos .btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 13px; border-radius: 9px;
+  font-size: 12.5px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--ce-border); background: var(--ce-card); color: var(--ce-text);
+}
+.crmEmbudos .btn:hover { background: var(--ce-card3); border-color: var(--ce-border2); }
+.crmEmbudos .btn.g { background: var(--ce-green); color: #04140a; border-color: transparent; font-weight: 700; }
+.crmEmbudos .btn.sm { padding: 5px 10px; font-size: 11.5px; border-radius: 7px; }
+
+.crmEmbudos .chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em;
+}
+.crmEmbudos .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.crmEmbudos .avatar { border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: #fff; flex-shrink: 0; }
+
+/**
+ * Cada etapa, en un solo renglón.
+ *
+ * Sin `nowrap`, nombres como «Cliente al día · Potencial otro servicio» se
+ * parten en dos líneas y la barra de filtros crece al doble de alto, con los
+ * chips desalineados entre sí. La tira scrollea en horizontal, que para eso
+ * está.
+ */
+.crmEmbudos .fchip {
+  padding: 4px 10px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--ce-border); background: transparent; color: var(--ce-muted);
+  white-space: nowrap; flex-shrink: 0;
+}
+.crmEmbudos .fchip.active { background: var(--ce-green); border-color: var(--ce-green); color: #04140a; }
+
+.crmEmbudos .kan-groups {
+  display: flex; gap: 6px; padding: 10px 16px;
+  border-bottom: 1px solid var(--ce-border);
+  align-items: center; overflow-x: auto; background: var(--ce-bg2);
+}
+.crmEmbudos .gchip {
+  padding: 6px 13px; border-radius: 9px;
+  font-size: 12px; font-weight: 650; cursor: pointer;
+  border: 1px solid var(--ce-border); background: var(--ce-card); color: var(--ce-muted);
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; flex-shrink: 0;
+}
+.crmEmbudos .gchip:hover { border-color: var(--ce-border2); color: var(--ce-text); }
+.crmEmbudos .gchip.active { background: var(--ce-card3); color: var(--ce-text); border-color: var(--ce-border2); }
+.crmEmbudos .gchip .cnt {
+  font-size: 10px; background: rgba(127, 127, 127, 0.16);
+  padding: 1px 6px; border-radius: 999px; color: var(--ce-muted);
+}
+
+.crmEmbudos .kan-funnels {
+  display: flex; flex-wrap: nowrap; gap: 5px; padding: 9px 16px;
+  border-bottom: 1px solid var(--ce-border); align-items: center; overflow-x: auto;
+}
+.crmEmbudos .rot {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--ce-muted2); margin-right: 4px; white-space: nowrap;
+}
+
+/**
+ * El tablero scrollea ENTERO, no columna por columna.
+ *
+ * Con una caja por columna había que scrollear adentro de cada una para ver sus
+ * contactos, y con 211 en Seguimiento eso era una ratonera: la columna medía
+ * siempre lo mismo y no se veía cuál está tapada. Ahora cada columna mide lo
+ * que mide su contenido y la página se desplaza en las dos direcciones.
+ */
+.crmEmbudos .kan {
+  flex: 1; display: flex; gap: 12px;
+  overflow: auto; padding: 16px; align-items: flex-start; min-height: 0;
+}
+.crmEmbudos .col {
+  width: 262px; flex-shrink: 0;
+  background: var(--ce-bg2); border: 1px solid var(--ce-border); border-radius: 12px;
+  display: flex; flex-direction: column;
+}
+/**
+ * El encabezado de columna NO va pegado.
+ *
+ * Con `position: sticky` adentro de `.kan`, que se desplaza en los dos ejes, el
+ * título se despegaba de su columna al mover en horizontal y quedaba flotando
+ * sobre la de al lado. Pegar algo a un contenedor que scrollea en dos
+ * direcciones es pedirle al navegador que elija, y elige mal.
+ */
+.crmEmbudos .col-h { border-radius: 12px 12px 0 0; }
+.crmEmbudos .col.shared {
+  border-color: rgba(124, 92, 252, 0.3);
+  background: linear-gradient(180deg, rgba(124, 92, 252, 0.05), transparent 60px);
+}
+.crmEmbudos .col-h {
+  padding: 11px 12px; border-bottom: 1px solid var(--ce-border);
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+.crmEmbudos .col-h .nm { font-size: 12.5px; font-weight: 700; flex: 1; display: flex; align-items: center; gap: 7px; }
+.crmEmbudos .col-h .ct {
+  font-size: 10.5px; color: var(--ce-muted); background: rgba(127, 127, 127, 0.14);
+  padding: 1px 7px; border-radius: 999px; font-weight: 700;
+}
+.crmEmbudos .col-val { padding: 0 12px 9px; font-size: 10.5px; color: var(--ce-muted); border-bottom: 1px solid var(--ce-border); }
+.crmEmbudos .col-b { padding: 9px; display: flex; flex-direction: column; gap: 8px; min-height: 56px; }
+.crmEmbudos .col-b.over {
+  background: rgba(37, 211, 102, 0.05);
+  outline: 1px dashed rgba(37, 211, 102, 0.35); outline-offset: -4px; border-radius: 8px;
+}
+
+.crmEmbudos .kcard {
+  background: var(--ce-card); border: 1px solid var(--ce-border);
+  border-radius: 10px; padding: 10px; cursor: grab; transition: all 0.14s;
+}
+.crmEmbudos .kcard:hover { border-color: var(--ce-border2); transform: translateY(-1px); }
+.crmEmbudos .kcard:active { cursor: grabbing; }
+.crmEmbudos .kcard.drag { opacity: 0.4; }
+.crmEmbudos .kcard-r1 { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+.crmEmbudos .kcard-nm { font-size: 12.5px; font-weight: 650; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crmEmbudos .kcard-deal { font-size: 12px; font-weight: 800; color: var(--ce-green); margin-bottom: 6px; }
+.crmEmbudos .kcard-meta { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--ce-muted); flex-wrap: wrap; }
+.crmEmbudos .kcard-src {
+  display: flex; align-items: center; gap: 4px; font-size: 10px; color: var(--ce-muted);
+  margin-top: 7px; padding-top: 7px; border-top: 1px solid rgba(127, 127, 127, 0.14);
+}
+.crmEmbudos .shared-tag {
+  font-size: 9px; font-weight: 800; color: var(--ce-purple);
+  background: rgba(124, 92, 252, 0.14); padding: 2px 6px; border-radius: 5px; letter-spacing: 0.03em;
+}
+
+/**
+ * La ficha del Command Center al costado. Panel fijo en escritorio y hoja
+ * completa en el celular, donde 440 px no entran al lado de nada.
+ */
+.crmFichaFondo {
+  position: fixed; inset: 0; z-index: 59;
+  background: rgba(0, 0, 0, 0.35);
+}
+.crmFichaBarra {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 2px 8px; font-size: 12px; font-weight: 700;
+}
+.crmFichaBarra button {
+  border: 0; background: transparent; cursor: pointer;
+  font-size: 15px; line-height: 1; color: inherit; padding: 4px 8px;
+}
+/* z-index 60: por encima del rail y del drawer de Empresa (que usan 50), si no
+   el panel abría por detrás y parecía que el clic no hacía nada. */
+.crmFicha {
+  position: fixed; inset: 0 0 0 auto; z-index: 60;
+  width: min(440px, 100vw);
+  display: flex; flex-direction: column;
+  padding: 12px;
+  /* Fondo opaco propio: el panel tapa el tablero y por debajo hay tarjetas.
+     `hsl(var(--background))` no sirve —el token es oklch— y dejaba el panel
+     transparente con el kanban leyéndose atrás. */
+  /* Acá sí van los tokens del SISTEMA: adentro vive la ficha del Command
+     Center, que se pinta con las clases del proyecto y tiene que seguir su
+     tema. `var(--card)` es válido tal cual; envolverlo en `hsl()` no, porque
+     el token es oklch —eso era lo que dejaba el panel transparente. */
+  background: var(--card);
+  color: var(--card-foreground);
+  border-left: 1px solid var(--border);
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.18);
+  overflow-y: auto;
+}
+@media (max-width: 640px) {
+  .crmFicha { width: 100vw; }
+}
+
+/**
+ * Sin barras de desplazamiento, en cualquier pantalla.
+ *
+ * El tablero se desplaza con la rueda, con el trackpad y arrastrando, y las
+ * barras sobre las tiras horizontales le comían un renglón a cada una y
+ * partían la vista. Lo que hace de señal de que hay más es la columna cortada
+ * en el borde.
+ *
+ * `overflow` sigue siendo `auto`: se oculta la barra, no el desplazamiento.
+ */
+.crmEmbudos .kan,
+.crmEmbudos .kan-groups,
+.crmEmbudos .kan-funnels,
+.crmFicha {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.crmEmbudos .kan::-webkit-scrollbar,
+.crmEmbudos .kan-groups::-webkit-scrollbar,
+.crmEmbudos .kan-funnels::-webkit-scrollbar,
+.crmFicha::-webkit-scrollbar {
+  display: none;
+}
+
+/**
+ * Móvil: además, una columna por pantalla.
+ *
+ * En el celular las columnas de 262 px dejaban ver una y media: quedaba la
+ * sensación de estar siempre a mitad de camino entre dos etapas.
+ *
+ * Ahora cada columna ocupa casi toda la pantalla y el desplazamiento hace
+ * `snap`, así que se pasa de etapa en etapa como quien pasa fotos.
+ */
+@media (max-width: 640px) {
+  .crmEmbudos .kan {
+    padding: 12px;
+    gap: 10px;
+    scroll-snap-type: x mandatory;
+    scroll-padding-left: 12px;
+    overscroll-behavior-x: contain;
+  }
+  .crmEmbudos .col {
+    width: calc(100vw - 42px);
+    scroll-snap-align: start;
+  }
+
+  /* Objetivos táctiles: los chips de una línea son fáciles de errar. */
+  .crmEmbudos .fchip { padding: 7px 12px; font-size: 12px; }
+  .crmEmbudos .gchip { padding: 8px 13px; }
+  .crmEmbudos .topbar { padding: 0 12px; gap: 10px; }
+  .crmEmbudos .kan-groups,
+  .crmEmbudos .kan-funnels { padding: 8px 12px; }
+  /* El encabezado de columna queda a mano al hacer scroll vertical. */
+  .crmEmbudos .col-h { padding: 12px; }
+  .crmEmbudos .kcard { padding: 12px; }
+}
+
+/**
+ * Móvil: dos botones y un desplegable de filtros.
+ *
+ * Arriba había tres tiras de chips —marca, grupos, etapas— una debajo de la
+ * otra: entre eso y el encabezado, la mitad de la pantalla se iba antes de la
+ * primera tarjeta. Ahora el topbar tiene dos botones, «Buscar» y «Filtros», y
+ * las tres tiras viven adentro del segundo, con el mismo marcado de siempre.
+ */
+.crmEmbudos .solo-movil { display: none; }
+
+@media (max-width: 640px) {
+  .crmEmbudos .solo-movil { display: inline-flex; }
+
+  /* El buscador aparece cuando se lo pide; ocupa el ancho, que en el celular
+     es lo único que lo hace usable. */
+  .crmEmbudos .buscador { display: none; }
+  .crmEmbudos.buscar-abierto .buscador { display: inline-flex; flex: 1; }
+  .crmEmbudos.buscar-abierto .buscador input { width: 100%; }
+
+  .crmEmbudos .kan-groups,
+  .crmEmbudos .kan-funnels { display: none; }
+  .crmEmbudos.filtros-abiertos .kan-groups,
+  .crmEmbudos.filtros-abiertos .kan-funnels { display: flex; }
+}
+
+/**
+ * Los cuatro filtros en un renglón: marca, grupo, etapa y etiqueta.
+ *
+ * Reemplazan en ESCRITORIO a las tres tiras de chips (`.kan-groups` ×2 y
+ * `.kan-funnels`), que se comían tres renglones del alto útil del tablero. En
+ * el celular no aparecen: ahí las tiras se tocan mejor que un desplegable y
+ * siguen saliendo con el botón «Filtros».
+ */
+.crmEmbudos .kan-selects {
+  display: none;
+  gap: 10px;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--ce-border);
+  align-items: center;
+  background: var(--ce-bg2);
+  flex-wrap: wrap;
+}
+.crmEmbudos .selcampo {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.crmEmbudos .selcampo .rot { margin-right: 0; }
+.crmEmbudos .selcampo select {
+  appearance: none;
+  -webkit-appearance: none;
+  max-width: 230px;
+  padding: 6px 26px 6px 11px;
+  border-radius: 9px;
+  border: 1px solid var(--ce-border);
+  background-color: var(--ce-card);
+  color: var(--ce-text);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  text-overflow: ellipsis;
+  /* La flecha va dibujada: el triángulo nativo del sistema no sigue el tema y
+     en oscuro queda un cuadrado gris al costado. */
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 12px;
+}
+.crmEmbudos .selcampo select:hover { border-color: var(--ce-border2); }
+.crmEmbudos .selcampo select:focus-visible { outline: 2px solid var(--ce-green); outline-offset: 1px; }
+/* Las opciones las pinta el sistema: sin esto, en oscuro salen negras sobre negro. */
+.crmEmbudos .selcampo select option { background: var(--ce-card); color: var(--ce-text); }
+
+@media (min-width: 641px) {
+  .crmEmbudos .kan-selects { display: flex; }
+  .crmEmbudos .kan-groups,
+  .crmEmbudos .kan-funnels { display: none; }
+}
