@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { teamPromptRuns, teamPrompts } from '@/lib/db/schema';
+import { getTeamSystemPrompt, renderTeamPrompt } from '@/lib/prompts/team-system';
 import { DROP_REASONS, GATES, NEEDS, OBJECTIONS, OWNERS, SIGNAL_KINDS } from '../shared/taxonomy';
 
 /**
@@ -165,6 +166,14 @@ export async function getActivePrompt(teamId: number, key: SalesOpsPromptKey): P
   return { id: null, key: fallback.key, version: 0, title: fallback.title, systemPrompt: fallback.systemPrompt, userTemplate: fallback.userTemplate, source: 'default' };
 }
 
+/** Resuelve cualquier prompt versionable contra su documento base. */
+export async function getPromptForDefinition(
+  teamId: number,
+  definition: { key: string; title: string; systemPrompt: string; userTemplate: string },
+): Promise<ActivePrompt> {
+  return getTeamSystemPrompt(teamId, definition);
+}
+
 /**
  * El contrato de la corrección de CRM, para pegárselo al prompt activo.
  *
@@ -195,7 +204,7 @@ export function composeClassifySystem(systemPrompt: string): string {
 
 /** Reemplaza `{{var}}`; las variables que no existen quedan vacías (nunca se filtra la llave). */
 export function renderTemplate(template: string, vars: Record<string, string>): string {
-  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, name: string) => vars[name] ?? '');
+  return renderTeamPrompt(template, vars);
 }
 
 export function promptFingerprint(systemPrompt: string, userPrompt: string): string {

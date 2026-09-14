@@ -3,6 +3,7 @@
 import { ExternalLink, Pause, Play, Sparkles, Trash2, UserSquare2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { AbrirChat, AbrirIa } from './AbrirChat';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { PROGRAMADOS_API, programadosFetcher } from '@/lib/plugins/scheduled-messages/ui/swr';
@@ -56,7 +57,7 @@ export async function cambiarEstadoProgramado(item: Programado, status: 'active'
  * Descartar un programado es borrarlo: no hay un estado "rechazado" para ellos
  * y uno pausado seguiría apareciendo en revisión para siempre.
  */
-export function ProgramadoRow({ item, chatId, onOpen, onChanged }: { item: Programado; chatId?: number | null; onOpen?: (chatId: number) => void; onChanged: () => void }) {
+export function ProgramadoRow({ item, chatId, onOpen, onOpenChat, onOpenIa, onChanged }: { item: Programado; chatId?: number | null; onOpen?: (chatId: number) => void; onOpenChat?: (chatId: number) => void; onOpenIa?: (chatId: number) => void; onChanged: () => void }) {
   const descartar = async () => {
     if (!window.confirm(`¿Descartar el programado “${item.name}”? Se borra y no sale.`)) return;
     try {
@@ -110,6 +111,12 @@ export function ProgramadoRow({ item, chatId, onOpen, onChanged }: { item: Progr
           >
             {item.status === 'active' ? <Pause className="size-3.5" aria-hidden /> : <Play className="size-3.5" aria-hidden />}
           </Button>
+        )}
+        {chatId != null && (
+          <>
+            <AbrirChat onOpen={onOpenChat && (() => onOpenChat(chatId))} nombre={item.name} />
+            <AbrirIa onOpen={onOpenIa && (() => onOpenIa(chatId))} nombre={item.name} />
+          </>
         )}
         {chatId && onOpen ? (
           <Button type="button" variant="ghost" size="icon" className="size-7" title="Abrir la ficha del contacto" onClick={() => onOpen(chatId)}>

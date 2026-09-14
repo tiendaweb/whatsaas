@@ -20,6 +20,7 @@ import { duplicateSkill as duplicateSkillApi, pinSkill, retireSkillByKey, type S
 import { BibliotecaView } from './BibliotecaView';
 import { ComponerView } from './ComponerView';
 import { StudioSidebar, type StudioUser } from './StudioSidebar';
+import { SystemPromptsView, type SystemPromptsPayload } from './SystemPromptsView';
 import { SECCIONES, SECCION_BAJADAS, SECCION_ICONS, SECCION_LABELS, isSeccion, type Seccion } from './secciones';
 
 /**
@@ -62,6 +63,8 @@ function StudioShell({ slug }: { slug: string[] }) {
   }, [searchParams, slug]);
 
   const skillKey = searchParams.get('skill');
+  const moduleId = searchParams.get('modulo');
+  const systemPromptKey = searchParams.get('prompt');
 
   const [drawer, setDrawer] = useState(false);
   const [launching, setLaunching] = useState<Skill | null>(null);
@@ -85,6 +88,7 @@ function StudioShell({ slug }: { slug: string[] }) {
   }, []);
 
   const { data, isLoading, error, mutate } = useSWR<SkillsPayload>(`${SALES_OPS_API}/prompts`, fetcher);
+  const systemPrompts = useSWR<SystemPromptsPayload>(`${SALES_OPS_API}/prompts/system`, fetcher);
   const runs = useSWR<{ runs: SkillRun[] }>(`${SALES_OPS_API}/prompts/queue?status=all`, fetcher, { refreshInterval: 30_000 });
   const { data: user } = useSWR<StudioUser>('/api/user', fetcher);
 
@@ -136,8 +140,16 @@ function StudioShell({ slug }: { slug: string[] }) {
 
   const refrescar = useCallback(() => {
     void mutate();
+    void systemPrompts.mutate();
     void runs.mutate();
-  }, [mutate, runs]);
+  }, [mutate, runs, systemPrompts]);
+
+  const elegirModulo = useCallback((nextModule: string) => {
+    setDrawer(false);
+    setParams({ s: 'sistema', modulo: nextModule, prompt: null });
+  }, [setParams]);
+
+  const elegirSystemPrompt = useCallback((key: string) => setParams({ s: 'sistema', prompt: key }), [setParams]);
 
   const onPin = async (skill: Skill) => {
     try {
@@ -184,6 +196,9 @@ function StudioShell({ slug }: { slug: string[] }) {
       setEditing('new');
     },
     onElegirSkill: abrirEnComponer,
+    modules: systemPrompts.data?.modules ?? [],
+    moduleId,
+    onElegirModulo: elegirModulo,
   };
 
   const contenido = (() => {
@@ -196,6 +211,20 @@ function StudioShell({ slug }: { slug: string[] }) {
           onSeleccionar={(skill) => setParams({ skill: skill.key })}
           onEditar={(skill) => setEditing(skill)}
           onLanzada={refrescar}
+        />
+      );
+    }
+    if (seccion === 'sistema') {
+      if (systemPrompts.error) return <ErrorState message={String(systemPrompts.error.message ?? systemPrompts.error)} onRetry={() => void systemPrompts.mutate()} />;
+      return (
+        <SystemPromptsView
+          data={systemPrompts.data}
+          isLoading={systemPrompts.isLoading}
+          moduleId={moduleId}
+          promptKey={systemPromptKey}
+          onSelectModule={elegirModulo}
+          onSelectPrompt={elegirSystemPrompt}
+          onSaved={systemPrompts.mutate}
         />
       );
     }
@@ -247,10 +276,10 @@ function StudioShell({ slug }: { slug: string[] }) {
           <Button variant="ghost" size="icon" className="size-8 shrink-0 text-muted-foreground" onClick={refrescar} title="Recargar skills y corridas" aria-label="Recargar">
             <RefreshCw className={cn('size-4', (isLoading || runs.isLoading) && 'animate-spin')} />
           </Button>
-          <Button size="sm" className="h-9 shrink-0 gap-1.5 rounded-xl px-3 font-semibold" onClick={() => setEditing('new')}>
-            <Plus className="size-4" aria-hidden />
-            <span className="hidden sm:inline">Nueva skill</span>
-          </Button>
+          {seccion !== 'sistema' && <Button size="sm" className="h-9 shrink-0 gap-1.5 rounded-xl px-3 font-semibold" onClick={() => setEditing('new')}>
+              <Plus className="size-4" aria-hidden />
+              <span className="hidden sm:inline">Nueva skill</span>
+            </Button>}
         </header>
 
         <main className="min-h-0 flex-1 overflow-y-auto px-3 py-4 pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:px-6 lg:py-5 lg:pb-8">
@@ -258,7 +287,6 @@ function StudioShell({ slug }: { slug: string[] }) {
         </main>
       </div>
 
-      {/* Barra inferior propia: las cuatro secciones, como en el Command Center. */}
       <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-[var(--ps-line)] bg-[var(--ps-shell)] pb-[env(safe-area-inset-bottom)] lg:hidden" aria-label="Secciones">
         {SECCIONES.map((s) => {
           const Icon = SECCION_ICONS[s];

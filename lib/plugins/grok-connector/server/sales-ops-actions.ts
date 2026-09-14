@@ -8,6 +8,7 @@ import { executePromptTool, promptActionTools, promptReadTools } from '@/lib/plu
 import { executeTareasTool, tareasActionTools, tareasReadTools } from '@/lib/plugins/sales-ops/tools/tareas-tools';
 import { executeManageTool, manageActionTools, manageReadTools } from '@/lib/plugins/sales-ops/tools/manage-tools';
 import { cobrosActionTools, cobrosReadTools, executeCobrosTool } from '@/lib/plugins/sales-ops/tools/cobros-tools';
+import { crmActionTools, crmReadTools, executeCrmTool } from '@/lib/plugins/sales-ops/tools/crm-tools';
 
 /**
  * Command Center Comercial por MCP (`whatspro_sales_*`).
@@ -17,8 +18,8 @@ import { cobrosActionTools, cobrosReadTools, executeCobrosTool } from '@/lib/plu
  * `z.object` adentro hace desaparecer la tool en silencio (verificar con
  * scripts/verify-connector-tools.mts).
  */
-export const salesOpsReadTools: GrokActionTool[] = [...workReadTools, ...promptReadTools, ...dossierReadTools, ...queueReadTools, ...signalReadTools, ...manageReadTools, ...cobrosReadTools, ...tareasReadTools];
-export const salesOpsActionTools: GrokActionTool[] = [...dossierActionTools, ...queueActionTools, ...signalActionTools, ...workActionTools, ...promptActionTools, ...tareasActionTools, ...manageActionTools, ...cobrosActionTools];
+export const salesOpsReadTools: GrokActionTool[] = [...workReadTools, ...promptReadTools, ...dossierReadTools, ...queueReadTools, ...signalReadTools, ...manageReadTools, ...cobrosReadTools, ...tareasReadTools, ...crmReadTools];
+export const salesOpsActionTools: GrokActionTool[] = [...dossierActionTools, ...queueActionTools, ...signalActionTools, ...workActionTools, ...promptActionTools, ...tareasActionTools, ...manageActionTools, ...cobrosActionTools, ...crmActionTools];
 
 const has = (tools: GrokActionTool[], name: string) => tools.some((tool) => tool.name === name);
 
@@ -32,5 +33,6 @@ export async function executeSalesOpsTool(name: string, input: Record<string, un
   if (has(tareasActionTools, name)) return executeTareasTool(name, input, context);
   if (has(manageReadTools, name) || has(manageActionTools, name)) return executeManageTool(name, input, context);
   if (has(cobrosReadTools, name) || has(cobrosActionTools, name)) return executeCobrosTool(name, input, context);
+  if (has(crmReadTools, name) || has(crmActionTools, name)) return executeCrmTool(name, input, context);
   throw new Error(`sales-ops: tool desconocida ${name}`);
 }

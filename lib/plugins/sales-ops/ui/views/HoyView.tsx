@@ -85,7 +85,7 @@ export function HoyView({ owner, onChangeVista, onOpen }: Props) {
               onClick={() => elegir(id)}
               aria-current={activa ? 'page' : undefined}
               className={cn(
-                'flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold transition-all',
+                'flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors',
                 activa ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
               )}
             >
@@ -94,7 +94,7 @@ export function HoyView({ owner, onChangeVista, onOpen }: Props) {
               {badge !== null && (
                 <span
                   className={cn(
-                    'rounded-full px-1.5 text-[10px] font-black tabular-nums',
+                    'rounded-full px-1.5 text-[11px] font-semibold tabular-nums',
                     activa ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-foreground/10 text-foreground',
                   )}
                 >
@@ -127,15 +127,15 @@ function HoySkeleton() {
   return (
     <div className="space-y-3" aria-busy="true">
       <div className="grid gap-3 lg:grid-cols-2">
-        <Skeleton className="h-36 rounded-3xl" />
-        <Skeleton className="h-36 rounded-3xl" />
+        <Skeleton className="h-36 rounded-2xl" />
+        <Skeleton className="h-36 rounded-2xl" />
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-[88px] rounded-3xl" />
+          <Skeleton key={i} className="h-[88px] rounded-2xl" />
         ))}
       </div>
-      <Skeleton className="h-56 w-full rounded-3xl" />
+      <Skeleton className="h-56 w-full rounded-2xl" />
     </div>
   );
 }

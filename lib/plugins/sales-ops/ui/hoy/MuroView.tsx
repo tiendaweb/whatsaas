@@ -188,7 +188,7 @@ export function MuroView({ onOpen }: { onOpen: (chatId: number) => void }) {
       ) : cargando ? (
         <div className="space-y-2" aria-busy="true">
           {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 rounded-3xl" />
+            <Skeleton key={i} className="h-24 rounded-2xl" />
           ))}
         </div>
       ) : porDia.length === 0 ? (
@@ -205,7 +205,7 @@ export function MuroView({ onOpen }: { onOpen: (chatId: number) => void }) {
               <div className="flex items-center gap-3">
                 <h3 className={CH.rotulo}>{tituloDia(delDia[0].at)}</h3>
                 <span className="h-px flex-1 bg-border" aria-hidden />
-                <span className="text-[10px] font-bold tabular-nums text-muted-foreground">{delDia.length}</span>
+                <span className="text-[11px] font-semibold tabular-nums text-muted-foreground">{delDia.length}</span>
               </div>
               <ul className="space-y-2">
                 {delDia.map((entry) => (
@@ -238,7 +238,7 @@ function ActorAvatar({ actor }: { actor: WallEntry['actor'] }) {
   if (actor.kind === 'persona') {
     return (
       <span
-        className="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-[11px] font-black text-primary"
+        className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-[11px] font-semibold text-primary"
         title={`${actor.name} (persona)`}
       >
         {iniciales(actor.name)}
@@ -280,7 +280,7 @@ function Publicacion({ entry, onOpen }: { entry: WallEntry; onOpen: (chatId: num
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
             <span className="text-sm font-bold text-foreground">{autor.nombre}</span>
-            {autor.detalle && <span className="text-[10px] text-muted-foreground">{autor.detalle}</span>}
+            {autor.detalle && <span className="text-[11px] text-muted-foreground">{autor.detalle}</span>}
             <span className="text-[11px] text-muted-foreground" title={entry.at}>
               · {tiempoRelativo(entry.at)} · {fmtHora(entry.at)}
             </span>
@@ -288,7 +288,7 @@ function Publicacion({ entry, onOpen }: { entry: WallEntry; onOpen: (chatId: num
           {/* La persona que lo pidió, en chico: importa saber quién fue, pero no
               es quien hizo el trabajo. */}
           {entry.by && entry.actor.kind !== 'persona' && (
-            <p className="text-[10px] text-muted-foreground/80">pedido por {entry.by}</p>
+            <p className="text-[11px] text-muted-foreground/80">pedido por {entry.by}</p>
           )}
 
           <div className="mt-2 flex items-start gap-2">

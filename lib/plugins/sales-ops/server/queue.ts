@@ -36,6 +36,7 @@ import {
   type Owner,
 } from '../shared/taxonomy';
 import { getSalesOpsSettings } from './settings';
+import { tieneVariablesPendientes } from '../shared/variables';
 
 /**
  * Cola de ejecución del Command Center Comercial (doc 03 §5, doc 05 §5).
@@ -440,6 +441,20 @@ async function warningsFor(
 
 /** Lotes que le llegan al cliente por WhatsApp: pasan por las mismas exclusiones y exigen texto. */
 const SEND_KINDS: ActionKind[] = ['send_message', 'schedule_message'];
+
+function assertNoPendingVariables(actions: Array<{ kind: string; payload: unknown }>): void {
+  const blocked = actions.filter((action) => {
+    if (!SEND_KINDS.includes(action.kind as ActionKind)) return false;
+    const text = (action.payload as Record<string, unknown> | null)?.text;
+    return typeof text === 'string' && tieneVariablesPendientes(text);
+  });
+  if (blocked.length) {
+    throw new QueueError(
+      'invalid',
+      `No se puede aprobar: ${blocked.length === 1 ? 'el mensaje tiene' : `${blocked.length} mensajes tienen`} variables sin completar.`,
+    );
+  }
+}
 
 export async function proposeBatch(teamId: number, input: ProposeInput): Promise<ProposeResult> {
   if (!input.label?.trim()) throw new QueueError('invalid', 'El lote necesita un nombre.');
@@ -924,6 +939,8 @@ export async function approveBatch(
   const toReject = pending.filter((a) => exclude.has(a.id));
   const now = new Date();
 
+  assertNoPendingVariables(toApprove);
+
   // Pre-chequeo con mensaje claro; el índice parcial es la red de seguridad.
   if (actions[0].kind === 'send_message' && toApprove.length) {
     const conflicts = await conflictingSends(teamId, batchId, toApprove.map((a) => a.chatId));
@@ -999,6 +1016,7 @@ export async function approveAction(
   if (action.status !== 'proposed' && action.status !== 'pending_approval') {
     throw new QueueError('invalid', `Ya está ${action.status}: no se puede aprobar.`);
   }
+  assertNoPendingVariables([action]);
   if (action.kind === 'send_message') {
     const conflicts = await conflictingSends(teamId, action.batchId, [action.chatId]);
     if (conflicts.length) throw new QueueError('conflict', 'El contacto ya tiene otro envío aprobado.', { blockedChats: conflicts });

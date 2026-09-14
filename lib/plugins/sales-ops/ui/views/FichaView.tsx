@@ -73,11 +73,20 @@ type Payload = DetailPayload & { header: Header };
 type Props = {
   chatId: number;
   onClose?: () => void;
-  /** Sección con la que abrir. `chat` es lo que usa el botón de las listas. */
+  /**
+   * Sección con la que abrir, tal como viene en `?sec=` de la URL.
+   *
+   * La usan los botones de las listas y de la Cola: "abrir el chat" es esta
+   * misma ficha en `chat`, y el botón IA es esta misma ficha en `ia`. Un valor
+   * que no existe cae en el Resumen en vez de dejar la ficha en blanco.
+   */
   seccionInicial?: string | null;
 };
 
-type Seccion = 'resumen' | 'chat' | 'ia' | 'crm' | 'acciones' | 'radar' | 'versiones' | 'historial';
+const SECCIONES = ['resumen', 'chat', 'ia', 'crm', 'acciones', 'radar', 'versiones', 'historial'] as const;
+type Seccion = (typeof SECCIONES)[number];
+
+const esSeccion = (v: unknown): v is Seccion => typeof v === 'string' && (SECCIONES as readonly string[]).includes(v);
 
 /**
  * Ficha del contacto, en el panel derecho del Command Center.
@@ -90,7 +99,7 @@ type Seccion = 'resumen' | 'chat' | 'ia' | 'crm' | 'acciones' | 'radar' | 'versi
  */
 export function FichaView({ chatId, seccionInicial, onClose }: Props) {
   const { data, error, isLoading, mutate } = useSWR<Payload>(`${SALES_OPS_API}/contacts/${chatId}`, fetcher);
-  const [seccion, setSeccion] = useState<Seccion>(seccionInicial === 'chat' ? 'chat' : 'resumen');
+  const [seccion, setSeccion] = useState<Seccion>(esSeccion(seccionInicial) ? seccionInicial : 'resumen');
 
   if (error) return <ErrorState message={String(error.message ?? error)} onRetry={() => void mutate()} />;
   if (isLoading || !data) return <FichaSkeleton />;
@@ -779,6 +788,10 @@ function PromptConector({
       setText('');
       // El chat pasó a tener algo en cola: sale solo de "Pendiente de verificación".
       avisarEncolado(chatId);
+      // Se dice adónde fue. El pedido no se ejecuta acá: queda en la Cola como
+      // una indicación, y desde ahí se aprueba o lo toma un conector. Sin este
+      // aviso, la caja se vaciaba y no quedaba claro si había pasado algo.
+      toast.success('Encolado: queda en la Cola como indicación.');
       await mutate();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'No se pudo encolar.');

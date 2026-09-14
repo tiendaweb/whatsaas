@@ -87,6 +87,8 @@ export function NoeliaView({ owner, onSalir }: { owner: OwnerFilterValue; onSali
     g: () => acciones.current?.programar(),
     c: () => acciones.current?.cola(),
     p: () => acciones.current?.posponer(),
+    d: () => acciones.current?.prompt(),
+    x: () => acciones.current?.excluir(),
   }), []);
   useAtajosTeclado({ onAnterior: cola.retroceder, onSiguiente: cola.avanzar, onSaltar: saltar, acciones: teclas });
 

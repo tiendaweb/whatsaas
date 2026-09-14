@@ -1,4 +1,4 @@
-import { Activity, FlaskConical, LayoutGrid, PenLine, type LucideIcon } from 'lucide-react';
+import { Activity, FileCog, FlaskConical, LayoutGrid, PenLine, type LucideIcon } from 'lucide-react';
 
 /**
  * Secciones del Prompt Studio.
@@ -12,10 +12,11 @@ import { Activity, FlaskConical, LayoutGrid, PenLine, type LucideIcon } from 'lu
  * comparte un enlace a "Actividad" sin pedirle a nadie que navegue.
  */
 export const SECCIONES = ['biblioteca', 'componer', 'actividad', 'experimentos'] as const;
-export type Seccion = (typeof SECCIONES)[number];
+export type Seccion = (typeof SECCIONES)[number] | 'sistema';
 
 export const SECCION_LABELS: Record<Seccion, string> = {
   biblioteca: 'Biblioteca',
+  sistema: 'Sistema',
   componer: 'Componer',
   actividad: 'Actividad',
   experimentos: 'Experimentos',
@@ -24,6 +25,7 @@ export const SECCION_LABELS: Record<Seccion, string> = {
 /** La línea de abajo del encabezado: qué se hace en cada sección. */
 export const SECCION_BAJADAS: Record<Seccion, string> = {
   biblioteca: 'Las skills del equipo: prompts guardados con nombre, formulario y motor.',
+  sistema: 'Los prompts internos que ejecutan Command Center, Radar, Focus y Prompt Studio.',
   componer: 'Completá los datos de una skill y mirá el prompt final antes de lanzarlo.',
   actividad: 'Todo lo que se lanzó: en cola, sin cuota, fallado y hecho.',
   experimentos: 'Dos textos, la misma situación, y cuál convierte mejor.',
@@ -31,11 +33,12 @@ export const SECCION_BAJADAS: Record<Seccion, string> = {
 
 export const SECCION_ICONS: Record<Seccion, LucideIcon> = {
   biblioteca: LayoutGrid,
+  sistema: FileCog,
   componer: PenLine,
   actividad: Activity,
   experimentos: FlaskConical,
 };
 
 export function isSeccion(v: unknown): v is Seccion {
-  return typeof v === 'string' && (SECCIONES as readonly string[]).includes(v);
+  return typeof v === 'string' && ([...SECCIONES, 'sistema'] as readonly string[]).includes(v);
 }

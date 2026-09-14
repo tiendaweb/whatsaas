@@ -1,11 +1,12 @@
 'use client';
 
-import { ArrowLeft, ListChecks, Plus, Radar, Wand2 } from 'lucide-react';
+import { ArrowLeft, Braces, ListChecks, Plus, Radar, ScanSearch, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Skill } from '../../shared/skills';
 import { iniciales } from '../components/format';
 import { SKILL_ICON_COMPONENTS } from '../skills/skill-meta';
 import { SECCIONES, SECCION_ICONS, SECCION_LABELS, type Seccion } from './secciones';
+import type { SystemPromptModule } from './SystemPromptsView';
 
 export type StudioUser = { name: string | null; email: string | null } | null;
 
@@ -18,6 +19,9 @@ type Props = {
   onNav: (s: Seccion) => void;
   onNuevaSkill: () => void;
   onElegirSkill: (skill: Skill) => void;
+  modules: SystemPromptModule[];
+  moduleId: string | null;
+  onElegirModulo: (moduleId: string) => void;
   className?: string;
 };
 
@@ -31,7 +35,9 @@ type Props = {
  * todo, la puerta a las otras aplicaciones: el Studio es una app aparte, y
  * salir no puede obligar a adivinar la URL.
  */
-export function StudioSidebar({ seccion, atajos, skillActiva, user, onNav, onNuevaSkill, onElegirSkill, className }: Props) {
+const MODULE_ICONS = { 'command-center': Radar, radar: ScanSearch, tasks: ListChecks } as const;
+
+export function StudioSidebar({ seccion, atajos, skillActiva, user, onNav, onNuevaSkill, onElegirSkill, modules, moduleId, onElegirModulo, className }: Props) {
   return (
     <aside
       className={cn('flex h-full w-[252px] shrink-0 flex-col border-r border-[var(--ps-line)] bg-[var(--ps-shell)]', className)}
@@ -71,6 +77,19 @@ export function StudioSidebar({ seccion, atajos, skillActiva, user, onNav, onNue
         })}
       </nav>
 
+      <div className="mx-3 mt-2 border-t border-[var(--ps-line)] pt-2" aria-label="Prompts internos por aplicación">
+        {modules.map((module) => {
+          const ModuleIcon = MODULE_ICONS[module.id as keyof typeof MODULE_ICONS] ?? Braces;
+          const active = seccion === 'sistema' && moduleId === module.id;
+          return (
+            <button key={module.id} type="button" onClick={() => onElegirModulo(module.id)} aria-current={active ? 'page' : undefined} className={cn('flex w-full items-center gap-2.5 rounded-[10px] px-3 py-2 text-left text-[13px] font-semibold transition-colors', active ? 'bg-[var(--ps-accent-wash)] text-[var(--ps-accent-soft)] shadow-[inset_0_0_0_1px_var(--ps-line-strong)]' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground')}>
+              <ModuleIcon className="size-4 shrink-0" aria-hidden />
+              <span className="truncate">{module.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
       <button
         type="button"
         onClick={onNuevaSkill}
@@ -80,7 +99,7 @@ export function StudioSidebar({ seccion, atajos, skillActiva, user, onNav, onNue
         Nueva skill
       </button>
 
-      <p className="px-5 pb-1.5 pt-3 text-[10px] font-semibold tracking-[0.16em] text-[var(--ps-dim)]">ACCESO RÁPIDO</p>
+      <p className="px-5 pb-1.5 pt-4 text-[10px] font-semibold tracking-[0.16em] text-[var(--ps-dim)]">ACCESO RÁPIDO</p>
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-3">
         {atajos.length === 0 && <p className="px-2 text-[11px] text-[var(--ps-dim)]">Fijá una skill y aparece acá.</p>}
         {atajos.map((skill) => {

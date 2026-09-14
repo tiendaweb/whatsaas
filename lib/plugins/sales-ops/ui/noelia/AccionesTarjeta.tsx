@@ -1,12 +1,14 @@
 'use client';
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { Bot, Check, Clock3, Loader2, Pencil, Send, Sparkles, SkipForward, X } from 'lucide-react';
+import { Ban, Bot, Check, Clock3, Loader2, Pencil, Send, Sparkles, SkipForward, Wand2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { ActionKind } from '../../shared/taxonomy';
 import type { ActionRow, DetailPayload } from '../../shared/api-types';
 import type { EstadoCaso } from './tipos';
+import { aplicarVariables, detectarVariables, fechaLegible, horaLegible, nombreParaSaludo } from '../../shared/variables';
+import { VariablesRapidas } from './VariablesRapidas';
 
 export type AccionesTarjetaHandle = {
   enviar: () => void;
@@ -15,6 +17,8 @@ export type AccionesTarjetaHandle = {
   programar: () => void;
   cola: () => void;
   posponer: () => void;
+  prompt: () => void;
+  excluir: () => void;
 };
 
 type Detalle = DetailPayload & { header: { name: string } };
@@ -36,10 +40,29 @@ type AprobarRespuesta = {
   execution: { executed: number; skipped: number; failed: number; results: Array<{ status: 'executed' | 'skipped' | 'failed'; reason?: string }> } | null;
 };
 
-type Modo = 'ver' | 'editar' | 'ia' | 'programar' | 'cola';
+type Modo = 'ver' | 'editar' | 'ia' | 'programar' | 'cola' | 'prompt' | 'excluir';
 
 const VIVAS = ['proposed', 'pending_approval', 'approved'] as const;
 const CHIPS = ['Más corto', 'Más cálido', 'Quiero cerrar', 'No menciones el precio', 'Recordale lo que pidió', 'Que parezca más humano'];
+/**
+ * Los tres motivos con los que se saca a alguien del circuito. Son los mismos
+ * de las Listas (`EXCLUSION_KINDS` del servidor): un cuarto motivo inventado acá
+ * no lo entendería el panel de Ignorados.
+ */
+const MOTIVOS: Array<{ kind: 'personal' | 'equipo' | 'otros'; label: string; ayuda: string }> = [
+  { kind: 'personal', label: 'PERSONAL', ayuda: 'Familia, amigos, cosas mías.' },
+  { kind: 'equipo', label: 'EQUIPO', ayuda: 'Alguien que trabaja acá.' },
+  { kind: 'otros', label: 'OTROS', ayuda: 'Proveedor, spam, no es una venta.' },
+];
+
+/** Encabezados de prompt: lo más pedido, para dejarlo sin escribir nada. */
+const PROMPTS_RAPIDOS = [
+  'Averiguá en qué quedó y dejame el resumen.',
+  'Escribile vos con lo que veas en el chat.',
+  'Revisá si ya pagó y avisame.',
+  'Buscá el mejor momento para insistir y dejalo programado.',
+];
+
 const INDICACIONES = [
   'Mejorá el texto con lo que veas en el chat y mandalo.',
   'Confirmá el precio en el chat antes de mandar.',
@@ -92,6 +115,8 @@ export const AccionesTarjeta = forwardRef<AccionesTarjetaHandle, Props>(function
   const [modo, setModo] = useState<Modo>('ver');
   const [instruccion, setInstruccion] = useState('');
   const [paraConector, setParaConector] = useState('');
+  const [promptTexto, setPromptTexto] = useState('');
+  const [valores, setValores] = useState<Record<string, string>>({});
   const [cuando, setCuando] = useState(() => paraInput(mananaALas(9)));
   const [generando, setGenerando] = useState(false);
   const [guardando, setGuardando] = useState(false);
@@ -118,10 +143,10 @@ export const AccionesTarjeta = forwardRef<AccionesTarjetaHandle, Props>(function
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          draftType: 'dynamic',
+          draftType: 'static',
           mode: 'improve',
           baseContent: mensaje || a?.recommendedAction || '',
-          prompt: `Escribí únicamente un mensaje de WhatsApp listo para enviar a ${detalle.header.name}. No inventes precios, fechas ni promesas. Objetivo confirmado: ${a?.recommendedAction || 'retomar la conversación'}. Necesidad: ${a?.needDetail || a?.need || 'sin confirmar'}. Estado: ${a?.statusReason || a?.status || 'sin confirmar'}. Instrucción: ${direccion}`,
+          prompt: `Escribí únicamente un mensaje de WhatsApp final y listo para enviar a ${detalle.header.name}. No uses variables, placeholders ni textos entre llaves o corchetes. No inventes precios, fechas, horarios ni promesas. Si falta un dato, formulá una pregunta natural para que el cliente lo indique. Objetivo confirmado: ${a?.recommendedAction || 'retomar la conversación'}. Necesidad: ${a?.needDetail || a?.need || 'sin confirmar'}. Estado: ${a?.statusReason || a?.status || 'sin confirmar'}. Instrucción: ${direccion}`,
         }),
       });
       const next = body.content?.trim();
@@ -143,6 +168,54 @@ export const AccionesTarjeta = forwardRef<AccionesTarjetaHandle, Props>(function
     void generar();
   }, [chatId, generar, mensaje]);
 
+  /**
+   * Los huecos del mensaje y su resolución.
+   *
+   * `mensaje` guarda el texto CON las llaves —es lo que se edita y lo que se
+   * vuelve a leer si cambia una variable— y todo lo que sale para afuera usa
+   * `mensajeFinal`. Guardar el texto ya resuelto haría imposible corregir una
+   * fecha sin reescribir la frase entera.
+   */
+  const variables = useMemo(() => detectarVariables(mensaje), [mensaje]);
+  const nombreSugerido = useMemo(() => nombreParaSaludo(detalle.header.name), [detalle.header.name]);
+
+  const valoresLegibles = useMemo(() => {
+    const salida: Record<string, string> = {};
+    for (const v of variables) {
+      const crudo = (valores[v.name] ?? '').trim();
+      if (!crudo) continue;
+      // La fecha y la hora se guardan como las devuelve el picker y se
+      // escriben como las diría una persona.
+      salida[v.name] = v.tipo === 'fecha' ? fechaLegible(crudo) : v.tipo === 'hora' ? horaLegible(crudo) : crudo;
+    }
+    return salida;
+  }, [variables, valores]);
+
+  const mensajeFinal = useMemo(() => aplicarVariables(mensaje, valoresLegibles), [mensaje, valoresLegibles]);
+  const faltan = variables.filter((v) => !(valores[v.name] ?? '').trim()).length;
+
+  /**
+   * El nombre del contacto se completa solo, pero únicamente si sirve para
+   * saludar: con «5491160001672» o «vidrieria urgencia 24» el campo queda
+   * vacío en vez de mandar "Hola 5491160001672".
+   */
+  useEffect(() => {
+    if (!nombreSugerido) return;
+    const deNombre = variables.filter((v) => v.tipo === 'nombre');
+    if (!deNombre.length) return;
+    setValores((actual) => {
+      let cambio = false;
+      const siguiente = { ...actual };
+      for (const v of deNombre) {
+        if (!(siguiente[v.name] ?? '').trim()) {
+          siguiente[v.name] = nombreSugerido;
+          cambio = true;
+        }
+      }
+      return cambio ? siguiente : actual;
+    });
+  }, [variables, nombreSugerido]);
+
   const editarAction = useCallback(async (actionId: number, text: string) => {
     await json(`/api/plugins/sales-ops/queue/actions/${actionId}`, {
       method: 'PATCH',
@@ -156,8 +229,10 @@ export const AccionesTarjeta = forwardRef<AccionesTarjetaHandle, Props>(function
    * (actualizando el texto si cambió) y si no crea el lote de una sola fila.
    */
   const asegurarAction = useCallback(async (kind: ActionKind, extra: Record<string, unknown> = {}, sendAt?: string): Promise<ActionRow> => {
-    const texto = mensaje.trim();
+    // Sale el texto con las variables resueltas, nunca el de las llaves.
+    const texto = mensajeFinal.trim();
     if (!texto) throw new Error('Todavía no hay un mensaje.');
+    if (faltan > 0) throw new Error('Completá o quitá las variables antes de continuar.');
     if (kind === 'send_message' && action && !Object.keys(extra).length) {
       if (action.status === 'proposed' || action.status === 'pending_approval') {
         if (textoDe(action) !== texto) await editarAction(action.id, texto);
@@ -185,15 +260,15 @@ export const AccionesTarjeta = forwardRef<AccionesTarjetaHandle, Props>(function
     const created = batch.actions.find((row) => row.chatId === chatId);
     if (!created) throw new Error('La propuesta se creó sin una fila aprobable.');
     return created;
-  }, [action, chatId, detalle, editarAction, instruccion, mensaje, original]);
+  }, [action, chatId, detalle, editarAction, faltan, instruccion, mensajeFinal, original]);
 
   const aprobar = useCallback(async (actionId: number, execute: boolean) => {
     return json<AprobarRespuesta>(`/api/plugins/sales-ops/queue/actions/${actionId}/approve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ recommendation: detalle.analysis?.recommendedAction, originalText: original || mensaje, aiInstruction: instruccion || undefined, execute }),
+      body: JSON.stringify({ recommendation: detalle.analysis?.recommendedAction, originalText: original || mensajeFinal, aiInstruction: instruccion || undefined, execute }),
     });
-  }, [detalle.analysis?.recommendedAction, instruccion, mensaje, original]);
+  }, [detalle.analysis?.recommendedAction, instruccion, mensajeFinal, original]);
 
   /** Envía ahora: aprueba y ejecuta en el mismo request. */
   const enviarAhora = useCallback(async () => {
@@ -309,6 +384,83 @@ export const AccionesTarjeta = forwardRef<AccionesTarjetaHandle, Props>(function
     }
   }, [chatId, guardando, onEstado, onResuelto]);
 
+  /**
+   * Deja un prompt para el conector sobre ESTE contacto, sin mensaje de por
+   * medio.
+   *
+   * "A la cola" exige un mensaje redactado —es una fila aprobable con texto—, y
+   * eso dejaba afuera el caso más común de la cabina: no querés mandar nada
+   * todavía, querés que el conector averigüe algo o escriba él. Esto crea una
+   * corrida del Prompt Studio (`team_prompt_runs`) en modo `queue`: contesta al
+   * instante y el conector la levanta con su turno.
+   */
+  const dejarPrompt = useCallback(async () => {
+    if (guardando) return;
+    const texto = promptTexto.trim();
+    if (!texto) {
+      toast.error('Escribí qué querés que haga.');
+      return;
+    }
+    setGuardando(true);
+    try {
+      await json('/api/plugins/sales-ops/prompts/launch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: texto,
+          title: `Modo Noelia · ${detalle.header.name}`,
+          targetKind: 'chat',
+          targetId: chatId,
+          mode: 'queue',
+        }),
+      });
+      setPromptTexto('');
+      setModo('ver');
+      onEstado({ texto: '🤖 PROMPT DEJADO', tono: 'neutro' });
+      toast.success('Listo: el conector lo toma en su próxima pasada.');
+      onResuelto('encolado');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo dejar el prompt.');
+    } finally {
+      setGuardando(false);
+    }
+  }, [chatId, detalle.header.name, guardando, onEstado, onResuelto, promptTexto]);
+
+  /**
+   * Saca al contacto del circuito comercial.
+   *
+   * No borra nada: lo marca como no comercial y lo limpia de listas, radar,
+   * clasificador y cola de audios, igual que el botón de las Listas. Conserva el
+   * análisis para que devolverlo sea un clic desde Ignorados.
+   */
+  const excluir = useCallback(async (kind: 'personal' | 'equipo' | 'otros') => {
+    if (guardando) return;
+    setGuardando(true);
+    try {
+      const res = await json<{ excluded: number; audiosRemoved?: number; signalsRemoved?: number }>(
+        '/api/plugins/sales-ops/exclusions',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chatIds: [chatId], kind, reason: 'Excluido desde Modo Noelia' }),
+        },
+      );
+      const extra = [
+        res.audiosRemoved ? `${res.audiosRemoved} audios fuera de la cola` : null,
+        res.signalsRemoved ? `${res.signalsRemoved} señales descartadas` : null,
+      ].filter(Boolean);
+      setModo('ver');
+      onEstado({ texto: '🚫 FUERA DEL CIRCUITO', tono: 'ambar' });
+      toast.success(`${detalle.header.name} queda fuera${extra.length ? ` · ${extra.join(' · ')}` : ''}.`);
+      // Se va de la cola como un salteado: ya no hay nada que decidir acá.
+      onSaltar();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo excluir.');
+    } finally {
+      setGuardando(false);
+    }
+  }, [chatId, detalle.header.name, guardando, onEstado, onSaltar]);
+
   const abrirEdicion = useCallback(() => {
     setModo('editar');
     onEstado({ texto: 'EDITANDO · TODAVÍA NO SALIÓ', tono: 'neutro' });
@@ -321,10 +473,12 @@ export const AccionesTarjeta = forwardRef<AccionesTarjetaHandle, Props>(function
     programar: () => setModo((m) => (m === 'programar' ? 'ver' : 'programar')),
     cola: () => setModo((m) => (m === 'cola' ? 'ver' : 'cola')),
     posponer: () => void posponer(),
+    prompt: () => setModo((m) => (m === 'prompt' ? 'ver' : 'prompt')),
+    excluir: () => setModo((m) => (m === 'excluir' ? 'ver' : 'excluir')),
   }), [abrirEdicion, enviarAhora, posponer]);
 
   const hayMensaje = Boolean(mensaje.trim());
-  const bloqueado = guardando || generando || !hayMensaje;
+  const bloqueado = guardando || generando || !hayMensaje || faltan > 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
@@ -333,7 +487,13 @@ export const AccionesTarjeta = forwardRef<AccionesTarjetaHandle, Props>(function
       <section className="flex min-h-0 flex-1 flex-col rounded-xl border border-[var(--mn-msg-line)] bg-[var(--mn-msg-bg)] p-2.5" aria-label="Mensaje listo">
         <div className="flex items-center justify-between gap-2">
           <small className="text-[11px] font-black tracking-[0.06em] text-[var(--mn-green-soft)]">
-            {modo === 'editar' ? 'EDITANDO EL MENSAJE' : modo === 'programar' ? 'CUÁNDO SALE' : modo === 'cola' ? 'QUÉ HACE EL CONECTOR' : modo === 'ia' ? 'QUÉ CAMBIAMOS' : 'MENSAJE LISTO'}
+            {modo === 'editar' ? 'EDITANDO EL MENSAJE'
+              : modo === 'programar' ? 'CUÁNDO SALE'
+                : modo === 'cola' ? 'QUÉ HACE EL CONECTOR'
+                  : modo === 'ia' ? 'QUÉ CAMBIAMOS'
+                    : modo === 'prompt' ? 'QUÉ QUERÉS QUE HAGA'
+                      : modo === 'excluir' ? 'POR QUÉ LO SACÁS'
+                        : faltan > 0 ? `MENSAJE CON ${faltan} HUECO${faltan === 1 ? '' : 'S'}` : 'MENSAJE LISTO'}
           </small>
           {modo !== 'ver' && (
             <button type="button" onClick={() => { setModo('ver'); onEstado(null); }} className="text-[var(--mn-muted)] hover:text-[var(--mn-text)]" aria-label="Volver">
@@ -390,6 +550,54 @@ export const AccionesTarjeta = forwardRef<AccionesTarjetaHandle, Props>(function
               {guardando ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Bot className="size-4" aria-hidden />} DEJAR EN LA COLA
             </button>
           </div>
+        ) : modo === 'prompt' ? (
+          <div className="mt-1 flex min-h-0 flex-1 flex-col gap-2">
+            <div className="flex flex-wrap gap-1.5">
+              {PROMPTS_RAPIDOS.map((chip) => (
+                <button
+                  key={chip}
+                  type="button"
+                  onClick={() => setPromptTexto(chip)}
+                  className={cn('rounded-full border px-2.5 py-1 text-[11px] font-black', promptTexto === chip ? 'border-[var(--mn-accent)] text-[var(--mn-accent)]' : 'border-[var(--mn-line)] text-[var(--mn-muted)] hover:border-[var(--mn-accent)]')}
+                >
+                  {chip}
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={promptTexto}
+              onChange={(e) => setPromptTexto(e.target.value)}
+              placeholder="Escribile al conector qué tiene que hacer con este contacto…"
+              className="min-h-0 flex-1 resize-none rounded-lg border border-[var(--mn-line)] bg-transparent p-2 text-[14px] font-[650] leading-relaxed text-[var(--mn-text)] outline-none focus-visible:border-[var(--mn-accent)]"
+              aria-label="Prompt para el conector"
+            />
+            <p className="text-[11px] font-bold text-[var(--mn-dim)]">
+              No manda nada: queda como corrida en el Prompt Studio y el conector la toma en su próxima pasada.
+            </p>
+            <button type="button" className={cn(BTN_PRIMARIO, 'w-full')} disabled={guardando || !promptTexto.trim()} onClick={() => void dejarPrompt()}>
+              {guardando ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Wand2 className="size-4" aria-hidden />} DEJAR PROMPT
+            </button>
+          </div>
+        ) : modo === 'excluir' ? (
+          <div className="mt-1 flex min-h-0 flex-1 flex-col gap-2">
+            <p className="text-[12px] font-bold leading-snug text-[var(--mn-muted)]">
+              Sale de las listas, del radar, del clasificador y de la cola de audios. No se borra: vuelve de un clic desde Ignorados.
+            </p>
+            <div className="flex flex-col gap-1.5">
+              {MOTIVOS.map((m) => (
+                <button
+                  key={m.kind}
+                  type="button"
+                  disabled={guardando}
+                  onClick={() => void excluir(m.kind)}
+                  className={cn(BTN_GHOST, 'w-full justify-between px-3 text-left')}
+                >
+                  <span>{m.label}</span>
+                  <span className="text-[11px] font-bold text-[var(--mn-dim)]">{m.ayuda}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         ) : modo === 'ia' ? (
           <div className="mt-1.5 min-h-0 flex-1 overflow-y-auto">
             <div className="flex flex-wrap gap-1.5">
@@ -416,10 +624,21 @@ export const AccionesTarjeta = forwardRef<AccionesTarjetaHandle, Props>(function
           <p className="mt-1 min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap text-[14px] font-[650] leading-relaxed text-[var(--mn-text)]" aria-live="polite">
             {generando
               ? <span className="flex items-center gap-2 text-[var(--mn-dim)]"><Loader2 className="size-4 animate-spin" aria-hidden /> Preparando el mensaje…</span>
-              : mensaje || <span className="text-[var(--mn-dim)]">No hay mensaje. Usá «IA» para prepararlo o escribilo con «Editar».</span>}
+              : mensajeFinal || <span className="text-[var(--mn-dim)]">No hay mensaje. Usá «IA» para prepararlo o escribilo con «Editar».</span>}
           </p>
         )}
       </section>
+
+      {/* Los huecos del mensaje. Sólo aparece si hay alguno: una tarjeta sin
+          variables no tiene por qué perder alto en un recuadro vacío. */}
+      {modo === 'ver' && variables.length > 0 && (
+        <VariablesRapidas
+          variables={variables}
+          valores={valores}
+          onCambio={(name, valor) => setValores((actual) => ({ ...actual, [name]: valor }))}
+          nombreSugerido={nombreSugerido}
+        />
+      )}
 
       {/* Las tres salidas del caso. Enviar ahora es la primaria. */}
       <div className="grid shrink-0 grid-cols-3 gap-1.5">
@@ -435,19 +654,27 @@ export const AccionesTarjeta = forwardRef<AccionesTarjetaHandle, Props>(function
         </button>
       </div>
 
-      {/* Fila secundaria: corregir, posponer, saltar y contexto. */}
-      <div className="flex shrink-0 items-center gap-1.5">
+      {/* Fila secundaria: corregir, dejar prompt, posponer, saltar, sacar del
+          circuito y contexto. Envuelve: son siete y en el celular no entran en
+          una línea sin volverse ilegibles. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5">
         <button type="button" className={cn(BTN_MINI, modo === 'editar' && 'border-[var(--mn-accent)] text-[var(--mn-accent)]')} title="Atajo: E" onClick={() => (modo === 'editar' ? (setModo('ver'), onEstado(null)) : abrirEdicion())}>
           <Pencil className="size-3.5" aria-hidden /> {modo === 'editar' ? 'Listo' : 'Editar'}
         </button>
         <button type="button" className={cn(BTN_MINI, modo === 'ia' && 'border-[var(--mn-accent)] text-[var(--mn-accent)]')} title="Atajo: I" onClick={() => setModo((m) => (m === 'ia' ? 'ver' : 'ia'))}>
           <Sparkles className="size-3.5" aria-hidden /> IA
         </button>
+        <button type="button" className={cn(BTN_MINI, modo === 'prompt' && 'border-[var(--mn-accent)] text-[var(--mn-accent)]')} title="Atajo: D · dejar un prompt sin mandar nada" onClick={() => setModo((m) => (m === 'prompt' ? 'ver' : 'prompt'))}>
+          <Wand2 className="size-3.5" aria-hidden /> Prompt
+        </button>
         <button type="button" className={BTN_MINI} title="Atajo: P" onClick={() => void posponer()} disabled={guardando}>
           <Clock3 className="size-3.5" aria-hidden /> Posponer
         </button>
         <button type="button" className={BTN_MINI} title="Atajo: S" onClick={onSaltar}>
           <SkipForward className="size-3.5" aria-hidden /> Saltar
+        </button>
+        <button type="button" className={cn(BTN_MINI, modo === 'excluir' && 'border-[var(--mn-accent)] text-[var(--mn-accent)]')} title="Atajo: X · sacarlo del circuito" onClick={() => setModo((m) => (m === 'excluir' ? 'ver' : 'excluir'))} disabled={guardando}>
+          <Ban className="size-3.5" aria-hidden /> Excluir
         </button>
         <button type="button" className={cn(BTN_MINI, contextoAbierto && 'border-[var(--mn-accent)] text-[var(--mn-accent)]')} aria-expanded={contextoAbierto} onClick={onContexto}>
           <Check className="size-3.5" aria-hidden /> Por qué

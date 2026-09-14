@@ -36,6 +36,12 @@ import { SALES_OPS_PROMPT_KEYS } from './prompts';
 const ACTIVE_STATUSES = ['active', 'draft'] as const;
 /** Sólo los prompts del Studio; los del motor de clasificación viven aparte. */
 const SKILL_PURPOSE = 'custom';
+const RESERVED_SYSTEM_PROMPT_KEYS = [
+  ...Object.values(SALES_OPS_PROMPT_KEYS),
+  'sales-ops.suggestions',
+  'sales-ops.focus',
+  'sales-ops.skill-api',
+];
 
 export type SkillRow = typeof teamPrompts.$inferSelect;
 
@@ -226,7 +232,7 @@ export async function upsertSkill(teamId: number, userId: number, raw: SkillInpu
   const key = (input.key || `qa.${slugify(input.title)}`).slice(0, 64);
   // Guardar una skill con la key de un prompt del motor lo dejaría retirado y
   // el clasificador volvería al texto por defecto sin avisar.
-  if ((Object.values(SALES_OPS_PROMPT_KEYS) as string[]).includes(key)) {
+  if (RESERVED_SYSTEM_PROMPT_KEYS.includes(key)) {
     throw new Error(`"${key}" es un prompt del motor de clasificación, no una skill. Usá otra key.`);
   }
   const previous = await db.query.teamPrompts.findMany({

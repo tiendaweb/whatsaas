@@ -7,6 +7,7 @@ import { isCategory, isSkillIcon } from '../shared/skills';
 import { buildChatDossier } from './dossier';
 import { getChatSituation, listSkills, recommendSkillsForChat, type SkillRecommendation } from './skills';
 import { extractJson, runJsonWithApi } from './skill-runner';
+import { getPromptForDefinition, renderTemplate } from './prompts';
 
 /**
  * Siguientes acciones sugeridas para UN cliente, generadas por IA.
@@ -46,7 +47,7 @@ export type AiSuggestion = {
   prompt: string | null;
 };
 
-const SYSTEM = `Sos el analista comercial del equipo. Tu trabajo acá es UNO: elegir las próximas acciones concretas para un chat específico y devolverlas en JSON.
+export const SUGGESTIONS_SYSTEM_PROMPT = `Sos el analista comercial del equipo. Tu trabajo acá es UNO: elegir las próximas acciones concretas para un chat específico y devolverlas en JSON.
 
 REGLAS
 1. Elegí del CATÁLOGO de skills la que resuelva lo que hay que hacer ahora. Sólo si ninguna sirve, devolvé skill_key null y escribí un prompt libre.
@@ -60,17 +61,15 @@ REGLAS
 SALIDA (JSON, exactamente estas claves):
 { "suggestions": [ { "skill_key": "qa.algo" | null, "title": "<imperativa, ≤ 70 caracteres>", "why": "<≤ 120 caracteres, cita el chat>", "variables": { "nombre_variable": "valor" }, "prompt": "<sólo si skill_key es null, la instrucción completa>" } ] }`;
 
-function buildUserPrompt(catalogo: string, situacion: string, dossier: unknown): string {
-  return `CATÁLOGO DE SKILLS DISPONIBLES (elegí de acá):
-${catalogo}
+export const SUGGESTIONS_USER_TEMPLATE = `CATÁLOGO DE SKILLS DISPONIBLES (elegí de acá):
+{{catalogo}}
 
 SITUACIÓN ACTUAL DEL CHAT:
-${situacion}
+{{situacion}}
 
 <<<EXPEDIENTE>>>
-${JSON.stringify(dossier).slice(0, 40_000)}
+{{dossier_json}}
 <<<FIN EXPEDIENTE>>>`;
-}
 
 function parseSuggestions(raw: unknown, skillsByKey: Map<string, { id: number; icon: SkillIcon; category: SkillCategory; variableNames: Set<string> }>): AiSuggestion[] {
   const list = (raw as { suggestions?: unknown })?.suggestions;
@@ -186,7 +185,18 @@ export async function getChatSuggestions(teamId: number, chatId: number, opts: {
     situation.signals.length ? `respuestas nuevas sin atender: ${situation.signals.join(', ')}` : 'sin respuestas nuevas',
   ].join(' · ');
 
-  const outcome = await runJsonWithApi(teamId, SYSTEM, buildUserPrompt(catalogo, situacionTexto, dossier));
+  const prompt = await getPromptForDefinition(teamId, {
+    key: 'sales-ops.suggestions',
+    title: 'Sugerencias de próximas acciones',
+    systemPrompt: SUGGESTIONS_SYSTEM_PROMPT,
+    userTemplate: SUGGESTIONS_USER_TEMPLATE,
+  });
+  const userPrompt = renderTemplate(prompt.userTemplate, {
+    catalogo,
+    situacion: situacionTexto,
+    dossier_json: JSON.stringify(dossier).slice(0, 40_000),
+  });
+  const outcome = await runJsonWithApi(teamId, prompt.systemPrompt, userPrompt);
   if (!outcome.ok) {
     return { suggestions: [], generatedAt: null, recommendations, situation, unavailable: outcome.error };
   }

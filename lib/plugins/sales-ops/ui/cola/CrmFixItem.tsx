@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Check, Loader2, UserSquare2, Wrench, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { AbrirChat, AbrirIa } from './AbrirChat';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { CrmFixPendiente } from '../../server/crm';
@@ -27,11 +28,17 @@ export const CRM_FIXES_ENDPOINT = `${SALES_OPS_API}/crm-fixes`;
 export function CrmFixItem({
   item,
   onOpen,
+  onOpenChat,
+  onOpenIa,
   onResuelto,
   variante = 'fila',
 }: {
   item: CrmFixPendiente;
   onOpen?: (chatId: number) => void;
+  /** Abre la misma ficha en la pestaña Chat. */
+  onOpenChat?: (chatId: number) => void;
+  /** Abre la misma ficha en la pestaña IA, para dejarle un pedido al conector. */
+  onOpenIa?: (chatId: number) => void;
   /** Se aplicó o se descartó: la lista lo saca. */
   onResuelto: (como: 'aprobado' | 'descartado') => void;
   /** `focus` = más aire y botones grandes; `fila` = compacto para la lista. */
@@ -121,6 +128,14 @@ export function CrmFixItem({
             <UserSquare2 className="size-3" aria-hidden />
             Ficha
           </Button>
+        )}
+        {/* La corrección dice qué contradice el chat; leerlo es la forma de
+            comprobarlo antes de aplicarla. */}
+        {!focus && (
+          <>
+            <AbrirChat onOpen={onOpenChat && (() => onOpenChat(item.chatId))} nombre={item.name} />
+            <AbrirIa onOpen={onOpenIa && (() => onOpenIa(item.chatId))} nombre={item.name} />
+          </>
         )}
       </div>
     </div>

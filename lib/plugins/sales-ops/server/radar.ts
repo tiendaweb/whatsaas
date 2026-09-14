@@ -37,6 +37,7 @@ import {
   type SignalStatus,
 } from '../shared/taxonomy';
 import type { SignalRow, SignalsPayload } from '../shared/api-types';
+import { getActivePrompt, renderTemplate, SALES_OPS_PROMPT_KEYS } from './prompts';
 
 // ── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -305,27 +306,24 @@ function classifyMedia(message: MessageCtx, timeline: MessageCtx[], gateBefore: 
 
 // ── IA para lo ambiguo (prompt corto, doc 04 §10) ───────────────────────────
 
-async function classifyByAi(teamId: number, text: string, timeline: MessageCtx[], gateBefore: Gate | null): Promise<SignalClassification | null> {
+async function classifyByAi(teamId: number, messageId: string, text: string, timeline: MessageCtx[], gateBefore: Gate | null): Promise<SignalClassification | null> {
   const context = timeline
     .filter((m) => m.id)
     .map((m) => `${m.fromMe ? 'NOSOTROS' : 'CLIENTE'}: ${excerptOf(textOf(m) || `[${m.messageType ?? 'media'}]`).slice(0, 200)}`)
     .join('\n');
   try {
+    const prompt = await getActivePrompt(teamId, SALES_OPS_PROMPT_KEYS.radar);
     const result = await generateStructuredObjectForTeam({
       teamId,
       schema: signalClassificationSchema,
       temperature: 0.1,
-      systemPrompt:
-        'Sos el radar de respuestas de un equipo comercial que vende sitios web y tiendas online por WhatsApp. ' +
-        'Clasificás UN mensaje nuevo del cliente en una sola categoría: ' +
-        'interesado (muestra interés general), pide_informacion (pregunta cómo funciona, qué incluye), ' +
-        'precio (pregunta o discute el precio), objecion (pone una traba: caro, después, lo consulto, no confío), ' +
-        'quiere_llamada (pide hablar por teléfono o reunión), intencion_compra (quiere avanzar ya), ' +
-        'pago (pide datos de pago, avisa que pagó o manda comprobante), rechazo (no le interesa, que no lo molesten), ' +
-        'respuesta_automatica (mensaje de bot o autorespuesta), irrelevante (saludo suelto, emoji, tema ajeno). ' +
-        'Los gates van G0 (entrada muerta) a G11 (ganado); GX perdido. gate_after_suggested es a qué gate sugerís pasar, o null si no cambia. ' +
-        'urgent=true sólo para pago, intencion_compra o quiere_llamada. confidence 0-100. excerpt: el fragmento literal (≤ 200 caracteres) que justifica la categoría.',
-      userPrompt: `Gate actual: ${gateBefore ?? 'sin analizar'}\n\nÚltimos mensajes:\n${context || '(sin contexto)'}\n\nMENSAJE NUEVO DEL CLIENTE:\n${excerptOf(text)}\n\nDevolvé {"kind","confidence","gate_after_suggested","urgent","excerpt"}.`,
+      systemPrompt: prompt.systemPrompt,
+      userPrompt: renderTemplate(prompt.userTemplate, {
+        current_gate: gateBefore ?? 'sin analizar',
+        context_json: context || '(sin contexto)',
+        message_id: messageId,
+        message_text: excerptOf(text),
+      }),
     });
     return result.data;
   } catch (error) {
@@ -564,7 +562,7 @@ export async function classifyIncomingMessage(teamId: number, messageId: string,
   }
 
   if (!classification && (opts.engine ?? 'server') === 'server') {
-    const ai = await classifyByAi(teamId, text, timeline, gateBefore);
+    const ai = await classifyByAi(teamId, messageId, text, timeline, gateBefore);
     if (ai) {
       classification = { ...ai, excerpt: ai.excerpt || excerptOf(text) };
       decidedBy = 'ai';

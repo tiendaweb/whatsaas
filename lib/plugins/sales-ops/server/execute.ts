@@ -14,6 +14,7 @@ import { transferLead } from './lead';
 import { scheduleActionMessage } from './scheduled';
 import { markResult } from './queue';
 import { CobroError, parsearImporte, registrarCobro } from './cobros';
+import { tieneVariablesPendientes } from '../shared/variables';
 
 /**
  * Fase 6: ejecutar desde el servidor lo que una persona ya aprobó.
@@ -159,6 +160,11 @@ export async function executeApprovedBatch(
           results.push({ ...base, status: 'failed', reason: 'La acción no tiene texto.' });
           continue;
         }
+        if (tieneVariablesPendientes(text)) {
+          await markResult(teamId, row.id, { status: 'failed', result: { error: 'variables_pendientes' }, executedVia: 'command-center', userId });
+          results.push({ ...base, status: 'failed', reason: 'El mensaje tiene variables sin completar.' });
+          continue;
+        }
         if (await clienteRespondioDespues(teamId, row.chatId, row.approvedAt)) {
           await markResult(teamId, row.id, { status: 'failed', result: { error: 'customer_replied' }, executedVia: 'command-center', userId });
           results.push({ ...base, status: 'skipped', reason: 'El cliente escribió después de la aprobación.' });
@@ -213,6 +219,11 @@ export async function executeApprovedBatch(
         if (!text || !sendAt || Number.isNaN(sendAt.getTime())) {
           await markResult(teamId, row.id, { status: 'failed', result: { error: 'sin_texto_o_fecha' }, executedVia: 'command-center', userId });
           results.push({ ...base, status: 'failed', reason: 'La acción no tiene texto o fecha de salida.' });
+          continue;
+        }
+        if (tieneVariablesPendientes(text)) {
+          await markResult(teamId, row.id, { status: 'failed', result: { error: 'variables_pendientes' }, executedVia: 'command-center', userId });
+          results.push({ ...base, status: 'failed', reason: 'El mensaje tiene variables sin completar.' });
           continue;
         }
         if (await clienteRespondioDespues(teamId, row.chatId, row.approvedAt)) {
