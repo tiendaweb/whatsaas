@@ -729,6 +729,27 @@
       "when": 1788800000000,
       "tag": "0113_ai_session_override",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1789344000000,
+      "tag": "0114_service_financing",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1789424000000,
+      "tag": "0115_membership_plan_prices",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1789510400000,
+      "tag": "0116_membership_company_currencies",
+      "breakpoints": true
     }
   ]
 }

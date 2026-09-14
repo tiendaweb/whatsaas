@@ -63,7 +63,7 @@ type Article = {
 
 // ---- Constants -----------------------------------------------------------
 
-const CURRENCIES = ['USD', 'MXN', 'EUR', 'ARS', 'COP', 'CLP'];
+const CURRENCIES = ['USD', 'ARS', 'PYG', 'MXN', 'EUR', 'COP', 'CLP'];
 
 const STATUS_OPTIONS: { value: SaleFormData['status']; label: string }[] = [
   { value: 'draft',     label: 'Borrador' },

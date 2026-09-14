@@ -42,6 +42,7 @@ const ESTADOS: Record<string, { label: string; cls: string }> = {
   overdue: { label: 'Vencido', cls: 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300' },
   cancelled: { label: 'Cancelado', cls: 'bg-muted text-muted-foreground' },
   active: { label: 'Activa', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' },
+  completed: { label: 'Completada', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' },
   expired: { label: 'Vencida', cls: 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300' },
   confirmed: { label: 'Confirmada', cls: 'bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300' },
   SUCCESS: { label: 'Acreditado', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' },

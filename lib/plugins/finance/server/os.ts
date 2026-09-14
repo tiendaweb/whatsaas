@@ -11,6 +11,7 @@ import {
   teamMembershipSubscriptions,
   teamSales,
 } from '@/lib/db/schema';
+import { listFinancingPlans } from '@/lib/plugins/finance/server/financing';
 
 /**
  * Capa de datos de Finanzas OS (la app a pantalla completa del plugin
@@ -73,6 +74,7 @@ async function allEntries(teamId: number) {
       customerName: teamCustomers.name,
       subscriptionId: teamFinancialEntries.subscriptionId,
       saleId: teamFinancialEntries.saleId,
+      externalSource: teamFinancialEntries.externalSource,
       description: teamFinancialEntries.description,
       createdAt: teamFinancialEntries.createdAt,
     })
@@ -450,7 +452,7 @@ export async function financeOsClienteFicha(teamId: number, customerId: number) 
 // ----------------------------------------------------------------- COBROS
 
 export async function financeOsCobros(teamId: number) {
-  const [entries, subs, gateway] = await Promise.all([
+  const [entries, subs, gateway, financing] = await Promise.all([
     allEntries(teamId),
     allSubs(teamId),
     db
@@ -469,11 +471,12 @@ export async function financeOsCobros(teamId: number) {
       .where(eq(teamCustomerTransactions.teamId, teamId))
       .orderBy(desc(teamCustomerTransactions.transactionDate))
       .limit(40),
+    listFinancingPlans(teamId),
   ]);
 
   const dueKey = (e: FinanceOsEntry) => e.dueOn ?? e.occurredOn;
   const receivables = entries
-    .filter((e) => e.type === 'income' && (e.status === 'pending' || e.status === 'overdue'))
+    .filter((e) => e.type === 'income' && e.externalSource !== 'financing_plan' && (e.status === 'pending' || e.status === 'overdue'))
     .map((e) => ({ ...e, overdue: isOverdue(e) }))
     .sort((a, b) => dueKey(a).localeCompare(dueKey(b)));
   const payables = entries
@@ -493,6 +496,7 @@ export async function financeOsCobros(teamId: number) {
   };
 
   return {
+    financing,
     receivables: { totalByCurrency: totalByCurrency(receivables), rows: receivables.slice(0, 60) },
     payables: { totalByCurrency: totalByCurrency(payables), rows: payables.slice(0, 60) },
     renovaciones: { count: renovaciones.length, rows: renovaciones.slice(0, 60) },

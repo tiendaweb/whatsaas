@@ -11,7 +11,10 @@ const manifest: AppPluginManifest<typeof financeSettingsSchema> = {
   activationMode: 'user',
   scopes: ['dashboard.nav', 'dashboard.page'],
   routes: [{ path: '/plugins/finance', title: 'Finanzas OS', scope: 'dashboard.page' }],
-  navItems: [{ label: 'Finanzas OS', href: '/plugins/finance', icon: 'BadgeDollarSign', order: 61, requiredPermission: 'finance.read' }],
+  // Sin entrada propia en el menú: se entra por la app Empresa, que es la que
+  // agrupa la gestión del negocio. La ruta y los permisos siguen igual, así que
+  // los enlaces guardados y los favoritos siguen abriendo esta app.
+  navItems: [],
   settingsSchema: financeSettingsSchema,
   featureFlags: [],
 };

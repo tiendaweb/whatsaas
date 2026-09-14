@@ -31,10 +31,13 @@ test('DELETE de cuenta financiera bloquea con 409 si tiene entries o pagos vincu
 
 test('DELETE de centro de costo bloquea con 409 si tiene entries vinculadas', async () => {
   const byId = await read('app/api/plugins/finance/cost-centers/[id]/route.ts');
+  const service = await read('lib/plugins/finance/server/cost-centers.ts');
   const deleteFnStart = byId.indexOf('export async function DELETE');
   const deleteFn = byId.slice(deleteFnStart);
-  assert.match(deleteFn, /eq\(teamFinancialEntries\.costCenterId, id\)/);
+  assert.match(deleteFn, /deleteCostCenter\(ctx\.team\.id, ctx\.user\.id, id\)/);
   assert.match(deleteFn, /status: 409/);
+  assert.match(service, /eq\(teamFinancialEntries\.costCenterId, costCenterId\), eq\(teamFinancialEntries\.teamId, teamId\)/);
+  assert.match(service, /FinanceCostCenterError\('cost_center_in_use'/);
 });
 
 test('registrar un pago parcial queda acotado al team y marca la entry como paid al cubrir el monto', async () => {

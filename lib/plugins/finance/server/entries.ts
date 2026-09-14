@@ -170,6 +170,10 @@ export async function settleFinancialEntry(teamId: number, userId: number, input
   }
 
   const yaPagado = pagos.reduce((total, pago) => total + pago.amount, 0);
+  if (entry.status === 'cancelled') throw new FinanceEntryError('No se puede cobrar un movimiento cancelado.');
+  if (input.amount > Math.max(0, entry.amount - yaPagado)) {
+    throw new FinanceEntryError('El cobro supera el saldo pendiente del movimiento.');
+  }
 
   if (input.dry_run) {
     const proyectado = yaPagado + input.amount;

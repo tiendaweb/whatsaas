@@ -3397,10 +3397,10 @@ export const teamSales = pgTable(
     status: varchar("status", { length: 30 }).notNull().default("draft"),
     currency: varchar("currency", { length: 3 }).notNull().default("USD"),
     items: jsonb("items").$type<SaleItem[]>().notNull().default([]),
-    subtotal: integer("subtotal").notNull().default(0),
-    discountAmount: integer("discount_amount").notNull().default(0),
-    taxAmount: integer("tax_amount").notNull().default(0),
-    total: integer("total").notNull().default(0),
+    subtotal: bigint("subtotal", { mode: "number" }).notNull().default(0),
+    discountAmount: bigint("discount_amount", { mode: "number" }).notNull().default(0),
+    taxAmount: bigint("tax_amount", { mode: "number" }).notNull().default(0),
+    total: bigint("total", { mode: "number" }).notNull().default(0),
     notes: text("notes").notNull().default(""),
     paidAt: timestamp("paid_at"),
     dueDate: timestamp("due_date"),
@@ -3831,7 +3831,7 @@ export const teamFinancialEntries = pgTable(
     title: varchar("title", { length: 200 }).notNull(),
     description: text("description").notNull().default(""),
     category: varchar("category", { length: 60 }).notNull(),
-    amount: integer("amount").notNull(),
+    amount: bigint("amount", { mode: "number" }).notNull(),
     currency: varchar("currency", { length: 3 }).notNull().default("ARS"),
     status: varchar("status", { length: 20 }).$type<"pending" | "paid" | "overdue" | "cancelled">().notNull().default("pending"),
     occurredOn: date("occurred_on", { mode: "string" }).notNull(),
@@ -3908,7 +3908,7 @@ export const teamFinancialAccounts = pgTable(
       .notNull()
       .default("bank"),
     currency: varchar("currency", { length: 3 }).notNull().default("ARS"),
-    openingBalance: integer("opening_balance").notNull().default(0),
+    openingBalance: bigint("opening_balance", { mode: "number" }).notNull().default(0),
     isActive: boolean("is_active").notNull().default(true),
     notes: text("notes").notNull().default(""),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
@@ -3949,7 +3949,7 @@ export const teamBudgets = pgTable(
     category: varchar("category", { length: 60 }),
     periodStart: date("period_start", { mode: "string" }).notNull(),
     periodEnd: date("period_end", { mode: "string" }).notNull(),
-    amount: integer("amount").notNull(),
+    amount: bigint("amount", { mode: "number" }).notNull(),
     currency: varchar("currency", { length: 3 }).notNull().default("ARS"),
     notes: text("notes").notNull().default(""),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
@@ -3969,7 +3969,7 @@ export const teamFinancialEntryPayments = pgTable(
     teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
     entryId: integer("entry_id").notNull().references(() => teamFinancialEntries.id, { onDelete: "cascade" }),
     accountId: integer("account_id").references(() => teamFinancialAccounts.id, { onDelete: "set null" }),
-    amount: integer("amount").notNull(),
+    amount: bigint("amount", { mode: "number" }).notNull(),
     paidOn: date("paid_on", { mode: "string" }).notNull(),
     method: varchar("method", { length: 80 }),
     notes: text("notes").notNull().default(""),
@@ -4002,6 +4002,62 @@ export const teamExchangeRates = pgTable(
       table.quoteCurrency,
       table.rateDate,
     ),
+  }),
+);
+
+// Planes de financiación de servicios/proyectos. Cada cuota se materializa
+// además como `team_financial_entries`: Finanzas, Clientes, Ventas y los
+// conectores leen así la misma deuda, sin mantener saldos paralelos.
+export const teamFinancingPlans = pgTable(
+  "team_financing_plans",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 200 }).notNull(),
+    customerId: integer("customer_id").references(() => teamCustomers.id, { onDelete: "set null" }),
+    saleId: integer("sale_id").references(() => teamSales.id, { onDelete: "set null" }),
+    projectId: integer("project_id").references(() => teamTaskProjects.id, { onDelete: "set null" }),
+    totalAmount: bigint("total_amount", { mode: "number" }).notNull(),
+    currency: varchar("currency", { length: 3 }).notNull(),
+    frequency: varchar("frequency", { length: 16 })
+      .$type<"weekly" | "biweekly" | "monthly">()
+      .notNull(),
+    installmentCount: integer("installment_count").notNull(),
+    firstDueOn: date("first_due_on", { mode: "string" }).notNull(),
+    status: varchar("status", { length: 16 })
+      .$type<"active" | "completed" | "cancelled">()
+      .notNull()
+      .default("active"),
+    notes: text("notes").notNull().default(""),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    teamStatusIdx: index("team_financing_plans_team_status_idx").on(table.teamId, table.status),
+    customerIdx: index("team_financing_plans_customer_idx").on(table.teamId, table.customerId),
+    saleIdx: index("team_financing_plans_sale_idx").on(table.teamId, table.saleId),
+    projectIdx: index("team_financing_plans_project_idx").on(table.teamId, table.projectId),
+  }),
+);
+
+export const teamFinancingInstallments = pgTable(
+  "team_financing_installments",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    planId: integer("plan_id").notNull().references(() => teamFinancingPlans.id, { onDelete: "cascade" }),
+    entryId: integer("entry_id").notNull().references(() => teamFinancialEntries.id, { onDelete: "restrict" }),
+    installmentNumber: integer("installment_number").notNull(),
+    dueOn: date("due_on", { mode: "string" }).notNull(),
+    amount: bigint("amount", { mode: "number" }).notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    planNumberUnique: unique("team_financing_installments_plan_number_uidx").on(table.planId, table.installmentNumber),
+    entryUnique: unique("team_financing_installments_entry_uidx").on(table.entryId),
+    teamDueIdx: index("team_financing_installments_team_due_idx").on(table.teamId, table.dueOn),
   }),
 );
 
