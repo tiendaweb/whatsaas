@@ -7,7 +7,7 @@ export const fetcher = async (url: string) => {
   return response.json();
 };
 
-export const CURRENCIES = ['USD', 'MXN', 'EUR', 'ARS', 'COP', 'CLP', 'PEN'];
+export const CURRENCIES = ['USD', 'ARS', 'PYG', 'MXN', 'EUR', 'COP', 'CLP', 'PEN'];
 
 /**
  * `currency || 'USD'` NO alcanzaba: los valores sucios que llegaban del sync de
@@ -22,6 +22,38 @@ export function formatPrice(cents: number, currency: string) {
   });
 }
 
+/** Precios del plan, con el principal (`currency`/`price`) como respaldo. */
+export function planPrices(plan: Plan): PlanPrice[] {
+  if (plan.prices?.length) return plan.prices;
+  return [{ currency: plan.currency, price: plan.price, setupFee: plan.setupFee, maintenanceAmount: plan.maintenanceAmount }];
+}
+
+/** El precio del plan en esa moneda, o null si el plan no se vende en ella. */
+export function planPriceIn(plan: Plan, currency: string): PlanPrice | null {
+  return planPrices(plan).find((item) => item.currency === currency) ?? null;
+}
+
+/**
+ * Monedas ofrecidas: manda lo configurado en la empresa; si no configuró nada,
+ * se deducen de los precios cargados en sus planes (así el selector nunca sale
+ * vacío en las empresas viejas).
+ */
+export function companyCurrencies(company: Company | null | undefined, plans: Plan[]): string[] {
+  if (company?.currencies?.length) return company.currencies;
+  const found = new Set<string>();
+  for (const plan of plans) {
+    if (company && plan.companyId !== company.id) continue;
+    for (const price of planPrices(plan)) if (price.currency) found.add(price.currency);
+  }
+  return [...found].sort();
+}
+
+/** Con qué moneda abre el selector. */
+export function preferredCurrency(company: Company | null | undefined, available: string[]): string {
+  if (company?.defaultCurrency && available.includes(company.defaultCurrency)) return company.defaultCurrency;
+  return available[0] ?? 'USD';
+}
+
 export function formatDate(iso: string | null | undefined) {
   if (!iso) return '—';
   const d = new Date(`${iso}T00:00:00`);
@@ -32,6 +64,8 @@ export function formatDate(iso: string | null | undefined) {
 // ─── Tipos compartidos ───────────────────────────────────────────────────────
 
 export type MembershipFeature = { label: string; type: FeatureType; value?: string };
+
+export type PlanPrice = { currency: string; price: number; setupFee?: number; maintenanceAmount?: number };
 
 export type Company = {
   id: number;
@@ -47,6 +81,8 @@ export type Company = {
   address?: string | null;
   externalSource?: string | null;
   externalId?: string | null;
+  currencies?: string[];
+  defaultCurrency?: string | null;
   createdAt?: string;
   updatedAt?: string;
   kpis?: { customers: number; activeMemberships: number; stores: number };
@@ -65,6 +101,7 @@ export type Plan = {
   maintenanceIntervalMonths: number | null;
   billingLabel: string | null;
   currency: string;
+  prices?: PlanPrice[];
   features: MembershipFeature[];
   visibility: PlanVisibility;
   status: 'active' | 'archived';

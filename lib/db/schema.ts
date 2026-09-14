@@ -3594,6 +3594,12 @@ export const teamMembershipCompanies = pgTable(
     externalSource: varchar("external_source", { length: 60 }),
     externalId: varchar("external_id", { length: 160 }),
     notes: text("notes").notNull().default(""),
+    // Monedas en las que esta empresa vende. Vacío = sin restricción (se toman
+    // las que traigan los planes). aapp.business vende sólo en USD; AAPP SPACE
+    // en USD, ARS y PYG: el mismo plan lleva un precio por cada una.
+    currencies: jsonb("currencies").$type<string[]>().notNull().default([]),
+    // Cuál se muestra primero en el selector. NULL = la primera de `currencies`.
+    defaultCurrency: varchar("default_currency", { length: 3 }),
     status: varchar("status", { length: 20 }).notNull().default("active"),
     position: integer("position").notNull().default(0),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
@@ -3614,6 +3620,13 @@ export type MembershipFeature = {
   value?: string;
 };
 
+export type MembershipPlanPrice = {
+  currency: string;
+  price: number;
+  setupFee?: number;
+  maintenanceAmount?: number;
+};
+
 export const teamMembershipPlans = pgTable(
   "team_membership_plans",
   {
@@ -3627,15 +3640,17 @@ export const teamMembershipPlans = pgTable(
     // free | monthly | annual | lifetime | setup_maintenance | custom
     billingType: varchar("billing_type", { length: 30 }).notNull().default("monthly"),
     // Monto principal recurrente/único (centavos).
-    price: integer("price").notNull().default(0),
+    price: bigint("price", { mode: "number" }).notNull().default(0),
     // Pago inicial (centavos), para setup_maintenance.
-    setupFee: integer("setup_fee").notNull().default(0),
+    setupFee: bigint("setup_fee", { mode: "number" }).notNull().default(0),
     // Cuota de mantenimiento (centavos), para setup_maintenance.
-    maintenanceAmount: integer("maintenance_amount").notNull().default(0),
+    maintenanceAmount: bigint("maintenance_amount", { mode: "number" }).notNull().default(0),
     // Cada cuántos meses se cobra el mantenimiento / se renueva (custom).
     maintenanceIntervalMonths: integer("maintenance_interval_months"),
     billingLabel: varchar("billing_label", { length: 100 }),
     currency: varchar("currency", { length: 3 }).notNull().default("USD"),
+    // Precios alternativos del mismo plan (se conserva currency/price como precio principal por compatibilidad).
+    prices: jsonb("prices").$type<MembershipPlanPrice[]>().notNull().default([]),
     features: jsonb("features").$type<MembershipFeature[]>().notNull().default([]),
     // public: visible en catálogos; private: solo visible para gestión interna.
     visibility: varchar("visibility", { length: 20 }).notNull().default("public"),
@@ -3678,7 +3693,7 @@ export const teamMembershipSubscriptions = pgTable(
     externalSource: varchar("external_source", { length: 60 }),
     externalId: varchar("external_id", { length: 160 }),
     planNameSnapshot: varchar("plan_name_snapshot", { length: 150 }).notNull().default(""),
-    price: integer("price").notNull().default(0),
+    price: bigint("price", { mode: "number" }).notNull().default(0),
     currency: varchar("currency", { length: 3 }).notNull().default("USD"),
     billingType: varchar("billing_type", { length: 30 }).notNull().default("monthly"),
     // active | pending | expired | cancelled

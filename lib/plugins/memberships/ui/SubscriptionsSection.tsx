@@ -46,9 +46,12 @@ import {
   type SubscriptionStatus,
 } from '../constants';
 import {
+  CURRENCIES,
   fetcher,
   formatDate,
   formatPrice,
+  planPriceIn,
+  planPrices,
   type ContactOption,
   type CustomerOption,
   type Plan,
@@ -605,6 +608,13 @@ function SubscriptionFormDialog({
     [form.planId, plans],
   );
 
+  // Con un plan elegido, sólo sus monedas; sin plan, el precio es manual y vale
+  // cualquiera del catálogo. La actual siempre está, aunque el plan ya no la venda.
+  const currencyOptions = useMemo(() => {
+    const base = selectedPlan ? planPrices(selectedPlan).map((item) => item.currency) : CURRENCIES;
+    return [...new Set([...base, form.currency].filter(Boolean))];
+  }, [form.currency, selectedPlan]);
+
   function selectPlan(planId: string) {
     if (planId === '__none__') {
       set('planId', '__none__');
@@ -613,13 +623,25 @@ function SubscriptionFormDialog({
     const plan = plans.find((p) => p.id === parseInt(planId, 10));
     if (!plan) return;
     const endDate = computeDefaultEndDate(form.startDate, plan.billingType, plan.maintenanceIntervalMonths) ?? '';
+    // Si la suscripción ya estaba en una moneda que el plan vende, se respeta:
+    // cambiar de plan no tiene por qué cambiarle la moneda al cliente.
+    const price = planPriceIn(plan, form.currency) ?? planPriceIn(plan, plan.currency) ?? planPrices(plan)[0];
     setForm((prev) => ({
       ...prev,
       planId,
-      price: plan.price ? (plan.price / 100).toFixed(2) : '0.00',
-      currency: plan.currency,
+      price: price.price ? (price.price / 100).toFixed(2) : '0.00',
+      currency: price.currency,
       endDate,
     }));
+  }
+
+  /** Cambiar la moneda trae el precio que el plan tiene cargado en ella. */
+  function selectCurrency(currency: string) {
+    setForm((prev) => {
+      const plan = plans.find((p) => p.id === parseInt(prev.planId, 10));
+      const price = plan ? planPriceIn(plan, currency) : null;
+      return { ...prev, currency, ...(price ? { price: price.price ? (price.price / 100).toFixed(2) : '0.00' } : {}) };
+    });
   }
 
   function onStartDateChange(value: string) {
@@ -706,7 +728,16 @@ function SubscriptionFormDialog({
             </Select>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-4">
+            <div className="space-y-1.5">
+              <Label>Moneda</Label>
+              <Select value={form.currency} onValueChange={selectCurrency}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {currencyOptions.map((currency) => <SelectItem key={currency} value={currency}>{currency}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-1.5">
               <Label>Precio</Label>
               <Input type="number" min="0" step="0.01" value={form.price} onChange={(e) => set('price', e.target.value)} placeholder="0.00" />

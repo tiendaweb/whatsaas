@@ -47,7 +47,18 @@ import {
   type FeatureType,
   type PlanVisibility,
 } from '../constants';
-import { CURRENCIES, fetcher, formatPrice, type Company, type MembershipFeature, type Plan } from './shared';
+import {
+  CURRENCIES,
+  companyCurrencies,
+  fetcher,
+  formatPrice,
+  planPriceIn,
+  planPrices,
+  preferredCurrency,
+  type Company,
+  type MembershipFeature,
+  type Plan,
+} from './shared';
 import styles from './PlansSection.module.css';
 
 type VisibilityFilter = PlanVisibility;
@@ -64,6 +75,7 @@ type PlanForm = {
   maintenanceIntervalMonths: string;
   billingLabel: string;
   currency: string;
+  prices: Array<{ currency: string; price: string }>;
   features: MembershipFeature[];
   visibility: PlanVisibility;
   status: 'active' | 'archived';
@@ -81,6 +93,7 @@ function emptyPlanForm(): PlanForm {
     maintenanceIntervalMonths: '',
     billingLabel: '',
     currency: 'USD',
+    prices: [{ currency: 'USD', price: '' }],
     features: [],
     visibility: 'public',
     status: 'active',
@@ -104,9 +117,33 @@ export function PlansSection() {
   const [query, setQuery] = useState('');
   const [companyFilter, setCompanyFilter] = useState('all');
   const [visibilityFilter, setVisibilityFilter] = useState<VisibilityFilter>('public');
+  const [pricingPreview, setPricingPreview] = useState(false);
+  // '' = mostrar cada plan en su moneda principal y listar las demás como chips.
+  const [currency, setCurrency] = useState('');
 
   const plans = data ?? [];
   const companies = companiesData ?? [];
+  const selectedCompany = companyFilter === 'all' ? null : companies.find((item) => item.id === Number(companyFilter)) ?? null;
+
+  // Monedas del selector: las que configuró la empresa elegida, o todas las que
+  // aparecen en el catálogo cuando se están viendo las empresas juntas.
+  const currencyOptions = useMemo(() => {
+    if (selectedCompany) return companyCurrencies(selectedCompany, plans);
+    const found = new Set<string>();
+    for (const company of companies) for (const item of company.currencies ?? []) found.add(item);
+    for (const plan of plans) for (const price of planPrices(plan)) if (price.currency) found.add(price.currency);
+    return [...found].sort();
+  }, [companies, plans, selectedCompany]);
+
+  // Al cambiar de empresa se abre en la moneda que ella muestra primero; si la
+  // moneda elegida no la vende, se cae a la suya en vez de quedar en blanco.
+  useEffect(() => {
+    if (!selectedCompany) return;
+    const options = companyCurrencies(selectedCompany, plans);
+    if (!options.length) return;
+    setCurrency((current) => (current && options.includes(current) ? current : preferredCurrency(selectedCompany, options)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCompany?.id, plans.length]);
 
   const stats = useMemo(
     () => ({
@@ -149,6 +186,7 @@ export function PlansSection() {
       maintenanceIntervalMonths: plan.maintenanceIntervalMonths ? String(plan.maintenanceIntervalMonths) : '',
       billingLabel: plan.billingLabel ?? '',
       currency: plan.currency,
+      prices: (plan.prices?.length ? plan.prices : [{ currency: plan.currency, price: plan.price }]).map((item) => ({ currency: item.currency, price: (item.price / 100).toFixed(2) })),
       features: plan.features ?? [],
       visibility: plan.visibility ?? 'public',
       status: plan.status,
@@ -158,6 +196,12 @@ export function PlansSection() {
 
   async function handleSave(form: PlanForm) {
     const toCents = (value: string) => Math.round(parseFloat(value || '0') * 100);
+    // Una moneda sin importe no se guarda: un plan "a 0" en PYG se vería como
+    // gratis en el catálogo. La moneda principal siempre entra en la lista.
+    const rows = form.prices.filter((item) => item.currency && (item.price.trim() !== '' || item.currency === form.currency));
+    const prices = rows.some((item) => item.currency === form.currency)
+      ? rows
+      : [...rows, { currency: form.currency, price: form.price }];
     const payload = {
       companyId: form.companyId === '__none__' ? null : parseInt(form.companyId, 10),
       name: form.name.trim(),
@@ -172,6 +216,7 @@ export function PlansSection() {
           : null,
       billingLabel: form.billingType === 'custom' ? form.billingLabel.trim() : null,
       currency: form.currency,
+      prices: form.billingType === 'free' ? [] : prices.map((item) => ({ currency: item.currency, price: toCents(item.price) })),
       features: form.features,
       visibility: form.visibility,
       status: form.status,
@@ -285,6 +330,20 @@ export function PlansSection() {
                 <Plus className="h-4 w-4" />
                 {t('new_plan_button')}
               </Button>
+              {currencyOptions.length > 1 ? (
+                <Select value={currency || '__all__'} onValueChange={(value) => setCurrency(value === '__all__' ? '' : value)}>
+                  <SelectTrigger className="h-11 w-full rounded-2xl border-border/60 bg-background/45 shadow-none sm:w-36" aria-label="Moneda">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">Todas las monedas</SelectItem>
+                    {currencyOptions.map((item) => (
+                      <SelectItem key={item} value={item}>{item}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
+              <Button variant={pricingPreview ? 'secondary' : 'outline'} onClick={() => setPricingPreview((value) => !value)} className="h-11 rounded-2xl">{pricingPreview ? 'Vista gestión' : 'Vista pricing'}</Button>
             </div>
           </div>
           <div className="flex items-center justify-between border-t border-border/45 px-4 py-3 text-xs text-muted-foreground">
@@ -337,6 +396,8 @@ export function PlansSection() {
                   onEdit={() => handleEdit(plan)}
                   onDelete={() => setToDelete(plan)}
                   onVisibilityChange={(visibility) => handleVisibilityChange(plan, visibility)}
+                  pricingPreview={pricingPreview}
+                  currency={currency}
                 />
               ))}
             </div>
@@ -389,17 +450,27 @@ function PlanCard({
   onEdit,
   onDelete,
   onVisibilityChange,
+  pricingPreview,
+  currency,
 }: {
   plan: Plan;
   onEdit: () => void;
   onDelete: () => void;
   onVisibilityChange: (visibility: PlanVisibility) => void;
+  pricingPreview: boolean;
+  currency: string;
 }) {
   const t = useTranslations('Memberships');
   const visibility = plan.visibility ?? 'public';
   const VisibilityIcon = visibility === 'public' ? Globe2 : LockKeyhole;
   const isFree = plan.billingType === 'free';
-  const visibleFeatures = plan.features.slice(0, 4);
+  const visibleFeatures = pricingPreview ? plan.features : plan.features.slice(0, 4);
+  const prices = planPrices(plan);
+  // Con una moneda elegida se muestra ese precio y nada más: mezclar monedas en
+  // la misma tarjeta es justo lo que confunde al que está comparando planes.
+  const selected = currency ? planPriceIn(plan, currency) : null;
+  const missing = Boolean(currency) && !selected;
+  const shown = selected ?? prices[0];
 
   return (
     <article className={`${styles.planCard} ${visibility === 'private' ? styles.privateCard : ''}`}>
@@ -439,16 +510,20 @@ function PlanCard({
 
         <div className="mt-6">
           <div className="flex items-end gap-2">
-            <span className="text-3xl font-semibold tracking-[-0.05em]">
-              {isFree ? t('billing_free') : formatPrice(plan.price, plan.currency)}
+            <span className={`text-3xl font-semibold tracking-[-0.05em] ${missing && !isFree ? 'text-muted-foreground/60' : ''}`}>
+              {isFree ? t('billing_free') : missing ? `— ${currency}` : formatPrice(shown.price, shown.currency)}
             </span>
             {!isFree ? <span className="pb-1 text-xs text-muted-foreground">/ {localizedBillingLabel(t, plan.billingType, plan.billingLabel)}</span> : null}
           </div>
-          {plan.billingType === 'setup_maintenance' ? (
+          {missing && !isFree ? (
+            <p className="mt-1.5 text-xs text-muted-foreground">Este plan todavía no tiene precio en {currency}.</p>
+          ) : null}
+          {!currency && prices.length > 1 ? <div className="mt-2 flex flex-wrap gap-1.5">{prices.map((item) => <span key={item.currency} className="rounded-full border border-border/50 px-2 py-0.5 text-[10px] text-muted-foreground">{item.currency} {formatPrice(item.price, item.currency)}</span>)}</div> : null}
+          {plan.billingType === 'setup_maintenance' && !missing ? (
             <p className="mt-1.5 text-xs text-muted-foreground">
               {t('plan_setup_summary', {
-                setup: formatPrice(plan.setupFee, plan.currency),
-                maintenance: formatPrice(plan.maintenanceAmount, plan.currency),
+                setup: formatPrice(shown.setupFee ?? plan.setupFee, shown.currency),
+                maintenance: formatPrice(shown.maintenanceAmount ?? plan.maintenanceAmount, shown.currency),
                 months: plan.maintenanceIntervalMonths ?? 1,
               })}
             </p>
@@ -561,6 +636,63 @@ function PlanFormDialog({
     set('features', form.features.filter((_, currentIndex) => currentIndex !== index));
   }
 
+  const planCompany = form.companyId === '__none__' ? null : companies.find((item) => item.id === Number(form.companyId)) ?? null;
+  const companyOffers = planCompany?.currencies ?? [];
+
+  /**
+   * Cambiar de empresa completa las filas de precio con las monedas que esa
+   * empresa vende, sin pisar los importes ya cargados: el caso real es el mismo
+   * plan en ARS, PYG y USD y cargarlas a mano una por una se presta a olvidos.
+   */
+  function selectCompany(value: string) {
+    const company = value === '__none__' ? null : companies.find((item) => item.id === Number(value)) ?? null;
+    setForm((current) => {
+      if (!company?.currencies?.length) return { ...current, companyId: value };
+      const byCurrency = new Map(current.prices.map((item) => [item.currency, item]));
+      const prices = company.currencies.map((currency) => byCurrency.get(currency) ?? { currency, price: '' });
+      // Se conservan las monedas fuera del listado de la empresa que ya tenían precio.
+      for (const item of current.prices) {
+        if (!company.currencies.includes(item.currency) && item.price.trim()) prices.push(item);
+      }
+      return { ...current, companyId: value, prices, currency: company.defaultCurrency ?? company.currencies[0] ?? current.currency };
+    });
+  }
+
+  function addPrice() {
+    const used = new Set(form.prices.map((item) => item.currency));
+    const next = companyOffers.find((item) => !used.has(item)) ?? CURRENCIES.find((item) => !used.has(item)) ?? 'USD';
+    set('prices', [...form.prices, { currency: next, price: '' }]);
+  }
+  /**
+   * `price`/`currency` (el precio principal) y la fila de esa misma moneda son
+   * el mismo número: si se separan, el catálogo muestra uno y la suscripción
+   * cobra el otro. Se sincronizan en los dos sentidos.
+   */
+  function updatePrice(index: number, patch: Partial<PlanForm['prices'][number]>) {
+    setForm((current) => {
+      const prices = current.prices.map((item, i) => (i === index ? { ...item, ...patch } : item));
+      const principal = prices.find((item) => item.currency === current.currency);
+      return { ...current, prices, ...(principal ? { price: principal.price } : {}) };
+    });
+  }
+
+  function removePrice(index: number) { set('prices', form.prices.filter((_, i) => i !== index)); }
+
+  function setPrincipalPrice(value: string) {
+    setForm((current) => ({
+      ...current,
+      price: value,
+      prices: current.prices.map((item) => (item.currency === current.currency ? { ...item, price: value } : item)),
+    }));
+  }
+
+  function setPrincipalCurrency(value: string) {
+    setForm((current) => {
+      const row = current.prices.find((item) => item.currency === value);
+      return { ...current, currency: value, ...(row ? { price: row.price } : {}) };
+    });
+  }
+
   async function save() {
     if (!form.name.trim()) {
       toast.error(t('plan_name_required'));
@@ -627,6 +759,11 @@ function PlanFormDialog({
             </div>
           </section>
 
+          <section className="space-y-3 rounded-2xl border border-border/50 bg-background/30 p-4">
+            <div className="flex items-center justify-between gap-3"><div><Label>Precios por moneda</Label><p className="mt-1 text-xs text-muted-foreground">Un mismo plan puede venderse en ARS, USD y PYG.</p></div><Button type="button" variant="outline" size="sm" onClick={addPrice} className="rounded-xl"><Plus className="h-3.5 w-3.5" />Agregar moneda</Button></div>
+            <div className="space-y-2">{form.prices.map((item, index) => <div key={index} className="flex gap-2"><Select value={item.currency} onValueChange={(value) => updatePrice(index, { currency: value })}><SelectTrigger className="w-28"><SelectValue /></SelectTrigger><SelectContent>{CURRENCIES.map((currency) => <SelectItem key={currency} value={currency}>{currency}</SelectItem>)}</SelectContent></Select><Input type="number" min="0" step="0.01" value={item.price} onChange={(event) => updatePrice(index, { price: event.target.value })} placeholder="0.00" className="flex-1" />{item.currency === form.currency ? <span className="self-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">principal</span> : null}{form.prices.length > 1 ? <Button type="button" variant="ghost" size="icon" onClick={() => removePrice(index)}><X className="h-4 w-4" /></Button> : null}</div>)}</div>
+          </section>
+
           <section className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="plan-name">{t('plan_name_label')} <span className="text-destructive">*</span></Label>
@@ -634,7 +771,7 @@ function PlanFormDialog({
             </div>
             <div className="space-y-1.5">
               <Label>{t('company_label')}</Label>
-              <Select value={form.companyId} onValueChange={(value) => set('companyId', value)}>
+              <Select value={form.companyId} onValueChange={selectCompany}>
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">{t('plan_without_company')}</SelectItem>
@@ -660,9 +797,9 @@ function PlanFormDialog({
             </div>
             <div className="space-y-1.5">
               <Label>{t('currency_label')}</Label>
-              <Select value={form.currency} onValueChange={(value) => set('currency', value)}>
+              <Select value={form.currency} onValueChange={setPrincipalCurrency}>
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent>{CURRENCIES.map((currency) => <SelectItem key={currency} value={currency}>{currency}</SelectItem>)}</SelectContent>
+                <SelectContent>{(companyOffers.length ? companyOffers : CURRENCIES).map((currency) => <SelectItem key={currency} value={currency}>{currency}</SelectItem>)}</SelectContent>
               </Select>
             </div>
 
@@ -677,7 +814,7 @@ function PlanFormDialog({
               <>
                 <div className="space-y-1.5">
                   <Label htmlFor="plan-price">{showSetup ? t('maintenance_fee_label') : t('price_label')}</Label>
-                  <Input id="plan-price" type="number" min="0" step="0.01" value={showSetup ? form.maintenanceAmount : form.price} onChange={(event) => set(showSetup ? 'maintenanceAmount' : 'price', event.target.value)} placeholder="0.00" />
+                  <Input id="plan-price" type="number" min="0" step="0.01" value={showSetup ? form.maintenanceAmount : form.price} onChange={(event) => (showSetup ? set('maintenanceAmount', event.target.value) : setPrincipalPrice(event.target.value))} placeholder="0.00" />
                 </div>
                 {showSetup ? (
                   <div className="space-y-1.5">

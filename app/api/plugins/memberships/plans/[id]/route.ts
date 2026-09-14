@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { teamMembershipPlans } from '@/lib/db/schema';
 import { getPluginRequestContext } from '@/lib/plugins/core/runtime-permissions';
+import { syncPlanPrices } from '@/lib/plugins/memberships/server/prices';
 import { assertCompanyOwnership, planSchema } from '@/lib/plugins/memberships/server/plan-schema';
 
 export const dynamic = 'force-dynamic';
@@ -53,6 +54,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         ? { billingLabel: nextBillingType === 'custom' ? (d.billingLabel ?? existing.billingLabel ?? null) : null }
         : {}),
       ...(d.currency !== undefined ? { currency: d.currency } : {}),
+      // Aunque no manden `prices`, la fila de la moneda principal sigue al precio.
+      ...(d.prices !== undefined || d.price !== undefined || d.currency !== undefined
+        ? {
+            prices: syncPlanPrices({
+              prices: d.prices,
+              previous: existing.prices,
+              currency: d.currency ?? existing.currency,
+              price: d.price ?? existing.price,
+            }),
+          }
+        : {}),
       ...(d.features !== undefined ? { features: d.features } : {}),
       ...(d.visibility !== undefined ? { visibility: d.visibility } : {}),
       ...(d.status !== undefined ? { status: d.status } : {}),

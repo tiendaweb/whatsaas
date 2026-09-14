@@ -16,29 +16,11 @@ const manifest: AppPluginManifest<typeof membershipsSettingsSchema> = {
     { path: '/plugins/memberships/companies', title: 'Empresas', scope: 'dashboard.page' },
     { path: '/plugins/memberships', title: 'Membresías', scope: 'dashboard.page' },
   ],
-  navItems: [
-    {
-      label: 'Suscripciones',
-      href: '/plugins/memberships/subscriptions',
-      icon: 'CreditCard',
-      order: 57,
-      requiredPermission: 'memberships.read',
-    },
-    {
-      label: 'Planes',
-      href: '/plugins/memberships/plans',
-      icon: 'BadgeDollarSign',
-      order: 58,
-      requiredPermission: 'memberships.read',
-    },
-    {
-      label: 'Empresas',
-      href: '/plugins/memberships/companies',
-      icon: 'Building2',
-      order: 59,
-      requiredPermission: 'memberships.read',
-    },
-  ],
+  // Sin entradas propias en el menú: Suscripciones, Planes y Empresas se abren
+  // desde la app Empresa, que es la que agrupa la gestión del negocio. Las
+  // rutas y los permisos siguen igual, así que los enlaces guardados y los
+  // favoritos siguen funcionando.
+  navItems: [],
   settingsSchema: membershipsSettingsSchema,
   featureFlags: [],
 };

@@ -3,6 +3,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import { teamMembershipPlans } from '@/lib/db/schema';
 import { getPluginRequestContext } from '@/lib/plugins/core/runtime-permissions';
+import { syncPlanPrices } from '@/lib/plugins/memberships/server/prices';
 import { assertCompanyOwnership, planSchema } from '@/lib/plugins/memberships/server/plan-schema';
 import { PLAN_VISIBILITIES, type PlanVisibility } from '@/lib/plugins/memberships/constants';
 
@@ -64,6 +65,7 @@ export async function POST(request: Request) {
       maintenanceIntervalMonths: d.maintenanceIntervalMonths ?? null,
       billingLabel: d.billingType === 'custom' ? d.billingLabel ?? null : null,
       currency: d.currency,
+      prices: syncPlanPrices({ prices: d.prices.length ? d.prices : undefined, currency: d.currency, price: d.price }),
       features: d.features,
       visibility: d.visibility,
       status: d.status,

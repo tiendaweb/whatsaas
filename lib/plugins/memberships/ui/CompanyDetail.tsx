@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import useSWR from 'swr';
 import {
@@ -25,6 +25,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Link } from '@/i18n/routing';
+import { companyCurrencies, planPriceIn, preferredCurrency } from './shared';
 import type { CompanyDetailData, Plan } from './shared';
 
 const detailFetcher = async (url: string): Promise<CompanyDetailData> => {
@@ -49,6 +50,17 @@ export function CompanyDetail({ companyId }: { companyId: number }) {
     `/api/plugins/memberships/companies/${companyId}`,
     detailFetcher,
   );
+
+  // Moneda con la que se miran los precios de esta empresa. Arranca en la que
+  // ella muestra primero (aapp.business abre en USD; AAPP SPACE, en la suya).
+  const [currency, setCurrency] = useState('');
+  const currencyOptions = useMemo(() => (data ? companyCurrencies(data, data.plans) : []), [data]);
+
+  useEffect(() => {
+    if (!currencyOptions.length) return;
+    setCurrency((current) => (current && currencyOptions.includes(current) ? current : preferredCurrency(data, currencyOptions)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currencyOptions.join(','), data?.id]);
 
   const dateFormatter = useMemo(
     () => new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short', year: 'numeric' }),
@@ -84,6 +96,14 @@ export function CompanyDetail({ companyId }: { companyId: number }) {
       cancelled: t('status_cancelled'),
     };
     return labels[value] ?? value;
+  }
+
+  /** El precio en la moneda elegida; si el plan no se vende en ella, se dice. */
+  function planPriceLabel(plan: Plan) {
+    if (plan.billingType === 'free') return t('billing_free');
+    if (!currency) return formatMoney(plan.price, plan.currency);
+    const price = planPriceIn(plan, currency);
+    return price ? formatMoney(price.price, price.currency) : `— ${currency}`;
   }
 
   function billingLabel(plan: Plan) {
@@ -192,7 +212,28 @@ export function CompanyDetail({ companyId }: { companyId: number }) {
 
         <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.75fr)] xl:items-start">
           <div className="min-w-0 space-y-6">
-            <SectionCard icon={BadgeDollarSign} title={t('company_plans_title')} count={data.plans.length}>
+            <SectionCard
+              icon={BadgeDollarSign}
+              title={t('company_plans_title')}
+              count={data.plans.length}
+              action={
+                currencyOptions.length > 1 ? (
+                  <div className="flex items-center gap-1" role="group" aria-label="Moneda">
+                    {currencyOptions.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        aria-pressed={currency === option}
+                        onClick={() => setCurrency(option)}
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${currency === option ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted'}`}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                ) : null
+              }
+            >
               {data.plans.length ? (
                 <div className="divide-y divide-border">
                   {data.plans.map((plan) => (
@@ -212,9 +253,7 @@ export function CompanyDetail({ companyId }: { companyId: number }) {
                         </p>
                       </div>
                       <div className="sm:text-right">
-                        <p className="text-sm font-semibold tabular-nums">
-                          {plan.billingType === 'free' ? t('billing_free') : formatMoney(plan.price, plan.currency)}
-                        </p>
+                        <p className="text-sm font-semibold tabular-nums">{planPriceLabel(plan)}</p>
                         <p className="mt-1 text-xs text-muted-foreground">{billingLabel(plan)}</p>
                       </div>
                     </article>
@@ -327,11 +366,13 @@ function SectionCard({
   icon: Icon,
   title,
   count,
+  action,
   children,
 }: {
   icon: LucideIcon;
   title: string;
   count?: number;
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -341,9 +382,12 @@ function SectionCard({
           <Icon className="h-4 w-4 shrink-0 text-primary" />
           <h2 className="truncate text-sm font-semibold">{title}</h2>
         </div>
-        {typeof count === 'number' ? (
-          <span className="text-xs font-semibold tabular-nums text-muted-foreground">{count}</span>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-3">
+          {action}
+          {typeof count === 'number' ? (
+            <span className="text-xs font-semibold tabular-nums text-muted-foreground">{count}</span>
+          ) : null}
+        </div>
       </div>
       {children}
     </Card>

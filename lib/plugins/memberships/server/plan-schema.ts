@@ -9,6 +9,12 @@ const featureSchema = z.object({
   type: z.enum(FEATURE_TYPES),
   value: z.string().max(200).optional(),
 });
+const priceSchema = z.object({
+  currency: z.string().length(3),
+  price: z.number().int().min(0),
+  setupFee: z.number().int().min(0).optional().default(0),
+  maintenanceAmount: z.number().int().min(0).optional().default(0),
+});
 
 export const planSchema = z.object({
   companyId: z.number().int().optional().nullable(),
@@ -21,6 +27,7 @@ export const planSchema = z.object({
   maintenanceIntervalMonths: z.number().int().min(1).max(240).optional().nullable(),
   billingLabel: z.string().max(100).optional().nullable(),
   currency: z.string().length(3).default('USD'),
+  prices: z.array(priceSchema).max(20).default([]),
   features: z.array(featureSchema).default([]),
   visibility: z.enum(PLAN_VISIBILITIES).default('public'),
   status: z.enum(['active', 'archived']).default('active'),

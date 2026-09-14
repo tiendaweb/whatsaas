@@ -3,7 +3,6 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '@/lib/db/drizzle';
 import {
   activityLogs,
-  teamPlugins,
   chats,
   contacts,
   customFields,
@@ -17,6 +16,7 @@ import {
   teamMembershipSubscriptions,
   type MembershipFeature,
 } from '@/lib/db/schema';
+import { syncPlanPrices } from '@/lib/plugins/memberships/server/prices';
 import { AappError, aappFetchAllPages } from './client';
 
 type Row = Record<string, unknown>;
@@ -29,29 +29,34 @@ type Row = Record<string, unknown>;
  */
 
 /**
- * Moneda de las membresías importadas.
+ * Moneda de las membresías importadas de AAPP SPACE.
  *
- * La API de AAPP SPACE devuelve `plan_price` y NINGÚN campo de moneda —
- * verificado contra `/plans`. El código anterior hacía `|| 'USD'`, así que las
- * 225 suscripciones importadas quedaron etiquetadas en dólares con importes que
- * son pesos: "Sitio Web Profesional, 200.000 USD" cuando el cliente pagó
- * $200.000 ARS por Personal Pay. Cualquier total por moneda —el panel del chat,
- * el conector, Finanzas— sumaba pesos en la columna de dólares.
+ * La API devuelve `plan_price` como un número pelado y NINGÚN campo de moneda
+ * (verificado contra `/plans`), y tampoco expone los ajustes de la plataforma:
+ * `/settings`, `/platform/settings`, `/billing` y `/config` dan 404. Así que la
+ * moneda hay que saberla desde acá.
  *
- * Ahora sale de la configuración del plugin de membresías del equipo, que es
- * editable y auditable, y sólo si no hay nada configurado cae a ARS: la
- * plataforma y sus pasarelas de cobro son argentinas. El literal 'USD' no
- * vuelve, porque era una suposición disfrazada de default.
+ * **Es ARS**, y no es una corazonada:
+ * - la configuración de facturación de la plataforma dice `currency: "ARS"`;
+ * - 240 cobros reales lo confirman — el plan `606732aa4fb58`, con
+ *   `plan_price: 60000`, se cobró como **ARS 60.000** por Mercado Pago, por
+ *   transferencia y en efectivo.
+ *
+ * Historia de por qué esto está escrito con tanto detalle: primero el código
+ * hacía `|| 'USD'` y las 225 suscripciones importadas quedaron en dólares con
+ * importes que son pesos ("Sitio Web Profesional, 200.000 USD" cuando el
+ * cliente pagó $200.000). Después se cambió por la moneda por defecto del
+ * plugin de Membresías, que arregla el número de hoy pero deja la trampa
+ * armada: esa preferencia es del equipo para SUS planes, y el día que alguien
+ * la ponga en USD —cosa perfectamente razonable— los 225 cobros de AAPP
+ * vuelven a decir dólares. La plata es de la plataforma; la moneda también.
+ *
+ * `AAPP_SPACE_CURRENCY` existe para el día que haya una instancia con otra
+ * moneda (la URL de la API ya es configurable). Un valor que no sea ISO-4217 se
+ * ignora en vez de romper el sync entero.
  */
-async function membershipCurrency(teamId: number) {
-  const [fila] = await db
-    .select({ settings: teamPlugins.settings })
-    .from(teamPlugins)
-    .where(and(eq(teamPlugins.teamId, teamId), eq(teamPlugins.pluginId, 'memberships')))
-    .limit(1);
-  const configurada = (fila?.settings as Record<string, unknown> | null)?.defaultCurrency;
-  if (typeof configurada === 'string' && /^[A-Za-z]{3}$/.test(configurada)) return configurada.toUpperCase();
-  return 'ARS';
+function monedaDeLaPlataforma(): string {
+  return normalizeCurrency(process.env.AAPP_SPACE_CURRENCY) ?? 'ARS';
 }
 
 export type AappSyncSummary = { plans: number; customers: number; linkedContacts: number; subscriptions: number; stores: number; transactions: number };
@@ -149,7 +154,7 @@ export async function syncTeamAapp(teamId: number, apiKey: string): Promise<Aapp
       set: { name: 'AAPP SPACE', website: 'https://aapp.space', status: 'active', updatedAt: now },
     }).returning();
 
-    const monedaEquipo = await membershipCurrency(teamId);
+    const monedaPlataforma = monedaDeLaPlataforma();
     const planIds = new Map<string, number>();
     const planSnapshots = new Map<string, { name: string; price: number; currency: string; billingType: string }>();
     for (const row of plans) {
@@ -161,7 +166,7 @@ export async function syncTeamAapp(teamId: number, apiKey: string): Promise<Aapp
       // Mismo caso que las transacciones: la API mete texto que no es ISO-4217
       // en `currency`. Acá además la columna es varchar(3), así que un valor
       // largo no ensucia una fila: hace fallar el sync ENTERO del equipo.
-      const currency = normalizeCurrency(stringValue(row, 'currency')) ?? monedaEquipo;
+      const currency = normalizeCurrency(stringValue(row, 'currency')) ?? monedaPlataforma;
       const [plan] = await db.insert(teamMembershipPlans).values({
         teamId, companyId: company.id, name: planName,
         description: stringValue(row, 'description'), price, currency,
@@ -172,7 +177,15 @@ export async function syncTeamAapp(teamId: number, apiKey: string): Promise<Aapp
         set: { companyId: company.id, name: planName, description: stringValue(row, 'description'), price,
           currency, billingType: mappedBilling.billingType, billingLabel: mappedBilling.billingLabel,
           features: planFeatures(row), status: 'active', updatedAt: now },
-      }).returning({ id: teamMembershipPlans.id });
+      }).returning({ id: teamMembershipPlans.id, prices: teamMembershipPlans.prices });
+      // El plan puede tener cargados a mano precios en otras monedas (el mismo
+      // plan en ARS, PYG y USD). El sync manda sobre el precio de SU moneda y
+      // no toca los demás: pisar la lista entera borraría trabajo ajeno.
+      const previas = plan.prices ?? [];
+      const proximas = syncPlanPrices({ previous: previas, currency, price });
+      if (JSON.stringify(proximas) !== JSON.stringify(previas)) {
+        await db.update(teamMembershipPlans).set({ prices: proximas }).where(eq(teamMembershipPlans.id, plan.id));
+      }
       planIds.set(id, plan.id);
       planSnapshots.set(id, { name: planName, price, currency, billingType: mappedBilling.billingType });
       summary.plans++;
@@ -233,12 +246,12 @@ export async function syncTeamAapp(teamId: number, apiKey: string): Promise<Aapp
         await db.insert(teamMembershipSubscriptions).values({
           teamId, subscriptionNumber: `AAPP-${id}`, planId, companyId: company.id, customerId: customer.id, contactId: matchingContactId,
           externalSource: 'aapp_space', externalId: id, planNameSnapshot: planSnapshot?.name ?? '',
-          price: planSnapshot?.price ?? 0, currency: planSnapshot?.currency ?? monedaEquipo, billingType: planSnapshot?.billingType ?? 'custom',
+          price: planSnapshot?.price ?? 0, currency: planSnapshot?.currency ?? monedaPlataforma, billingType: planSnapshot?.billingType ?? 'custom',
           status: subscriptionStatus(value(row, 'status'), endDate), paymentStatus: 'paid', startDate, endDate, updatedAt: now,
         }).onConflictDoUpdate({
           target: [teamMembershipSubscriptions.teamId, teamMembershipSubscriptions.externalSource, teamMembershipSubscriptions.externalId],
           set: { planId, companyId: company.id, customerId: customer.id, contactId: matchingContactId,
-            planNameSnapshot: planSnapshot?.name ?? '', price: planSnapshot?.price ?? 0, currency: planSnapshot?.currency ?? monedaEquipo,
+            planNameSnapshot: planSnapshot?.name ?? '', price: planSnapshot?.price ?? 0, currency: planSnapshot?.currency ?? monedaPlataforma,
             billingType: planSnapshot?.billingType ?? 'custom', startDate, endDate,
             status: subscriptionStatus(value(row, 'status'), endDate), updatedAt: now },
         });

@@ -20,6 +20,16 @@ import {
 
 export class MembershipCompanyError extends Error {}
 
+/**
+ * Monedas en las que vende la empresa. Se normalizan a ISO en mayúsculas y sin
+ * repetidos: el selector de la pantalla de planes usa este orden tal cual.
+ */
+const currencyListSchema = z
+  .array(z.string().trim().length(3))
+  .max(12)
+  .transform((list) => [...new Set(list.map((item) => item.toUpperCase()))]);
+const defaultCurrencySchema = z.string().trim().length(3).transform((value) => value.toUpperCase());
+
 export const membershipCompanySchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(1000).default(''),
@@ -29,6 +39,8 @@ export const membershipCompanySchema = z.object({
   phone: z.string().max(80).optional().nullable(),
   address: z.string().max(1000).optional().nullable(),
   notes: z.string().max(2000).default(''),
+  currencies: currencyListSchema.default([]),
+  defaultCurrency: defaultCurrencySchema.optional().nullable(),
   status: z.enum(['active', 'archived']).default('active'),
   position: z.number().int().optional(),
 });
@@ -43,10 +55,21 @@ export const membershipCompanyUpdateSchema = z.object({
   phone: z.string().max(80).optional().nullable(),
   address: z.string().max(1000).optional().nullable(),
   notes: z.string().max(2000).optional(),
+  currencies: currencyListSchema.optional(),
+  defaultCurrency: defaultCurrencySchema.optional().nullable(),
   status: z.enum(['active', 'archived']).optional(),
   position: z.number().int().optional(),
 });
 export type MembershipCompanyUpdateInput = z.infer<typeof membershipCompanyUpdateSchema>;
+
+/**
+ * La moneda por defecto tiene que estar entre las que vende la empresa: si no,
+ * el selector abriría en una moneda sin precio y el plan se vería vacío.
+ */
+function pickDefaultCurrency(currencies: string[], preferred?: string | null) {
+  if (preferred && currencies.includes(preferred)) return preferred;
+  return currencies[0] ?? null;
+}
 
 export async function getMembershipCompany(teamId: number, companyId: number) {
   return db.query.teamMembershipCompanies.findFirst({
@@ -91,6 +114,8 @@ export async function createMembershipCompany(teamId: number, userId: number, d:
       phone: d.phone || null,
       address: d.address || null,
       notes: d.notes,
+      currencies: d.currencies,
+      defaultCurrency: pickDefaultCurrency(d.currencies, d.defaultCurrency),
       status: d.status,
       position: d.position ?? 0,
       createdBy: userId,
@@ -113,6 +138,8 @@ export async function updateMembershipCompany(teamId: number, userId: number, co
       ...(d.phone !== undefined ? { phone: d.phone || null } : {}),
       ...(d.address !== undefined ? { address: d.address || null } : {}),
       ...(d.notes !== undefined ? { notes: d.notes } : {}),
+      ...(d.currencies !== undefined ? { currencies: d.currencies, defaultCurrency: pickDefaultCurrency(d.currencies, d.defaultCurrency) } : {}),
+      ...(d.currencies === undefined && d.defaultCurrency !== undefined ? { defaultCurrency: d.defaultCurrency || null } : {}),
       ...(d.status !== undefined ? { status: d.status } : {}),
       ...(d.position !== undefined ? { position: d.position } : {}),
       updatedBy: userId,

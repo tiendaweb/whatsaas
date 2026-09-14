@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ArrowRight, Building2, Loader2, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Link } from '@/i18n/routing';
-import { fetcher, type Company, type Plan } from './shared';
+import { CURRENCIES, fetcher, type Company, type Plan } from './shared';
 
 type CompanyForm = {
   id?: number;
@@ -31,9 +31,11 @@ type CompanyForm = {
   phone: string;
   address: string;
   notes: string;
+  currencies: string[];
+  defaultCurrency: string;
 };
 
-const EMPTY: CompanyForm = { name: '', description: '', logoUrl: '', website: '', email: '', phone: '', address: '', notes: '' };
+const EMPTY: CompanyForm = { name: '', description: '', logoUrl: '', website: '', email: '', phone: '', address: '', notes: '', currencies: ['USD'], defaultCurrency: 'USD' };
 
 export function CompaniesSection() {
   const t = useTranslations('Memberships');
@@ -56,7 +58,7 @@ export function CompaniesSection() {
   }
 
   function handleEdit(c: Company) {
-    setEditing({ id: c.id, name: c.name, description: c.description, logoUrl: c.logoUrl ?? '', website: c.website ?? '', email: c.email ?? '', phone: c.phone ?? '', address: c.address ?? '', notes: c.notes });
+    setEditing({ id: c.id, name: c.name, description: c.description, logoUrl: c.logoUrl ?? '', website: c.website ?? '', email: c.email ?? '', phone: c.phone ?? '', address: c.address ?? '', notes: c.notes, currencies: c.currencies ?? [], defaultCurrency: c.defaultCurrency ?? c.currencies?.[0] ?? '' });
     setFormOpen(true);
   }
 
@@ -70,6 +72,8 @@ export function CompaniesSection() {
       phone: form.phone || null,
       address: form.address || null,
       notes: form.notes,
+      currencies: form.currencies,
+      defaultCurrency: form.defaultCurrency || null,
     };
     const res = await fetch(
       form.id ? `/api/plugins/memberships/companies/${form.id}` : '/api/plugins/memberships/companies',
@@ -211,6 +215,17 @@ function CompanyFormDialog({
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
+  // Sacar una moneda no puede dejar como "primera" a una que ya no se vende.
+  function toggleCurrency(currency: string) {
+    setForm((prev) => {
+      const currencies = prev.currencies.includes(currency)
+        ? prev.currencies.filter((item) => item !== currency)
+        : [...prev.currencies, currency];
+      const defaultCurrency = currencies.includes(prev.defaultCurrency) ? prev.defaultCurrency : currencies[0] ?? '';
+      return { ...prev, currencies, defaultCurrency };
+    });
+  }
+
   async function handleSave() {
     if (!form.name.trim()) {
       alert('El nombre de la empresa es requerido');
@@ -252,6 +267,44 @@ function CompanyFormDialog({
           </div>
           <div className="grid grid-cols-2 gap-3"><div className="space-y-1.5"><Label>Sitio web</Label><Input value={form.website} onChange={(e) => set('website', e.target.value)} placeholder="https://..." /></div><div className="space-y-1.5"><Label>Email</Label><Input type="email" value={form.email} onChange={(e) => set('email', e.target.value)} /></div></div>
           <div className="grid grid-cols-2 gap-3"><div className="space-y-1.5"><Label>Teléfono</Label><Input value={form.phone} onChange={(e) => set('phone', e.target.value)} /></div><div className="space-y-1.5"><Label>Dirección</Label><Input value={form.address} onChange={(e) => set('address', e.target.value)} /></div></div>
+          <div className="space-y-1.5">
+            <Label>Monedas en las que vende</Label>
+            <p className="text-xs text-muted-foreground">
+              Cada plan lleva un precio por moneda y el catálogo muestra el selector con estas.
+            </p>
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {CURRENCIES.map((currency) => {
+                const selected = form.currencies.includes(currency);
+                return (
+                  <button
+                    key={currency}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => toggleCurrency(currency)}
+                    className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${selected ? 'border-primary bg-primary/10 font-medium text-primary' : 'border-border/60 text-muted-foreground hover:bg-muted'}`}
+                  >
+                    {currency}
+                  </button>
+                );
+              })}
+            </div>
+            {form.currencies.length > 1 ? (
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-muted-foreground">
+                <span>Muestra primero:</span>
+                {form.currencies.map((currency) => (
+                  <button
+                    key={currency}
+                    type="button"
+                    aria-pressed={form.defaultCurrency === currency}
+                    onClick={() => set('defaultCurrency', currency)}
+                    className={`rounded-full px-2 py-0.5 ${form.defaultCurrency === currency ? 'bg-foreground text-background' : 'underline-offset-2 hover:underline'}`}
+                  >
+                    {currency}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <div className="space-y-1.5">
             <Label>Notas internas</Label>
             <Textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={2} className="resize-none text-sm" />

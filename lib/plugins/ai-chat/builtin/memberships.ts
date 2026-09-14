@@ -40,6 +40,9 @@ export const membershipsTools: BuiltinToolDefinition[] = [
           price: fromCents(p.price),
           setup_fee: fromCents(p.setupFee),
           currency: p.currency,
+          // El mismo plan puede venderse en varias monedas: si el cliente
+          // pregunta en la suya, el precio está acá y no hay que convertir nada.
+          prices: (p.prices ?? []).map((item) => ({ currency: item.currency, price: fromCents(item.price) })),
           billing: p.billingLabel || p.billingType,
           features: (p.features as any[]).map((f) => (typeof f === 'string' ? f : f?.label ?? f?.name ?? '')).filter(Boolean).slice(0, 12),
         })),
@@ -75,6 +78,7 @@ export const membershipsTools: BuiltinToolDefinition[] = [
       required: ['plan_id'],
       properties: {
         plan_id: { type: 'integer', description: 'id del plan elegido (de list_membership_plans)' },
+        currency: { type: 'string', description: 'Moneda elegida, si el plan se vende en varias (de prices en list_membership_plans). Por defecto, la principal del plan.' },
         start_date: { type: 'string', description: 'Fecha de inicio YYYY-MM-DD. Por defecto hoy.' },
         notes: { type: 'string', description: 'Observaciones (medio de pago prometido, aclaraciones)' },
       },
@@ -86,6 +90,17 @@ export const membershipsTools: BuiltinToolDefinition[] = [
       if (!bundle) return fail('Chat no encontrado');
       const plan = await db.query.teamMembershipPlans.findFirst({ where: and(eq(teamMembershipPlans.id, planId), eq(teamMembershipPlans.teamId, context.teamId), eq(teamMembershipPlans.status, 'active')) });
       if (!plan) return fail('Plan no encontrado o inactivo');
+
+      // La moneda pedida tiene que ser una en la que el plan realmente se vende:
+      // cobrar el importe de ARS diciendo USD sería un error de miles de pesos.
+      const pedida = typeof args.currency === 'string' ? args.currency.trim().toUpperCase() : '';
+      const tarifa = pedida ? (plan.prices ?? []).find((item) => item.currency === pedida) : null;
+      if (pedida && !tarifa && pedida !== plan.currency) {
+        const disponibles = [plan.currency, ...(plan.prices ?? []).map((item) => item.currency)];
+        return fail(`El plan ${plan.name} no se vende en ${pedida}. Monedas disponibles: ${[...new Set(disponibles)].join(', ')}.`);
+      }
+      const precio = tarifa ? tarifa.price : plan.price;
+      const moneda = tarifa ? tarifa.currency : plan.currency;
 
       const startDate = typeof args.start_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(args.start_date) ? args.start_date : new Date().toISOString().slice(0, 10);
       const months = MONTHS_BY_BILLING[plan.billingType] ?? 1;
@@ -112,8 +127,8 @@ export const membershipsTools: BuiltinToolDefinition[] = [
           externalSource: 'ai-chat',
           externalId,
           planNameSnapshot: plan.name,
-          price: plan.price,
-          currency: plan.currency,
+          price: precio,
+          currency: moneda,
           billingType: plan.billingType,
           status: 'active',
           paymentStatus: 'pending',
@@ -125,7 +140,7 @@ export const membershipsTools: BuiltinToolDefinition[] = [
         })
         .returning();
       await logBotAction(context, bundle, `@@syslog_ai_added_note`);
-      return ok({ subscription_id: sub.id, number: subscriptionNumber, plan: plan.name, price: fromCents(plan.price), currency: plan.currency, start_date: startDate, end_date: endDate, payment_status: 'pending' });
+      return ok({ subscription_id: sub.id, number: subscriptionNumber, plan: plan.name, price: fromCents(precio), currency: moneda, start_date: startDate, end_date: endDate, payment_status: 'pending' });
     },
   },
 ];
